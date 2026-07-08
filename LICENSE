@@ -1,0 +1,27 @@
+GNU AFFERO GENERAL PUBLIC LICENSE
+Version 3, 19 November 2007
+
+Copyright (C) [ANO] [NOME DO TITULAR DOS DIREITOS / ORGANIZAÇÃO]
+
+Este programa é software livre: pode redistribuí-lo e/ou modificá-lo sob os
+termos da GNU Affero General Public License, conforme publicada pela Free
+Software Foundation, na versão 3 da licença, ou (à sua escolha) qualquer
+versão posterior.
+
+Este programa é distribuído na esperança de que seja útil, mas SEM QUALQUER
+GARANTIA; nem mesmo a garantia implícita de COMERCIALIZAÇÃO ou ADEQUAÇÃO A UM
+FIM ESPECÍFICO. Ver a GNU Affero General Public License para mais detalhes.
+
+---
+
+AÇÃO NECESSÁRIA: este ficheiro contém apenas um cabeçalho de referência.
+Antes de publicar o repositório, substitua este conteúdo pelo texto integral
+e oficial da licença, disponível em:
+
+    https://www.gnu.org/licenses/agpl-3.0.txt
+
+O texto completo é longo (~660 linhas) e é o documento legal que efetivamente
+rege os direitos de uso — copie-o na íntegra, sem alterações, para este
+ficheiro `LICENSE`.
+
+SPDX-License-Identifier: AGPL-3.0-or-later
