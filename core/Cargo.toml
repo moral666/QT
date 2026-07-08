@@ -18,6 +18,22 @@ sha2 = "0.10"
 rand_core = { version = "0.6", features = ["std"] }
 zeroize = { version = "1", features = ["derive"] }
 thiserror = "1"
+# ML-KEM (Kyber), FIPS 203 - usado no PQXDH (modulo pqxdh.rs) para
+# resistencia pos-quantica. Opcional (feature "pq") porque exige rustc
+# >= 1.81 (o resto do core suporta 1.75+). Testado e a passar com
+# rustc 1.91.1 - ativa com `cargo build --features pq` / `cargo test --features pq`.
+ml-kem = { version = "0.2", optional = true }
+
+[features]
+default = []
+pq = ["dep:ml-kem"]
+
+[[test]]
+name = "full_flow"
+
+[[test]]
+name = "pqxdh_flow"
+required-features = ["pq"]
 
 [dev-dependencies]
 hex = "0.4"

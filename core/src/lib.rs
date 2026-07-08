@@ -6,14 +6,20 @@
 //! na camada de UI - tudo passa por aqui, para que auditorias externas
 //! possam focar-se num unico lugar.
 //!
-//! Estado atual: prova de conceito didatica (X3DH classico + Double Ratchet).
-//! Ver TODOs em x3dh.rs para o que falta antes de uso em producao:
-//! PQXDH (Kyber), assinatura da signed pre-key, one-time pre-keys.
+//! Estado atual (v0.2): X3DH classico + assinatura da signed pre-key +
+//! one-time pre-keys + Double Ratchet, tudo compilado e testado com
+//! `cargo test` (rustc 1.75). PQXDH (modulo pqxdh.rs) existe mas fica
+//! atras da feature "pq" - requer rustc >= 1.81 (ver Cargo.toml).
+//! Ver docs/protocol-spec.md para o que ainda falta antes de producao real
+//! (transporte, sealed sender, armazenamento persistente).
 
 pub mod primitives;
 pub mod x3dh;
 pub mod ratchet;
 
-pub use primitives::{CryptoError, DhKeyPair};
+#[cfg(feature = "pq")]
+pub mod pqxdh;
+
+pub use primitives::{CryptoError, DhKeyPair, SigningKeyPair};
 pub use ratchet::{EncryptedMessage, RatchetError, RatchetState};
-pub use x3dh::{x3dh_initiate, x3dh_respond, PreKeyBundle, X3dhInitResult};
+pub use x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle, X3dhError, X3dhInitResult};

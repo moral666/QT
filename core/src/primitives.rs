@@ -9,6 +9,7 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
     ChaCha20Poly1305, Key, Nonce,
 };
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use hkdf::Hkdf;
 use rand_core::{OsRng, RngCore};
 use sha2::Sha256;
@@ -22,6 +23,42 @@ pub enum CryptoError {
     DecryptionFailed,
     #[error("tamanho de nonce/ciphertext invalido")]
     InvalidLength,
+    #[error("assinatura invalida: a pre-key pode ter sido adulterada/substituida")]
+    SignatureInvalid,
+}
+
+/// Par de chaves Ed25519 usado para ASSINAR (nao para DH). E a chave de
+/// identidade "de longo prazo" que assina a signed pre-key publicada no
+/// servidor, permitindo a quem inicia um handshake verificar que a pre-key
+/// realmente pertence a quem diz pertencer (protege contra um servidor
+/// malicioso substituir a pre-key por uma sua).
+pub struct SigningKeyPair {
+    signing_key: SigningKey,
+    pub verifying_key: VerifyingKey,
+}
+
+impl SigningKeyPair {
+    pub fn generate() -> Self {
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let verifying_key = signing_key.verifying_key();
+        Self { signing_key, verifying_key }
+    }
+
+    pub fn sign(&self, message: &[u8]) -> Signature {
+        self.signing_key.sign(message)
+    }
+}
+
+/// Verifica uma assinatura Ed25519. Deve ser chamado SEMPRE antes de usar
+/// uma signed pre-key recebida do servidor.
+pub fn verify_signature(
+    verifying_key: &VerifyingKey,
+    message: &[u8],
+    signature: &Signature,
+) -> Result<(), CryptoError> {
+    verifying_key
+        .verify(message, signature)
+        .map_err(|_| CryptoError::SignatureInvalid)
 }
 
 /// Par de chaves X25519 para operacoes Diffie-Hellman.

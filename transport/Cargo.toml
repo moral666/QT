@@ -1,0 +1,16 @@
+[package]
+name = "secure_messenger_transport"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "Camada de transporte: Noise Protocol sobre WebSocket"
+
+[dependencies]
+snow = "0.9"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
+thiserror = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }

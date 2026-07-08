@@ -2,34 +2,32 @@
 
 ## Estado deste documento
 
-Rascunho inicial. Cobre o que já está implementado em `core/` e o que falta
-antes de qualquer uso real. Não é ainda uma especificação formal revisada
-por pares — isso é um requisito antes da Fase 1 (MVP) começar, conforme
-`README.md` do repositório principal do projeto (ver conversa de arquitetura
-anterior, seção "Roadmap").
+Rascunho inicial. Cobre o que já está implementado, **compilado e testado**
+em `core/`, e o que falta antes de qualquer uso real. Não é ainda uma
+especificação formal revisada por pares.
 
-## 1. Handshake inicial (X3DH) — implementado, incompleto
+## 1. Handshake inicial — implementado e testado
 
-Implementado em `core/src/x3dh.rs`: 3x Diffie-Hellman (X25519) combinados
-via HKDF-SHA256, seguindo a estrutura do X3DH original (Marlinspike/Perrin,
-Signal, 2016).
+Duas variantes, ambas em `core/`, ambas com testes de integração a passar:
 
-**Pendente antes de produção:**
+**X3DH clássico** (`core/src/x3dh.rs`) — 3-4x Diffie-Hellman (X25519) via
+HKDF-SHA256, com:
+- Assinatura Ed25519 da signed pre-key, verificada pelo iniciador antes de
+  confiar nela (protege contra um servidor malicioso substituir a chave).
+- One-time pre-key opcional (DH4), com degradação graciosa quando o
+  servidor não tem nenhuma disponível.
+- Testado em `core/tests/full_flow.rs` (4 testes, incluindo casos que
+  devem falhar: assinatura adulterada, mensagem adulterada).
 
-- **PQXDH**: adicionar um KEM pós-quântico (ML-KEM/Kyber, FIPS 203) ao lado
-  do X25519 no cálculo do segredo compartilhado, para resistência a ataques
-  "colher agora, decifrar depois" por um adversário com computador quântico
-  futuro. O Signal já fez isso em produção — usar a mesma estrutura como
-  referência.
-- **Assinatura da signed pre-key**: a `signed_pre_key` no `PreKeyBundle`
-  deve ser assinada com a `identity_key` (Ed25519) no momento da publicação,
-  e essa assinatura **verificada** por quem inicia o handshake, antes de
-  prosseguir. Sem isso, um servidor malicioso pode substituir a chave
-  publicada (ataque de personificação). Marcado como TODO em `x3dh.rs`.
-- **One-time pre-keys**: adicionar uma quarta DH (`EK_A x OPK_B`) usando uma
-  chave descartável de uso único, consumida do servidor a cada novo
-  handshake. Fortalece a garantia de forward secrecy da própria primeira
-  mensagem.
+**PQXDH** (`core/src/pqxdh.rs`, atrás da feature `pq`) — a mesma estrutura,
+com um encapsulamento ML-KEM-768 (Kyber, FIPS 203) combinado no HKDF final,
+para resistência a "colher agora, decifrar depois" por um adversário com
+computador quântico futuro. Exige Rust 1.81+ (dependência `hybrid-array`).
+Testado em `core/tests/pqxdh_flow.rs`.
+
+**Pendente**: nenhum dos dois expõe ainda uma API para o servidor consumir
+one-time pre-keys de um pool (isso é lógica de servidor, fora do escopo de
+`core/` — ver secção 4 do roadmap geral do projeto).
 
 ## 2. Double Ratchet — implementado
 
@@ -51,13 +49,36 @@ memória (mitigação de DoS).
 **Pendente**: persistência do `RatchetState` em disco (via SQLCipher, ver
 seção 4) — atualmente o estado só existe em memória durante o processo.
 
-## 3. Camada de transporte — não implementado
+## 3. Camada de transporte — implementada e testada
 
-Decisão de arquitetura (da conversa de design): Noise Protocol Framework
-sobre WebSocket, usando a crate `snow`. Isto fica numa camada separada do
-`core/`, que deve permanecer agnóstica de rede — `core/` só produz/consome
-bytes cifrados, nunca faz I/O de rede diretamente (facilita testes e
-auditoria).
+Noise Protocol Framework (`Noise_XX_25519_ChaChaPoly_SHA256`) sobre
+WebSocket, implementado em `transport/` (crate `secure_messenger_transport`),
+usando `snow` (Noise) + `tokio-tungstenite` (WebSocket) + `tokio` (runtime
+async). Mantém-se agnóstica de conteúdo — só vê bytes já cifrados pelo
+Double Ratchet, nunca decifra a camada de aplicação.
+
+Testado de ponta a ponta em `demo/tests/e2e_over_real_websocket.rs`: um
+servidor WebSocket real sobe em `localhost`, um cliente liga-se, os dois
+fazem o handshake Noise, e uma mensagem já cifrada pelo Double Ratchet
+viaja através da ligação — a decifragem em ambas as camadas (Noise e
+depois Double Ratchet) é verificada no final.
+
+**Pendente antes de produção:**
+
+- **TLS (`wss://`)**: o transporte atual usa `ws://` puro (sem TLS),
+  adequado apenas para testes locais. Em produção, `wss://` deve ser a
+  primeira camada de defesa de rede, com o Noise por cima como segunda
+  camada de autenticação mútua independente da CA/PKI do TLS.
+- **Padrão Noise_IK**: para ligações servidor-servidor de federação, onde a
+  chave estática do destino já é conhecida antecipadamente, `Noise_IK`
+  permite um handshake com menos round-trips que o `Noise_XX` atual.
+- **Pinning de chave estática Noise**: `NoiseHandshake::remote_static_public_key()`
+  já expõe a chave do par remoto após o handshake, mas ainda não há lógica
+  de comparação com um "known_hosts" persistido entre sessões.
+- **Servidor/relay real**: o teste atual simula ambos os lados (cliente e
+  "servidor") no mesmo processo de teste. Falta um binário de servidor
+  real, com fila de mensagens e lógica de entrega assíncrona (ver secção
+  seguinte do roadmap geral do projeto).
 
 ## 4. Armazenamento local — não implementado
 

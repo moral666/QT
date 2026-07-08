@@ -7,51 +7,89 @@ pacote entregue) para uma explicação em linguagem simples.
 
 ## Estado atual do projeto
 
-🚧 **Fase 0 — fundação.** Existe apenas o núcleo criptográfico (`core/`),
-como prova de conceito didática. **Não usar em produção ainda.** Faltam,
-entre outras coisas:
+✅ **Núcleo criptográfico compilado e testado de verdade** (não é só pseudocódigo):
+X3DH clássico + assinatura Ed25519 da signed pre-key + one-time pre-keys +
+Double Ratchet — 4 testes de integração a passar. PQXDH (X25519 + ML-KEM/Kyber,
+pós-quântico) também implementado e testado, atrás da feature `pq` (ver
+secção "Compilar" abaixo).
 
-- [ ] PQXDH (adicionar ML-KEM/Kyber ao X3DH para resistência pós-quântica)
-- [ ] Assinatura Ed25519 da signed pre-key + verificação
-- [ ] One-time pre-keys
-- [ ] Camada de transporte (Noise sobre WebSocket)
+✅ **Camada de transporte também compilada e testada de verdade**: Noise
+Protocol Framework (`Noise_XX_25519_ChaChaPoly_SHA256`) sobre WebSocket real,
+usando `snow` + `tokio-tungstenite`. O teste em `demo/tests/e2e_over_real_websocket.rs`
+prova as duas camadas juntas: uma mensagem cifrada pelo Double Ratchet
+atravessa um WebSocket real em `localhost`, protegida por um canal Noise, e
+é corretamente decifrada do outro lado.
+
+🚧 **Ainda falta**, antes de qualquer uso real:
+
 - [ ] Sealed sender
 - [ ] Bindings FFI (uniffi) para Android/iOS
+- [ ] Armazenamento local (SQLCipher)
+- [ ] Servidor/relay real (o teste atual simula ambos os lados no mesmo processo)
+- [ ] TLS (`wss://`) - o transporte atual usa `ws://` puro, adequado só para testes locais
 - [ ] Auditoria de segurança externa
+
+**Não usar em produção ainda** — falta o servidor relay real e a app cliente.
 
 ## Estrutura do repositório
 
+Workspace Cargo com 3 crates:
+
 ```
-core/           # Núcleo Rust: X3DH + Double Ratchet (esta é a parte que já existe)
+Cargo.toml      # workspace root
+
+core/           # Núcleo E2EE: X3DH + Double Ratchet (compilado e testado)
   src/
-    primitives.rs   # DH, HKDF, AEAD - primitivas isoladas para auditoria
-    x3dh.rs         # Handshake inicial de estabelecimento de sessão
+    primitives.rs   # DH, HKDF, AEAD, assinaturas Ed25519
+    x3dh.rs         # Handshake clássico (com assinatura + one-time pre-key)
+    pqxdh.rs         # Variante pós-quântica (atrás da feature "pq")
     ratchet.rs       # Double Ratchet (forward secrecy contínua)
   tests/
-    full_flow.rs     # Teste de integração Alice<->Bob
+    full_flow.rs     # 4 testes: fluxo completo, assinatura/mensagem adulterada, sem OTK
+    pqxdh_flow.rs     # Teste do fluxo PQXDH (exige --features pq)
+
+transport/      # Camada de transporte: Noise sobre WebSocket (compilado e testado)
+  src/
+    noise_session.rs # Wrapper sobre o Noise Protocol Framework (crate snow)
+    ws_transport.rs   # Liga o handshake/transporte Noise a WebSocket real
+
+demo/           # Crate de demonstração - liga core + transport num teste completo
+  tests/
+    e2e_over_real_websocket.rs  # Mensagem E2EE real, através de WebSocket real
 
 docs/
-  protocol-spec.md         # Especificação do protocolo (a expandir)
-  threat-model.md          # Modelo de ameaças (a escrever)
-  architecture-decisions/  # ADRs
+  protocol-spec.md         # Especificação do protocolo
+  poc_ratchet_python.py    # PoC inicial em Python (referência histórica)
 
-android/        # (a criar) App Android nativo consumindo core/ via FFI
-ios/            # (a criar) App iOS nativo consumindo core/ via FFI
-desktop/        # (a criar) App Tauri consumindo core/ via FFI
+android/        # (a criar) App Android nativo consumindo core/ e transport/ via FFI
+ios/            # (a criar) App iOS nativo
+desktop/        # (a criar) App Tauri
 server/         # (repositório separado - ver justificativa em CONTRIBUTING.md)
 ```
 
-## Como compilar e testar o core
+## Como compilar e testar
+
+Requisitos: Rust estável (via [rustup](https://rustup.rs), recomendado) —
+qualquer versão recente serve para a maior parte do workspace; a feature
+`pq` do `core` (pós-quântico) exige especificamente **Rust 1.81 ou mais
+recente**.
 
 ```bash
-cd core
-cargo test
+# Testar tudo (core + transport + demo), sem a feature pq
+cargo test --workspace
+
+# Incluindo PQXDH (ML-KEM/Kyber) no core - exige Rust 1.81+
+cargo test -p secure_messenger_core --features pq
+
+# Só o teste de ponta a ponta (E2EE real sobre WebSocket real em localhost)
+cargo test -p secure_messenger_demo
 ```
 
-Isto executa `tests/full_flow.rs`, que simula uma conversa completa
-Alice↔Bob: handshake X3DH, troca de mensagens, resposta (forçando um DH
-ratchet step), mensagens fora de ordem, e um teste de adulteração que deve
-falhar (garante que o AEAD rejeita ciphertext modificado).
+O teste mais interessante para veres a arquitetura em ação é
+`demo/tests/e2e_over_real_websocket.rs`: sobe um servidor WebSocket real em
+`localhost`, faz o handshake Noise, e envia uma mensagem já cifrada pelo
+Double Ratchet através dele - as duas camadas de segurança a funcionar
+juntas, com tráfego de rede real (não simulado em memória).
 
 ## Licença
 
