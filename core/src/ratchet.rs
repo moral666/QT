@@ -41,6 +41,125 @@ pub enum RatchetError {
 }
 
 impl RatchetState {
+    /// Serializa o estado completo da sessao para bytes, para persistencia
+    /// local (ver storage/). O chamador e responsavel por cifrar estes
+    /// bytes em repouso (ex.: SQLCipher) - esta funcao so faz a
+    /// serializacao estrutural, nao adiciona cifra nenhuma por si so.
+    ///
+    /// Formato (tudo big-endian onde aplicavel):
+    /// [32 root_key]
+    /// [32 dh_send_private][32 dh_send_public]
+    /// [1 has_dh_recv][32 dh_recv_public se has_dh_recv=1]
+    /// [1 has_sending_chain][32 sending_chain_key se =1]
+    /// [1 has_receiving_chain][32 receiving_chain_key se =1]
+    /// [4 send_n][4 recv_n]
+    /// [4 skipped_count][entradas: 32 pub + 4 n + 32 key, repetido skipped_count vezes]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&self.root_key);
+        out.extend_from_slice(&self.dh_send.private.to_bytes());
+        out.extend_from_slice(self.dh_send.public.as_bytes());
+
+        match &self.dh_recv {
+            Some(pk) => {
+                out.push(1);
+                out.extend_from_slice(pk.as_bytes());
+            }
+            None => out.push(0),
+        }
+        match &self.sending_chain_key {
+            Some(k) => {
+                out.push(1);
+                out.extend_from_slice(k);
+            }
+            None => out.push(0),
+        }
+        match &self.receiving_chain_key {
+            Some(k) => {
+                out.push(1);
+                out.extend_from_slice(k);
+            }
+            None => out.push(0),
+        }
+
+        out.extend_from_slice(&self.send_n.to_be_bytes());
+        out.extend_from_slice(&self.recv_n.to_be_bytes());
+
+        out.extend_from_slice(&(self.skipped_keys.len() as u32).to_be_bytes());
+        for ((pub_bytes, n), key) in &self.skipped_keys {
+            out.extend_from_slice(pub_bytes);
+            out.extend_from_slice(&n.to_be_bytes());
+            out.extend_from_slice(key);
+        }
+
+        out
+    }
+
+    /// Reconstroi um `RatchetState` a partir dos bytes produzidos por
+    /// `to_bytes`. Devolve `None` se o formato for invalido/corrompido.
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        let mut cursor = 0usize;
+        let take = |cursor: &mut usize, n: usize| -> Option<&[u8]> {
+            let slice = bytes.get(*cursor..*cursor + n)?;
+            *cursor += n;
+            Some(slice)
+        };
+
+        let root_key: [u8; 32] = take(&mut cursor, 32)?.try_into().ok()?;
+        let dh_send_private_bytes: [u8; 32] = take(&mut cursor, 32)?.try_into().ok()?;
+        let dh_send_public_bytes: [u8; 32] = take(&mut cursor, 32)?.try_into().ok()?;
+
+        let dh_send = DhKeyPair {
+            private: x25519_dalek::StaticSecret::from(dh_send_private_bytes),
+            public: PublicKey::from(dh_send_public_bytes),
+        };
+
+        let has_recv = *take(&mut cursor, 1)?.first()?;
+        let dh_recv = if has_recv == 1 {
+            let b: [u8; 32] = take(&mut cursor, 32)?.try_into().ok()?;
+            Some(PublicKey::from(b))
+        } else {
+            None
+        };
+
+        let has_sending = *take(&mut cursor, 1)?.first()?;
+        let sending_chain_key = if has_sending == 1 {
+            Some(take(&mut cursor, 32)?.try_into().ok()?)
+        } else {
+            None
+        };
+
+        let has_receiving = *take(&mut cursor, 1)?.first()?;
+        let receiving_chain_key = if has_receiving == 1 {
+            Some(take(&mut cursor, 32)?.try_into().ok()?)
+        } else {
+            None
+        };
+
+        let send_n = u32::from_be_bytes(take(&mut cursor, 4)?.try_into().ok()?);
+        let recv_n = u32::from_be_bytes(take(&mut cursor, 4)?.try_into().ok()?);
+
+        let skipped_count = u32::from_be_bytes(take(&mut cursor, 4)?.try_into().ok()?);
+        let mut skipped_keys = HashMap::new();
+        for _ in 0..skipped_count {
+            let pub_bytes: [u8; 32] = take(&mut cursor, 32)?.try_into().ok()?;
+            let n = u32::from_be_bytes(take(&mut cursor, 4)?.try_into().ok()?);
+            let key: [u8; 32] = take(&mut cursor, 32)?.try_into().ok()?;
+            skipped_keys.insert((pub_bytes, n), key);
+        }
+
+        Some(Self {
+            root_key,
+            dh_send,
+            dh_recv,
+            sending_chain_key,
+            receiving_chain_key,
+            send_n,
+            recv_n,
+            skipped_keys,
+        })
+    }
+
     /// Inicializacao pelo lado que INICIOU o X3DH (Alice), ja conhecendo
     /// a signed pre-key publica de Bob como primeira chave DH remota.
     pub fn init_as_initiator(shared_secret: [u8; 32], their_dh_public: PublicKey) -> Self {

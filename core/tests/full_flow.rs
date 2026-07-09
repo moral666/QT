@@ -124,6 +124,56 @@ fn mensagem_adulterada_deve_falhar() {
 }
 
 #[test]
+fn ratchet_sobrevive_export_e_import() {
+    // Prova que uma sessao pode ser guardada (ex.: em SQLCipher, ver
+    // storage/) e recarregada, continuando a conversa exatamente do ponto
+    // onde ficou - essencial para persistencia entre execucoes do cliente.
+    let alice_identity = DhKeyPair::generate();
+    let bob = setup_bob();
+    let bob_bundle = bundle_for(&bob);
+
+    let init_result = x3dh_initiate(&alice_identity, &bob_bundle).unwrap();
+    let bob_shared_secret = x3dh_respond(
+        &bob.identity,
+        &bob.signed_pre_key,
+        Some(&bob.one_time_pre_key),
+        &alice_identity.public,
+        &init_result.ephemeral_public,
+    );
+
+    let mut alice_state =
+        RatchetState::init_as_initiator(init_result.shared_secret, bob.signed_pre_key.public);
+    let mut bob_state = RatchetState::init_as_responder(bob_shared_secret, bob.signed_pre_key);
+
+    // Troca inicial, antes de "desligar" o processo.
+    let msg1 = alice_state.encrypt(b"mensagem antes de guardar").unwrap();
+    assert_eq!(bob_state.decrypt(&msg1).unwrap(), b"mensagem antes de guardar");
+
+    // "Desligar": serializar ambos os lados, largar os originais.
+    let alice_bytes = alice_state.to_bytes();
+    let bob_bytes = bob_state.to_bytes();
+    drop(alice_state);
+    drop(bob_state);
+
+    // "Religar": reconstruir a partir dos bytes guardados.
+    let mut alice_recarregada = RatchetState::from_bytes(&alice_bytes).expect("deveria desserializar");
+    let mut bob_recarregado = RatchetState::from_bytes(&bob_bytes).expect("deveria desserializar");
+
+    // A conversa continua exatamente de onde ficou.
+    let msg2 = alice_recarregada.encrypt(b"mensagem depois de recarregar").unwrap();
+    assert_eq!(
+        bob_recarregado.decrypt(&msg2).unwrap(),
+        b"mensagem depois de recarregar"
+    );
+
+    let resposta = bob_recarregado.encrypt(b"e a resposta tambem funciona").unwrap();
+    assert_eq!(
+        alice_recarregada.decrypt(&resposta).unwrap(),
+        b"e a resposta tambem funciona"
+    );
+}
+
+#[test]
 fn sem_one_time_pre_key_ainda_funciona() {
     // Garante que o protocolo degrada de forma graciosa quando o servidor
     // ficou sem one-time pre-keys disponiveis (cenario realista em producao).

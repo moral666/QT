@@ -47,6 +47,19 @@ impl SigningKeyPair {
     pub fn sign(&self, message: &[u8]) -> Signature {
         self.signing_key.sign(message)
     }
+
+    /// Bytes da chave privada, para persistencia local (ver storage/). O
+    /// chamador e responsavel por cifrar isto em repouso.
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.signing_key.to_bytes()
+    }
+
+    /// Reconstroi a partir dos bytes produzidos por `to_bytes`.
+    pub fn from_bytes(bytes: &[u8; 32]) -> Self {
+        let signing_key = SigningKey::from_bytes(bytes);
+        let verifying_key = signing_key.verifying_key();
+        Self { signing_key, verifying_key }
+    }
 }
 
 /// Verifica uma assinatura Ed25519. Deve ser chamado SEMPRE antes de usar

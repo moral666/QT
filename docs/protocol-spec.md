@@ -80,17 +80,89 @@ depois Double Ratchet) é verificada no final.
   real, com fila de mensagens e lógica de entrega assíncrona (ver secção
   seguinte do roadmap geral do projeto).
 
-## 4. Armazenamento local — não implementado
+## 4. Servidor/relay — implementado e testado
 
-SQLCipher para persistir: identity key (protegida por Keystore/Secure
-Enclave), `RatchetState` por contacto, mensagens (se não configuradas para
-desaparecer imediatamente), pre-keys não consumidas.
+Implementado em `server/` (crate `secure_messenger_server`): fila de
+mensagens em memória + diretório de pre-keys públicas, comunicando através
+do canal Noise/WebSocket já validado na secção anterior.
 
-## 5. Sealed sender — não implementado
+Protocolo de aplicação (`server/src/protocol.rs`, serializado em JSON por
+simplicidade nesta fase):
+- `RegisterPreKeyBundle` / `FetchPreKeyBundle` — diretório de pre-keys
+- `SendMessage { from, to, ciphertext }` / `FetchMessages` — fila de
+  entrega assíncrona. O campo `from` existe para o destinatário saber qual
+  sessão/ratchet usar ao decifrar — **o servidor vê `from` e `to`
+  diretamente neste momento** (não há sealed sender ainda, ver secção 6).
 
-Camada adicional sobre as mensagens já cifradas pelo Double Ratchet, para
-que o servidor de transporte não veja o remetente. A implementar após a
-camada de transporte básica estar funcional.
+Testado em `server/tests/relay_flow.rs`, incluindo o caso mais importante
+de um relay: **entrega assíncrona real** — Alice liga-se, envia, desliga-se;
+só depois Bob se liga (ligação TCP separada) e recebe da fila, decifrando
+corretamente com o Double Ratchet do lado dele.
+
+**Pendente antes de produção:**
+
+- **Persistência real**: a fila e o diretório de pre-keys vivem em memória
+  (`server/src/store.rs`) — perdem-se se o processo reiniciar. Substituir
+  por Redis (fila, com TTL automático) e uma base de dados para os bundles.
+- **Sealed sender**: o campo `to`/`user_id` no protocolo atual identifica
+  diretamente o destinatário (e o remetente é implícito na ligação
+  autenticada) — falta a camada adicional que impede o servidor de saber
+  quem enviou, só quem recebe.
+- **Persistência da chave estática Noise do servidor**: gerada de novo a
+  cada arranque (`server/src/bin/relay_server.rs`) — impede que clientes
+  façam pinning da identidade do servidor entre reinícios.
+- **Federação**: por agora um único servidor. Protocolo servidor-servidor
+  para federação real fica para uma fase posterior.
+- **Rate limiting / autenticação de registo**: neste momento qualquer
+  ligação pode registar um bundle para qualquer `user_id` — falta lógica
+  de autenticação (ex.: provar posse da identity key correspondente antes
+  de aceitar um `RegisterPreKeyBundle`).
+
+## 5. Armazenamento local (no cliente) — implementado e testado
+
+Implementado em `storage/` (crate `secure_messenger_storage`): SQLCipher
+(ligado à biblioteca do sistema `libsqlcipher`, não uma reimplementação
+própria de cifra), guardando:
+- A identidade do utilizador (`core::primitives::DhKeyPair` de identidade,
+  `SigningKeyPair`, signed pre-key, one-time pre-key)
+- Sessões de Double Ratchet por contacto, usando `RatchetState::to_bytes()`/
+  `from_bytes()` (adicionado a `core/` especificamente para permitir esta
+  persistência sem acoplar `core/` a nenhuma biblioteca de serialização)
+
+Testado em `storage/tests/persistence.rs`: identidade e sessão sobrevivem a
+fechar e reabrir a ligação à base de dados; uma passphrase errada não
+consegue ler os dados; confirmado manualmente (fora do teste automatizado)
+que o ficheiro em disco não contém a assinatura padrão do SQLite nem
+nenhum conteúdo legível.
+
+**Integração completa testada**: `cli/src/bin/messenger.rs` liga tudo isto
+- `identity`, `register`, `send`, `receive` como comandos completamente
+separados (processos reais distintos, não simulados). Testado manualmente:
+Bob cria identidade → publica bundle → Alice cria identidade → envia
+mensagem (X3DH automático, primeira sessão) → Bob recebe e decifra num
+processo separado → segunda mensagem confirma que a sessão persistida
+continua corretamente. O wire format da primeira mensagem de uma sessão
+inclui um pequeno cabeçalho extra (identity key + ephemeral key do X3DH,
+ver `cli/src/bin/messenger.rs` para o formato exato) para o destinatário
+conseguir completar o handshake de forma completamente assíncrona.
+
+**Pendente antes de produção:**
+
+- **Origem da passphrase**: atualmente é um argumento de linha de
+  comandos. Numa app real, tem de vir do Android Keystore / iOS Secure
+  Enclave — nunca um literal no código nem passada por argumento (fica no
+  histórico do shell).
+- **One-time pre-key reutilizada**: o CLI atual usa sempre a mesma
+  one-time pre-key para todos os handshakes recebidos (simplificação
+  documentada) — em produção cada uma deve ser consumida uma única vez e
+  substituída por uma nova.
+- **`PRAGMA secure_delete = ON`** já está ativo (relevante para mensagens
+  que desaparecem não deixarem resíduos recuperáveis), mas ainda não há
+  lógica de TTL/expiração de mensagens implementada.
+
+## 6. Sealed sender — não implementado
+
+Ver nota na secção 4. A implementar depois da persistência real do servidor.
 
 ## Próximos documentos a escrever
 

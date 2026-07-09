@@ -1,3 +1,3 @@
 [workspace]
 resolver = "2"
-members = ["core", "transport", "demo"]
+members = ["core", "transport", "server", "demo", "cli", "storage"]

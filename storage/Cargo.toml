@@ -1,0 +1,12 @@
+[package]
+name = "secure_messenger_storage"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "Armazenamento local encriptado (SQLCipher): identidade e sessoes"
+
+[dependencies]
+secure_messenger_core = { path = "../core" }
+rusqlite = { version = "0.31", features = ["sqlcipher"] }
+thiserror = "1"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
