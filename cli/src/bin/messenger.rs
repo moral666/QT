@@ -29,6 +29,7 @@ use clap::{Parser, Subcommand};
 use secure_messenger_cli::wire_format;
 use secure_messenger_core::primitives::{DhKeyPair, SigningKeyPair};
 use secure_messenger_core::ratchet::{EncryptedMessage, RatchetState};
+use secure_messenger_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
 use secure_messenger_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond};
 use secure_messenger_server::protocol::{
     deserialize_server_message, serialize_client_message, ClientMessage, ServerMessage,
@@ -89,6 +90,18 @@ enum Command {
 /// (nao escolhido pela pessoa) - consistente com o objetivo de anonimato.
 fn derive_user_id(identity_public: &x25519_dalek::PublicKey) -> String {
     identity_public.as_bytes().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// O inverso de `derive_user_id`: o ID de um contacto E a sua chave publica
+/// de identidade, em hex - por isso conseguimos "endereca-lo" para o
+/// sealed sender sem precisar de o ter contactado antes.
+fn hex_to_pubkey(hex_str: &str) -> x25519_dalek::PublicKey {
+    let bytes: Vec<u8> = (0..hex_str.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex_str[i..i + 2], 16).expect("ID invalido: nao e hex valido"))
+        .collect();
+    let arr: [u8; 32] = bytes.try_into().expect("ID invalido: deveria ter 32 bytes (64 chars hex)");
+    x25519_dalek::PublicKey::from(arr)
 }
 
 async fn enviar_ao_servidor(url: &str, msg: ClientMessage) -> ServerMessage {
@@ -174,7 +187,6 @@ async fn main() {
         Command::Send { db, passphrase, to, message, server } => {
             let conn = open_database(&db, &passphrase).expect("falha ao abrir a base de dados");
             let identity = load_identity(&conn).expect("identidade nao encontrada - corre 'identity' primeiro");
-            let my_user_id = derive_user_id(&identity.identity.public);
 
             let existing_session = load_session(&conn, &to).expect("erro ao ler sessao guardada");
 
@@ -224,9 +236,12 @@ async fn main() {
                 }
             };
 
+            let their_identity_pub = hex_to_pubkey(&to);
+            let sealed_from = seal_sender_identity(&identity.identity.public, &their_identity_pub);
+
             let resp = enviar_ao_servidor(
                 &server,
-                ClientMessage::SendMessage { from: my_user_id, to: to.clone(), ciphertext: wire_message },
+                ClientMessage::SendMessage { to: to.clone(), sealed_from, ciphertext: wire_message },
             )
             .await;
             println!("Mensagem enviada para {to} - servidor respondeu: {resp:?}");
@@ -258,6 +273,12 @@ async fn main() {
                 let bytes = delivered.ciphertext;
                 let msg_type = bytes[0];
 
+                // Abre o envelope selado PRIMEIRO - so agora sabemos quem
+                // enviou (o servidor nunca soube isto).
+                let sender_identity_pub = unseal_sender_identity(&identity.identity, &delivered.sealed_from)
+                    .expect("falha ao abrir o envelope selado - remetente desconhecido ou corrompido");
+                let sender_user_id = derive_user_id(&sender_identity_pub);
+
                 let (mut ratchet, ratchet_msg) = if msg_type == 1 {
                     // Primeira mensagem deste contacto - completar o X3DH do
                     // nosso lado (responder).
@@ -280,16 +301,16 @@ async fn main() {
                     let ratchet = RatchetState::init_as_responder(shared_secret, signed_pre_key_clone);
                     (ratchet, deserialize_ratchet_message(&bytes[65..]))
                 } else {
-                    let ratchet = load_session(&conn, &delivered.from)
+                    let ratchet = load_session(&conn, &sender_user_id)
                         .expect("erro ao ler sessao")
                         .expect("mensagem normal recebida mas nao existe sessao com este contacto");
                     (ratchet, deserialize_ratchet_message(&bytes[1..]))
                 };
 
                 let plaintext = ratchet.decrypt(&ratchet_msg).expect("falha ao decifrar mensagem");
-                println!("[{}]: {}", delivered.from, String::from_utf8_lossy(&plaintext));
+                println!("[{sender_user_id}]: {}", String::from_utf8_lossy(&plaintext));
 
-                save_session(&conn, &delivered.from, &ratchet).expect("falha ao guardar sessao atualizada");
+                save_session(&conn, &sender_user_id, &ratchet).expect("falha ao guardar sessao atualizada");
             }
         }
     }

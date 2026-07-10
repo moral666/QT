@@ -8,5 +8,6 @@ pub mod noise_session;
 pub mod ws_transport;
 
 pub use noise_session::{
-    generate_static_keypair, NoiseError, NoiseHandshake, NoiseStaticKeyPair, NoiseTransport,
+    generate_static_keypair, static_keypair_from_private_bytes, NoiseError, NoiseHandshake,
+    NoiseStaticKeyPair, NoiseTransport,
 };

@@ -28,22 +28,23 @@ pub enum ClientMessage {
     /// Envia uma mensagem ja cifrada (Double Ratchet) para outro
     /// utilizador. Fica em fila no servidor ate ele se ligar.
     ///
-    /// `from` identifica o remetente para que o destinatario saiba qual
-    /// sessao/ratchet usar para decifrar - NAO e sealed sender (o servidor
-    /// ve `from` e `to` neste momento; sealed sender e uma melhoria
-    /// pendente, ver docs/protocol-spec.md).
-    SendMessage { from: UserId, to: UserId, ciphertext: Vec<u8> },
+    /// `sealed_from` e um envelope produzido por
+    /// `core::sealed_sender::seal_sender_identity` - o servidor NAO
+    /// consegue ler quem enviou (so o destinatario, com a sua chave
+    /// privada de identidade, consegue abrir o envelope). O servidor
+    /// continua a saber `to` (precisa disso para rotear para a fila certa).
+    SendMessage { to: UserId, sealed_from: Vec<u8>, ciphertext: Vec<u8> },
 
     /// Pede todas as mensagens em fila destinadas ao proprio utilizador
     /// (chamado logo apos autenticar-se/ligar-se).
     FetchMessages { user_id: UserId },
 }
 
-/// Uma mensagem entregue da fila, com a identidade de quem a enviou (para
-/// o destinatario saber qual sessao Double Ratchet usar para decifrar).
+/// Uma mensagem entregue da fila. `sealed_from` so o destinatario consegue
+/// abrir (ver `core::sealed_sender`) - o servidor nunca soube quem enviou.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DeliveredMessage {
-    pub from: UserId,
+    pub sealed_from: Vec<u8>,
     pub ciphertext: Vec<u8>,
 }
 

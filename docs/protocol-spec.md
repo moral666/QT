@@ -72,9 +72,13 @@ depois Double Ratchet) é verificada no final.
 - **Padrão Noise_IK**: para ligações servidor-servidor de federação, onde a
   chave estática do destino já é conhecida antecipadamente, `Noise_IK`
   permite um handshake com menos round-trips que o `Noise_XX` atual.
-- **Pinning de chave estática Noise**: `NoiseHandshake::remote_static_public_key()`
-  já expõe a chave do par remoto após o handshake, mas ainda não há lógica
-  de comparação com um "known_hosts" persistido entre sessões.
+- **Pinning de chave estática Noise (lado cliente)**: o servidor já
+  persiste a sua própria chave estática entre reinícios (ver secção 4),
+  então a base para pinning já existe do lado servidor. `NoiseHandshake::
+  remote_static_public_key()` já expõe a chave do par remoto após o
+  handshake, mas ainda não há, do lado do CLIENTE, lógica de comparação
+  com um "known_hosts" persistido entre sessões — falta isso para o
+  pinning ser efetivo, não só possível.
 - **Servidor/relay real**: o teste atual simula ambos os lados (cliente e
   "servidor") no mesmo processo de teste. Falta um binário de servidor
   real, com fila de mensagens e lógica de entrega assíncrona (ver secção
@@ -83,40 +87,55 @@ depois Double Ratchet) é verificada no final.
 ## 4. Servidor/relay — implementado e testado
 
 Implementado em `server/` (crate `secure_messenger_server`): fila de
-mensagens em memória + diretório de pre-keys públicas, comunicando através
-do canal Noise/WebSocket já validado na secção anterior.
+mensagens + diretório de pre-keys públicas **persistidos em Redis real**
+(não em memória), comunicando através do canal Noise/WebSocket já
+validado na secção anterior. As filas têm TTL automático de 30 dias sem
+serem levantadas, renovado a cada nova mensagem.
 
 Protocolo de aplicação (`server/src/protocol.rs`, serializado em JSON por
 simplicidade nesta fase):
 - `RegisterPreKeyBundle` / `FetchPreKeyBundle` — diretório de pre-keys
-- `SendMessage { from, to, ciphertext }` / `FetchMessages` — fila de
-  entrega assíncrona. O campo `from` existe para o destinatário saber qual
-  sessão/ratchet usar ao decifrar — **o servidor vê `from` e `to`
-  diretamente neste momento** (não há sealed sender ainda, ver secção 6).
+- `SendMessage { to, sealed_from, ciphertext }` / `FetchMessages` — fila de
+  entrega assíncrona. O servidor sabe `to` (precisa disso para rotear),
+  mas **já não sabe quem enviou** — `sealed_from` é um envelope selado
+  (ver secção 7) que só o destinatário consegue abrir.
 
-Testado em `server/tests/relay_flow.rs`, incluindo o caso mais importante
-de um relay: **entrega assíncrona real** — Alice liga-se, envia, desliga-se;
-só depois Bob se liga (ligação TCP separada) e recebe da fila, decifrando
-corretamente com o Double Ratchet do lado dele.
+Testado em `server/tests/relay_flow.rs` contra um Redis real (não mockado),
+incluindo o caso mais importante de um relay: **entrega assíncrona real** —
+Alice liga-se, envia, desliga-se; só depois Bob se liga (ligação TCP
+separada) e recebe da fila, decifrando corretamente com o Double Ratchet
+do lado dele.
+
+**Persistência confirmada manualmente da forma mais convincente possível**:
+registado o bundle de Bob → processo do servidor morto com `kill -9` →
+confirmado no Redis (`redis-cli KEYS`) que os dados continuavam lá →
+subido um servidor completamente novo (chave estática Noise diferente,
+novo processo) → Alice conseguiu enviar uma mensagem a Bob sem ninguém se
+ter registado outra vez, e Bob recebeu-a corretamente.
 
 **Pendente antes de produção:**
 
-- **Persistência real**: a fila e o diretório de pre-keys vivem em memória
-  (`server/src/store.rs`) — perdem-se se o processo reiniciar. Substituir
-  por Redis (fila, com TTL automático) e uma base de dados para os bundles.
-- **Sealed sender**: o campo `to`/`user_id` no protocolo atual identifica
-  diretamente o destinatário (e o remetente é implícito na ligação
-  autenticada) — falta a camada adicional que impede o servidor de saber
-  quem enviou, só quem recebe.
-- **Persistência da chave estática Noise do servidor**: gerada de novo a
-  cada arranque (`server/src/bin/relay_server.rs`) — impede que clientes
-  façam pinning da identidade do servidor entre reinícios.
 - **Federação**: por agora um único servidor. Protocolo servidor-servidor
   para federação real fica para uma fase posterior.
 - **Rate limiting / autenticação de registo**: neste momento qualquer
   ligação pode registar um bundle para qualquer `user_id` — falta lógica
   de autenticação (ex.: provar posse da identity key correspondente antes
   de aceitar um `RegisterPreKeyBundle`).
+
+**Chave estática Noise do servidor — implementada e testada**: já não é
+gerada de novo a cada arranque. `server/src/bin/relay_server.rs` carrega-a
+de um ficheiro local (`NOISE_KEY_PATH`, por omissão `relay_noise_key.bin`,
+permissões `0600`), gerando-a apenas no primeiro arranque. Testado matando
+o processo com `kill -9` e arrancando um novo: a chave pública impressa
+foi exatamente a mesma nos dois arranques. A função de reconstrução
+(`static_keypair_from_private_bytes`, em `transport/src/noise_session.rs`)
+deriva a chave pública X25519 a partir dos bytes privados guardados.
+
+Nota de segurança documentada no próprio binário: a chave fica em texto
+simples no disco (só protegida por permissões do sistema de ficheiros) —
+aceitável para um servidor com acesso físico controlado, mas não é o
+nível de proteção usado para chaves de utilizador final (essas usam
+SQLCipher, ver secção 5).
 
 ## 5. Armazenamento local (no cliente) — implementado e testado
 
@@ -160,9 +179,80 @@ conseguir completar o handshake de forma completamente assíncrona.
   que desaparecem não deixarem resíduos recuperáveis), mas ainda não há
   lógica de TTL/expiração de mensagens implementada.
 
-## 6. Sealed sender — não implementado
+## 6. Bindings FFI (Android/iOS/Python) — implementado e testado
 
-Ver nota na secção 4. A implementar depois da persistência real do servidor.
+Implementado em `ffi/` (crate `secure_messenger_ffi`), usando
+[uniffi](https://mozilla.github.io/uniffi-rs/) (a mesma ferramenta usada
+pelo Signal e por vários projetos Mozilla). Desenho **funcional**
+deliberado: todas as funções expostas recebem e devolvem bytes/records
+simples, sem objetos com estado mutável partilhado entre a fronteira
+FFI — o cliente móvel guarda os bytes de estado (identidade, sessão)
+exatamente como o `storage/` já faz no lado desktop, só que no
+armazenamento seguro nativo do SO (Keystore/Secure Enclave).
+
+API exposta: geração de chaves DH/assinatura, `sign_signed_pre_key`,
+`x3dh_initiate`/`x3dh_respond`, `ratchet_init_as_initiator`/
+`init_as_responder`/`encrypt`/`decrypt`, `seal_sender`/`unseal_sender`.
+
+Gerados e testados bindings para **Kotlin**, **Swift**, e **Python**
+(`ffi/generate_bindings.sh`). Testado com 7 testes reais a partir do
+Python (`ffi/tests/test_ffi_bindings.py`), cobrindo o mesmo que os testes
+Rust de `core/` já cobriam, mas atravessando a fronteira FFI: X3DH com
+segredos a coincidir entre Alice e Bob, assinatura adulterada rejeitada,
+Double Ratchet completo, sealed sender a revelar corretamente o
+remetente, e uma chave errada a não conseguir abrir o envelope.
+
+**Pendente antes de produção:**
+
+- **Apps nativas reais**: os bindings gerados (`ffi/bindings/kotlin/`,
+  `ffi/bindings/swift/`) ainda não têm nenhuma app Android/iOS à volta
+  deles — só foram testados via Python neste ambiente de desenvolvimento.
+- **Empacotamento para Android**: falta gerar as bibliotecas nativas
+  (`.so`) para cada arquitetura Android (arm64-v8a, armeabi-v7a, x86_64)
+  via `cargo-ndk`, e empacotá-las num `.aar`.
+- **Empacotamento para iOS**: falta gerar um `XCFramework` a partir da
+  biblioteca estática, para consumo direto no Xcode.
+- **Camada de transporte/storage no FFI**: o FFI atual só expõe `core/` —
+  `transport/` e `storage/` (SQLCipher) ainda vivem só no lado desktop/CLI;
+  uma app móvel real também precisaria de bindings para essas camadas (ou
+  reimplementar essa parte nativamente, usando bibliotecas equivalentes
+  já existentes em Android/iOS para WebSocket e SQLCipher).
+
+## 7. Sealed sender — implementado e testado
+
+Implementado em `core/src/sealed_sender.rs`: cifra anónima (estilo ECIES)
+contra a chave pública de identidade do destinatário. O remetente gera um
+par de chaves efémero por mensagem, faz DH com a chave pública do
+destinatário, deriva uma chave via HKDF, e cifra a sua própria chave de
+identidade pública com ChaCha20-Poly1305. Só quem tem a chave privada
+correspondente ao destinatário consegue reproduzir o DH e abrir o envelope.
+
+O servidor continua a saber `to` (necessário para rotear a mensagem para a
+fila certa) — isto não é anonimato de rede completo (não esconde IP nem
+timing), apenas remove a identidade do remetente do protocolo de
+aplicação. Anonimato de rede mais forte (ex.: mixnet, Tor) fica fora do
+escopo atual.
+
+Testado a três níveis:
+- `core/tests/sealed_sender_flow.rs`: destinatário certo abre o envelope;
+  qualquer outra chave privada não consegue reconstruir a identidade
+  correta; envelope adulterado falha a decifrar (deteção do AEAD).
+- `server/tests/relay_flow.rs`: confirma que o campo guardado/entregue
+  pela fila não é a string em bruto do remetente, e que só a chave privada
+  do destinatário consegue abrir o envelope recebido através do servidor real.
+- `cli/src/bin/messenger_demo.rs`: a demo de terminal mostra explicitamente
+  "remetente ainda selado" no momento da entrega, e só depois de Bob abrir
+  o envelope é que a identidade de Alice é confirmada.
+
+**Pendente antes de produção:**
+
+- **Metadados de timing/tamanho**: sealed sender esconde a identidade do
+  remetente, mas não esconde quando uma mensagem foi enviada nem o seu
+  tamanho aproximado — um adversário observando o servidor ainda pode
+  correlacionar padrões de tráfego. Padding de tamanho fixo e jitter no
+  envio são melhorias futuras (ver conversa de arquitetura original).
+- **Autenticação de registo**: ver nota na secção 4 — falta impedir que
+  alguém publique um bundle a fingir ser outra identidade.
 
 ## Próximos documentos a escrever
 

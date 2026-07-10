@@ -43,17 +43,50 @@ manualmente correndo os quatro comandos como processos reais separados:
 Alice enviou, Bob recebeu e decifrou corretamente — depois uma segunda
 mensagem confirmou que a sessão continua no sítio certo entre execuções.
 
+✅ **Sealed sender também implementado e testado de verdade**: o servidor
+já não vê quem enviou cada mensagem, só para quem é entregue. Cada
+mensagem leva um pequeno envelope cifrado (`core::sealed_sender`) que só o
+destinatário, com a sua chave privada de identidade, consegue abrir.
+Testado a três níveis: no `core/` isoladamente (destinatário certo abre,
+qualquer outra chave falha), no `server/` (confirmando que o campo guardado
+na fila não é a string em bruto do remetente), e na demo de terminal
+(que agora mostra explicitamente "remetente ainda selado" até Bob abrir o
+envelope).
+
+✅ **Bindings FFI (uniffi) gerados e testados de verdade**: `ffi/` expõe
+uma API funcional do núcleo (geração de chaves, X3DH, Double Ratchet,
+sealed sender) via [uniffi](https://mozilla.github.io/uniffi-rs/) — a
+mesma ferramenta usada pelo Signal e pela Mozilla. Gerámos bindings para
+**Kotlin** (Android), **Swift** (iOS) e **Python**, e corremos os 7 testes
+mais importantes do projeto (X3DH, Double Ratchet, sealed sender,
+assinatura/chave errada a falhar corretamente) **a partir do Python**,
+contra os bindings gerados — a prova de que o FFI funciona de verdade fora
+do Rust, não só em teoria.
+
+✅ **Persistência real no servidor (Redis)**: a fila de mensagens e o
+diretório de pre-keys já não vivem em memória — estão em Redis de
+verdade, com TTL automático nas filas (30 dias sem serem levantadas).
+**Testado da forma mais convincente possível**: registei o bundle de Bob,
+matei o processo do servidor por completo (`kill -9`), confirmei no
+Redis que os dados continuavam lá, subi um servidor novo (chave Noise
+diferente, processo diferente), e a Alice conseguiu enviar-lhe uma
+mensagem sem ninguém se ter de registar outra vez.
+
+✅ **Chave estática Noise do servidor também persistida**: já não é gerada
+de novo a cada arranque — fica guardada em disco (`relay_noise_key.bin`,
+permissões `0600`), gerada uma única vez no primeiro arranque. **Testado
+matando o processo com `kill -9` e arrancando um novo**: a chave pública
+impressa foi exatamente a mesma nos dois arranques, confirmando que o
+"pinning" entre clientes e servidor agora sobrevive a reinícios de verdade.
+
 🚧 **Ainda falta**, antes de qualquer uso real:
 
-- [ ] Sealed sender (o servidor ainda associa `to`/`user_id` diretamente)
-- [ ] Bindings FFI (uniffi) para Android/iOS - a peça que finalmente traz
-      isto para um telemóvel
-- [ ] Persistência real no servidor (a fila atual é em memória — perde-se
-      se o processo reiniciar)
+- [ ] Apps Android/iOS de verdade que consomem os bindings gerados (o FFI
+      em si já está pronto - falta a camada de UI nativa à volta dele)
 - [ ] Passphrase da base de dados vinda do Android Keystore / iOS Secure
       Enclave, em vez de argumento de linha de comandos (ver cli/, storage/)
-- [ ] TLS (`wss://`) e persistência da chave estática Noise do servidor
-      entre reinícios
+- [ ] TLS (`wss://`) - o transporte ainda usa `ws://` puro, adequado só
+      para desenvolvimento local
 - [ ] One-time pre-key só usada uma vez de verdade (o CLI atual reutiliza
       sempre a mesma - simplificação documentada, não é o comportamento
       correto de produção)
@@ -75,6 +108,7 @@ core/           # Núcleo E2EE: X3DH + Double Ratchet (compilado e testado)
     x3dh.rs         # Handshake clássico (com assinatura + one-time pre-key)
     pqxdh.rs         # Variante pós-quântica (atrás da feature "pq")
     ratchet.rs       # Double Ratchet (forward secrecy contínua)
+    sealed_sender.rs # Esconde a identidade do remetente do servidor
   tests/
     full_flow.rs     # 4 testes: fluxo completo, assinatura/mensagem adulterada, sem OTK
     pqxdh_flow.rs     # Teste do fluxo PQXDH (exige --features pq)
@@ -88,14 +122,14 @@ demo/           # Crate de demonstração - liga core + transport num teste comp
   tests/
     e2e_over_real_websocket.rs  # Mensagem E2EE real, através de WebSocket real
 
-server/         # Servidor/relay: fila de mensagens + diretório de pre-keys
+server/         # Servidor/relay: fila de mensagens (Redis) + diretório de pre-keys
   src/
     protocol.rs      # Mensagens cliente<->servidor (ClientMessage/ServerMessage)
-    store.rs         # Armazenamento em memória (a substituir por Redis/DB antes de produção)
+    store.rs         # Armazenamento em Redis real, com TTL automático nas filas
     connection.rs     # Handshake Noise + loop de processamento por ligação
     bin/relay_server.rs  # Binário standalone (cargo run --bin relay_server)
   tests/
-    relay_flow.rs     # Prova a entrega assíncrona: liga, envia, desliga, o outro liga depois e recebe
+    relay_flow.rs     # Prova a entrega assíncrona contra Redis real
 
 cli/            # Demo de terminal - vê a conversa a acontecer, em texto
   src/
@@ -106,6 +140,13 @@ storage/        # Armazenamento local encriptado (SQLCipher)
   src/lib.rs        # save/load de identidade e sessões, base de dados cifrada
   tests/
     persistence.rs   # Sobrevive a fechar/reabrir; passphrase errada falha
+
+ffi/            # Bindings FFI (uniffi) - Kotlin, Swift, Python
+  src/lib.rs        # API funcional (bytes dentro, bytes fora) exportada via uniffi
+  generate_bindings.sh  # Compila + gera os bindings + corre o teste Python
+  tests/
+    test_ffi_bindings.py  # 7 testes reais, a partir do Python, via bindings gerados
+  bindings/       # GERADO (não commitado) - ver .gitignore
 
 docs/
   protocol-spec.md         # Especificação do protocolo
@@ -122,7 +163,13 @@ server/         # (repositório separado - ver justificativa em CONTRIBUTING.md)
 Requisitos: Rust estável (via [rustup](https://rustup.rs), recomendado) —
 qualquer versão recente serve para a maior parte do workspace; a feature
 `pq` do `core` (pós-quântico) exige especificamente **Rust 1.81 ou mais
-recente**.
+recente**. Os testes do `server/` (e o binário `relay_server`) precisam de
+um **Redis a correr em `localhost:6379`**:
+
+```bash
+sudo apt install redis-server libsqlcipher-dev
+redis-server --daemonize yes
+```
 
 ```bash
 # Testar tudo (core + transport + demo), sem a feature pq
@@ -189,6 +236,17 @@ cargo run -p secure_messenger_cli --bin messenger -- receive --db bob.sqlite --p
 O ID de cada pessoa é derivado automaticamente da sua chave pública de
 identidade (não é escolhido por ela) — consistente com o objetivo de não
 depender de nomes de utilizador.
+
+**Para gerar e testar os bindings FFI** (Kotlin/Swift/Python):
+
+```bash
+./ffi/generate_bindings.sh
+```
+
+Isto compila o núcleo, gera os bindings nas três linguagens em
+`ffi/bindings/`, e corre um teste real em Python contra eles (X3DH,
+Double Ratchet, sealed sender - os mesmos conceitos que uma app Android ou
+iOS real usaria através dos ficheiros `.kt`/`.swift` gerados).
 
 ## Licença
 

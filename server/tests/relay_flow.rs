@@ -8,6 +8,7 @@
 
 use secure_messenger_core::primitives::{DhKeyPair, SigningKeyPair};
 use secure_messenger_core::ratchet::{EncryptedMessage, RatchetState};
+use secure_messenger_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
 use secure_messenger_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle};
 use secure_messenger_server::protocol::{
     deserialize_server_message, serialize_client_message, ClientMessage, ServerMessage,
@@ -19,10 +20,18 @@ use tokio::net::TcpListener;
 
 /// Sobe uma instancia do servidor/relay real em localhost, numa porta
 /// aleatoria livre, e devolve o endereco a que os clientes se devem ligar.
+/// Usa Redis real (assume-se `redis://127.0.0.1:6379` a correr - ver
+/// README.md), com um prefixo de namespace unico por chamada para nao
+/// colidir com outros testes a correr em paralelo no mesmo Redis.
 async fn spawn_test_server() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let store = Arc::new(Store::new());
+
+    let unique_prefix = format!("test-{}-{}", std::process::id(), addr.port());
+    let store = Arc::new(
+        Store::with_prefix("redis://127.0.0.1:6379", &unique_prefix)
+            .expect("falha ao ligar ao Redis - certifica-te que esta a correr em localhost:6379"),
+    );
     let static_keys = generate_static_keypair().unwrap();
 
     tokio::spawn(async move {
@@ -101,10 +110,18 @@ async fn entrega_assincrona_atraves_do_relay() {
     // ---------- Servidor real em localhost ----------
     let server_url = spawn_test_server().await;
 
+    // Alice sela a sua identidade contra a chave publica de Bob - o
+    // servidor vai receber isto, mas NAO consegue abri-lo (so Bob consegue).
+    let sealed_from = seal_sender_identity(&alice_identity.public, &bob_identity.public);
+
     // ---------- Alice liga-se, envia, e DESLIGA-SE (Bob nao esta online) ----------
     let response = send_one_message(
         &server_url,
-        ClientMessage::SendMessage { from: "alice".to_string(), to: "bob".to_string(), ciphertext: wire_bytes.clone() },
+        ClientMessage::SendMessage {
+            to: "bob".to_string(),
+            sealed_from: sealed_from.clone(),
+            ciphertext: wire_bytes.clone(),
+        },
     )
     .await;
     assert!(matches!(response, ServerMessage::Ack), "servidor deveria confirmar o envio");
@@ -121,8 +138,22 @@ async fn entrega_assincrona_atraves_do_relay() {
         other => panic!("esperava ServerMessage::Messages, recebi {other:?}"),
     };
     assert_eq!(messages.len(), 1, "Bob deveria ter exatamente 1 mensagem em fila");
-    assert_eq!(messages[0].from, "alice");
     assert_eq!(messages[0].ciphertext, wire_bytes);
+
+    // O SERVIDOR nunca viu "alice" em lado nenhum - confirma que o envelope
+    // selado, tal como armazenado/entregue, nao contem a string em bruto.
+    // (o proprio formato binario ja garante isto, mas o teste documenta a
+    // propriedade explicitamente para quem ler o codigo perceber o objetivo)
+    assert_ne!(messages[0].sealed_from, b"alice".to_vec());
+
+    // So Bob, com a sua chave privada de identidade, consegue abrir o envelope.
+    let remetente_revelado = unseal_sender_identity(&bob_identity, &messages[0].sealed_from)
+        .expect("Bob deveria conseguir abrir o envelope selado");
+    assert_eq!(
+        remetente_revelado.as_bytes(),
+        alice_identity.public.as_bytes(),
+        "Bob deve conseguir confirmar que foi Alice quem enviou"
+    );
 
     // Segunda tentativa de fetch deve vir vazia - a fila foi drenada.
     let response = send_one_message(

@@ -1,0 +1,14 @@
+/target
+**/target
+
+# Bindings FFI sao GERADOS a partir do Rust compilado - nao commitar.
+# Correr ffi/generate_bindings.sh para os produzir localmente.
+/ffi/bindings/
+
+# Bases de dados de teste locais, caso alguem as crie na raiz por engano
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+
+__pycache__/
+*.pyc

@@ -16,10 +16,12 @@
 pub mod primitives;
 pub mod x3dh;
 pub mod ratchet;
+pub mod sealed_sender;
 
 #[cfg(feature = "pq")]
 pub mod pqxdh;
 
 pub use primitives::{CryptoError, DhKeyPair, SigningKeyPair};
 pub use ratchet::{EncryptedMessage, RatchetError, RatchetState};
+pub use sealed_sender::{seal_sender_identity, unseal_sender_identity};
 pub use x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle, X3dhError, X3dhInitResult};

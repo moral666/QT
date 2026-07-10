@@ -20,6 +20,7 @@
 use secure_messenger_cli::wire_format;
 use secure_messenger_core::primitives::{DhKeyPair, SigningKeyPair};
 use secure_messenger_core::ratchet::{EncryptedMessage, RatchetState};
+use secure_messenger_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
 use secure_messenger_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle};
 use secure_messenger_server::protocol::{
     deserialize_server_message, serialize_client_message, ClientMessage, ServerMessage,
@@ -37,7 +38,11 @@ fn passo(texto: &str) {
 async fn subir_servidor_local() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let store = Arc::new(Store::new());
+    let unique_prefix = format!("demo-{}", std::process::id());
+    let store = Arc::new(
+        Store::with_prefix("redis://127.0.0.1:6379", &unique_prefix)
+            .expect("falha ao ligar ao Redis - corre 'redis-server' primeiro"),
+    );
     let static_keys = generate_static_keypair().unwrap();
 
     tokio::spawn(async move {
@@ -153,10 +158,13 @@ async fn main() {
     );
 
     // ---------- Alice envia ao servidor. O servidor NUNCA ve o texto original. ----------
+    passo("Alice sela a sua identidade (o servidor nunca vai saber quem enviou)...");
+    let sealed_from = seal_sender_identity(&alice_identity.public, &bob_identity.public);
+
     passo("Alice envia a mensagem cifrada ao servidor (que so ve bytes opacos)...");
     let resp = enviar_ao_servidor(
         &server_url,
-        ClientMessage::SendMessage { from: "alice".into(), to: "bob".into(), ciphertext: wire_bytes },
+        ClientMessage::SendMessage { to: "bob".into(), sealed_from, ciphertext: wire_bytes },
     )
     .await;
     println!("    servidor respondeu: {resp:?}");
@@ -174,7 +182,7 @@ async fn main() {
         ServerMessage::Messages { messages } => messages,
         other => panic!("esperava Messages, recebi {other:?}"),
     };
-    println!("    Bob recebeu {} mensagem(ns) da fila, de: {}", messages.len(), messages[0].from);
+    println!("    Bob recebeu {} mensagem(ns) da fila (remetente ainda selado).", messages.len());
 
     // ---------- Bob completa o X3DH do seu lado e decifra ----------
     passo("Bob completa o handshake X3DH e decifra com o Double Ratchet...");
@@ -186,6 +194,14 @@ async fn main() {
         &init_result.ephemeral_public,
     );
     let mut bob_ratchet = RatchetState::init_as_responder(bob_shared_secret, bob_signed_pre_key);
+
+    passo("Bob abre o envelope selado para descobrir quem enviou...");
+    let remetente = unseal_sender_identity(&bob_identity, &messages[0].sealed_from)
+        .expect("Bob deveria conseguir abrir o envelope");
+    println!(
+        "    Bob confirma que foi Alice quem enviou (chave publica bate certo: {})",
+        remetente.as_bytes() == alice_identity.public.as_bytes()
+    );
 
     let recebido = &messages[0].ciphertext;
     let dh_public_bytes: [u8; 32] = recebido[0..32].try_into().unwrap();

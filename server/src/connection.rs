@@ -51,7 +51,7 @@ pub async fn handle_connection(
             }
         };
 
-        let response = handle_client_message(&store, client_msg);
+        let response = handle_client_message(&store, client_msg).await;
         let response_bytes = serialize_server_message(&response);
         ws_transport::send_encrypted(&mut ws_stream, &mut noise_transport, &response_bytes).await?;
     }
@@ -59,29 +59,34 @@ pub async fn handle_connection(
     Ok(())
 }
 
-fn handle_client_message(store: &Store, msg: ClientMessage) -> ServerMessage {
+async fn handle_client_message(store: &Store, msg: ClientMessage) -> ServerMessage {
     match msg {
         ClientMessage::RegisterPreKeyBundle { user_id, bundle_bytes } => {
-            store.register_bundle(user_id, bundle_bytes);
-            ServerMessage::Ack
+            match store.register_bundle(user_id, bundle_bytes).await {
+                Ok(()) => ServerMessage::Ack,
+                Err(e) => ServerMessage::Error { reason: e.to_string() },
+            }
         }
-        ClientMessage::FetchPreKeyBundle { user_id } => match store.get_bundle(&user_id) {
-            Some(bundle_bytes) => ServerMessage::PreKeyBundle { bundle_bytes },
-            None => ServerMessage::PreKeyBundleNotFound,
+        ClientMessage::FetchPreKeyBundle { user_id } => match store.get_bundle(&user_id).await {
+            Ok(Some(bundle_bytes)) => ServerMessage::PreKeyBundle { bundle_bytes },
+            Ok(None) => ServerMessage::PreKeyBundleNotFound,
+            Err(e) => ServerMessage::Error { reason: e.to_string() },
         },
-        ClientMessage::SendMessage { from, to, ciphertext } => {
-            match store.enqueue_message(from, to, ciphertext) {
+        ClientMessage::SendMessage { to, sealed_from, ciphertext } => {
+            match store.enqueue_message(to, sealed_from, ciphertext).await {
                 Ok(()) => ServerMessage::Ack,
                 Err(reason) => ServerMessage::Error { reason: reason.to_string() },
             }
         }
-        ClientMessage::FetchMessages { user_id } => {
-            let messages = store
-                .drain_messages(&user_id)
-                .into_iter()
-                .map(|(from, ciphertext)| DeliveredMessage { from, ciphertext })
-                .collect();
-            ServerMessage::Messages { messages }
-        }
+        ClientMessage::FetchMessages { user_id } => match store.drain_messages(&user_id).await {
+            Ok(raw) => {
+                let messages = raw
+                    .into_iter()
+                    .map(|(sealed_from, ciphertext)| DeliveredMessage { sealed_from, ciphertext })
+                    .collect();
+                ServerMessage::Messages { messages }
+            }
+            Err(e) => ServerMessage::Error { reason: e.to_string() },
+        },
     }
 }

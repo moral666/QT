@@ -1,0 +1,25 @@
+[package]
+name = "secure_messenger_ffi"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "Bindings FFI (uniffi) do core para Android/iOS/Python/etc"
+publish = false
+
+[lib]
+name = "secure_messenger_ffi"
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[dependencies]
+secure_messenger_core = { path = "../core" }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+ed25519-dalek = { version = "2" }
+uniffi = { version = "0.28", features = ["cli"] }
+thiserror = "1"
+
+[build-dependencies]
+uniffi = { version = "0.28", features = ["build"] }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"

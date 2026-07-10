@@ -30,6 +30,8 @@ pub enum NoiseError {
     HandshakeNotFinished,
     #[error("handshake ja terminou - use encrypt/decrypt em vez de handshake_step")]
     HandshakeAlreadyFinished,
+    #[error("chave privada com tamanho invalido (esperado 32 bytes)")]
+    InvalidKeyLength,
 }
 
 /// Par de chaves estaticas Noise, geradas uma vez por instalacao (nao por
@@ -45,6 +47,21 @@ pub fn generate_static_keypair() -> Result<NoiseStaticKeyPair, NoiseError> {
     let builder = Builder::new(NOISE_PATTERN.parse()?);
     let keypair = builder.generate_keypair()?;
     Ok(NoiseStaticKeyPair { private: keypair.private, public: keypair.public })
+}
+
+/// Reconstroi o par de chaves a partir de bytes privados guardados
+/// anteriormente (ex.: lidos de um ficheiro) - permite persistir a
+/// identidade de transporte de um servidor/cliente entre reinicios, para
+/// que o pinning (`remote_static_public_key`) continue a fazer sentido.
+pub fn static_keypair_from_private_bytes(private: &[u8]) -> Result<NoiseStaticKeyPair, NoiseError> {
+    if private.len() != 32 {
+        return Err(NoiseError::InvalidKeyLength);
+    }
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(private);
+    let secret = x25519_dalek::StaticSecret::from(arr);
+    let public = x25519_dalek::PublicKey::from(&secret);
+    Ok(NoiseStaticKeyPair { private: private.to_vec(), public: public.as_bytes().to_vec() })
 }
 
 /// Estado de uma sessao Noise em curso de handshake. Depois de
