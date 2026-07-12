@@ -1,4 +1,4 @@
-//! secure_messenger_server
+//! qt_server
 //!
 //! Servidor/relay: recebe mensagens ja cifradas (Double Ratchet, de
 //! `core/`), guarda-as em fila, e entrega-as ao destinatario - sem nunca

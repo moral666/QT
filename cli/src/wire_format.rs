@@ -12,7 +12,7 @@
 //! [32 bytes one_time_pre_key, so presente se o byte anterior for 1]
 
 use ed25519_dalek::{Signature, VerifyingKey};
-use secure_messenger_core::x3dh::PreKeyBundle;
+use qt_core::x3dh::PreKeyBundle;
 use x25519_dalek::PublicKey;
 
 #[derive(Debug)]

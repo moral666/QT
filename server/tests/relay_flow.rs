@@ -6,15 +6,15 @@
 //! O servidor nunca ve o conteudo: o `ciphertext` que ele guarda e
 //! exatamente o que sai do Double Ratchet em `core/` - bytes opacos.
 
-use secure_messenger_core::primitives::{DhKeyPair, SigningKeyPair};
-use secure_messenger_core::ratchet::{EncryptedMessage, RatchetState};
-use secure_messenger_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
-use secure_messenger_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle};
-use secure_messenger_server::protocol::{
+use qt_core::primitives::{DhKeyPair, SigningKeyPair};
+use qt_core::ratchet::{EncryptedMessage, RatchetState};
+use qt_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
+use qt_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle};
+use qt_server::protocol::{
     deserialize_server_message, serialize_client_message, ClientMessage, ServerMessage,
 };
-use secure_messenger_server::Store;
-use secure_messenger_transport::{generate_static_keypair, ws_transport};
+use qt_server::Store;
+use qt_transport::{generate_static_keypair, ws_transport};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
@@ -43,7 +43,7 @@ async fn spawn_test_server() -> String {
             let store = store.clone();
             let static_private = static_keys.private.clone();
             tokio::spawn(async move {
-                let _ = secure_messenger_server::handle_connection(tcp_stream, store, static_private)
+                let _ = qt_server::handle_connection(tcp_stream, store, static_private)
                     .await;
             });
         }

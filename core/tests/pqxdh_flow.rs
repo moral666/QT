@@ -3,11 +3,11 @@
 //! Nao foi possivel executar isto no ambiente onde o projeto foi gerado
 //! (toolchain 1.75, ml-kem exige 1.81+) - correr localmente para validar.
 
-use secure_messenger_core::pqxdh::{
+use qt_core::pqxdh::{
     pqxdh_initiate, pqxdh_respond, sign_pre_key, PqPreKeyBundle, PqPreKeyPair,
 };
-use secure_messenger_core::primitives::{DhKeyPair, SigningKeyPair};
-use secure_messenger_core::ratchet::RatchetState;
+use qt_core::primitives::{DhKeyPair, SigningKeyPair};
+use qt_core::ratchet::RatchetState;
 
 #[test]
 fn fluxo_completo_alice_bob_pqxdh() {

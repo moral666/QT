@@ -1,4 +1,4 @@
-//! secure_messenger_transport
+//! qt_transport
 //!
 //! Camada de transporte: Noise Protocol Framework sobre WebSocket.
 //! Agnostica do conteudo - so ve bytes ja cifrados pelo `core/` (Double

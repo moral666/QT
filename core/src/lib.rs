@@ -1,4 +1,4 @@
-//! secure_messenger_core
+//! qt_core
 //!
 //! Nucleo criptografico do mensageiro. Esta biblioteca e consumida pelas
 //! apps Android/iOS/Desktop via FFI (ver docs/architecture-decisions/

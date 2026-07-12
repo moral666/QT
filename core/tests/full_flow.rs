@@ -1,6 +1,6 @@
-use secure_messenger_core::primitives::{DhKeyPair, SigningKeyPair};
-use secure_messenger_core::ratchet::RatchetState;
-use secure_messenger_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle};
+use qt_core::primitives::{DhKeyPair, SigningKeyPair};
+use qt_core::ratchet::RatchetState;
+use qt_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle};
 
 struct BobKeys {
     identity: DhKeyPair,

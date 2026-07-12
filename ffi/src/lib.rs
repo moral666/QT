@@ -8,10 +8,10 @@
 //! estado (identidade, sessao) no seu proprio armazenamento seguro -
 //! exatamente o mesmo padrao que `storage/` ja usa no lado desktop/CLI.
 
-use secure_messenger_core::primitives::{DhKeyPair, SigningKeyPair};
-use secure_messenger_core::ratchet::{EncryptedMessage, RatchetState};
-use secure_messenger_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
-use secure_messenger_core::x3dh::{self, sign_pre_key, PreKeyBundle};
+use qt_core::primitives::{DhKeyPair, SigningKeyPair};
+use qt_core::ratchet::{EncryptedMessage, RatchetState};
+use qt_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
+use qt_core::x3dh::{self, sign_pre_key, PreKeyBundle};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 uniffi::setup_scaffolding!();
@@ -269,4 +269,130 @@ pub fn unseal_sender(my_identity_private: Vec<u8>, envelope: Vec<u8>) -> Result<
     let sender_pub = unseal_sender_identity(&my_identity, &envelope)
         .map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
     Ok(sender_pub.as_bytes().to_vec())
+}
+
+// ---------- Transporte: Noise Protocol ----------
+// Ao contrario do resto deste ficheiro, aqui expomos um OBJETO com estado
+// mutavel (uniffi::Object) em vez de funcoes puras - o handshake Noise e
+// interativo (varias trocas de mensagens) e mais simples de gerir do lado
+// Kotlin como um "handle" vivo do que serializando o estado completo do
+// snow::HandshakeState a cada passo (que nao e feito para isso).
+//
+// O envio/receção dos bytes pela rede (WebSocket) continua do lado
+// Kotlin (usando uma biblioteca de WebSocket normal, ex.: OkHttp) - este
+// objeto so trata da parte criptografica: produzir/consumir as mensagens
+// de handshake, e depois cifrar/decifrar mensagens de aplicacao.
+
+use qt_transport::{generate_static_keypair, NoiseHandshake, NoiseTransport};
+use std::sync::Mutex;
+
+#[uniffi::export]
+pub fn generate_noise_static_keypair() -> KeyPairBytes {
+    let kp = generate_static_keypair().expect("geracao de chaves Noise nao deveria falhar");
+    KeyPairBytes { private: kp.private, public: kp.public }
+}
+
+enum SessionState {
+    Handshaking(NoiseHandshake),
+    Transport(NoiseTransport),
+    /// Estado temporario usado so durante a transicao Handshaking->Transport
+    /// (necessario porque into_transport() consome o valor por movimento).
+    Empty,
+}
+
+/// Sessao Noise com estado - cobre tanto a fase de handshake como, depois
+/// de terminado, a fase de cifra/decifra de mensagens de aplicacao.
+#[derive(uniffi::Object)]
+pub struct NoiseSession {
+    state: Mutex<SessionState>,
+}
+
+#[uniffi::export]
+impl NoiseSession {
+    #[uniffi::constructor]
+    pub fn new_initiator(local_static_private: Vec<u8>) -> Result<std::sync::Arc<Self>, FfiError> {
+        let handshake = NoiseHandshake::new_initiator(&local_static_private)
+            .map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
+        Ok(std::sync::Arc::new(Self { state: Mutex::new(SessionState::Handshaking(handshake)) }))
+    }
+
+    #[uniffi::constructor]
+    pub fn new_responder(local_static_private: Vec<u8>) -> Result<std::sync::Arc<Self>, FfiError> {
+        let handshake = NoiseHandshake::new_responder(&local_static_private)
+            .map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
+        Ok(std::sync::Arc::new(Self { state: Mutex::new(SessionState::Handshaking(handshake)) }))
+    }
+
+    /// True assim que o handshake terminou e a sessao ja pode cifrar/decifrar.
+    pub fn is_finished(&self) -> bool {
+        matches!(&*self.state.lock().unwrap(), SessionState::Transport(_))
+    }
+
+    /// Produz a proxima mensagem de handshake a enviar ao par remoto pela
+    /// rede (Kotlin trata do envio real, ex.: como frame binario WebSocket).
+    /// Se esta for a ultima mensagem do handshake, a sessao transita
+    /// automaticamente para modo de transporte (o mesmo que read_step faz).
+    pub fn write_step(&self) -> Result<Vec<u8>, FfiError> {
+        let mut guard = self.state.lock().unwrap();
+        match &mut *guard {
+            SessionState::Handshaking(hs) => {
+                let out = hs.write_step().map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
+                if hs.is_finished() {
+                    let old = std::mem::replace(&mut *guard, SessionState::Empty);
+                    if let SessionState::Handshaking(hs) = old {
+                        let transport = hs
+                            .into_transport()
+                            .map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
+                        *guard = SessionState::Transport(transport);
+                    }
+                }
+                Ok(out)
+            }
+            _ => Err(FfiError::CryptoFailure { reason: "handshake ja terminou".into() }),
+        }
+    }
+
+    /// Processa uma mensagem de handshake recebida do par remoto. Quando o
+    /// handshake termina automaticamente nesta chamada, a sessao transita
+    /// para modo de transporte (encrypt/decrypt passam a funcionar).
+    pub fn read_step(&self, message: Vec<u8>) -> Result<(), FfiError> {
+        let mut guard = self.state.lock().unwrap();
+        match &mut *guard {
+            SessionState::Handshaking(hs) => {
+                hs.read_step(&message).map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
+                if hs.is_finished() {
+                    let old = std::mem::replace(&mut *guard, SessionState::Empty);
+                    if let SessionState::Handshaking(hs) = old {
+                        let transport = hs
+                            .into_transport()
+                            .map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
+                        *guard = SessionState::Transport(transport);
+                    }
+                }
+                Ok(())
+            }
+            _ => Err(FfiError::CryptoFailure { reason: "handshake ja terminou".into() }),
+        }
+    }
+
+    /// Cifra uma mensagem de aplicacao. Só funciona depois de `is_finished()`.
+    pub fn encrypt(&self, plaintext: Vec<u8>) -> Result<Vec<u8>, FfiError> {
+        let mut guard = self.state.lock().unwrap();
+        match &mut *guard {
+            SessionState::Transport(t) => {
+                t.encrypt(&plaintext).map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })
+            }
+            _ => Err(FfiError::CryptoFailure { reason: "handshake ainda nao terminou".into() }),
+        }
+    }
+
+    pub fn decrypt(&self, ciphertext: Vec<u8>) -> Result<Vec<u8>, FfiError> {
+        let mut guard = self.state.lock().unwrap();
+        match &mut *guard {
+            SessionState::Transport(t) => {
+                t.decrypt(&ciphertext).map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })
+            }
+            _ => Err(FfiError::CryptoFailure { reason: "handshake ainda nao terminou".into() }),
+        }
+    }
 }

@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+jobs:
+  test-workspace:
+    name: Testar workspace (core + transport + server + demo)
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar toolchain Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Instalar libsqlcipher-dev (necessário para o crate storage)
+        run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev
+
+      - name: cargo test --workspace (sem PQXDH)
+        run: cargo test --workspace --verbose
+
+      - name: cargo test (core com PQXDH, exige Rust 1.81+)
+        working-directory: core
+        run: cargo test --features pq --verbose
+
+      - name: Gerar e testar bindings FFI (Python)
+        run: |
+          cargo build -p qt_ffi
+          mkdir -p ffi/bindings
+          cargo run -p qt_ffi --bin uniffi-bindgen -- \
+            generate --library target/debug/libqt_ffi.so --language python --out-dir ffi/bindings
+          cp target/debug/libqt_ffi.so ffi/bindings/
+          python3 ffi/tests/test_ffi_bindings.py
+
+      - name: cargo clippy (lint estrito)
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: cargo audit (CVEs em dependências)
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
+
+  # TODO: adicionar jobs de build reprodutível (Nix) e build Android/iOS
+  # quando essas camadas existirem.

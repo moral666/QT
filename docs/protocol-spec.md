@@ -52,7 +52,7 @@ seção 4) — atualmente o estado só existe em memória durante o processo.
 ## 3. Camada de transporte — implementada e testada
 
 Noise Protocol Framework (`Noise_XX_25519_ChaChaPoly_SHA256`) sobre
-WebSocket, implementado em `transport/` (crate `secure_messenger_transport`),
+WebSocket, implementado em `transport/` (crate `qt_transport`),
 usando `snow` (Noise) + `tokio-tungstenite` (WebSocket) + `tokio` (runtime
 async). Mantém-se agnóstica de conteúdo — só vê bytes já cifrados pelo
 Double Ratchet, nunca decifra a camada de aplicação.
@@ -86,7 +86,7 @@ depois Double Ratchet) é verificada no final.
 
 ## 4. Servidor/relay — implementado e testado
 
-Implementado em `server/` (crate `secure_messenger_server`): fila de
+Implementado em `server/` (crate `qt_server`): fila de
 mensagens + diretório de pre-keys públicas **persistidos em Redis real**
 (não em memória), comunicando através do canal Noise/WebSocket já
 validado na secção anterior. As filas têm TTL automático de 30 dias sem
@@ -139,7 +139,7 @@ SQLCipher, ver secção 5).
 
 ## 5. Armazenamento local (no cliente) — implementado e testado
 
-Implementado em `storage/` (crate `secure_messenger_storage`): SQLCipher
+Implementado em `storage/` (crate `qt_storage`): SQLCipher
 (ligado à biblioteca do sistema `libsqlcipher`, não uma reimplementação
 própria de cifra), guardando:
 - A identidade do utilizador (`core::primitives::DhKeyPair` de identidade,
@@ -181,7 +181,7 @@ conseguir completar o handshake de forma completamente assíncrona.
 
 ## 6. Bindings FFI (Android/iOS/Python) — implementado e testado
 
-Implementado em `ffi/` (crate `secure_messenger_ffi`), usando
+Implementado em `ffi/` (crate `qt_ffi`), usando
 [uniffi](https://mozilla.github.io/uniffi-rs/) (a mesma ferramenta usada
 pelo Signal e por vários projetos Mozilla). Desenho **funcional**
 deliberado: todas as funções expostas recebem e devolvem bytes/records

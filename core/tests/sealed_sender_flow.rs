@@ -1,5 +1,5 @@
-use secure_messenger_core::primitives::DhKeyPair;
-use secure_messenger_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
+use qt_core::primitives::DhKeyPair;
+use qt_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
 
 #[test]
 fn destinatario_correto_descobre_o_remetente() {

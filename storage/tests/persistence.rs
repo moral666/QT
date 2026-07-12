@@ -3,13 +3,13 @@
 //! mais tarde". Tambem prova que uma passphrase errada nao consegue ler os
 //! dados (a cifra do SQLCipher esta mesmo a proteger o conteudo).
 
-use secure_messenger_core::primitives::{DhKeyPair, SigningKeyPair};
-use secure_messenger_core::ratchet::RatchetState;
-use secure_messenger_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle};
-use secure_messenger_storage::{load_identity, load_session, open_database, save_identity, save_session, StoredIdentity};
+use qt_core::primitives::{DhKeyPair, SigningKeyPair};
+use qt_core::ratchet::RatchetState;
+use qt_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle};
+use qt_storage::{load_identity, load_session, open_database, save_identity, save_session, StoredIdentity};
 
 fn temp_db_path(nome: &str) -> String {
-    format!("/tmp/secure_messenger_test_{}_{}.sqlite", nome, std::process::id())
+    format!("/tmp/qt_test_{}_{}.sqlite", nome, std::process::id())
 }
 
 #[test]

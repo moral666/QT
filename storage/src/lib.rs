@@ -15,8 +15,8 @@
 //! Keystore / iOS Secure Enclave (ver docs/protocol-spec.md secao 5).
 
 use rusqlite::Connection;
-use secure_messenger_core::primitives::{DhKeyPair, SigningKeyPair};
-use secure_messenger_core::ratchet::RatchetState;
+use qt_core::primitives::{DhKeyPair, SigningKeyPair};
+use qt_core::ratchet::RatchetState;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

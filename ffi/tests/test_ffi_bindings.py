@@ -8,7 +8,7 @@ import sys
 sys.path.insert(0, "ffi/bindings")
 sys.path.insert(0, "target/debug")
 
-import secure_messenger_ffi as ffi
+import qt_ffi as ffi
 
 print("=== Teste 1: geracao de chaves ===")
 alice_identity = ffi.generate_dh_keypair()

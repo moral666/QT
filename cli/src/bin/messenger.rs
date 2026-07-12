@@ -26,16 +26,16 @@
 //! utilizador) - consistente com o objetivo de nao ter "usernames".
 
 use clap::{Parser, Subcommand};
-use secure_messenger_cli::wire_format;
-use secure_messenger_core::primitives::{DhKeyPair, SigningKeyPair};
-use secure_messenger_core::ratchet::{EncryptedMessage, RatchetState};
-use secure_messenger_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
-use secure_messenger_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond};
-use secure_messenger_server::protocol::{
+use qt_cli::wire_format;
+use qt_core::primitives::{DhKeyPair, SigningKeyPair};
+use qt_core::ratchet::{EncryptedMessage, RatchetState};
+use qt_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
+use qt_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond};
+use qt_server::protocol::{
     deserialize_server_message, serialize_client_message, ClientMessage, ServerMessage,
 };
-use secure_messenger_storage::{load_identity, load_session, open_database, save_identity, save_session, StoredIdentity};
-use secure_messenger_transport::{generate_static_keypair, ws_transport};
+use qt_storage::{load_identity, load_session, open_database, save_identity, save_session, StoredIdentity};
+use qt_transport::{generate_static_keypair, ws_transport};
 
 #[derive(Parser)]
 #[command(name = "messenger", about = "CLI persistente do secure-messenger (demo)")]
@@ -168,7 +168,7 @@ async fn main() {
             let user_id = derive_user_id(&identity.identity.public);
 
             let signature = sign_pre_key(&identity.identity_signing, &identity.signed_pre_key.public);
-            let bundle_bytes = wire_format::serialize_bundle(&secure_messenger_core::x3dh::PreKeyBundle {
+            let bundle_bytes = wire_format::serialize_bundle(&qt_core::x3dh::PreKeyBundle {
                 identity_key: identity.identity.public,
                 identity_signing_key: identity.identity_signing.verifying_key,
                 signed_pre_key: identity.signed_pre_key.public,

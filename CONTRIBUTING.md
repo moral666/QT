@@ -2,11 +2,11 @@
 
 ## Estrutura mono-repo vs multi-repo
 
-Este repositório (`secure-messenger`) contém o núcleo criptográfico e, no
+Este repositório (`QT`) contém o núcleo criptográfico e, no
 futuro, os clientes (Android/iOS/Desktop), porque todos consomem a mesma
 versão de `core/` via FFI — mantê-los juntos evita divergência entre
 plataformas. O servidor/relay vive em repositório separado
-(`secure-messenger-server`), já que tem ciclo de deploy e contribuidores
+(`QT-server`), já que tem ciclo de deploy e contribuidores
 potencialmente diferentes (quem quer só fazer self-host não precisa clonar
 os clientes mobile).
 

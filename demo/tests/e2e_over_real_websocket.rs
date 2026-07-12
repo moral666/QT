@@ -1,7 +1,7 @@
 //! Teste de ponta a ponta: Alice e Bob estabelecem sessao E2EE (X3DH +
-//! Double Ratchet, de `secure_messenger_core`) e depois trocam uma mensagem
+//! Double Ratchet, de `qt_core`) e depois trocam uma mensagem
 //! cifrada atraves de uma ligacao WebSocket REAL em localhost, protegida por
-//! um canal Noise (`secure_messenger_transport`).
+//! um canal Noise (`qt_transport`).
 //!
 //! Isto demonstra as DUAS camadas de seguranca definidas na arquitetura:
 //!   1. E2EE de aplicacao (Double Ratchet) - o servidor/relay nunca veria o
@@ -13,10 +13,10 @@
 //! embrulhados outra vez pelo Noise. Um observador de rede real (sem as
 //! chaves de nenhuma das camadas) nao veria absolutamente nada legivel.
 
-use secure_messenger_core::primitives::{DhKeyPair, SigningKeyPair};
-use secure_messenger_core::ratchet::RatchetState;
-use secure_messenger_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle};
-use secure_messenger_transport::{generate_static_keypair, ws_transport};
+use qt_core::primitives::{DhKeyPair, SigningKeyPair};
+use qt_core::ratchet::RatchetState;
+use qt_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle};
+use qt_transport::{generate_static_keypair, ws_transport};
 use tokio::net::TcpListener;
 
 #[tokio::test]
@@ -118,7 +118,7 @@ async fn mensagem_e2ee_atraves_de_websocket_real() {
     let n = u32::from_be_bytes(bytes_recebidos[32..36].try_into().unwrap());
     let ciphertext = bytes_recebidos[36..].to_vec();
 
-    let msg_reconstruida = secure_messenger_core::ratchet::EncryptedMessage {
+    let msg_reconstruida = qt_core::ratchet::EncryptedMessage {
         dh_public: x25519_dalek::PublicKey::from(dh_public_bytes),
         n,
         ciphertext,

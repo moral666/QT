@@ -1,5 +1,5 @@
 [package]
-name = "secure_messenger_server"
+name = "qt_server"
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
@@ -7,7 +7,7 @@ description = "Servidor/relay: fila de mensagens cifradas + diretorio de pre-key
 publish = false
 
 [dependencies]
-secure_messenger_transport = { path = "../transport" }
+qt_transport = { path = "../transport" }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -16,5 +16,5 @@ redis = { version = "0.25", features = ["tokio-comp"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
-secure_messenger_core = { path = "../core" }
+qt_core = { path = "../core" }
 x25519-dalek = { version = "2", features = ["static_secrets"] }

@@ -8,7 +8,7 @@ use crate::protocol::{
     ServerMessage,
 };
 use crate::store::Store;
-use secure_messenger_transport::ws_transport;
+use qt_transport::ws_transport;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::net::TcpStream;

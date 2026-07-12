@@ -17,8 +17,8 @@
 //! ao disco, mas nao e o nivel de protecao usado para chaves de
 //! utilizador final (essas usam SQLCipher - ver storage/).
 
-use secure_messenger_server::Store;
-use secure_messenger_transport::{generate_static_keypair, static_keypair_from_private_bytes, NoiseStaticKeyPair};
+use qt_server::Store;
+use qt_transport::{generate_static_keypair, static_keypair_from_private_bytes, NoiseStaticKeyPair};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
@@ -79,7 +79,7 @@ async fn main() {
         tokio::spawn(async move {
             println!("nova ligacao de {peer_addr}");
             if let Err(e) =
-                secure_messenger_server::handle_connection(tcp_stream, store, static_private).await
+                qt_server::handle_connection(tcp_stream, store, static_private).await
             {
                 eprintln!("ligacao de {peer_addr} terminou com erro: {e}");
             }

@@ -1064,6 +1064,94 @@ dependencies = [
 ]
 
 [[package]]
+name = "qt_cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "ed25519-dalek",
+ "qt_core",
+ "qt_server",
+ "qt_storage",
+ "qt_transport",
+ "tokio",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "qt_core"
+version = "0.1.0"
+dependencies = [
+ "chacha20poly1305",
+ "ed25519-dalek",
+ "hex",
+ "hkdf",
+ "ml-kem",
+ "rand_core",
+ "sha2",
+ "thiserror",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
+name = "qt_demo"
+version = "0.1.0"
+dependencies = [
+ "qt_core",
+ "qt_transport",
+ "tokio",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "qt_ffi"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "qt_core",
+ "qt_transport",
+ "thiserror",
+ "uniffi",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "qt_server"
+version = "0.1.0"
+dependencies = [
+ "qt_core",
+ "qt_transport",
+ "redis",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "qt_storage"
+version = "0.1.0"
+dependencies = [
+ "qt_core",
+ "rusqlite",
+ "thiserror",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "qt_transport"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "snow",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite",
+ "x25519-dalek",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1188,93 +1276,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "secure_messenger_cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "ed25519-dalek",
- "secure_messenger_core",
- "secure_messenger_server",
- "secure_messenger_storage",
- "secure_messenger_transport",
- "tokio",
- "x25519-dalek",
-]
-
-[[package]]
-name = "secure_messenger_core"
-version = "0.1.0"
-dependencies = [
- "chacha20poly1305",
- "ed25519-dalek",
- "hex",
- "hkdf",
- "ml-kem",
- "rand_core",
- "sha2",
- "thiserror",
- "x25519-dalek",
- "zeroize",
-]
-
-[[package]]
-name = "secure_messenger_demo"
-version = "0.1.0"
-dependencies = [
- "secure_messenger_core",
- "secure_messenger_transport",
- "tokio",
- "x25519-dalek",
-]
-
-[[package]]
-name = "secure_messenger_ffi"
-version = "0.1.0"
-dependencies = [
- "ed25519-dalek",
- "secure_messenger_core",
- "thiserror",
- "uniffi",
- "x25519-dalek",
-]
-
-[[package]]
-name = "secure_messenger_server"
-version = "0.1.0"
-dependencies = [
- "redis",
- "secure_messenger_core",
- "secure_messenger_transport",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "x25519-dalek",
-]
-
-[[package]]
-name = "secure_messenger_storage"
-version = "0.1.0"
-dependencies = [
- "rusqlite",
- "secure_messenger_core",
- "thiserror",
- "x25519-dalek",
-]
-
-[[package]]
-name = "secure_messenger_transport"
-version = "0.1.0"
-dependencies = [
- "futures-util",
- "snow",
- "thiserror",
- "tokio",
- "tokio-tungstenite",
- "x25519-dalek",
-]
-
-[[package]]
 name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1329,9 +1330,9 @@ dependencies = [
 
 [[package]]
 name = "sha1"
-version = "0.10.6"
+version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3bf829a2d51ab4a5ddf1352d8470c140cadc8301b2ae1789db023f01cedd6ba"
+checksum = "a978451301f4db1d02937a4ab3ccce137717b81826e79b7d49ffe3244a13c3b8"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -1966,18 +1967,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.53"
+version = "0.8.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75726053136156d419e285b9b7eddaaea9e3fea6ce32eed44a89901f0bd98de1"
+checksum = "b7cbbc0a705a0fd05cc3676525980d2bf5a9bc4adac6d6475209a7887cf59d19"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.53"
+version = "0.8.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4714fd92cf900833d49538023a9b3915155210801d1c1169eba513b2addefd71"
+checksum = "e2e817b7b52d0c7358d3246da9d69935ebb18116b2b102b4230dac079b4862f5"
 dependencies = [
  "proc-macro2",
  "quote",
