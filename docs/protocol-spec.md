@@ -6,6 +6,20 @@ Rascunho inicial. Cobre o que já está implementado, **compilado e testado**
 em `core/`, e o que falta antes de qualquer uso real. Não é ainda uma
 especificação formal revisada por pares.
 
+## Índice
+
+1. [Handshake inicial](#1-handshake-inicial--implementado-e-testado) — X3DH e PQXDH
+2. [Double Ratchet](#2-double-ratchet--implementado) — cifra contínua, forward secrecy
+3. [Camada de transporte](#3-camada-de-transporte--implementada-e-testada) — Noise sobre WebSocket
+4. [Servidor/relay](#4-servidorrelay--implementado-e-testado) — fila de mensagens, Redis
+5. [Armazenamento local](#5-armazenamento-local-no-cliente--implementado-e-testado) — SQLCipher
+6. [Bindings FFI](#6-bindings-ffi-androidiospython--implementado-e-testado) — Kotlin/Swift/Python
+7. [Sealed sender](#7-sealed-sender--implementado-e-testado) — esconder o remetente do servidor
+
+*(Se preferires uma explicação sem jargão técnico, começa antes por
+[`apresentacao-projeto.md`](../../apresentacao-projeto.md) — este
+documento aqui é a referência técnica detalhada, não a porta de entrada.)*
+
 ## 1. Handshake inicial — implementado e testado
 
 Duas variantes, ambas em `core/`, ambas com testes de integração a passar:
