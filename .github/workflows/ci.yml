@@ -46,6 +46,7 @@ jobs:
             generate --library target/debug/libqt_ffi.so --language python --out-dir ffi/bindings
           cp target/debug/libqt_ffi.so ffi/bindings/
           python3 ffi/tests/test_ffi_bindings.py
+          python3 ffi/tests/test_noise_session.py
 
       - name: cargo clippy (lint estrito)
         run: cargo clippy --workspace -- -D warnings

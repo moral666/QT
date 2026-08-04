@@ -197,40 +197,56 @@ conseguir completar o handshake de forma completamente assíncrona.
 
 Implementado em `ffi/` (crate `qt_ffi`), usando
 [uniffi](https://mozilla.github.io/uniffi-rs/) (a mesma ferramenta usada
-pelo Signal e por vários projetos Mozilla). Desenho **funcional**
-deliberado: todas as funções expostas recebem e devolvem bytes/records
-simples, sem objetos com estado mutável partilhado entre a fronteira
-FFI — o cliente móvel guarda os bytes de estado (identidade, sessão)
-exatamente como o `storage/` já faz no lado desktop, só que no
-armazenamento seguro nativo do SO (Keystore/Secure Enclave).
+pelo Signal e por vários projetos Mozilla). Desenho **maioritariamente
+funcional**: a generalidade das funções expostas recebem e devolvem
+bytes/records simples, sem estado partilhado entre a fronteira FFI — o
+cliente móvel guarda os bytes de estado (identidade, sessão) exatamente
+como o `storage/` já faz no lado desktop, só que no armazenamento seguro
+nativo do SO (Keystore no Android, Secure Enclave no iOS).
 
-API exposta: geração de chaves DH/assinatura, `sign_signed_pre_key`,
-`x3dh_initiate`/`x3dh_respond`, `ratchet_init_as_initiator`/
-`init_as_responder`/`encrypt`/`decrypt`, `seal_sender`/`unseal_sender`.
+**API do núcleo** (funcional, bytes dentro/fora): geração de chaves
+DH/assinatura, `sign_signed_pre_key`, `x3dh_initiate`/`x3dh_respond`,
+`ratchet_init_as_initiator`/`init_as_responder`/`encrypt`/`decrypt`,
+`seal_sender`/`unseal_sender`.
+
+**API de transporte** (`NoiseSession`, objeto com estado): ao contrário do
+resto, o handshake Noise é interativo (várias trocas de mensagens), por
+isso é exposto como um objeto com estado (`uniffi::Object`) em vez de
+funções puras — `new_initiator`/`new_responder`, `write_step`/`read_step`
+(o handshake propriamente dito), `is_finished`, e depois de terminado,
+`encrypt`/`decrypt` para as mensagens de aplicação. O envio/receção real
+dos bytes pela rede continua do lado Kotlin/Swift (usando uma biblioteca
+de WebSocket normal, ex.: OkHttp) — o `NoiseSession` só trata da parte
+criptográfica.
 
 Gerados e testados bindings para **Kotlin**, **Swift**, e **Python**
 (`ffi/generate_bindings.sh`). Testado com 7 testes reais a partir do
-Python (`ffi/tests/test_ffi_bindings.py`), cobrindo o mesmo que os testes
-Rust de `core/` já cobriam, mas atravessando a fronteira FFI: X3DH com
-segredos a coincidir entre Alice e Bob, assinatura adulterada rejeitada,
-Double Ratchet completo, sealed sender a revelar corretamente o
-remetente, e uma chave errada a não conseguir abrir o envelope.
+Python (`ffi/tests/test_ffi_bindings.py`) cobrindo X3DH, Double Ratchet e
+sealed sender através da fronteira FFI, e mais um teste dedicado ao
+`NoiseSession` (`ffi/tests/test_noise_session.py`): handshake completo
+entre duas sessões + troca de mensagens cifradas nos dois sentidos.
+
+**Testado também num Android real** (emulador): uma app mínima em Kotlin,
+consumindo os bindings gerados, correu o fluxo completo — geração de
+identidade, X3DH, Double Ratchet, sealed sender — tudo dentro do
+telemóvel, com resultado visível no ecrã.
 
 **Pendente antes de produção:**
 
-- **Apps nativas reais**: os bindings gerados (`ffi/bindings/kotlin/`,
-  `ffi/bindings/swift/`) ainda não têm nenhuma app Android/iOS à volta
-  deles — só foram testados via Python neste ambiente de desenvolvimento.
-- **Empacotamento para Android**: falta gerar as bibliotecas nativas
-  (`.so`) para cada arquitetura Android (arm64-v8a, armeabi-v7a, x86_64)
-  via `cargo-ndk`, e empacotá-las num `.aar`.
+- **App Android/iOS completa**: o que existe é uma demo de um ecrã (prova
+  que o FFI funciona no dispositivo), não ainda uma app com ecrã de
+  conversa, lista de contactos, ou ligação de rede real a um servidor.
+- **Empacotamento para Android**: as bibliotecas nativas (`.so`) já são
+  geradas via `cargo-ndk` para arm64-v8a/armeabi-v7a/x86_64, mas ainda não
+  empacotadas num `.aar` publicável.
 - **Empacotamento para iOS**: falta gerar um `XCFramework` a partir da
-  biblioteca estática, para consumo direto no Xcode.
-- **Camada de transporte/storage no FFI**: o FFI atual só expõe `core/` —
-  `transport/` e `storage/` (SQLCipher) ainda vivem só no lado desktop/CLI;
-  uma app móvel real também precisaria de bindings para essas camadas (ou
-  reimplementar essa parte nativamente, usando bibliotecas equivalentes
-  já existentes em Android/iOS para WebSocket e SQLCipher).
+  biblioteca estática, para consumo direto no Xcode (ainda não testado em
+  iOS, só Android).
+- **`storage/` (SQLCipher) não é exposto via FFI** — deliberadamente: uma
+  app móvel real deve usar o armazenamento seguro nativo do próprio SO
+  (Keystore/EncryptedSharedPreferences no Android, Secure Enclave no iOS),
+  não SQLCipher cross-compilado, que traria complexidade extra sem
+  necessidade.
 
 ## 7. Sealed sender — implementado e testado
 
