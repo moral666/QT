@@ -109,7 +109,7 @@ pub fn x3dh_initiate(
 
     let bundle = PreKeyBundle {
         identity_key: PublicKey::from(to_array32(&their_identity_public, "their_identity_public")?),
-        identity_signing_key: identity_signing_key,
+        identity_signing_key,
         signed_pre_key: PublicKey::from(to_array32(
             &their_signed_pre_key_public,
             "their_signed_pre_key_public",
@@ -293,7 +293,7 @@ pub fn generate_noise_static_keypair() -> KeyPairBytes {
 }
 
 enum SessionState {
-    Handshaking(NoiseHandshake),
+    Handshaking(Box<NoiseHandshake>),
     Transport(NoiseTransport),
     /// Estado temporario usado so durante a transicao Handshaking->Transport
     /// (necessario porque into_transport() consome o valor por movimento).
@@ -313,14 +313,14 @@ impl NoiseSession {
     pub fn new_initiator(local_static_private: Vec<u8>) -> Result<std::sync::Arc<Self>, FfiError> {
         let handshake = NoiseHandshake::new_initiator(&local_static_private)
             .map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
-        Ok(std::sync::Arc::new(Self { state: Mutex::new(SessionState::Handshaking(handshake)) }))
+        Ok(std::sync::Arc::new(Self { state: Mutex::new(SessionState::Handshaking(Box::new(handshake))) }))
     }
 
     #[uniffi::constructor]
     pub fn new_responder(local_static_private: Vec<u8>) -> Result<std::sync::Arc<Self>, FfiError> {
         let handshake = NoiseHandshake::new_responder(&local_static_private)
             .map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
-        Ok(std::sync::Arc::new(Self { state: Mutex::new(SessionState::Handshaking(handshake)) }))
+        Ok(std::sync::Arc::new(Self { state: Mutex::new(SessionState::Handshaking(Box::new(handshake))) }))
     }
 
     /// True assim que o handshake terminou e a sessao ja pode cifrar/decifrar.

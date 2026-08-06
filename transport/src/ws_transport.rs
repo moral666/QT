@@ -20,7 +20,7 @@ pub enum TransportError {
     #[error("erro Noise: {0}")]
     Noise(#[from] NoiseError),
     #[error("erro WebSocket: {0}")]
-    WebSocket(#[from] tokio_tungstenite::tungstenite::Error),
+    WebSocket(#[from] Box<tokio_tungstenite::tungstenite::Error>),
     #[error("ligacao fechada inesperadamente durante o handshake")]
     ConnectionClosedDuringHandshake,
     #[error("tipo de frame WebSocket inesperado (esperava binario)")]
@@ -37,20 +37,21 @@ pub async fn client_connect(
     url: &str,
     local_static_private: &[u8],
 ) -> Result<(ClientWsStream, NoiseTransport), TransportError> {
-    let (mut ws_stream, _response) = tokio_tungstenite::connect_async(url).await?;
+    let (mut ws_stream, _response) = tokio_tungstenite::connect_async(url).await.map_err(Box::new)?;
 
     let mut handshake = NoiseHandshake::new_initiator(local_static_private)?;
 
     // Padrao Noise_XX: iniciador escreve primeiro.
     while !handshake.is_finished() {
         let out = handshake.write_step()?;
-        ws_stream.send(Message::Binary(out)).await?;
+        ws_stream.send(Message::Binary(out)).await.map_err(Box::new)?;
 
         if !handshake.is_finished() {
             let msg = ws_stream
                 .next()
                 .await
-                .ok_or(TransportError::ConnectionClosedDuringHandshake)??;
+                .ok_or(TransportError::ConnectionClosedDuringHandshake)?
+            .map_err(Box::new)?;
             let bytes = expect_binary(msg)?;
             handshake.read_step(&bytes)?;
         }
@@ -67,7 +68,7 @@ pub async fn server_accept(
     tcp_stream: TcpStream,
     local_static_private: &[u8],
 ) -> Result<(ServerWsStream, NoiseTransport), TransportError> {
-    let mut ws_stream = tokio_tungstenite::accept_async(tcp_stream).await?;
+    let mut ws_stream = tokio_tungstenite::accept_async(tcp_stream).await.map_err(Box::new)?;
 
     let mut handshake = NoiseHandshake::new_responder(local_static_private)?;
 
@@ -76,13 +77,14 @@ pub async fn server_accept(
         let msg = ws_stream
             .next()
             .await
-            .ok_or(TransportError::ConnectionClosedDuringHandshake)??;
+            .ok_or(TransportError::ConnectionClosedDuringHandshake)?
+            .map_err(Box::new)?;
         let bytes = expect_binary(msg)?;
         handshake.read_step(&bytes)?;
 
         if !handshake.is_finished() {
             let out = handshake.write_step()?;
-            ws_stream.send(Message::Binary(out)).await?;
+            ws_stream.send(Message::Binary(out)).await.map_err(Box::new)?;
         }
     }
 
@@ -108,7 +110,7 @@ where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     let ciphertext = transport.encrypt(plaintext_for_noise_layer)?;
-    ws_stream.send(Message::Binary(ciphertext)).await?;
+    ws_stream.send(Message::Binary(ciphertext)).await.map_err(Box::new)?;
     Ok(())
 }
 
@@ -123,7 +125,8 @@ where
     let msg = ws_stream
         .next()
         .await
-        .ok_or(TransportError::ConnectionClosedDuringHandshake)??;
+        .ok_or(TransportError::ConnectionClosedDuringHandshake)?
+            .map_err(Box::new)?;
     let bytes = expect_binary(msg)?;
     Ok(transport.decrypt(&bytes)?)
 }
