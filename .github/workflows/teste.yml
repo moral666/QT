@@ -1,0 +1,7 @@
+name: Teste Simples
+on: push
+jobs:
+  ola:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Se isto aparecer, o Actions funciona neste repositório"
