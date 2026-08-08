@@ -137,16 +137,19 @@ docs/        The full technical specification, and the design history
 ```
 
 Each piece has its own tests, kept next to the code (`tests/`). The
-Android app currently only lives on the machine it was built on — when
+Android app exists and has already run on a real device (see the status
+table above), but for now it only lives on the machine it was built on,
+with no repository of its own and nothing published — treat it as a
+technical proof of concept, not as something you can install yet. When
 published, it should get its own repository that uses this one as a
 dependency (the same separation principle explained in `CONTRIBUTING.md`).
 
 ## Want the technical details?
 
-`docs/protocol-spec.md` explains, section by section, exactly how each
-piece works internally — which algorithms, which decisions, and what's
-still missing in each one. It's the right document if you want to
-evaluate this technically or contribute.
+- [`docs/protocol-spec.md`](docs/protocol-spec.md) explains, section by section, exactly how each piece works internally — which algorithms, which decisions, and what's still missing in each one.
+- [`docs/threat-model.md`](docs/threat-model.md) explains who and what this protects against — and, just as importantly, who and what it does **not** protect against. Recommended reading before trusting any security claim made here.
+- [`ROADMAP.md`](ROADMAP.md) shows what's left, in priority order.
+- [`CHANGELOG.md`](CHANGELOG.md) shows the history of what's already changed.
 
 ## License
 

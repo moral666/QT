@@ -284,9 +284,15 @@ Testado a três níveis:
 - **Autenticação de registo**: ver nota na secção 4 — falta impedir que
   alguém publique um bundle a fingir ser outra identidade.
 
-## Próximos documentos a escrever
+## Documentos relacionados
 
-- `threat-model.md` — modelo de ameaças formal (quem é o adversário, o que
-  ele consegue ver em cada camada)
-- `architecture-decisions/0001-escolha-x3dh-vs-pqxdh.md`
-- `architecture-decisions/0002-uniffi-ffi.md`
+- [`threat-model.md`](threat-model.md) — modelo de ameaças formal: quem
+  é o adversário, o que está protegido, e o que **não** está — leitura
+  obrigatória antes de avaliar este projeto tecnicamente
+- [`../ROADMAP.md`](../ROADMAP.md) — o plano, por fases
+- [`../CHANGELOG.md`](../CHANGELOG.md) — histórico do que já mudou
+
+Ainda por escrever: `architecture-decisions/0001-escolha-x3dh-vs-pqxdh.md`,
+`architecture-decisions/0002-uniffi-ffi.md` (registos formais de decisões
+de arquitetura — por agora, essas decisões estão documentadas de forma
+menos formal ao longo das secções acima).

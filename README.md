@@ -117,11 +117,14 @@ ffi/         A ponte para Kotlin, Swift e Python
 docs/        A especificação técnica completa, e o histórico de decisões
 ```
 
-Cada peça tem os seus próprios testes, guardados ao lado do código (`tests/`). A app Android vive por agora só na máquina onde foi feita — quando for publicada, deve ganhar o seu próprio repositório, que usa este aqui como dependência (é o mesmo princípio de separação explicado em `CONTRIBUTING.md`).
+Cada peça tem os seus próprios testes, guardados ao lado do código (`tests/`). A app Android existe e já correu num dispositivo real (ver tabela de estado acima), mas por agora vive só na máquina onde foi feita, sem repositório próprio nem publicação — trata-a como uma prova de conceito técnica, não como algo que já podes instalar. Quando for publicada, deve ganhar o seu próprio repositório, que usa este aqui como dependência (é o mesmo princípio de separação explicado em `CONTRIBUTING.md`).
 
 ## Queres perceber os detalhes técnicos?
 
-`docs/protocol-spec.md` explica, secção a secção, exatamente como cada peça funciona por dentro — que algoritmos, que decisões, e o que ainda falta em cada uma. É o documento certo se quiseres avaliar isto tecnicamente ou contribuir.
+- [`docs/protocol-spec.md`](docs/protocol-spec.md) explica, secção a secção, exatamente como cada peça funciona por dentro — que algoritmos, que decisões, e o que ainda falta em cada uma.
+- [`docs/threat-model.md`](docs/threat-model.md) explica contra quem e contra o quê isto protege — e, tão importante quanto isso, contra quem e contra o quê **não** protege. Leitura recomendada antes de confiares em qualquer alegação de segurança feita aqui.
+- [`ROADMAP.md`](ROADMAP.md) mostra o que falta, por ordem de prioridade.
+- [`CHANGELOG.md`](CHANGELOG.md) mostra o histórico do que já mudou.
 
 ## Licença
 
