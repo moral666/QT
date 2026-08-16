@@ -27,6 +27,14 @@ bindings FFI para Kotlin/Swift/Python, testados também num Android real.
 
 ## Fase seguinte: robustez e confiança
 
+- [x] **Testes de robustez contra bytes malformados** — encontrado e
+  corrigido um crash real (`bytes[0]` sem verificação de tamanho em
+  `cli/src/bin/messenger.rs`); 40.000+ tentativas aleatórias sem pânico
+  contra as funções mais expostas do núcleo (ver `docs/threat-model.md`)
+- [ ] **Fuzzing guiado por cobertura, corrido a sério** — os alvos já
+  existem em `core/fuzz/` e compilam, mas nunca correram durante horas
+  numa máquina com Rust nightly (só testes de bytes aleatórios mais
+  simples correram até agora) — ver `core/fuzz/README.md`
 - [ ] **Auditoria de segurança externa** — nenhuma alegação de segurança
   deveria ser levada a sério sem isto; é a prioridade mais alta desta
   fase

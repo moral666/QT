@@ -1,10 +1,30 @@
-# Especificação do Protocolo (rascunho v0.1)
+# Especificação do Protocolo (v0.1 — congelado para testes)
 
 ## Estado deste documento
 
 Rascunho inicial. Cobre o que já está implementado, **compilado e testado**
 em `core/`, e o que falta antes de qualquer uso real. Não é ainda uma
 especificação formal revisada por pares.
+
+## Nota sobre estabilidade do formato
+
+Os formatos de fio descritos aqui (X3DH/PQXDH, mensagens do Double
+Ratchet, envelope do sealed sender, bundle serializado em
+`cli/src/wire_format.rs`) estão **congelados nesta versão (v0.1)**
+enquanto decorre a bateria de testes de robustez, fuzzing, e qualquer
+auditoria futura. Qualquer mudança ao formato de bytes trocados entre
+cliente e servidor, ou entre dois clientes, deve:
+
+1. Ser justificada por um problema real encontrado (bug de segurança,
+   limitação genuína), não por preferência estética
+2. Incluir um número de versão explícito no formato afetado, para que
+   clientes antigos e novos consigam, no mínimo, detetar a incompatibilidade
+   em vez de falhar de forma confusa
+3. Ser registada aqui e no `CHANGELOG.md`
+
+Isto existe para que o trabalho de testes (`docs/threat-model.md`,
+`core/fuzz/`) tenha um alvo estável, em vez de estar sempre a testar um
+formato que já mudou outra vez.
 
 ## Índice
 

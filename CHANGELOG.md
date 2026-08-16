@@ -10,10 +10,20 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - Modelo de ameaças completo (`docs/threat-model.md`)
 - Roadmap dedicado (`ROADMAP.md`)
 - Este changelog
+- Testes de robustez contra bytes malformados: `core/tests/fuzz_lite.rs`
+  (40.000 tentativas), `cli/tests/fuzz_lite.rs` (20.000 tentativas), e
+  alvos reais de `cargo-fuzz` em `core/fuzz/` (prontos, não corridos
+  ainda por falta de Rust nightly no ambiente de desenvolvimento)
 
 ### Corrigido
 - `SECURITY.md` já não tem placeholders por preencher — usa o mecanismo
   de report privado do GitHub em vez de um email/PGP que nunca existiu
+- **Crash real corrigido**: `cli/src/bin/messenger.rs` entrava em pânico
+  ao processar uma mensagem vazia ou demasiado curta vinda do servidor
+  (indexação direta `bytes[0]` sem verificação de tamanho) — encontrado
+  através do trabalho de testes de robustez acima. Corrigido para
+  devolver um erro controlado, sem derrubar o processo nem impedir o
+  processamento das restantes mensagens da fila.
 
 ## Núcleo e infraestrutura (fundação técnica)
 
