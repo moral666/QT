@@ -77,7 +77,45 @@ escrever. Aqui está, sem rodeios:
   revisto só pelo autor original. Isto é uma limitação séria para
   qualquer alegação de segurança "a sério" — ver a secção seguinte.
 
-## Fora de escopo (deliberadamente, por agora)
+## Testes adversariais já feitos
+
+Antes de qualquer avaliação externa, faz sentido testar contra o
+adversário mais simples de todos: bytes aleatórios ou malformados, do
+tipo que um atacante (ou simplesmente um bug noutro ponto da cadeia)
+poderia enviar.
+
+**Um problema real foi encontrado e corrigido através deste exercício**:
+`cli/src/bin/messenger.rs` fazia `bytes[0]` e outras indexações diretas
+sobre mensagens vindas do servidor, sem verificar o tamanho primeiro — uma
+mensagem vazia ou demasiado curta entrava em pânico e derrubava o
+processo inteiro (uma negação de serviço trivial). Corrigido para
+devolver um erro controlado e continuar a processar as restantes
+mensagens da fila, em vez de crashar.
+
+Cobertura atual:
+- `core/tests/fuzz_lite.rs` — 40.000 tentativas com bytes aleatórios
+  contra `RatchetState::from_bytes` e `unseal_sender_identity` (as duas
+  funções do núcleo que recebem bytes mais diretamente expostos a um
+  adversário de rede), mais um caso de fronteira específico. Zero pânicos.
+- `cli/tests/fuzz_lite.rs` — 20.000 tentativas contra
+  `deserialize_bundle` (o parsing do bundle de pre-keys recebido de
+  outra pessoa através do servidor). Zero pânicos.
+- `cli/src/bin/messenger.rs` tem também um teste unitário dedicado que
+  tenta todos os tamanhos de 0 a 35 bytes contra a função corrigida.
+- `core/fuzz/` tem alvos reais de `cargo-fuzz` (fuzzing guiado por
+  cobertura, mais poderoso do que os testes aleatórios acima) prontos
+  para correr — **não foram corridos** no ambiente onde este projeto foi
+  desenvolvido, por não haver Rust *nightly* disponível nesse ambiente
+  específico. Correm normalmente em qualquer máquina com
+  `rustup toolchain install nightly` — ver `core/fuzz/README.md` (a criar)
+  ou a documentação do [`cargo-fuzz`](https://github.com/rust-fuzz/cargo-fuzz).
+
+**O que isto prova, e o que não prova**: estes testes dão confiança de
+que os pontos mais óbvios de entrada de dados não confiáveis não
+crasham trivialmente. Não substituem fuzzing guiado por cobertura a
+sério (mais tempo, mais iterações, exploração mais inteligente do espaço
+de input) nem, principalmente, uma auditoria de segurança feita por
+alguém que não seja o autor do código.
 
 - **Anonimato de rede completo** (esconder o endereço IP de quem se
   liga). Precisaria de Tor ou uma mixnet por cima do transporte atual.
