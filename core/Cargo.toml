@@ -37,3 +37,5 @@ required-features = ["pq"]
 
 [dev-dependencies]
 hex = "0.4"
+rand = "0.8"
+proptest = "1"
