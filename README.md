@@ -128,7 +128,16 @@ Cada peça tem os seus próprios testes, guardados ao lado do código (`tests/`)
 
 ## Licença
 
-AGPL-3.0-or-later. Em linguagem simples: qualquer pessoa pode usar, estudar e modificar este código livremente — mas se alguém pegar nele para oferecer um serviço (mesmo só através da internet, sem "distribuir" software no sentido tradicional), é obrigado a partilhar também o código dessas modificações. Isto fecha uma porta que licenças mais permissivas deixam aberta: a de alguém pegar num projeto aberto e transformá-lo num serviço fechado.
+QT é disponibilizado sob uma licença dual:
+
+- **Open source:** GNU Affero General Public License, versão 3 ou posterior (AGPL-3.0-or-later).
+- **Comercial:** organizações que necessitem de termos diferentes da AGPL podem obter uma licença comercial mediante acordo escrito com o autor.
+
+A licença comercial permite definir contratualmente termos específicos de utilização, integração, distribuição, deployment, suporte, manutenção e outros direitos comerciais.
+
+Os componentes e dependências de terceiros utilizados pelo QT permanecem sujeitos às respetivas licenças.
+
+Ver [`LICENSE`](LICENSE) para a licença AGPL e [`LICENSE-COMMERCIAL.md`](LICENSE-COMMERCIAL.md) para informação sobre o modelo de licenciamento comercial.
 
 ## Queres ajudar ou reportar um problema?
 
