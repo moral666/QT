@@ -10,3 +10,11 @@ qt_core = { path = "../core" }
 rusqlite = { version = "0.31", features = ["sqlcipher"] }
 thiserror = "1"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
+zeroize = "1"
+
+[features]
+default = []
+pq = ["qt_core/pq"]
+# Compila SQLCipher + OpenSSL a partir do codigo-fonte (OBRIGATORIO no Android,
+# onde nao existe libsqlcipher no sistema). Requer perl + make no host de build.
+bundled-sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
