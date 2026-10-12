@@ -1,150 +1,161 @@
-# Modelo de Ameaças
+# Modelo de Ameaças (v0.2 — fase Android)
 
-Este documento explica, de forma explícita, contra quem e contra o quê o
-QT protege — e, tão importante quanto isso, contra quem e contra o quê
-**não** protege. Um projeto de segurança sem isto é um projeto que pede
-para ser avaliado por fé, não por engenharia.
+> **Estado: protótipo técnico, NÃO auditado.** Nada neste documento é uma
+> alegação de segurança de produção. Descreve o que o código faz hoje, o que
+> os testes demonstram, e — com igual peso — o que **não** está protegido.
+> Uma auditoria criptográfica externa continua a ser necessária antes de o QT
+> ser apresentado como sistema de comunicação seguro.
 
-## Ativos a proteger
+## 1. Ativos
 
-1. **Conteúdo das mensagens** — o texto real trocado entre duas pessoas.
-2. **Identidade do remetente** — quem enviou uma mensagem específica.
-3. **Chaves privadas** — de identidade, de sessão, e de transporte, em
-   cada dispositivo.
-4. **Metadados de conversa** — quem fala com quem, com que frequência,
-   aproximadamente quando (proteção parcial — ver secção de limitações).
+1. **Conteúdo das mensagens.**
+2. **Identidade do remetente** (quem enviou uma mensagem concreta).
+3. **Chaves privadas**: identidade X25519/Ed25519, signed pre-key, prekey
+   ML-KEM, one-time prekeys, estado do ratchet, chave estática Noise.
+4. **Metadados**: quem fala com quem, quando, quanto (proteção só parcial).
+5. **Estado de sessão** (ratchet, deduplicação de envelopes).
 
-## Adversários considerados
+## 2. Adversários
 
 | Adversário | Capacidades assumidas |
 |---|---|
-| **Operador do servidor/relay** (curioso ou comprometido) | Acesso total à máquina que corre o `relay_server` e ao Redis — lê tudo o que lá estiver guardado, em qualquer momento. |
-| **Autoridade com poder legal sobre o operador** | Pode obrigar o operador a entregar tudo o que o servidor tem, ou a desligar o serviço. Não pode obrigar o operador a entregar o que ele não tem (ex.: chaves privadas de utilizadores, que nunca lá estiveram). |
-| **Atacante passivo na rede** (ISP, ponto de trânsito, Wi-Fi público) | Vê todo o tráfego de rede entre cliente e servidor, mas não consegue modificá-lo sem ser detetado. |
-| **Atacante ativo na rede** (man-in-the-middle) | Além de ver, tenta modificar, injetar, ou bloquear tráfego. |
-| **Adversário com computador quântico futuro** | Grava tráfego cifrado hoje, tenta decifrá-lo daqui a vários anos quando tiver capacidade de quebrar criptografia clássica ("harvest now, decrypt later"). |
-| **Um dos participantes da conversa** | **Não é um adversário coberto por este modelo.** Se Alice mostra a Bob as mensagens que Bob lhe enviou, ou grava a conversa, isso está fora do alcance de qualquer sistema de E2EE — é uma limitação física, não técnica. |
+| **Relay comprometido / curioso** | Acesso total ao processo, ao Redis e ao disco do relay; pode registar, atrasar, duplicar, reordenar, descartar ou fabricar envelopes e bundles. |
+| **Atacante passivo na rede** | Vê todo o tráfego cliente↔relay. |
+| **Atacante ativo na rede** | Injeta, repete, reordena, corta ou modifica frames. |
+| **Quem lê o Redis / o armazenamento do relay** | Cópia total do que o relay persiste. |
+| **Quem captura tráfego hoje (harvest-now-decrypt-later)** | Guarda tudo; mais tarde tem um computador quântico capaz de correr Shor. |
+| **Quem obtém uma cópia do ficheiro SQLCipher** | Ficheiro cifrado, sem a chave. |
+| **Quem obtém o *estado* de uma sessão num instante T** | Cópia do estado do ratchet nesse momento. |
+| *Fora de âmbito* | Dispositivo totalmente comprometido; o outro participante da conversa; ver §4. |
 
-## O que está protegido, e como
+## 3. O que o QT protege — e a evidência
 
-| Ameaça | Proteção | Estado |
+Cada linha indica o mecanismo e **o teste que o demonstra** (corre com
+`cargo test --workspace`; os testes de relay precisam de Redis).
+
+| Ameaça | Mecanismo | Evidência |
 |---|---|---|
-| Servidor lê o conteúdo das mensagens | Double Ratchet (`core/src/ratchet.rs`) — o servidor só vê bytes cifrados, nunca teve a chave | ✅ Implementado e testado |
-| Servidor descobre quem enviou uma mensagem | Sealed sender (`core/src/sealed_sender.rs`) — o campo `from` é um envelope cifrado que só o destinatário consegue abrir | ✅ Implementado e testado |
-| Uma chave de sessão comprometida expõe conversas passadas | Forward secrecy (Double Ratchet) — cada mensagem usa uma chave derivada nova, descartada logo a seguir | ✅ Implementado e testado |
-| Uma chave de sessão comprometida expõe conversas futuras indefinidamente | Post-compromise security (Double Ratchet) — a sessão recupera segurança após a troca seguinte de mensagens | ✅ Implementado e testado |
-| Atacante na rede lê/modifica o tráfego cliente↔servidor | Noise Protocol (`transport/`) — canal autenticado e cifrado, independente do E2EE de aplicação (defesa em profundidade) | ✅ Implementado e testado |
-| Servidor forjar uma pre-key de outro utilizador | Assinatura Ed25519 da signed pre-key, verificada antes de qualquer handshake (`core/src/x3dh.rs`) | ✅ Implementado e testado |
-| Alguém com acesso físico ao dispositivo lê a base de dados local | SQLCipher (`storage/`) — base de dados cifrada em repouso | ✅ Implementado e testado |
-| Computador quântico futuro decifra tráfego capturado hoje | PQXDH (X25519 + ML-KEM/Kyber combinados) — feature `pq` do `core/` | ✅ Implementado e testado (opcional, exige Rust 1.81+) |
+| Relay lê o conteúdo | Double Ratchet; o relay só guarda envelopes opacos | `server/tests/two_clients_over_relay.rs` lê o Redis real e verifica que não há plaintext |
+| Relay descobre o remetente | Sealed Sender: identidade do remetente numa caixa selada para o destinatário; o cabeçalho PQXDH **não** contém a identidade | `ffi/tests/client_flow.rs::sealed_sender_relay_nao_ve_plaintext_nem_remetente`; mesmo teste no Redis real |
+| Relay substitui o bundle de outra pessoa | `start_session` verifica o bundle contra o QT Public ID (chaves de identidade) e a assinatura Ed25519, que cobre a signed pre-key **e** a chave ML-KEM (impede um relay de anular a proteção pós-quântica trocando-a); chaves ML-KEM validadas (tamanho e codificação canónica) | `bundles_invalidos_sao_rejeitados`, `relay_malicioso_nao_pode_substituir_a_chave_mlkem` |
+| Atacante passivo lê o tráfego | Noise XX (X25519, ChaChaPoly, SHA256) + E2EE por cima | `transport/` e `relay_hardening.rs` |
+| Atacante ativo corrompe, repete ou reordena frames de transporte | O Noise tem contador de nonce estrito: qualquer frame corrompido/repetido/fora de ordem faz o relay encerrar a sessão | `frame_noise_corrompido…`, `frame_noise_repetido…`, `frame_noise_fora_de_ordem…` |
+| Reutilização de uma assinatura de autenticação noutra sessão | A autenticação do relay assina `contexto ‖ hash do handshake Noise` (channel binding) | `assinatura_de_autenticacao_nao_serve_noutra_sessao` |
+| Utilizador A lê/apaga a fila de B ou regista o bundle de B | `user_id` autenticado por assinatura Ed25519; o relay só aceita operações sobre o próprio `user_id` | `utilizadores_nao_acedem_a_filas_ou_bundles_de_outros` |
+| Perda de mensagens por queda de rede | Entrega *at-least-once*: o relay só apaga após `AckMessages` | `entrega_at_least_once_so_apaga_apos_ack`, `conversa_a_b_pelo_relay_com_quedas_e_reinicios` |
+| Replay / duplicados de envelopes | Deduplicação persistente por (chave DH do ratchet, n) antes de decifrar + chaves de mensagem de uso único | `replay_e_rejeitado_tambem_depois_de_reiniciar`, `message_key_usada_nao_pode_ser_reutilizada` |
+| Manipulação de ciphertext | AEAD (ChaCha20-Poly1305) com o cabeçalho (chave DH, n) como AAD; falha não altera o estado | `ciphertext_alterado_falha_e_nao_estraga_o_estado`, `decrypt_falhado_nao_altera_o_estado` |
+| Mensagem forjada para quebrar a sessão (DoS) | `RatchetState::decrypt` é transacional; a FFI trabalha sobre cópias do disco | `decrypt_falhado_nao_altera_o_estado`, `cabecalho_forjado_nao_gasta_a_prekey` |
+| One-time prekey reutilizada / consumida por um forjador | Só é apagada depois de a 1.ª mensagem autenticar | `prekey_reutilizada_e_rejeitada`, `cabecalho_forjado_nao_gasta_a_prekey` |
+| Estado comprometido expõe mensagens passadas | Forward secrecy do Double Ratchet (chaves de mensagem apagadas após uso) | `core/tests/forward_secrecy.rs` |
+| Estado comprometido expõe mensagens futuras | Post-compromise security após um novo passo DH (limites em §4) | `post_compromise_security_cura_apos_novo_passo_dh` |
+| Cópia do ficheiro da base de dados | SQLCipher com chave binária de 32 bytes vinda do Android Keystore; sem cabeçalho SQLite em claro; sem tabela de mensagens | `storage/tests/storage_extended.rs` |
+| Lixo / entradas malformadas | Todas as entradas de rede e disco devolvem erro (sem `unwrap` em caminhos de rede/cripto); limites de tamanho | `sessao_inexistente_e_lixo_nao_fazem_panic`, `limites_e_validacao_de_entrada`, fuzz do estado em `forward_secrecy.rs` |
 
-## O que NÃO está protegido (limitações honestas)
+### 3.1 Segurança pós-quântica — o que exatamente se afirma
 
-Isto é a parte que a maioria dos projetos de "mensageiro seguro" evita
-escrever. Aqui está, sem rodeios:
+O segredo inicial da sessão é
+`HKDF-SHA256(DH1 ‖ DH2 ‖ DH3 [‖ DH4] ‖ ss_ML-KEM-768)`, com info `PQXDH_v1`,
+e depois alimenta a root key do Double Ratchet.
 
-- **O servidor sabe o destinatário (`to`) de cada mensagem.** Precisa
-  disso para saber para que fila entregar. Isto significa que um operador
-  malicioso ou coagido consegue construir um grafo de "quem recebe
-  mensagens de forma consistente", mesmo sem saber quem as enviou nem o
-  que dizem.
-- **Timing e frequência de tráfego são visíveis ao servidor e a quem
-  observar a rede.** Nada no design atual esconde *quando* alguém envia
-  uma mensagem, nem com que frequência. Um adversário capaz de observar
-  o servidor ao longo do tempo consegue inferir padrões de atividade.
-- **Um único servidor é um único ponto de pressão legal.** Se o operador
-  for coagido a desligar o serviço, a disponibilidade cai para todos os
-  utilizadores desse servidor. A confidencialidade não é afetada (o
-  servidor nunca teve as chaves), mas a capacidade de comunicar, sim.
-  Federação (vários servidores independentes) resolveria isto — ainda
-  não implementada, ver `docs/protocol-spec.md` secção 4.
-- **O transporte ainda não usa TLS (`wss://`).** O Noise Protocol cifra e
-  autentica a ligação, mas sem TLS por cima não há a camada extra de
-  defesa que a maioria dos serviços na internet já assume como padrão.
-  Adequado para redes de confiança/testes, não para produção.
-- **Comprometimento do dispositivo quebra tudo.** Se o telemóvel de
-  alguém tem malware, ou se um atacante tem acesso físico E consegue a
-  passphrase da base de dados, todas as conversas desse dispositivo
-  ficam expostas. Isto é verdade para qualquer sistema de E2EE — não é
-  uma fraqueza específica do QT, mas vale a pena dizê-lo explicitamente.
-  A passphrase da base de dados vir do Keystore/Secure Enclave do
-  sistema operativo (em vez de um argumento de linha de comandos, como é
-  hoje) reduziria este risco — ver `docs/protocol-spec.md` secção 5.
-- **Screenshots e capturas de ecrã não podem ser impedidos por nenhuma
-  tecnologia de mensagens.** Quem recebe uma mensagem sempre pode
-  fotografá-la com outro dispositivo.
-- **Sem auditoria de segurança externa.** Todo o código foi escrito e
-  revisto só pelo autor original. Isto é uma limitação séria para
-  qualquer alegação de segurança "a sério" — ver a secção seguinte.
+* **Afirmado:** *confidencialidade do segredo inicial contra harvest-now-
+  decrypt-later*. Um adversário que quebre **só** X25519 (computador
+  quântico) mas **não** ML-KEM-768 não obtém o segredo inicial; um que quebre
+  só ML-KEM mas não X25519 também não. Como as root/chain keys seguintes são
+  derivadas desse segredo (as saídas DH posteriores são *misturadas* na root
+  key, não a substituem), o conteúdo das mensagens da sessão depende do
+  segredo ML-KEM durante toda a conversa. Testado: o segredo diverge se o
+  componente clássico **ou** o pós-quântico for alterado
+  (`segredo_depende_do_componente_*`).
+* **NÃO afirmado:**
+  * **Autenticação pós-quântica.** Assinaturas (Ed25519) e DH de identidade
+    são clássicos: um adversário quântico *ativo* no futuro poderia falsificar
+    identidades (não decifra o tráfego antigo).
+  * **Cura pós-quântica.** O *post-compromise security* assenta em X25519; um
+    adversário quântico que obtenha o estado e depois quebre X25519 pode
+    acompanhar a sessão.
+  * **Sealed Sender** usa X25519: a identidade do remetente protege-se contra
+    adversários clássicos, **não** contra harvest-now-decrypt-later quântico.
+  * **O transporte Noise é clássico.** Só o E2EE (conteúdo) é híbrido.
+  * ML-KEM é uma implementação (`ml-kem 0.2.3`) **sem auditoria independente**
+    e sem garantias de tempo constante verificadas por nós.
+  * Sem *transcript binding*: o HKDF não inclui as chaves públicas nem o
+    ciphertext KEM (mantido para compatibilidade com o formato v0.1).
 
-## Testes adversariais já feitos
+## 4. O que NÃO está protegido (limitações)
 
-Antes de qualquer avaliação externa, faz sentido testar contra o
-adversário mais simples de todos: bytes aleatórios ou malformados, do
-tipo que um atacante (ou simplesmente um bug noutro ponto da cadeia)
-poderia enviar.
+* **Dispositivo comprometido** (root, malware com acesso à memória, depuração
+  da app): a chave do storage, as chaves de sessão e o plaintext estão em
+  memória; nenhuma defesa de software no Rust resolve isto. A chave do storage
+  passa pela memória da JVM no arranque.
+* **Endpoint do outro participante** comprometido, screenshots, capturas.
+* **Metadados no relay:** o relay vê o destinatário (`to`), o tamanho, o
+  instante e o endereço IP de cada ligação (o relay **não** os regista, mas um
+  operador mal-intencionado pode). Sealed Sender esconde só o remetente, e só
+  contra o relay — não contra análise de tráfego/correlação temporal.
+* **O relay pode censurar, atrasar, descartar ou reordenar** (disponibilidade
+  não é garantida). Não há federação.
+* **Spam / abuso:** qualquer utilizador autenticado pode enfileirar mensagens
+  para qualquer `user_id` (limite de 1000 mensagens por fila). Não há *rate
+  limiting*, nem consentimento de contacto no relay.
+* **Sem one-time prekeys servidas pelo relay:** o relay entrega o mesmo
+  bundle a todos (sem OTPK). O PQXDH sem OTPK é válido mas perde a proteção
+  extra contra replay do handshake inicial.
+* **Bundles sem validade:** um relay pode servir um bundle antigo (signed
+  pre-key e prekey PQ não rodam automaticamente nem têm timestamp).
+* **Rollback do armazenamento:** quem restaurar uma cópia antiga do ficheiro
+  SQLCipher faz o ratchet recuar (reabrindo janelas de replay/chaves antigas).
+  O SQLCipher protege confidencialidade e integridade das páginas, não a
+  *frescura*.
+* **Ratchet:** mensagens da cadeia DH anterior que cheguem *depois* de uma
+  mensagem da cadeia nova perdem-se (o cabeçalho não tem `pn`); chaves de
+  mensagens puladas ficam no estado até serem usadas (o roubo do estado nesse
+  momento expõe-nas); `MAX_SKIP` = 1000.
+* **Tamanho:** plaintext máximo de 10 000 bytes por mensagem (limite do
+  enquadramento Noise + JSON). Sem anexos.
+* **Zeroização parcial:** o segredo inicial e a chave de storage são
+  zeroizados nos caminhos controlados pelo QT; as chaves privadas das
+  dependências (`x25519-dalek`, `ml-kem`) e cópias feitas pela JVM/alocador
+  não são garantidamente limpas.
+* **Reinstalação do contacto:** se o outro lado perder o estado e iniciar uma
+  sessão nova, o cabeçalho PQXDH novo é ignorado enquanto existir sessão
+  antiga (não há fluxo de *session reset* nem *safety numbers*).
+* **Verificação de identidade fora de banda:** o QT Public ID tem de ser
+  trocado por um canal autêntico. Não há comparação de impressões digitais na
+  interface.
+* **Transporte de teste sem TLS** (`ws://`). Em produção usar `wss://` (o
+  Noise protege o conteúdo, mas TLS evita expor o padrão Noise e aproveita a
+  infraestrutura de certificados).
+* **Sem auditoria externa**, sem análise de canais laterais, sem fuzzing
+  contínuo; o código foi escrito e revisto por um único autor (e assistido por
+  IA).
+* **Legacy:** a feature `legacy-api` da FFI expõe chaves privadas e estados
+  em bytes. Nunca deve ser ativada na build Android (o script de bindings
+  falha se aparecer no Kotlin).
 
-**Um problema real foi encontrado e corrigido através deste exercício**:
-`cli/src/bin/messenger.rs` fazia `bytes[0]` e outras indexações diretas
-sobre mensagens vindas do servidor, sem verificar o tamanho primeiro — uma
-mensagem vazia ou demasiado curta entrava em pânico e derrubava o
-processo inteiro (uma negação de serviço trivial). Corrigido para
-devolver um erro controlado e continuar a processar as restantes
-mensagens da fila, em vez de crashar.
+## 5. Modelo de confiança por componente
 
-Cobertura atual:
-- `core/tests/fuzz_lite.rs` — 40.000 tentativas com bytes aleatórios
-  contra `RatchetState::from_bytes` e `unseal_sender_identity` (as duas
-  funções do núcleo que recebem bytes mais diretamente expostos a um
-  adversário de rede), mais um caso de fronteira específico. Zero pânicos.
-- `cli/tests/fuzz_lite.rs` — 20.000 tentativas contra
-  `deserialize_bundle` (o parsing do bundle de pre-keys recebido de
-  outra pessoa através do servidor). Zero pânicos.
-- `cli/src/bin/messenger.rs` tem também um teste unitário dedicado que
-  tenta todos os tamanhos de 0 a 35 bytes contra a função corrigida.
-- `core/fuzz/` tem alvos reais de `cargo-fuzz` (fuzzing guiado por
-  cobertura, mais poderoso do que os testes aleatórios acima) prontos
-  para correr — **não foram corridos** no ambiente onde este projeto foi
-  desenvolvido, por não haver Rust *nightly* disponível nesse ambiente
-  específico. Correm normalmente em qualquer máquina com
-  `rustup toolchain install nightly` — ver `core/fuzz/README.md` (a criar)
-  ou a documentação do [`cargo-fuzz`](https://github.com/rust-fuzz/cargo-fuzz).
+| Componente | Confiado para… | Não confiado para… |
+|---|---|---|
+| Rust `core` (+ dependências) | Toda a criptografia | — (sem auditoria) |
+| Android Keystore | Proteger a chave que cifra o storage | Resistir a um dispositivo comprometido |
+| Relay + Redis | Entregar o que recebe, quando quiser | Confidencialidade, autenticidade de bundles, ordem, disponibilidade |
+| Rede | Nada | Tudo |
+| App Kotlin | Mover bytes, UI, ciclo de vida | Qualquer criptografia (proibido) |
 
-**O que isto prova, e o que não prova**: estes testes dão confiança de
-que os pontos mais óbvios de entrada de dados não confiáveis não
-crasham trivialmente. Não substituem fuzzing guiado por cobertura a
-sério (mais tempo, mais iterações, exploração mais inteligente do espaço
-de input) nem, principalmente, uma auditoria de segurança feita por
-alguém que não seja o autor do código.
+## 6. Auditoria interna realizada nesta fase
 
-- **Anonimato de rede completo** (esconder o endereço IP de quem se
-  liga). Precisaria de Tor ou uma mixnet por cima do transporte atual.
-  Não está no roadmap imediato.
-- **Deteção e prevenção de spam/abuso.** Um sistema com registo anónimo
-  é, por natureza, mais vulnerável a abuso do que um com verificação de
-  identidade. Este é um trade-off consciente do projeto (ver
-  `apresentacao-projeto.md`), não um esquecimento.
-- **Proteção contra coerção física do utilizador** ("aponta uma arma e
-  pede a passphrase"). Nenhuma tecnologia resolve isto.
-- **Grupos e conversas com mais de duas pessoas.** O protocolo atual
-  (X3DH + Double Ratchet clássico) é desenhado para conversas 1-para-1;
-  grupos exigiriam uma extensão (ex.: Sender Keys, ou MLS) ainda não
-  implementada.
-
-## Modelo de confiança, resumido por componente
-
-| Componente | Nível de confiança necessário |
-|---|---|
-| Dispositivo do utilizador | Total — é onde as chaves privadas vivem. Se este for comprometido, nada mais importa. |
-| Rede (Wi-Fi, ISP, internet) | Zero — assume-se hostil por padrão; toda a proteção vem da criptografia, não da rede. |
-| Servidor/relay | Zero para conteúdo e remetente; parcial para metadados (`to`, timing) — ver limitações acima. |
-| Bibliotecas de terceiros (`x25519-dalek`, `chacha20poly1305`, etc.) | Alta — não são reimplementadas, mas também não foram auditadas especificamente para este projeto (herdam a reputação/maturidade geral do ecossistema Rust, que é considerável, mas não é o mesmo que uma auditoria dedicada). |
-
-## Porque é que isto importa mais do que parece
-
-Um leitor técnico que avalie este projeto não vai (nem deve) confiar
-apenas na palavra de que "é seguro". Este documento existe para que essa
-avaliação possa ser feita com base no que está escrito aqui: o que foi
-pensado, o que foi decidido deixar de fora, e porquê. Se alguma coisa
-aqui parecer errada ou incompleta, é exatamente esse o tipo de feedback
-que este projeto precisa — ver `SECURITY.md` para como reportar.
+* Procuradas: passwords/chaves/segredos fixos (nenhum), RNG (só `OsRng`),
+  `unwrap`/`expect`/`panic` em rede/cripto (removidos de `core`, `storage`,
+  `server`, `ffi`, `transport`; restam `expect` apenas nos binários de demo/CLI),
+  logs de plaintext/chaves (nenhum; o relay deixou de registar endereços IP e
+  oculta credenciais do URL do Redis), reutilização de nonce (nonces AEAD
+  aleatórios de 96 bits sob chaves de mensagem de uso único; ephemeral novo
+  por envelope selado), downgrade (a API de alto nível só aceita PQXDH; o
+  bundle de formato fixo não permite remover a chave ML-KEM), serialização
+  (parsers com verificação de tamanhos; testes de truncagem/bit-flip).
+* Corrigido: bundle PQXDH com a chave ML-KEM fora da assinatura (relay podia anular a proteção pós-quântica), relay sem autenticação, entrega destrutiva, `decrypt` não
+  transacional, SQLCipher dependente do sistema (inutilizável no Android),
+  API legacy a expor chaves, permissões da chave Noise do relay.
+* **Não** feito: revisão formal, análise de tempo constante, fuzzing
+  prolongado, revisão de dependências (`cargo audit` não corrido).
