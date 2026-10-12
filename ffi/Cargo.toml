@@ -6,6 +6,17 @@ license = "AGPL-3.0-or-later"
 description = "Bindings FFI (uniffi) do core para Android/iOS/Python/etc"
 publish = false
 
+[features]
+# `pq` expoe a API de alto nivel (QtClient) com PQXDH (X25519 + ML-KEM-768).
+# Ativo por omissao; exige rustc >= 1.81.
+default = ["pq"]
+pq = ["qt_core/pq", "qt_storage/pq"]
+# API ANTIGA (bytes de chaves privadas e estados de ratchet atravessam a FFI).
+# So para testes/ferramentas; a build Android NAO a deve ativar.
+legacy-api = []
+# Build Android: SQLCipher+OpenSSL embebidos (sem dependencias do sistema).
+android = ["pq", "qt_storage/bundled-sqlcipher"]
+
 [lib]
 name = "qt_ffi"
 crate-type = ["cdylib", "staticlib", "lib"]
@@ -13,6 +24,10 @@ crate-type = ["cdylib", "staticlib", "lib"]
 [dependencies]
 qt_core = { path = "../core" }
 qt_transport = { path = "../transport" }
+qt_storage = { path = "../storage" }
+zeroize = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 ed25519-dalek = { version = "2" }
 uniffi = { version = "0.28", features = ["cli"] }

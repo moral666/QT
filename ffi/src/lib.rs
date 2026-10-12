@@ -7,6 +7,8 @@
 //! O cliente movel (Android/iOS) e responsavel por guardar os bytes de
 //! estado (identidade, sessao) no seu proprio armazenamento seguro -
 //! exatamente o mesmo padrao que `storage/` ja usa no lado desktop/CLI.
+// Sem a feature `legacy-api` (build Android) varios imports ficam sem uso.
+#![cfg_attr(not(feature = "legacy-api"), allow(unused_imports, dead_code))]
 
 use qt_core::primitives::{DhKeyPair, SigningKeyPair};
 use qt_core::ratchet::{EncryptedMessage, RatchetState};
@@ -15,6 +17,11 @@ use qt_core::x3dh::{self, sign_pre_key, PreKeyBundle};
 use x25519_dalek::{PublicKey, StaticSecret};
 
 uniffi::setup_scaffolding!();
+
+#[cfg(feature = "pq")]
+pub mod client;
+#[cfg(feature = "pq")]
+pub use client::*;
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum FfiError {
@@ -26,6 +33,7 @@ pub enum FfiError {
     InvalidLength { field: String },
 }
 
+#[cfg(feature = "legacy-api")]
 fn to_array32(bytes: &[u8], field: &str) -> Result<[u8; 32], FfiError> {
     bytes
         .try_into()
@@ -34,24 +42,28 @@ fn to_array32(bytes: &[u8], field: &str) -> Result<[u8; 32], FfiError> {
 
 // ---------- Geração de chaves ----------
 
+#[cfg(feature = "legacy-api")]
 #[derive(uniffi::Record)]
 pub struct KeyPairBytes {
     pub private: Vec<u8>,
     pub public: Vec<u8>,
 }
 
+#[cfg(feature = "legacy-api")]
 #[uniffi::export]
 pub fn generate_dh_keypair() -> KeyPairBytes {
     let kp = DhKeyPair::generate();
     KeyPairBytes { private: kp.private.to_bytes().to_vec(), public: kp.public.as_bytes().to_vec() }
 }
 
+#[cfg(feature = "legacy-api")]
 #[uniffi::export]
 pub fn generate_signing_keypair() -> KeyPairBytes {
     let kp = SigningKeyPair::generate();
     KeyPairBytes { private: kp.to_bytes().to_vec(), public: kp.verifying_key.to_bytes().to_vec() }
 }
 
+#[cfg(feature = "legacy-api")]
 #[uniffi::export]
 pub fn sign_signed_pre_key(
     signing_private: Vec<u8>,
@@ -65,6 +77,7 @@ pub fn sign_signed_pre_key(
 
 // ---------- X3DH ----------
 
+#[cfg(feature = "legacy-api")]
 #[derive(uniffi::Record)]
 pub struct X3dhInitiateResult {
     pub shared_secret: Vec<u8>,
@@ -73,6 +86,7 @@ pub struct X3dhInitiateResult {
 
 /// Executado por quem INICIA a conversa. `their_one_time_pre_key_public`
 /// pode ser vazio (`None`) se o destinatario nao tinha nenhuma disponivel.
+#[cfg(feature = "legacy-api")]
 #[uniffi::export]
 pub fn x3dh_initiate(
     my_identity_private: Vec<u8>,
@@ -131,6 +145,7 @@ pub fn x3dh_initiate(
 /// Executado por quem RESPONDE. `my_one_time_pre_key_private` deve ser
 /// `None` exatamente quando o bundle publicado nao tinha nenhuma
 /// disponivel (tem de corresponder ao que o iniciador usou).
+#[cfg(feature = "legacy-api")]
 #[uniffi::export]
 pub fn x3dh_respond(
     my_identity_private: Vec<u8>,
@@ -178,6 +193,7 @@ pub fn x3dh_respond(
 // from_bytes, ja existentes em core/ para a persistencia em storage/) -
 // o cliente movel guarda-o exatamente como o CLI desktop guarda em SQLCipher.
 
+#[cfg(feature = "legacy-api")]
 #[uniffi::export]
 pub fn ratchet_init_as_initiator(shared_secret: Vec<u8>, their_dh_public: Vec<u8>) -> Result<Vec<u8>, FfiError> {
     let secret = to_array32(&shared_secret, "shared_secret")?;
@@ -186,6 +202,7 @@ pub fn ratchet_init_as_initiator(shared_secret: Vec<u8>, their_dh_public: Vec<u8
     Ok(state.to_bytes())
 }
 
+#[cfg(feature = "legacy-api")]
 #[uniffi::export]
 pub fn ratchet_init_as_responder(
     shared_secret: Vec<u8>,
@@ -201,6 +218,7 @@ pub fn ratchet_init_as_responder(
     Ok(state.to_bytes())
 }
 
+#[cfg(feature = "legacy-api")]
 #[derive(uniffi::Record)]
 pub struct RatchetEncryptResult {
     pub new_state: Vec<u8>,
@@ -209,6 +227,7 @@ pub struct RatchetEncryptResult {
     pub ciphertext: Vec<u8>,
 }
 
+#[cfg(feature = "legacy-api")]
 #[uniffi::export]
 pub fn ratchet_encrypt(state_bytes: Vec<u8>, plaintext: Vec<u8>) -> Result<RatchetEncryptResult, FfiError> {
     let mut state = RatchetState::from_bytes(&state_bytes)
@@ -224,12 +243,14 @@ pub fn ratchet_encrypt(state_bytes: Vec<u8>, plaintext: Vec<u8>) -> Result<Ratch
     })
 }
 
+#[cfg(feature = "legacy-api")]
 #[derive(uniffi::Record)]
 pub struct RatchetDecryptResult {
     pub new_state: Vec<u8>,
     pub plaintext: Vec<u8>,
 }
 
+#[cfg(feature = "legacy-api")]
 #[uniffi::export]
 pub fn ratchet_decrypt(
     state_bytes: Vec<u8>,
@@ -252,13 +273,15 @@ pub fn ratchet_decrypt(
 
 // ---------- Sealed sender ----------
 
+#[cfg(feature = "legacy-api")]
 #[uniffi::export]
 pub fn seal_sender(sender_identity_public: Vec<u8>, recipient_identity_public: Vec<u8>) -> Result<Vec<u8>, FfiError> {
     let sender = PublicKey::from(to_array32(&sender_identity_public, "sender_identity_public")?);
     let recipient = PublicKey::from(to_array32(&recipient_identity_public, "recipient_identity_public")?);
-    Ok(seal_sender_identity(&sender, &recipient))
+    seal_sender_identity(&sender, &recipient).map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })
 }
 
+#[cfg(feature = "legacy-api")]
 #[uniffi::export]
 pub fn unseal_sender(my_identity_private: Vec<u8>, envelope: Vec<u8>) -> Result<Vec<u8>, FfiError> {
     let priv_bytes = to_array32(&my_identity_private, "my_identity_private")?;
@@ -286,10 +309,11 @@ pub fn unseal_sender(my_identity_private: Vec<u8>, envelope: Vec<u8>) -> Result<
 use qt_transport::{generate_static_keypair, NoiseHandshake, NoiseTransport};
 use std::sync::Mutex;
 
+#[cfg(feature = "legacy-api")]
 #[uniffi::export]
-pub fn generate_noise_static_keypair() -> KeyPairBytes {
-    let kp = generate_static_keypair().expect("geracao de chaves Noise nao deveria falhar");
-    KeyPairBytes { private: kp.private, public: kp.public }
+pub fn generate_noise_static_keypair() -> Result<KeyPairBytes, FfiError> {
+    let kp = generate_static_keypair().map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
+    Ok(KeyPairBytes { private: kp.private, public: kp.public })
 }
 
 enum SessionState {
@@ -307,6 +331,22 @@ pub struct NoiseSession {
     state: Mutex<SessionState>,
 }
 
+impl NoiseSession {
+    /// Mutex envenenado (panic noutra thread) vira erro, nunca panic na FFI.
+    fn guard(&self) -> Result<std::sync::MutexGuard<'_, SessionState>, FfiError> {
+        self.state.lock().map_err(|_| FfiError::CryptoFailure { reason: "sessao Noise indisponivel".into() })
+    }
+
+    /// Uso interno (nao exportado): inicia a sessao com a chave estatica que
+    /// o proprio Rust guarda no storage - a chave privada nunca passa por Kotlin.
+    pub(crate) fn initiator_from_key(key: &[u8]) -> Result<std::sync::Arc<Self>, FfiError> {
+        let handshake = NoiseHandshake::new_initiator(key)
+            .map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
+        Ok(std::sync::Arc::new(Self { state: Mutex::new(SessionState::Handshaking(Box::new(handshake))) }))
+    }
+}
+
+#[cfg(feature = "legacy-api")]
 #[uniffi::export]
 impl NoiseSession {
     #[uniffi::constructor]
@@ -322,10 +362,30 @@ impl NoiseSession {
             .map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
         Ok(std::sync::Arc::new(Self { state: Mutex::new(SessionState::Handshaking(Box::new(handshake))) }))
     }
+}
+
+#[uniffi::export]
+impl NoiseSession {
+    /// Hash do handshake (disponivel quando `is_finished()`), usado para a
+    /// autenticacao ligada a sessao (ver `QtClient::relay_auth_message`).
+    pub fn handshake_hash(&self) -> Result<Vec<u8>, FfiError> {
+        match &*self.state.lock().map_err(|_| FfiError::CryptoFailure { reason: "sessao Noise em estado invalido".into() })? {
+            SessionState::Transport(t) => Ok(t.handshake_hash().to_vec()),
+            _ => Err(FfiError::CryptoFailure { reason: "sessao Noise em estado invalido".into() }),
+        }
+    }
+
+    /// Chave estatica Noise do relay (para pinning), disponivel apos o handshake.
+    pub fn remote_static_public_key(&self) -> Result<Vec<u8>, FfiError> {
+        match &*self.state.lock().map_err(|_| FfiError::CryptoFailure { reason: "sessao Noise em estado invalido".into() })? {
+            SessionState::Transport(t) => t.remote_static_public_key().map(|k| k.to_vec()).ok_or(FfiError::CryptoFailure { reason: "sessao Noise em estado invalido".into() }),
+            _ => Err(FfiError::CryptoFailure { reason: "sessao Noise em estado invalido".into() }),
+        }
+    }
 
     /// True assim que o handshake terminou e a sessao ja pode cifrar/decifrar.
     pub fn is_finished(&self) -> bool {
-        matches!(&*self.state.lock().unwrap(), SessionState::Transport(_))
+        self.guard().map(|g| matches!(&*g, SessionState::Transport(_))).unwrap_or(false)
     }
 
     /// Produz a proxima mensagem de handshake a enviar ao par remoto pela
@@ -333,7 +393,7 @@ impl NoiseSession {
     /// Se esta for a ultima mensagem do handshake, a sessao transita
     /// automaticamente para modo de transporte (o mesmo que read_step faz).
     pub fn write_step(&self) -> Result<Vec<u8>, FfiError> {
-        let mut guard = self.state.lock().unwrap();
+        let mut guard = self.guard()?;
         match &mut *guard {
             SessionState::Handshaking(hs) => {
                 let out = hs.write_step().map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
@@ -356,7 +416,7 @@ impl NoiseSession {
     /// handshake termina automaticamente nesta chamada, a sessao transita
     /// para modo de transporte (encrypt/decrypt passam a funcionar).
     pub fn read_step(&self, message: Vec<u8>) -> Result<(), FfiError> {
-        let mut guard = self.state.lock().unwrap();
+        let mut guard = self.guard()?;
         match &mut *guard {
             SessionState::Handshaking(hs) => {
                 hs.read_step(&message).map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })?;
@@ -377,7 +437,7 @@ impl NoiseSession {
 
     /// Cifra uma mensagem de aplicacao. Só funciona depois de `is_finished()`.
     pub fn encrypt(&self, plaintext: Vec<u8>) -> Result<Vec<u8>, FfiError> {
-        let mut guard = self.state.lock().unwrap();
+        let mut guard = self.guard()?;
         match &mut *guard {
             SessionState::Transport(t) => {
                 t.encrypt(&plaintext).map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })
@@ -387,7 +447,7 @@ impl NoiseSession {
     }
 
     pub fn decrypt(&self, ciphertext: Vec<u8>) -> Result<Vec<u8>, FfiError> {
-        let mut guard = self.state.lock().unwrap();
+        let mut guard = self.guard()?;
         match &mut *guard {
             SessionState::Transport(t) => {
                 t.decrypt(&ciphertext).map_err(|e| FfiError::CryptoFailure { reason: e.to_string() })
