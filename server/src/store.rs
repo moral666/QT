@@ -7,8 +7,7 @@
 //! Continua "cego" quanto ao conteúdo: os bundles e os `sealed_from`/
 //! `ciphertext` são guardados como bytes opacos, exatamente como recebidos.
 //!
-//! Formato de codificação de cada entrada da fila (uma mensagem):
-//! [4 bytes u32 BE: tamanho de sealed_from][sealed_from][ciphertext]
+//! Formato de cada entrada da fila: ver `encode_entry` (id + sealed_from + ciphertext).
 //! Escolhido deliberadamente sem serde/JSON para evitar overhead e
 //! dependências extra - é só concatenação de bytes com um prefixo de tamanho.
 
@@ -84,7 +83,8 @@ impl Store {
             return Err(StoreError::QueueFull);
         }
 
-        let entry = encode_entry(&sealed_from, &ciphertext);
+        let id = self.next_id(&mut conn).await?;
+        let entry = encode_entry(id, &sealed_from, &ciphertext);
         conn.rpush::<_, _, ()>(&key, entry).await?;
         // Renova o TTL a cada nova mensagem - a fila só expira 30 dias
         // depois da ÚLTIMA mensagem recebida, não da primeira.
@@ -93,35 +93,89 @@ impl Store {
         Ok(())
     }
 
-    /// Retira e devolve todas as mensagens em fila para este utilizador
-    /// (drena a fila - operação atómica via transação Redis, para não
-    /// perder mensagens que cheguem exatamente durante a leitura).
-    pub async fn drain_messages(&self, user_id: &str) -> Result<Vec<(Vec<u8>, Vec<u8>)>, StoreError> {
+    /// Devolve (SEM apagar) as proximas mensagens da fila, ate `max_bytes`
+    /// estimados de payload (para caber num frame Noise). Entradas corrompidas
+    /// sao descartadas em vez de provocarem panic.
+    pub async fn peek_messages(
+        &self,
+        user_id: &str,
+        max_bytes: usize,
+    ) -> Result<Vec<QueuedMessage>, StoreError> {
         let mut conn = self.connection().await?;
         let key = format!("{}:queue:{}", self.key_prefix, user_id);
+        let raw_entries: Vec<Vec<u8>> = conn.lrange(&key, 0, 99).await?;
+        let mut out = Vec::new();
+        let mut budget = 0usize;
+        for raw in raw_entries {
+            match decode_entry(&raw) {
+                Some(m) => {
+                    // JSON serializa cada byte como ate 4 caracteres.
+                    let est = (m.sealed_from.len() + m.ciphertext.len()) * 4 + 64;
+                    if !out.is_empty() && budget + est > max_bytes {
+                        break;
+                    }
+                    budget += est;
+                    out.push(m);
+                }
+                None => {
+                    conn.lrem::<_, _, ()>(&key, 1, raw).await?;
+                }
+            }
+        }
+        Ok(out)
+    }
 
-        let (raw_entries, _deleted): (Vec<Vec<u8>>, i64) = redis::pipe()
-            .atomic()
-            .lrange(&key, 0, -1)
-            .del(&key)
-            .query_async(&mut conn)
-            .await?;
+    /// Apaga da fila as mensagens confirmadas (por id).
+    pub async fn ack_messages(&self, user_id: &str, ids: &[u64]) -> Result<usize, StoreError> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let mut conn = self.connection().await?;
+        let key = format!("{}:queue:{}", self.key_prefix, user_id);
+        let raw_entries: Vec<Vec<u8>> = conn.lrange(&key, 0, -1).await?;
+        let mut removed = 0usize;
+        for raw in raw_entries {
+            if let Some(m) = decode_entry(&raw) {
+                if ids.contains(&m.id) {
+                    removed += conn.lrem::<_, _, usize>(&key, 1, raw).await?;
+                }
+            }
+        }
+        Ok(removed)
+    }
 
-        Ok(raw_entries.iter().map(|e| decode_entry(e)).collect())
+    async fn next_id(&self, conn: &mut redis::aio::MultiplexedConnection) -> Result<u64, StoreError> {
+        let key = format!("{}:seq", self.key_prefix);
+        Ok(conn.incr::<_, _, u64>(key, 1u64).await?)
     }
 }
 
-fn encode_entry(sealed_from: &[u8], ciphertext: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(4 + sealed_from.len() + ciphertext.len());
+#[derive(Debug, Clone)]
+pub struct QueuedMessage {
+    pub id: u64,
+    pub sealed_from: Vec<u8>,
+    pub ciphertext: Vec<u8>,
+}
+
+/// Formato: [8 id BE][4 len(sealed_from) BE][sealed_from][ciphertext]
+fn encode_entry(id: u64, sealed_from: &[u8], ciphertext: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(12 + sealed_from.len() + ciphertext.len());
+    out.extend_from_slice(&id.to_be_bytes());
     out.extend_from_slice(&(sealed_from.len() as u32).to_be_bytes());
     out.extend_from_slice(sealed_from);
     out.extend_from_slice(ciphertext);
     out
 }
 
-fn decode_entry(bytes: &[u8]) -> (Vec<u8>, Vec<u8>) {
-    let len = u32::from_be_bytes(bytes[0..4].try_into().expect("entrada corrompida na fila")) as usize;
-    let sealed_from = bytes[4..4 + len].to_vec();
-    let ciphertext = bytes[4 + len..].to_vec();
-    (sealed_from, ciphertext)
+fn decode_entry(bytes: &[u8]) -> Option<QueuedMessage> {
+    if bytes.len() < 12 {
+        return None;
+    }
+    let id = u64::from_be_bytes(bytes[0..8].try_into().ok()?);
+    let len = u32::from_be_bytes(bytes[8..12].try_into().ok()?) as usize;
+    let end = 12usize.checked_add(len)?;
+    if bytes.len() < end {
+        return None;
+    }
+    Some(QueuedMessage { id, sealed_from: bytes[12..end].to_vec(), ciphertext: bytes[end..].to_vec() })
 }

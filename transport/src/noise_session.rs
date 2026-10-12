@@ -32,6 +32,8 @@ pub enum NoiseError {
     HandshakeAlreadyFinished,
     #[error("chave privada com tamanho invalido (esperado 32 bytes)")]
     InvalidKeyLength,
+    #[error("mensagem excede o limite do Noise (65535 bytes)")]
+    MessageTooLarge,
 }
 
 /// Par de chaves estaticas Noise, geradas uma vez por instalacao (nao por
@@ -121,8 +123,12 @@ impl NoiseHandshake {
         if !self.state.is_handshake_finished() {
             return Err(NoiseError::HandshakeNotFinished);
         }
+        // Capturar ANTES de consumir o estado: hash do handshake (para
+        // channel binding da autenticacao) e chave estatica do par.
+        let handshake_hash = self.state.get_handshake_hash().to_vec();
+        let remote_static = self.state.get_remote_static().map(|k| k.to_vec());
         let transport = self.state.into_transport_mode()?;
-        Ok(NoiseTransport { transport })
+        Ok(NoiseTransport { transport, handshake_hash, remote_static })
     }
 }
 
@@ -131,10 +137,27 @@ impl NoiseHandshake {
 /// isto e uma segunda camada, "defesa em profundidade" do transporte).
 pub struct NoiseTransport {
     transport: TransportState,
+    handshake_hash: Vec<u8>,
+    remote_static: Option<Vec<u8>>,
 }
 
 impl NoiseTransport {
+    /// Hash do handshake: identico nos dois lados desta sessao e unico por
+    /// sessao. Usado para ligar (channel binding) a autenticacao de
+    /// aplicacao a ESTA sessao Noise, impedindo que uma assinatura seja
+    /// reutilizada noutra ligacao.
+    pub fn handshake_hash(&self) -> &[u8] {
+        &self.handshake_hash
+    }
+
+    pub fn remote_static_public_key(&self) -> Option<&[u8]> {
+        self.remote_static.as_deref()
+    }
+
     pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<Vec<u8>, NoiseError> {
+        if plaintext.len() + 16 > MAX_MESSAGE_LEN {
+            return Err(NoiseError::MessageTooLarge);
+        }
         let mut buf = vec![0u8; plaintext.len() + 16]; // +16 = tag do AEAD
         let len = self.transport.write_message(plaintext, &mut buf)?;
         buf.truncate(len);
@@ -142,6 +165,9 @@ impl NoiseTransport {
     }
 
     pub fn decrypt(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>, NoiseError> {
+        if ciphertext.len() > MAX_MESSAGE_LEN {
+            return Err(NoiseError::MessageTooLarge);
+        }
         let mut buf = vec![0u8; ciphertext.len()];
         let len = self.transport.read_message(ciphertext, &mut buf)?;
         buf.truncate(len);

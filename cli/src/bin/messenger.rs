@@ -32,10 +32,9 @@ use qt_core::ratchet::{EncryptedMessage, RatchetState};
 use qt_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
 use qt_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond};
 use qt_server::protocol::{
-    deserialize_server_message, serialize_client_message, ClientMessage, ServerMessage,
+    ClientMessage, ServerMessage,
 };
 use qt_storage::{load_identity, load_session, open_database, save_identity, save_session, StoredIdentity};
-use qt_transport::{generate_static_keypair, ws_transport};
 
 #[derive(Parser)]
 #[command(name = "messenger", about = "CLI persistente do secure-messenger (demo)")]
@@ -104,21 +103,28 @@ fn hex_to_pubkey(hex_str: &str) -> x25519_dalek::PublicKey {
     x25519_dalek::PublicKey::from(arr)
 }
 
-async fn enviar_ao_servidor(url: &str, msg: ClientMessage) -> ServerMessage {
-    let client_keys = generate_static_keypair().expect("falha ao gerar chaves Noise efemeras");
-    let (mut ws_stream, mut noise) = ws_transport::client_connect(url, &client_keys.private)
-        .await
-        .expect("falha ao ligar/handshake com o servidor");
+async fn enviar_ao_servidor(url: &str, signing: [u8; 32], msg: ClientMessage) -> ServerMessage {
+    qt_server::client::one_shot(url, signing, msg).await.expect("falha ao falar com o relay")
+}
 
-    let bytes = serialize_client_message(&msg);
-    ws_transport::send_encrypted(&mut ws_stream, &mut noise, &bytes)
-        .await
-        .expect("falha ao enviar mensagem cifrada");
+/// ID publico da CLI = "<identidade_hex>:<assinatura_hex>". A caixa de
+/// correio no relay e `<assinatura_hex>` (autenticada por assinatura Ed25519);
+/// `<identidade_hex>` serve para o sealed sender e para as sessoes.
+fn cli_public_id(identity: &StoredIdentity) -> String {
+    format!(
+        "{}:{}",
+        derive_user_id(&identity.identity.public),
+        qt_server::protocol::user_id_from_signing_public(&identity.identity_signing.verifying_key.to_bytes())
+    )
+}
 
-    let response_bytes = ws_transport::receive_encrypted(&mut ws_stream, &mut noise)
-        .await
-        .expect("falha ao receber resposta");
-    deserialize_server_message(&response_bytes).expect("resposta do servidor malformada")
+fn mailbox_of(identity: &StoredIdentity) -> String {
+    qt_server::protocol::user_id_from_signing_public(&identity.identity_signing.verifying_key.to_bytes())
+}
+
+fn split_public_id(id: &str) -> (String, String) {
+    let (a, b) = id.split_once(':').expect("ID invalido: esperado <identidade_hex>:<assinatura_hex>");
+    (a.to_string(), b.to_string())
 }
 
 /// Serializa um EncryptedMessage do Double Ratchet para o formato de fio.
@@ -154,7 +160,7 @@ async fn main() {
                 signed_pre_key: DhKeyPair::generate(),
                 one_time_pre_key: DhKeyPair::generate(),
             };
-            let user_id = derive_user_id(&identity.identity.public);
+            let user_id = cli_public_id(&identity);
             save_identity(&conn, &identity).expect("falha ao guardar a identidade");
 
             println!("Identidade criada e guardada em {db}");
@@ -165,7 +171,7 @@ async fn main() {
         Command::Register { db, passphrase, server } => {
             let conn = open_database(&db, &passphrase).expect("falha ao abrir a base de dados");
             let identity = load_identity(&conn).expect("identidade nao encontrada - corre 'identity' primeiro");
-            let user_id = derive_user_id(&identity.identity.public);
+            let user_id = mailbox_of(&identity);
 
             let signature = sign_pre_key(&identity.identity_signing, &identity.signed_pre_key.public);
             let bundle_bytes = wire_format::serialize_bundle(&qt_core::x3dh::PreKeyBundle {
@@ -178,6 +184,7 @@ async fn main() {
 
             let resp = enviar_ao_servidor(
                 &server,
+                identity.identity_signing.to_bytes(),
                 ClientMessage::RegisterPreKeyBundle { user_id: user_id.clone(), bundle_bytes },
             )
             .await;
@@ -188,7 +195,8 @@ async fn main() {
             let conn = open_database(&db, &passphrase).expect("falha ao abrir a base de dados");
             let identity = load_identity(&conn).expect("identidade nao encontrada - corre 'identity' primeiro");
 
-            let existing_session = load_session(&conn, &to).expect("erro ao ler sessao guardada");
+            let (to_identity_hex, to_mailbox) = split_public_id(&to);
+            let existing_session = load_session(&conn, &to_identity_hex).expect("erro ao ler sessao guardada");
 
             let (ratchet, wire_message) = match existing_session {
                 Some(mut ratchet) => {
@@ -203,7 +211,8 @@ async fn main() {
                     // e faz o handshake X3DH.
                     let resp = enviar_ao_servidor(
                         &server,
-                        ClientMessage::FetchPreKeyBundle { user_id: to.clone() },
+                        identity.identity_signing.to_bytes(),
+                        ClientMessage::FetchPreKeyBundle { user_id: to_mailbox.clone() },
                     )
                     .await;
                     let their_bundle_bytes = match resp {
@@ -236,27 +245,29 @@ async fn main() {
                 }
             };
 
-            let their_identity_pub = hex_to_pubkey(&to);
-            let sealed_from = seal_sender_identity(&identity.identity.public, &their_identity_pub);
+            let their_identity_pub = hex_to_pubkey(&to_identity_hex);
+            let sealed_from = seal_sender_identity(&identity.identity.public, &their_identity_pub).expect("falha ao selar o remetente");
 
             let resp = enviar_ao_servidor(
                 &server,
-                ClientMessage::SendMessage { to: to.clone(), sealed_from, ciphertext: wire_message },
+                identity.identity_signing.to_bytes(),
+                ClientMessage::SendMessage { to: to_mailbox.clone(), sealed_from, ciphertext: wire_message },
             )
             .await;
             println!("Mensagem enviada para {to} - servidor respondeu: {resp:?}");
 
-            save_session(&conn, &to, &ratchet).expect("falha ao guardar a sessao atualizada");
+            save_session(&conn, &to_identity_hex, &ratchet).expect("falha ao guardar a sessao atualizada");
         }
 
         Command::Receive { db, passphrase, server } => {
             let conn = open_database(&db, &passphrase).expect("falha ao abrir a base de dados");
             let identity = load_identity(&conn).expect("identidade nao encontrada - corre 'identity' primeiro");
-            let my_user_id = derive_user_id(&identity.identity.public);
+            let my_user_id = mailbox_of(&identity);
 
             let resp = enviar_ao_servidor(
                 &server,
-                ClientMessage::FetchMessages { user_id: my_user_id },
+                identity.identity_signing.to_bytes(),
+                ClientMessage::FetchMessages { user_id: my_user_id.clone() },
             )
             .await;
             let messages = match resp {
@@ -269,7 +280,9 @@ async fn main() {
                 return;
             }
 
+            let mut acked: Vec<u64> = Vec::new();
             for delivered in messages {
+                acked.push(delivered.id);
                 let bytes = delivered.ciphertext;
                 let msg_type = bytes[0];
 
@@ -312,6 +325,13 @@ async fn main() {
 
                 save_session(&conn, &sender_user_id, &ratchet).expect("falha ao guardar sessao atualizada");
             }
+            // So agora (tudo processado e persistido) o relay pode apagar as mensagens.
+            let _ = enviar_ao_servidor(
+                &server,
+                identity.identity_signing.to_bytes(),
+                ClientMessage::AckMessages { user_id: my_user_id, ids: acked },
+            )
+            .await;
         }
     }
 }

@@ -23,10 +23,10 @@ use qt_core::ratchet::{EncryptedMessage, RatchetState};
 use qt_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
 use qt_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle};
 use qt_server::protocol::{
-    deserialize_server_message, serialize_client_message, ClientMessage, ServerMessage,
+    ClientMessage, ServerMessage,
 };
 use qt_server::Store;
-use qt_transport::{generate_static_keypair, ws_transport};
+use qt_transport::generate_static_keypair;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -64,16 +64,8 @@ async fn subir_servidor_local() -> String {
     format!("ws://{addr}")
 }
 
-async fn enviar_ao_servidor(url: &str, msg: ClientMessage) -> ServerMessage {
-    let client_keys = generate_static_keypair().unwrap();
-    let (mut ws_stream, mut noise) =
-        ws_transport::client_connect(url, &client_keys.private).await.unwrap();
-
-    let bytes = serialize_client_message(&msg);
-    ws_transport::send_encrypted(&mut ws_stream, &mut noise, &bytes).await.unwrap();
-
-    let response_bytes = ws_transport::receive_encrypted(&mut ws_stream, &mut noise).await.unwrap();
-    deserialize_server_message(&response_bytes).unwrap()
+async fn enviar_ao_servidor(url: &str, signing: [u8; 32], msg: ClientMessage) -> ServerMessage {
+    qt_server::client::one_shot(url, signing, msg).await.expect("falha ao falar com o relay")
 }
 
 #[tokio::main]
@@ -100,6 +92,7 @@ async fn main() {
     passo("Bob gera a sua identidade e publica o bundle de pre-keys no servidor...");
     let bob_identity = DhKeyPair::generate();
     let bob_identity_signing = SigningKeyPair::generate();
+    let bob_uid = qt_server::protocol::user_id_from_signing_public(&bob_identity_signing.verifying_key.to_bytes());
     let bob_signed_pre_key = DhKeyPair::generate();
     let bob_one_time_pre_key = DhKeyPair::generate();
 
@@ -115,7 +108,8 @@ async fn main() {
 
     let resp = enviar_ao_servidor(
         &server_url,
-        ClientMessage::RegisterPreKeyBundle { user_id: "bob".into(), bundle_bytes },
+        bob_identity_signing.to_bytes(),
+        ClientMessage::RegisterPreKeyBundle { user_id: bob_uid.clone(), bundle_bytes },
     )
     .await;
     println!("    servidor respondeu: {resp:?}");
@@ -123,10 +117,12 @@ async fn main() {
     // ---------- Alice gera a sua identidade e busca o bundle de Bob ----------
     passo("Alice gera a sua identidade e pede o bundle publico de Bob ao servidor...");
     let alice_identity = DhKeyPair::generate();
+    let alice_signing = SigningKeyPair::generate();
 
     let resp = enviar_ao_servidor(
         &server_url,
-        ClientMessage::FetchPreKeyBundle { user_id: "bob".into() },
+        alice_signing.to_bytes(),
+        ClientMessage::FetchPreKeyBundle { user_id: bob_uid.clone() },
     )
     .await;
     let bob_bundle = match resp {
@@ -159,12 +155,13 @@ async fn main() {
 
     // ---------- Alice envia ao servidor. O servidor NUNCA ve o texto original. ----------
     passo("Alice sela a sua identidade (o servidor nunca vai saber quem enviou)...");
-    let sealed_from = seal_sender_identity(&alice_identity.public, &bob_identity.public);
+    let sealed_from = seal_sender_identity(&alice_identity.public, &bob_identity.public).expect("falha ao selar");
 
     passo("Alice envia a mensagem cifrada ao servidor (que so ve bytes opacos)...");
     let resp = enviar_ao_servidor(
         &server_url,
-        ClientMessage::SendMessage { to: "bob".into(), sealed_from, ciphertext: wire_bytes },
+        alice_signing.to_bytes(),
+        ClientMessage::SendMessage { to: bob_uid.clone(), sealed_from, ciphertext: wire_bytes },
     )
     .await;
     println!("    servidor respondeu: {resp:?}");
@@ -176,7 +173,7 @@ async fn main() {
     // ---------- Bob liga-se agora e busca as mensagens em fila ----------
     passo("Bob liga-se agora e pede as mensagens que estavam a espera dele...");
     let resp =
-        enviar_ao_servidor(&server_url, ClientMessage::FetchMessages { user_id: "bob".into() })
+        enviar_ao_servidor(&server_url, bob_identity_signing.to_bytes(), ClientMessage::FetchMessages { user_id: bob_uid.clone() })
             .await;
     let messages = match resp {
         ServerMessage::Messages { messages } => messages,

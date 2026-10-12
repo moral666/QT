@@ -22,27 +22,49 @@ use qt_transport::{generate_static_keypair, static_keypair_from_private_bytes, N
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
+/// Erro fatal de arranque: mensagem curta e saida != 0 (sem panic/backtrace).
+fn fatal(msg: &str) -> ! {
+    eprintln!("erro fatal: {msg}");
+    std::process::exit(1);
+}
+
+/// Escreve o ficheiro com permissoes 0600 DESDE A CRIACAO (sem janela em que
+/// a chave privada fica legivel por outros utilizadores).
+fn write_private_file(path: &str, data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts.open(path)?.write_all(data)
+}
+
 fn load_or_generate_static_keys(path: &str) -> NoiseStaticKeyPair {
     match std::fs::read(path) {
         Ok(private_bytes) => {
             println!("Chave estatica Noise carregada de {path}");
             static_keypair_from_private_bytes(&private_bytes)
-                .expect("ficheiro de chave existente esta corrompido")
+                .unwrap_or_else(|_| fatal("ficheiro de chave Noise existente esta corrompido"))
         }
-        Err(_) => {
-            println!("Nenhuma chave estatica encontrada em {path} - a gerar uma nova (primeiro arranque)...");
-            let keys = generate_static_keypair().expect("falha ao gerar par de chaves estaticas Noise");
-
-            std::fs::write(path, &keys.private).expect("falha ao guardar a chave estatica Noise em disco");
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mut perms = std::fs::metadata(path).unwrap().permissions();
-                perms.set_mode(0o600); // so o dono consegue ler/escrever
-                std::fs::set_permissions(path, perms).expect("falha ao restringir permissoes do ficheiro de chave");
-            }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            println!("Nenhuma chave estatica em {path} - a gerar uma nova (primeiro arranque)...");
+            let keys = generate_static_keypair().unwrap_or_else(|_| fatal("falha ao gerar chaves Noise"));
+            write_private_file(path, &keys.private)
+                .unwrap_or_else(|_| fatal("falha ao guardar a chave Noise (permissoes/disco)"));
             keys
         }
+        Err(_) => fatal("nao foi possivel ler o ficheiro da chave Noise"),
+    }
+}
+
+/// Remove credenciais de um URL do Redis antes de o mostrar (redis://user:pass@host).
+fn redact_url(url: &str) -> String {
+    match (url.find("://"), url.rfind('@')) {
+        (Some(i), Some(at)) if at > i => format!("{}://***@{}", &url[..i], &url[at + 1..]),
+        _ => url.to_string(),
     }
 }
 
@@ -55,20 +77,25 @@ async fn main() {
     let static_keys = load_or_generate_static_keys(&noise_key_path);
 
     println!("Servidor/relay a arrancar em {bind_addr}");
-    println!("A usar Redis em: {redis_url}");
+    println!("A usar Redis em: {}", redact_url(&redis_url));
     println!(
         "Chave publica estatica Noise (partilha isto com clientes para pinning): {}",
         hex_encode(&static_keys.public)
     );
 
-    let store = Arc::new(Store::new(&redis_url).expect("falha ao ligar ao Redis"));
-    let listener = TcpListener::bind(&bind_addr).await.expect("falha ao ligar o socket TCP");
+    let store = Arc::new(Store::new(&redis_url).unwrap_or_else(|_| fatal("URL do Redis invalido")));
+    let listener = TcpListener::bind(&bind_addr)
+        .await
+        .unwrap_or_else(|_| fatal("nao foi possivel abrir o socket TCP (porta ocupada/permissoes?)"));
 
+    // LOGS: so informacao operacional. NUNCA enderecos IP/identificadores de
+    // utilizadores, conteudo, chaves ou tokens.
     loop {
-        let (tcp_stream, peer_addr) = match listener.accept().await {
+        let (tcp_stream, _peer) = match listener.accept().await {
             Ok(x) => x,
-            Err(e) => {
-                eprintln!("falha ao aceitar ligacao: {e}");
+            Err(_) => {
+                eprintln!("falha ao aceitar ligacao");
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 continue;
             }
         };
@@ -77,12 +104,9 @@ async fn main() {
         let static_private = static_keys.private.clone();
 
         tokio::spawn(async move {
-            println!("nova ligacao de {peer_addr}");
-            if let Err(e) =
-                qt_server::handle_connection(tcp_stream, store, static_private).await
-            {
-                eprintln!("ligacao de {peer_addr} terminou com erro: {e}");
-            }
+            // O erro e descartado de proposito: nao e registado para nao
+            // criar um log de metadados por ligacao.
+            let _ = qt_server::handle_connection(tcp_stream, store, static_private).await;
         });
     }
 }

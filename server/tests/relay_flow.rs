@@ -11,10 +11,10 @@ use qt_core::ratchet::{EncryptedMessage, RatchetState};
 use qt_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
 use qt_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle};
 use qt_server::protocol::{
-    deserialize_server_message, serialize_client_message, ClientMessage, ServerMessage,
+    ClientMessage, ServerMessage,
 };
 use qt_server::Store;
-use qt_transport::{generate_static_keypair, ws_transport};
+use qt_transport::generate_static_keypair;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
@@ -52,26 +52,20 @@ async fn spawn_test_server() -> String {
     format!("ws://{}", addr)
 }
 
-/// Helper: liga-se ao servidor, envia UMA ClientMessage, recebe UMA
-/// ServerMessage de resposta, e fecha a ligacao. Suficiente para este teste,
-/// onde cada "sessao" de cliente faz so uma operacao antes de desligar.
-async fn send_one_message(url: &str, msg: ClientMessage) -> ServerMessage {
-    let client_keys = generate_static_keypair().unwrap();
-    let (mut ws_stream, mut noise_transport) =
-        ws_transport::client_connect(url, &client_keys.private).await.unwrap();
+/// Helper: liga-se (autenticado como `signing`), envia UMA ClientMessage e fecha.
+async fn send_one_message(url: &str, signing: &SigningKeyPair, msg: ClientMessage) -> ServerMessage {
+    qt_server::client::one_shot(url, signing.to_bytes(), msg).await.unwrap()
+}
 
-    let bytes = serialize_client_message(&msg);
-    ws_transport::send_encrypted(&mut ws_stream, &mut noise_transport, &bytes).await.unwrap();
-
-    let response_bytes =
-        ws_transport::receive_encrypted(&mut ws_stream, &mut noise_transport).await.unwrap();
-    deserialize_server_message(&response_bytes).unwrap()
+fn uid(signing: &SigningKeyPair) -> String {
+    qt_server::protocol::user_id_from_signing_public(&signing.verifying_key.to_bytes())
 }
 
 #[tokio::test]
 async fn entrega_assincrona_atraves_do_relay() {
     // ---------- Sessao E2EE entre Alice e Bob (igual aos testes anteriores) ----------
     let alice_identity = DhKeyPair::generate();
+    let alice_signing = SigningKeyPair::generate();
     let bob_identity = DhKeyPair::generate();
     let bob_identity_signing = SigningKeyPair::generate();
     let bob_signed_pre_key = DhKeyPair::generate();
@@ -112,13 +106,14 @@ async fn entrega_assincrona_atraves_do_relay() {
 
     // Alice sela a sua identidade contra a chave publica de Bob - o
     // servidor vai receber isto, mas NAO consegue abri-lo (so Bob consegue).
-    let sealed_from = seal_sender_identity(&alice_identity.public, &bob_identity.public);
+    let sealed_from = seal_sender_identity(&alice_identity.public, &bob_identity.public).unwrap();
 
     // ---------- Alice liga-se, envia, e DESLIGA-SE (Bob nao esta online) ----------
     let response = send_one_message(
         &server_url,
+        &alice_signing,
         ClientMessage::SendMessage {
-            to: "bob".to_string(),
+            to: uid(&bob_identity_signing),
             sealed_from: sealed_from.clone(),
             ciphertext: wire_bytes.clone(),
         },
@@ -129,7 +124,8 @@ async fn entrega_assincrona_atraves_do_relay() {
     // ---------- So agora Bob se liga (ligacao TCP completamente separada) ----------
     let response = send_one_message(
         &server_url,
-        ClientMessage::FetchMessages { user_id: "bob".to_string() },
+        &bob_identity_signing,
+        ClientMessage::FetchMessages { user_id: uid(&bob_identity_signing) },
     )
     .await;
 
@@ -155,15 +151,36 @@ async fn entrega_assincrona_atraves_do_relay() {
         "Bob deve conseguir confirmar que foi Alice quem enviou"
     );
 
-    // Segunda tentativa de fetch deve vir vazia - a fila foi drenada.
+    // At-least-once: ate Bob confirmar (Ack), o relay RE-ENTREGA a mensagem
+    // (ex.: se a ligacao tivesse caido antes de Bob a processar).
+    let again = send_one_message(
+        &server_url,
+        &bob_identity_signing,
+        ClientMessage::FetchMessages { user_id: uid(&bob_identity_signing) },
+    )
+    .await;
+    match again {
+        ServerMessage::Messages { messages: m } => assert_eq!(m.len(), 1, "sem Ack a mensagem continua em fila"),
+        other => panic!("esperava Messages, recebi {other:?}"),
+    }
+    // Bob confirma -> o relay apaga.
+    let ids: Vec<u64> = messages.iter().map(|m| m.id).collect();
+    let ack = send_one_message(
+        &server_url,
+        &bob_identity_signing,
+        ClientMessage::AckMessages { user_id: uid(&bob_identity_signing), ids },
+    )
+    .await;
+    assert!(matches!(ack, ServerMessage::Ack));
     let response = send_one_message(
         &server_url,
-        ClientMessage::FetchMessages { user_id: "bob".to_string() },
+        &bob_identity_signing,
+        ClientMessage::FetchMessages { user_id: uid(&bob_identity_signing) },
     )
     .await;
     match response {
         ServerMessage::Messages { messages } => {
-            assert!(messages.is_empty(), "a fila ja deveria estar vazia apos o primeiro fetch")
+            assert!(messages.is_empty(), "a fila deveria estar vazia apos o Ack")
         }
         other => panic!("esperava ServerMessage::Messages, recebi {other:?}"),
     }
@@ -186,12 +203,14 @@ async fn entrega_assincrona_atraves_do_relay() {
 async fn registo_e_consulta_de_prekey_bundle() {
     let server_url = spawn_test_server().await;
 
+    let alice_signing = SigningKeyPair::generate();
     let bundle_falso = b"bytes-opacos-representando-um-PreKeyBundle-serializado".to_vec();
 
     let response = send_one_message(
         &server_url,
+        &alice_signing,
         ClientMessage::RegisterPreKeyBundle {
-            user_id: "alice".to_string(),
+            user_id: uid(&alice_signing),
             bundle_bytes: bundle_falso.clone(),
         },
     )
@@ -200,7 +219,8 @@ async fn registo_e_consulta_de_prekey_bundle() {
 
     let response = send_one_message(
         &server_url,
-        ClientMessage::FetchPreKeyBundle { user_id: "alice".to_string() },
+        &alice_signing,
+        ClientMessage::FetchPreKeyBundle { user_id: uid(&alice_signing) },
     )
     .await;
     match response {
@@ -210,7 +230,8 @@ async fn registo_e_consulta_de_prekey_bundle() {
 
     let response = send_one_message(
         &server_url,
-        ClientMessage::FetchPreKeyBundle { user_id: "utilizador-que-nao-existe".to_string() },
+        &alice_signing,
+        ClientMessage::FetchPreKeyBundle { user_id: "0".repeat(64) },
     )
     .await;
     assert!(matches!(response, ServerMessage::PreKeyBundleNotFound));

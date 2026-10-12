@@ -16,6 +16,13 @@ pub type UserId = String;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ClientMessage {
+    /// PRIMEIRA mensagem de qualquer ligacao. `signature` e uma assinatura
+    /// Ed25519 (chave `signing_public`) sobre `AUTH_CONTEXT || hash do
+    /// handshake Noise` - prova posse da chave privada e liga a prova a ESTA
+    /// sessao (sem replay entre ligacoes). O `user_id` autenticado e
+    /// `hex(signing_public)` (ver `user_id_from_signing_public`).
+    Authenticate { signing_public: Vec<u8>, signature: Vec<u8> },
+
     /// Publica o bundle de pre-keys publicas do proprio utilizador, para
     /// que outros possam iniciar uma sessao X3DH/PQXDH mesmo offline.
     /// `bundle_bytes` e uma serializacao opaca do `PreKeyBundle` de
@@ -37,13 +44,36 @@ pub enum ClientMessage {
 
     /// Pede todas as mensagens em fila destinadas ao proprio utilizador
     /// (chamado logo apos autenticar-se/ligar-se).
+    ///
+    /// Entrega AT-LEAST-ONCE: as mensagens NAO sao apagadas ao serem lidas;
+    /// so depois de `AckMessages`. Devolve no maximo uma "pagina" que cabe
+    /// num frame Noise; repetir (fetch -> processar -> ack) ate vir vazio.
     FetchMessages { user_id: UserId },
+
+    /// Confirma que o cliente processou (e persistiu) estas mensagens; so
+    /// agora o relay as apaga. Duplicados na entrega sao apanhados pelo
+    /// cliente (replay protection no Double Ratchet/storage).
+    AckMessages { user_id: UserId, ids: Vec<u64> },
+}
+
+/// Contexto de dominio da assinatura de autenticacao.
+pub const AUTH_CONTEXT: &[u8] = b"QT-RELAY-AUTH-v1";
+
+pub fn user_id_from_signing_public(signing_public: &[u8]) -> UserId {
+    signing_public.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// `user_id` valido = 64 caracteres hexadecimais minusculos (32 bytes).
+/// Impede ids arbitrarios/gigantes nas chaves do Redis.
+pub fn is_valid_user_id(id: &str) -> bool {
+    id.len() == 64 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Uma mensagem entregue da fila. `sealed_from` so o destinatario consegue
 /// abrir (ver `core::sealed_sender`) - o servidor nunca soube quem enviou.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DeliveredMessage {
+    pub id: u64,
     pub sealed_from: Vec<u8>,
     pub ciphertext: Vec<u8>,
 }
@@ -58,7 +88,7 @@ pub enum ServerMessage {
 }
 
 pub fn serialize_client_message(msg: &ClientMessage) -> Vec<u8> {
-    serde_json::to_vec(msg).expect("serializacao de ClientMessage nao deveria falhar")
+    serde_json::to_vec(msg).unwrap_or_default()
 }
 
 pub fn deserialize_client_message(bytes: &[u8]) -> Result<ClientMessage, serde_json::Error> {
@@ -66,7 +96,7 @@ pub fn deserialize_client_message(bytes: &[u8]) -> Result<ClientMessage, serde_j
 }
 
 pub fn serialize_server_message(msg: &ServerMessage) -> Vec<u8> {
-    serde_json::to_vec(msg).expect("serializacao de ServerMessage nao deveria falhar")
+    serde_json::to_vec(msg).unwrap_or_default()
 }
 
 pub fn deserialize_server_message(bytes: &[u8]) -> Result<ServerMessage, serde_json::Error> {
