@@ -104,6 +104,26 @@ O identificador de cada pessoa nasce da sua chave pública — ninguém escolhe 
 ./ffi/generate_bindings.sh
 ```
 
+## Estado atual: integração Android (v0.2)
+
+O core Rust está preparado para servir de backend criptográfico de uma app
+Android (Kotlin/Compose) **sem criptografia em Kotlin**: API `QtClient`
+via UniFFI, storage SQLCipher com chave do Android Keystore, PQXDH
+(X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, relay autenticado com
+entrega *at-least-once*. **Continua a ser um protótipo não auditado.**
+
+* Guia de integração e build: [`docs/android-integration.md`](docs/android-integration.md)
+* Referência da API: [`docs/ffi-api.md`](docs/ffi-api.md)
+* Protocolo (§8–11 = v0.2): [`docs/protocol-spec.md`](docs/protocol-spec.md)
+* Ameaças e limitações: [`docs/threat-model.md`](docs/threat-model.md), [`docs/known-limitations.md`](docs/known-limitations.md)
+* Relatório da fase: [`docs/final-report.md`](docs/final-report.md)
+
+```bash
+redis-server --daemonize yes && cargo test --workspace   # testes (Redis local)
+./ffi/generate_bindings.sh                                # bindings Kotlin/Swift/Python
+./scripts/build-android.sh app/src/main                   # .so para 3 ABIs (requer NDK)
+```
+
 ## Como o projeto está organizado
 
 ```

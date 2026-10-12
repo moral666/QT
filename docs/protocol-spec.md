@@ -1,5 +1,14 @@
 # Especificação do Protocolo (v0.1 — congelado para testes)
 
+> **v0.2 (fase Android).** As secções 8–11 no fim deste ficheiro descrevem os
+> formatos e fluxos **atuais** usados pela API `QtClient` e pelo relay
+> autenticado; onde divergem das secções 3, 4 e 6 (escritas para a v0.1),
+> **prevalecem as secções 8–11**. Mudanças de formato desde a v0.1, cada uma
+> motivada por um problema real: (1) o bundle PQXDH passou a ser assinado
+> *incluindo a chave ML-KEM* (bundle v2); (2) o relay exige autenticação e
+> entrega *at-least-once* com `AckMessages`; (3) `DeliveredMessage` ganhou `id`;
+> (4) `RatchetState::decrypt` é transacional (sem mudança de formato).
+
 ## Estado deste documento
 
 Rascunho inicial. Cobre o que já está implementado, **compilado e testado**
@@ -303,6 +312,97 @@ Testado a três níveis:
   envio são melhorias futuras (ver conversa de arquitetura original).
 - **Autenticação de registo**: ver nota na secção 4 — falta impedir que
   alguém publique um bundle a fingir ser outra identidade.
+
+## 8. Qual fluxo estabelece a sessão? (X3DH vs PQXDH vs Double Ratchet) — v0.2
+
+Três peças, em camadas:
+
+1. **X3DH** (`core/src/x3dh.rs`): acordo de chave clássico (X25519). Mantido
+   no core, usado pela API legacy e pela CLI de demonstração. **Não** é usado
+   pela API `QtClient`.
+2. **PQXDH** (`core/src/pqxdh.rs`, feature `pq`): **é o mecanismo de
+   estabelecimento de sessão da API `QtClient`/Android.** Igual ao X3DH mais
+   um encapsulamento ML-KEM-768:
+   ```
+   DH1 = X25519(IK_A_priv, SPK_B)      DH2 = X25519(EK_A, IK_B)
+   DH3 = X25519(EK_A,       SPK_B)     DH4 = X25519(EK_A, OPK_B)   (opcional)
+   (ct, ss_pq) = ML-KEM-768.Encaps(PQPK_B)
+   SK = HKDF-SHA256(ikm = DH1‖DH2‖DH3[‖DH4]‖ss_pq, salt = vazio, info = "PQXDH_v1", 32 bytes)
+   ```
+   Bob calcula o mesmo `SK` com as chaves privadas e `Decaps(ct)`. O iniciador
+   só prossegue se a assinatura Ed25519 do bundle for válida (ver §9).
+3. **Double Ratchet** (`core/src/ratchet.rs`): `SK` é a root key inicial
+   (Alice: `init_as_initiator(SK, SPK_B)`; Bob: `init_as_responder(SK, SPK_B_keypair)`).
+   Daí em diante cada mensagem usa uma chave de mensagem de uso único
+   (ChaCha20-Poly1305, AAD = chave DH ‖ n).
+
+Fluxo ponta a ponta da app:
+```
+Bob:   createIdentity → publishableBundle → relay.register
+Alice: (QT Public ID de Bob) → relay.fetchBundle → startSession   # verifica + PQXDH + ratchet
+Alice: encryptSealed → relay.send            # 1.as mensagens levam o cabeçalho PQXDH
+Bob:   relay.fetch → decryptSealed → (sessão criada) → relay.ack
+```
+Propriedades PQ exatas: ver `threat-model.md` §3.1 (híbrido para
+confidencialidade do segredo inicial; autenticação, cura e transporte são clássicos).
+
+## 9. Bundle de chaves públicas (v2)
+
+Binário (1349 bytes), usado entre cliente e relay:
+`[2][IK 32][IK_sign 32][SPK 32][sig 64][pq_prekey_id u32 BE][ML-KEM-768 pub 1184]`.
+`sig = Ed25519(IK_sign, "QT-PQXDH-v1-bundle" ‖ SPK ‖ ML-KEM pub)`.
+O relay trata-o como opaco; o cliente verifica: `IK`/`IK_sign` iguais aos do
+QT Public ID, assinatura válida, chave ML-KEM canónica. Não inclui one-time
+prekeys (o relay não as distribui em modo single-use).
+
+**QT Public ID:** `"qt1:" + hex(IK ‖ IK_sign)` (64 bytes → 128 hex).
+**contactId:** `hex(IK)`. **Caixa no relay (`user_id`):** `hex(IK_sign)`.
+
+## 10. Envelope v1 (o que o relay transporta)
+
+```
+Envelope      = [1: versão=1][1: tipo][se tipo=1: Cabeçalho][Mensagem de ratchet]
+tipo          = 0 mensagem normal | 1 mensagem com cabeçalho PQXDH
+Cabeçalho     = [32: EK_A pública][4: opk_id BE (0 = nenhuma)][4: pq_prekey_id BE][1088: ct ML-KEM]
+Mensagem      = [32: chave DH do ratchet][4: n BE][N: nonce(12) ‖ AEAD ct ‖ tag(16)]
+Selado        = [1: versão=1][2: len BE][caixa selada (identidade do remetente)][Envelope]
+Caixa selada  = [32: efémera pública][nonce ‖ AEAD(IK_remetente, AAD = efémera)]  (chave = HKDF(X25519(efémera, IK_destinatário)))
+```
+* O cabeçalho **não** contém a identidade do remetente (vai na caixa selada,
+  ou é indicada pelo relay no modo não selado).
+* Enquanto o iniciador não receber nada do contacto, **todas** as mensagens
+  levam o cabeçalho (a 1.ª pode chegar fora de ordem ou perder-se).
+* ID do envelope para deduplicação = `(chave DH ‖ n)`; registado **depois** de
+  decifrar com sucesso (para um forjador não poder “envenenar” a lista).
+* O destinatário só consome a one-time prekey **depois** de a 1.ª mensagem
+  autenticar. Falhas nunca alteram o estado persistido.
+* Limite de plaintext: 10 000 bytes.
+
+## 11. Protocolo do relay (v0.2)
+
+Transporte: WebSocket (`wss://` em produção) → Noise `XX_25519_ChaChaPoly_SHA256`
+→ mensagens JSON (`serde`, enum externamente etiquetado) cifradas pelo Noise.
+Um pedido ↔ uma resposta, sequenciais.
+
+1. **Autenticação obrigatória (1.ª mensagem):**
+   `Authenticate{signing_public, signature}` com
+   `signature = Ed25519(IK_sign, "QT-RELAY-AUTH-v1" ‖ hash_do_handshake_Noise)`.
+   O `user_id` passa a ser `hex(signing_public)`. Sem autenticação válida → erro
+   e fecho. A assinatura liga-se à sessão (channel binding): não é reutilizável.
+2. `RegisterPreKeyBundle{user_id, bundle_bytes}` — só para o próprio `user_id`; ≤ 24 000 bytes.
+3. `FetchPreKeyBundle{user_id}` — qualquer utilizador autenticado.
+4. `SendMessage{to, sealed_from, ciphertext}` — `to` = 64 hex minúsculos;
+   `ciphertext` 1…14 000 bytes; `sealed_from` ≤ 1024 (vazio no modo `QtClient`,
+   que envia o blob selado inteiro em `ciphertext`); fila ≤ 1000 mensagens.
+5. `FetchMessages{user_id}` — só a própria fila; **não apaga**; devolve uma
+   página (≈ 40 kB de JSON) de `{id, sealed_from, ciphertext}`.
+6. `AckMessages{user_id, ids}` — só a própria fila; ≤ 200 ids; apaga as confirmadas.
+
+Respostas: `Ack`, `PreKeyBundle`, `PreKeyBundleNotFound`, `Messages`, `Error{reason}`
+(`reason` genérico, nunca detalhes internos).
+Timeouts do servidor (omissão): handshake 10 s, autenticação 10 s, inatividade 300 s.
+Qualquer frame Noise inválido/repetido/fora de ordem encerra a sessão.
+Entrega *at-least-once*: o cliente tem de deduplicar (o `QtClient` faz-o).
 
 ## Documentos relacionados
 
