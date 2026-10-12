@@ -8,6 +8,9 @@ publish = false
 
 [dependencies]
 qt_transport = { path = "../transport" }
+qt_core = { path = "../core" }
+ed25519-dalek = { version = "2" }
+rand = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -15,6 +18,8 @@ thiserror = "1"
 redis = { version = "0.25", features = ["tokio-comp"] }
 
 [dev-dependencies]
+qt_ffi = { path = "../ffi" }
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
 tokio = { version = "1", features = ["full", "test-util"] }
-qt_core = { path = "../core" }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
