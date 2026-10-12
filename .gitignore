@@ -12,3 +12,19 @@
 
 __pycache__/
 *.pyc
+
+# --- QT-android-app-ignores ---
+# Artefactos de build Android e ficheiros gerados (reconstroem-se; ver android/README.md)
+/android-out/
+/android/.gradle/
+/android/**/build/
+/android/local.properties
+/android/.idea/
+/android/app/src/main/jniLibs/
+/android/app/src/main/java/uniffi/
+# Chaves e bases de dados locais: NUNCA commitar
+*.key
+*.db
+*.db-journal
+peer.db*
+relay_noise_key*
