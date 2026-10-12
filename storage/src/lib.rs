@@ -14,10 +14,12 @@
 //! codigo nem escrita em disco em texto plano - deve vir do Android
 //! Keystore / iOS Secure Enclave (ver docs/protocol-spec.md secao 5).
 
+pub use rusqlite;
 use rusqlite::Connection;
 use qt_core::primitives::{DhKeyPair, SigningKeyPair};
 use qt_core::ratchet::RatchetState;
 use thiserror::Error;
+use zeroize::Zeroize;
 
 #[derive(Debug, Error)]
 pub enum StorageError {
@@ -29,6 +31,19 @@ pub enum StorageError {
     CorruptIdentity,
     #[error("sessao de ratchet guardada esta corrompida (falhou a desserializacao)")]
     CorruptRatchetState,
+    #[error("chave de protecao do storage invalida (esperados 32 bytes) ")]
+    InvalidStorageKey,
+    #[error("base de dados nao abre com esta chave, ou esta corrompida")]
+    CannotOpen,
+    #[error("secure_delete nao ficou ativo nesta ligacao")]
+    SecureDeleteNotActive,
+    #[error("prekey inexistente ou ja utilizada")]
+    PrekeyNotFoundOrUsed,
+    #[error("dados guardados corrompidos ou com tamanho invalido")]
+    CorruptData,
+    #[cfg(feature = "pq")]
+    #[error("chave PQ guardada esta corrompida")]
+    CorruptPqKey,
 }
 
 /// A identidade completa de um utilizador, tal como persistida localmente.
@@ -53,11 +68,49 @@ pub fn open_database(path: &str, passphrase: &str) -> Result<Connection, Storage
     // preparado do proprio SQLCipher para evitar problemas de injecao de
     // aspas na passphrase.
     conn.pragma_update(None, "key", passphrase)?;
+    init_connection(&conn)?;
+    Ok(conn)
+}
 
+/// Abre (ou cria) a base de dados cifrada usando uma CHAVE BINARIA de 32
+/// bytes (formato "raw key" do SQLCipher, sem KDF de passphrase). E esta a
+/// funcao pensada para o Android: a chave de 32 bytes e gerada/protegida
+/// pelo Android Keystore (ex.: segredo aleatorio cifrado com uma chave
+/// AES-GCM do Keystore) e entregue aqui em memoria; nunca vai para logs,
+/// ficheiros nem mensagens de erro.
+pub fn open_database_with_key(path: &str, key: &[u8]) -> Result<Connection, StorageError> {
+    if key.len() != 32 {
+        return Err(StorageError::InvalidStorageKey);
+    }
+    let conn = Connection::open(path)?;
+    let mut hex = String::with_capacity(32 * 2 + 8);
+    hex.push_str("PRAGMA key = \"x'");
+    for b in key {
+        hex.push_str(&format!("{:02x}", b));
+    }
+    hex.push_str("'\";");
+    let r = conn.execute_batch(&hex);
+    hex.zeroize();
+    r.map_err(|_| StorageError::CannotOpen)?;
+    // Qualquer erro aqui (chave errada, ficheiro corrompido) e mapeado para
+    // um erro generico, que nunca contem material de chave.
+    init_connection(&conn).map_err(|e| match e {
+        StorageError::Sqlite(_) => StorageError::CannotOpen,
+        other => other,
+    })?;
+    Ok(conn)
+}
+
+fn init_connection(conn: &Connection) -> Result<(), StorageError> {
     // secure_delete garante que paginas apagadas sao sobrescritas com
     // zeros, em vez de simplesmente marcadas como livres (relevante para
     // "mensagens que desaparecem" nao deixarem residuos recuperaveis).
     conn.pragma_update(None, "secure_delete", "ON")?;
+    // Confirmar de facto (e nao assumir) que ficou ativo.
+    let active: i64 = conn.query_row("PRAGMA secure_delete", [], |r| r.get(0))?;
+    if active != 1 {
+        return Err(StorageError::SecureDeleteNotActive);
+    }
 
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS identity (
@@ -71,10 +124,41 @@ pub fn open_database(path: &str, passphrase: &str) -> Result<Connection, Storage
             contact_id TEXT PRIMARY KEY,
             ratchet_state BLOB NOT NULL,
             updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+        );
+        CREATE TABLE IF NOT EXISTS one_time_prekeys (
+            id INTEGER PRIMARY KEY,
+            private BLOB NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS pq_prekeys (
+            id INTEGER PRIMARY KEY,
+            private BLOB NOT NULL,
+            created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+        );
+        CREATE TABLE IF NOT EXISTS noise_static (
+            id INTEGER PRIMARY KEY CHECK (id = 0),
+            private BLOB NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS session_meta (
+            contact_id TEXT PRIMARY KEY,
+            peer_identity_public BLOB NOT NULL,
+            protocol TEXT NOT NULL,
+            last_recv_seq INTEGER NOT NULL DEFAULT 0,
+            send_seq INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS kv (
+            k TEXT PRIMARY KEY,
+            v BLOB NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS seen_envelopes (
+            contact_id TEXT NOT NULL,
+            envelope_id BLOB NOT NULL,
+            seen_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            PRIMARY KEY (contact_id, envelope_id)
         );",
     )?;
-
-    Ok(conn)
+    // NOTA: nao existe (de proposito) nenhuma tabela de mensagens: o
+    // plaintext das mensagens nunca e guardado por este crate.
+    Ok(())
 }
 
 /// Guarda a identidade do utilizador (so pode existir uma - tabela com
@@ -177,4 +261,272 @@ pub fn load_session(conn: &Connection, contact_id: &str) -> Result<Option<Ratche
         }
         None => Ok(None),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Prekeys de uso unico
+// ---------------------------------------------------------------------------
+
+fn dh_from_private(bytes: &[u8]) -> Result<DhKeyPair, StorageError> {
+    let arr: [u8; 32] = bytes.try_into().map_err(|_| StorageError::CorruptData)?;
+    let private = x25519_dalek::StaticSecret::from(arr);
+    let public = x25519_dalek::PublicKey::from(&private);
+    Ok(DhKeyPair { private, public })
+}
+
+pub fn save_one_time_prekey(conn: &Connection, id: u32, key: &DhKeyPair) -> Result<(), StorageError> {
+    conn.execute(
+        "INSERT OR REPLACE INTO one_time_prekeys (id, private) VALUES (?1, ?2)",
+        rusqlite::params![id, key.private.to_bytes().to_vec()],
+    )?;
+    Ok(())
+}
+
+/// Devolve a one-time prekey e APAGA-A (com secure_delete) numa unica
+/// transacao: uma prekey so pode ser consumida uma vez. Uma segunda tentativa
+/// (reutilizacao) devolve `PrekeyNotFoundOrUsed`.
+pub fn take_one_time_prekey(conn: &mut Connection, id: u32) -> Result<DhKeyPair, StorageError> {
+    let tx = conn.transaction()?;
+    let bytes: Vec<u8> = tx
+        .query_row("SELECT private FROM one_time_prekeys WHERE id = ?1", [id], |r| r.get(0))
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => StorageError::PrekeyNotFoundOrUsed,
+            other => StorageError::Sqlite(other),
+        })?;
+    tx.execute("DELETE FROM one_time_prekeys WHERE id = ?1", [id])?;
+    let kp = dh_from_private(&bytes)?;
+    tx.commit()?;
+    Ok(kp)
+}
+
+pub fn count_one_time_prekeys(conn: &Connection) -> Result<u32, StorageError> {
+    Ok(conn.query_row("SELECT COUNT(*) FROM one_time_prekeys", [], |r| r.get::<_, u32>(0))?)
+}
+
+// ---------------------------------------------------------------------------
+// Prekeys PQ (ML-KEM-768) - feature "pq"
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "pq")]
+pub fn save_pq_prekey(
+    conn: &Connection,
+    id: u32,
+    key: &qt_core::pqxdh::PqPreKeyPair,
+) -> Result<(), StorageError> {
+    let mut blob = key.to_bytes();
+    let r = conn.execute(
+        "INSERT OR REPLACE INTO pq_prekeys (id, private) VALUES (?1, ?2)",
+        rusqlite::params![id, blob],
+    );
+    blob.zeroize();
+    r?;
+    Ok(())
+}
+
+#[cfg(feature = "pq")]
+pub fn load_pq_prekey(
+    conn: &Connection,
+    id: u32,
+) -> Result<Option<qt_core::pqxdh::PqPreKeyPair>, StorageError> {
+    let blob: Option<Vec<u8>> = conn
+        .query_row("SELECT private FROM pq_prekeys WHERE id = ?1", [id], |r| r.get(0))
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })?;
+    match blob {
+        None => Ok(None),
+        Some(mut b) => {
+            let r = qt_core::pqxdh::PqPreKeyPair::from_bytes(&b).map_err(|_| StorageError::CorruptPqKey);
+            b.zeroize();
+            r.map(Some)
+        }
+    }
+}
+
+#[cfg(feature = "pq")]
+pub fn delete_pq_prekey(conn: &Connection, id: u32) -> Result<(), StorageError> {
+    conn.execute("DELETE FROM pq_prekeys WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Chave estatica Noise do cliente
+// ---------------------------------------------------------------------------
+
+pub fn save_noise_static(conn: &Connection, private: &[u8]) -> Result<(), StorageError> {
+    if private.len() != 32 {
+        return Err(StorageError::CorruptData);
+    }
+    conn.execute(
+        "INSERT OR REPLACE INTO noise_static (id, private) VALUES (0, ?1)",
+        [private],
+    )?;
+    Ok(())
+}
+
+pub fn load_noise_static(conn: &Connection) -> Result<Option<Vec<u8>>, StorageError> {
+    let v: Option<Vec<u8>> = conn
+        .query_row("SELECT private FROM noise_static WHERE id = 0", [], |r| r.get(0))
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })?;
+    if let Some(ref b) = v {
+        if b.len() != 32 {
+            return Err(StorageError::CorruptData);
+        }
+    }
+    Ok(v)
+}
+
+// ---------------------------------------------------------------------------
+// Metadados de sessao e deduplicacao de envelopes (replay)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionMeta {
+    pub contact_id: String,
+    pub peer_identity_public: Vec<u8>,
+    /// "x3dh" ou "pqxdh" - protocolo usado para estabelecer a sessao.
+    pub protocol: String,
+    pub last_recv_seq: u64,
+    pub send_seq: u64,
+}
+
+pub fn save_session_meta(conn: &Connection, m: &SessionMeta) -> Result<(), StorageError> {
+    if m.peer_identity_public.len() != 32 {
+        return Err(StorageError::CorruptData);
+    }
+    conn.execute(
+        "INSERT OR REPLACE INTO session_meta
+            (contact_id, peer_identity_public, protocol, last_recv_seq, send_seq)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![
+            m.contact_id,
+            m.peer_identity_public,
+            m.protocol,
+            m.last_recv_seq as i64,
+            m.send_seq as i64
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn load_session_meta(conn: &Connection, contact_id: &str) -> Result<Option<SessionMeta>, StorageError> {
+    let row = conn.query_row(
+        "SELECT peer_identity_public, protocol, last_recv_seq, send_seq
+         FROM session_meta WHERE contact_id = ?1",
+        [contact_id],
+        |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?)),
+    );
+    match row {
+        Ok((peer, protocol, rs, ss)) => {
+            if peer.len() != 32 || rs < 0 || ss < 0 {
+                return Err(StorageError::CorruptData);
+            }
+            Ok(Some(SessionMeta {
+                contact_id: contact_id.to_string(),
+                peer_identity_public: peer,
+                protocol,
+                last_recv_seq: rs as u64,
+                send_seq: ss as u64,
+            }))
+        }
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Regista um envelope como visto. Devolve `true` se for NOVO e `false` se ja
+/// tinha sido visto (duplicado/replay) - o chamador deve descartar duplicados
+/// ANTES de os entregar ao Double Ratchet.
+pub fn record_envelope(conn: &Connection, contact_id: &str, envelope_id: &[u8]) -> Result<bool, StorageError> {
+    let n = conn.execute(
+        "INSERT OR IGNORE INTO seen_envelopes (contact_id, envelope_id) VALUES (?1, ?2)",
+        rusqlite::params![contact_id, envelope_id],
+    )?;
+    Ok(n == 1)
+}
+
+/// Apaga registos de deduplicacao mais antigos que `older_than_secs`.
+pub fn prune_seen_envelopes(conn: &Connection, older_than_secs: i64) -> Result<usize, StorageError> {
+    Ok(conn.execute(
+        "DELETE FROM seen_envelopes WHERE seen_at < strftime('%s','now') - ?1",
+        [older_than_secs],
+    )?)
+}
+
+pub fn delete_session(conn: &Connection, contact_id: &str) -> Result<(), StorageError> {
+    conn.execute("DELETE FROM sessions WHERE contact_id = ?1", [contact_id])?;
+    conn.execute("DELETE FROM session_meta WHERE contact_id = ?1", [contact_id])?;
+    conn.execute("DELETE FROM seen_envelopes WHERE contact_id = ?1", [contact_id])?;
+    Ok(())
+}
+
+/// Apaga TODA a informacao sensivel (identidade, prekeys, sessoes, Noise).
+/// Com secure_delete ON as paginas sao sobrescritas. Usar em "apagar conta".
+pub fn wipe_all(conn: &Connection) -> Result<(), StorageError> {
+    conn.execute_batch(
+        "DELETE FROM identity; DELETE FROM sessions; DELETE FROM one_time_prekeys;
+         DELETE FROM pq_prekeys; DELETE FROM noise_static; DELETE FROM session_meta;
+         DELETE FROM seen_envelopes; DELETE FROM kv; VACUUM;",
+    )?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Auxiliares: kv generico, leitura nao-destrutiva de prekeys, dedup read-only
+// ---------------------------------------------------------------------------
+
+pub fn kv_set(conn: &Connection, key: &str, value: &[u8]) -> Result<(), StorageError> {
+    conn.execute("INSERT OR REPLACE INTO kv (k, v) VALUES (?1, ?2)", rusqlite::params![key, value])?;
+    Ok(())
+}
+
+pub fn kv_get(conn: &Connection, key: &str) -> Result<Option<Vec<u8>>, StorageError> {
+    match conn.query_row("SELECT v FROM kv WHERE k = ?1", [key], |r| r.get::<_, Vec<u8>>(0)) {
+        Ok(v) => Ok(Some(v)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+pub fn kv_delete(conn: &Connection, key: &str) -> Result<(), StorageError> {
+    conn.execute("DELETE FROM kv WHERE k = ?1", [key])?;
+    Ok(())
+}
+
+/// Le uma one-time prekey SEM a consumir (usar `delete_one_time_prekey`
+/// so depois de o handshake ter sido validado com sucesso).
+pub fn load_one_time_prekey(conn: &Connection, id: u32) -> Result<DhKeyPair, StorageError> {
+    let bytes: Vec<u8> = conn
+        .query_row("SELECT private FROM one_time_prekeys WHERE id = ?1", [id], |r| r.get(0))
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => StorageError::PrekeyNotFoundOrUsed,
+            other => StorageError::Sqlite(other),
+        })?;
+    dh_from_private(&bytes)
+}
+
+pub fn delete_one_time_prekey(conn: &Connection, id: u32) -> Result<(), StorageError> {
+    conn.execute("DELETE FROM one_time_prekeys WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+/// Consulta (sem registar) se um envelope ja foi processado.
+pub fn is_envelope_seen(conn: &Connection, contact_id: &str, envelope_id: &[u8]) -> Result<bool, StorageError> {
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM seen_envelopes WHERE contact_id = ?1 AND envelope_id = ?2",
+        rusqlite::params![contact_id, envelope_id],
+        |r| r.get(0),
+    )?;
+    Ok(n > 0)
+}
+
+pub fn identity_exists(conn: &Connection) -> Result<bool, StorageError> {
+    let n: i64 = conn.query_row("SELECT COUNT(*) FROM identity WHERE id = 0", [], |r| r.get(0))?;
+    Ok(n > 0)
 }
