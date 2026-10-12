@@ -1,7 +1,5 @@
 //! Teste do fluxo PQXDH (X25519 + ML-KEM). So compila/corre com
 //! `cargo test --features pq` (ver Cargo.toml: required-features).
-//! Nao foi possivel executar isto no ambiente onde o projeto foi gerado
-//! (toolchain 1.75, ml-kem exige 1.81+) - correr localmente para validar.
 
 use qt_core::pqxdh::{
     pqxdh_initiate, pqxdh_respond, sign_pre_key, PqPreKeyBundle, PqPreKeyPair,
@@ -19,7 +17,7 @@ fn fluxo_completo_alice_bob_pqxdh() {
     let bob_pq_pre_key = PqPreKeyPair::generate();
     let bob_one_time_pre_key = DhKeyPair::generate();
 
-    let signature = sign_pre_key(&bob_identity_signing, &bob_signed_pre_key.public);
+    let signature = sign_pre_key(&bob_identity_signing, &bob_signed_pre_key.public, &bob_pq_pre_key.public_key_bytes());
     let bob_bundle = PqPreKeyBundle {
         identity_key: bob_identity.public,
         identity_signing_key: bob_identity_signing.verifying_key,
@@ -40,7 +38,8 @@ fn fluxo_completo_alice_bob_pqxdh() {
         &alice_identity.public,
         &init_result.ephemeral_public,
         &init_result.pq_ciphertext,
-    );
+    )
+    .expect("respond");
 
     assert_eq!(
         init_result.shared_secret, bob_shared_secret,

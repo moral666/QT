@@ -25,6 +25,8 @@ pub enum CryptoError {
     InvalidLength,
     #[error("assinatura invalida: a pre-key pode ter sido adulterada/substituida")]
     SignatureInvalid,
+    #[error("falha ao cifrar (entrada demasiado grande)")]
+    EncryptionFailed,
 }
 
 /// Par de chaves Ed25519 usado para ASSINAR (nao para DH). E a chave de
@@ -94,11 +96,20 @@ pub fn dh(private: &StaticSecret, public: &PublicKey) -> [u8; 32] {
 }
 
 /// HKDF-SHA256 generico: deriva `length` bytes a partir de `ikm`, com `salt` e `info`.
-pub fn hkdf_derive(ikm: &[u8], salt: &[u8], info: &[u8], length: usize) -> Vec<u8> {
+///
+/// INVARIANTE (por isso e `pub(crate)`): `length` e sempre uma constante do
+/// proprio crate (32 ou 64) e HKDF-SHA256 aceita ate 255*32 = 8160 bytes, logo
+/// `expand` nunca falha. Nunca recebe comprimentos vindos de input externo.
+pub(crate) fn hkdf_derive(ikm: &[u8], salt: &[u8], info: &[u8], length: usize) -> Vec<u8> {
+    debug_assert!(length <= 255 * 32);
     let hk = Hkdf::<Sha256>::new(Some(salt), ikm);
     let mut okm = vec![0u8; length];
-    hk.expand(info, &mut okm)
-        .expect("comprimento de saida HKDF invalido");
+    // Em vez de panic, um (impossivel) erro deixaria `okm` a zeros; para
+    // nunca devolver material de chave fraco, devolve-se vazio e os
+    // chamadores falham o handshake por tamanho incorreto.
+    if hk.expand(info, &mut okm).is_err() {
+        return Vec::new();
+    }
     okm
 }
 
@@ -129,7 +140,7 @@ pub fn kdf_chain_key(chain_key: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
 /// `aad` (associated data) deve incluir o header da mensagem (chave DH publica +
 /// numero da mensagem) para vincular criptograficamente o header ao conteudo,
 /// prevenindo adulteracao do header por um atacante na rede.
-pub fn aead_encrypt(key: &[u8; 32], plaintext: &[u8], aad: &[u8]) -> Vec<u8> {
+pub fn aead_encrypt(key: &[u8; 32], plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, CryptoError> {
     let cipher = ChaCha20Poly1305::new(Key::from_slice(key));
     let mut nonce_bytes = [0u8; 12];
     OsRng.fill_bytes(&mut nonce_bytes);
@@ -137,12 +148,12 @@ pub fn aead_encrypt(key: &[u8; 32], plaintext: &[u8], aad: &[u8]) -> Vec<u8> {
 
     let ciphertext = cipher
         .encrypt(nonce, Payload { msg: plaintext, aad })
-        .expect("falha na cifragem AEAD (nao deveria acontecer com chave valida)");
+        .map_err(|_| CryptoError::EncryptionFailed)?;
 
     let mut out = Vec::with_capacity(12 + ciphertext.len());
     out.extend_from_slice(&nonce_bytes);
     out.extend_from_slice(&ciphertext);
-    out
+    Ok(out)
 }
 
 pub fn aead_decrypt(key: &[u8; 32], blob: &[u8], aad: &[u8]) -> Result<Vec<u8>, CryptoError> {

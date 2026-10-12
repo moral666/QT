@@ -6,7 +6,7 @@ fn destinatario_correto_descobre_o_remetente() {
     let alice_identity = DhKeyPair::generate(); // remetente
     let bob_identity = DhKeyPair::generate(); // destinatario
 
-    let envelope = seal_sender_identity(&alice_identity.public, &bob_identity.public);
+    let envelope = seal_sender_identity(&alice_identity.public, &bob_identity.public).unwrap();
 
     let remetente_revelado =
         unseal_sender_identity(&bob_identity, &envelope).expect("Bob deveria conseguir abrir");
@@ -27,7 +27,7 @@ fn terceiro_nao_consegue_abrir_o_envelope() {
     let bob_identity = DhKeyPair::generate();
     let atacante_identity = DhKeyPair::generate();
 
-    let envelope = seal_sender_identity(&alice_identity.public, &bob_identity.public);
+    let envelope = seal_sender_identity(&alice_identity.public, &bob_identity.public).unwrap();
 
     let resultado = unseal_sender_identity(&atacante_identity, &envelope);
 
@@ -51,7 +51,7 @@ fn envelope_adulterado_falha_a_decifrar() {
     let alice_identity = DhKeyPair::generate();
     let bob_identity = DhKeyPair::generate();
 
-    let mut envelope = seal_sender_identity(&alice_identity.public, &bob_identity.public);
+    let mut envelope = seal_sender_identity(&alice_identity.public, &bob_identity.public).unwrap();
     let last = envelope.len() - 1;
     envelope[last] ^= 0xFF; // adultera o ultimo byte do ciphertext
 

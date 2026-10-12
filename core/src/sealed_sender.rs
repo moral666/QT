@@ -26,7 +26,7 @@ use x25519_dalek::PublicKey;
 pub fn seal_sender_identity(
     sender_identity_pub: &PublicKey,
     recipient_identity_pub: &PublicKey,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, CryptoError> {
     let ephemeral = DhKeyPair::generate();
     let shared_secret = dh(&ephemeral.private, recipient_identity_pub);
     let key_material = hkdf_derive(&shared_secret, &[], b"SealedSender_v1", 32);
@@ -35,12 +35,12 @@ pub fn seal_sender_identity(
 
     // O ephemeral_public serve de AAD - vincula o envelope a esta chave
     // efemera especifica, impedindo que um atacante troque o cabecalho.
-    let ciphertext = aead_encrypt(&key, sender_identity_pub.as_bytes(), ephemeral.public.as_bytes());
+    let ciphertext = aead_encrypt(&key, sender_identity_pub.as_bytes(), ephemeral.public.as_bytes())?;
 
     let mut out = Vec::with_capacity(32 + ciphertext.len());
     out.extend_from_slice(ephemeral.public.as_bytes());
     out.extend_from_slice(&ciphertext);
-    out
+    Ok(out)
 }
 
 /// Abre o envelope, devolvendo a chave publica de identidade do remetente.
