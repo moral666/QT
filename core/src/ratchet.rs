@@ -24,6 +24,7 @@ pub struct RatchetState {
     skipped_keys: HashMap<([u8; 32], u32), [u8; 32]>,
 }
 
+#[derive(Clone, Debug)]
 pub struct EncryptedMessage {
     pub dh_public: PublicKey,
     pub n: u32,
@@ -220,12 +221,30 @@ impl RatchetState {
 
         let dh_public = self.dh_send.public;
         let aad = build_aad(&dh_public, n);
-        let ciphertext = aead_encrypt(&message_key, plaintext, &aad);
+        let ciphertext = aead_encrypt(&message_key, plaintext, &aad)?;
 
         Ok(EncryptedMessage { dh_public, n, ciphertext })
     }
 
+    /// Decifra uma mensagem. TRANSACIONAL: se a decifragem falhar (mensagem
+    /// forjada, corrompida, repetida, demasiadas puladas...), o estado do
+    /// ratchet fica EXATAMENTE como estava antes. Sem isto, uma mensagem
+    /// forjada com uma chave DH nova avancaria o DH-ratchet e consumiria
+    /// chaves, quebrando a sessao legitima (DoS por um atacante sem chaves).
     pub fn decrypt(&mut self, msg: &EncryptedMessage) -> Result<Vec<u8>, RatchetError> {
+        let snapshot = self.to_bytes();
+        match self.decrypt_unchecked(msg) {
+            Ok(p) => Ok(p),
+            Err(e) => {
+                if let Some(restored) = RatchetState::from_bytes(&snapshot) {
+                    *self = restored;
+                }
+                Err(e)
+            }
+        }
+    }
+
+    fn decrypt_unchecked(&mut self, msg: &EncryptedMessage) -> Result<Vec<u8>, RatchetError> {
         let needs_dh_step = match &self.dh_recv {
             Some(current) => current.as_bytes() != msg.dh_public.as_bytes(),
             None => true,

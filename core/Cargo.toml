@@ -39,3 +39,7 @@ required-features = ["pq"]
 hex = "0.4"
 rand = "0.8"
 proptest = "1"
+
+[[test]]
+name = "pqxdh_persistence_negative"
+required-features = ["pq"]
