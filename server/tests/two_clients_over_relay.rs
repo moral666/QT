@@ -69,7 +69,14 @@ async fn conversa_a_b_pelo_relay_com_quedas_e_reinicios() {
     let mut rb = RelayClient::connect(&relay.url, noise(2), box_b, cfg.clone()).await.unwrap();
 
     // Bob publica o bundle; Alice descobre-o pelo relay e inicia PQXDH.
-    rb.register_bundle(bob.qt.publishable_bundle().unwrap()).await.unwrap();
+    // Esta caixa de correio de teste NAO usa a chave de identidade de Bob, por isso o
+    // relay (corretamente) recusaria o registo pela rede; publica-se direto no store.
+    // O registo autenticado com a identidade real e testado mais abaixo (`relay_request_register_bundle`).
+    qt_server::Store::with_prefix("redis://127.0.0.1:6379", &relay.prefix)
+        .unwrap()
+        .register_bundle(rb.user_id().to_string(), bob.qt.publishable_bundle().unwrap())
+        .await
+        .unwrap();
     let bytes = ra.fetch_bundle(rb.user_id()).await.unwrap().expect("bundle de Bob");
     let peer = peer_bundle_from_relay_bytes(bytes).unwrap();
     let bob_cid = alice.qt.start_session(bob.id.public_id.clone(), peer).unwrap();

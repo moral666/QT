@@ -77,6 +77,7 @@ pub fn verify_signature(
 }
 
 /// Par de chaves X25519 para operacoes Diffie-Hellman.
+#[derive(Clone)]
 pub struct DhKeyPair {
     pub private: StaticSecret,
     pub public: PublicKey,

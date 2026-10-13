@@ -137,10 +137,10 @@ fn sessao_inexistente_e_lixo_nao_fazem_panic() {
     let fake_contact: String = "ab".repeat(32);
     assert!(matches!(b.c.encrypt(fake_contact.clone(), b"x".to_vec()), Err(QtError::UnknownSession)));
     // envelope normal (sem cabecalho) sem sessao
-    let mut env = vec![1u8, 0u8];
+    let mut env = vec![2u8, 0u8];
     env.extend_from_slice(&[7u8; 60]);
     assert!(matches!(b.c.decrypt(fake_contact.clone(), env), Err(QtError::UnknownSession)));
-    for junk in [vec![], vec![1u8], vec![9u8; 5], vec![1, 1, 0, 0], vec![1, 7, 1, 2, 3], vec![0xFF; 3000]] {
+    for junk in [vec![], vec![1u8], vec![9u8; 5], vec![2, 1, 0, 0], vec![2, 7, 1, 2, 3], vec![0xFF; 3000]] {
         assert!(b.c.decrypt(fake_contact.clone(), junk.clone()).is_err());
         assert!(b.c.decrypt_sealed(junk).is_err());
     }
@@ -299,4 +299,105 @@ fn ids_de_prekey_nunca_sao_reutilizados() {
     ids.dedup();
     assert_eq!(ids.len(), n);
     assert!(ids.iter().all(|i| *i != 0));
+}
+
+// ---------------------------------------------------------------- seguranca (hardening)
+
+#[test]
+fn safety_number_igual_nos_dois_lados_e_muda_com_outra_identidade() {
+    let a = peer("sn_a", KA);
+    let b = peer("sn_b", KB);
+    let c = peer("sn_c", [0x33; 32]);
+    let n_ab = a.c.safety_number(b.id.public_id.clone()).unwrap();
+    assert_eq!(n_ab, b.c.safety_number(a.id.public_id.clone()).unwrap());
+    assert_eq!(n_ab.replace(' ', "").len(), 60);
+    assert_ne!(n_ab, a.c.safety_number(c.id.public_id.clone()).unwrap());
+    assert!(a.c.safety_number("qt1:zz".into()).is_err());
+}
+
+#[test]
+fn safety_number_depende_da_identidade_do_id_mesmo_com_sessao_ativa() {
+    let (a, b, bob_cid, _) = setup();
+    // ID forjado: identidade X25519 de outro, signing de Bob -> nao coincide com a sessao
+    let outro = peer("sn_x", [0x44; 32]);
+    let forjado = format!("qt1:{}{}",
+        outro.id.identity_public.iter().map(|x| format!("{:02x}", x)).collect::<String>(),
+        b.id.signing_public.iter().map(|x| format!("{:02x}", x)).collect::<String>());
+    // sessao existe com Bob (contact_id = identidade de Bob)
+    assert!(a.c.has_session(bob_cid).unwrap());
+    // o forjado tem contact_id diferente (nao ha sessao com ele): calcula, mas e outro numero
+    assert_ne!(a.c.safety_number(forjado).unwrap(), a.c.safety_number(b.id.public_id.clone()).unwrap());
+}
+
+#[test]
+fn bundle_com_identidade_x25519_trocada_e_rejeitado_mesmo_com_signing_e_assinatura_validos() {
+    // Relay malicioso: mantem signing_public e a assinatura de Bob, troca identity_public.
+    let a = peer("bi_a", KA);
+    let b = peer("bi_b", KB);
+    let mallory = peer("bi_m", [0x55; 32]);
+    let mut pb = b.peer_bundle(0);
+    pb.identity_public = mallory.id.identity_public.clone();
+    // public_id do ID legitimo de Bob: identity nao coincide -> InvalidBundle
+    assert!(matches!(a.c.start_session(b.id.public_id.clone(), pb), Err(QtError::InvalidBundle)));
+    // Mesmo com um public_id "montado" a condizer com o bundle adulterado, a
+    // assinatura cobre a identidade X25519 e tem de falhar.
+    let mut pb2 = b.peer_bundle(0);
+    pb2.identity_public = mallory.id.identity_public.clone();
+    let id_adulterado = format!("qt1:{}{}",
+        mallory.id.identity_public.iter().map(|x| format!("{:02x}", x)).collect::<String>(),
+        b.id.signing_public.iter().map(|x| format!("{:02x}", x)).collect::<String>());
+    assert!(matches!(a.c.start_session(id_adulterado, pb2), Err(QtError::InvalidBundle)));
+}
+
+#[test]
+fn remetente_vem_da_sessao_nao_do_envelope_selado() {
+    // Mallory conhece a identidade publica de Bob e SELA o envelope dela dizendo
+    // ser Alice. O contact_id devolvido so e aceite se a sessao autenticar.
+    let (a, b, bob_cid, _) = setup();
+    let m = peer("rs_m", [0x66; 32]);
+    let m_to_bob = m.c.start_session(b.id.public_id.clone(), b.peer_bundle(1)).unwrap();
+    let env_m = m.c.encrypt(m_to_bob, b"sou a Alice, juro".to_vec()).unwrap();
+    // sela como se fosse Alice (usa a API de baixo nivel do core)
+    let alice_pub = x25519_dalek::PublicKey::from(<[u8; 32]>::try_from(a.id.identity_public.as_slice()).unwrap());
+    let bob_pub = x25519_dalek::PublicKey::from(<[u8; 32]>::try_from(b.id.identity_public.as_slice()).unwrap());
+    use sha2::Digest;
+    let mut h = sha2::Sha256::new();
+    h.update(b"QT-SEALED-BIND-v1");
+    h.update(&env_m);
+    let binding = h.finalize().to_vec();
+    let caixa = qt_core::sealed_sender::seal_sender_identity_bound(&alice_pub, &bob_pub, &binding).unwrap();
+    let mut blob = vec![2u8];
+    blob.extend_from_slice(&(caixa.len() as u16).to_be_bytes());
+    blob.extend_from_slice(&caixa);
+    blob.extend_from_slice(&env_m);
+    assert!(b.c.decrypt_sealed(blob).is_err(), "identidade falsa tem de ser rejeitada pela sessao");
+    let _ = bob_cid;
+}
+
+#[test]
+fn caixa_selada_nao_pode_ser_reutilizada_com_outro_envelope() {
+    let (a, b, bob_cid, _) = setup();
+    let blob1 = a.c.encrypt_sealed(bob_cid.clone(), b"um".to_vec()).unwrap();
+    let blob2 = a.c.encrypt_sealed(bob_cid, b"dois".to_vec()).unwrap();
+    // troca o envelope interior do blob1 pelo do blob2 mantendo a caixa do blob1
+    let l1 = u16::from_be_bytes([blob1[1], blob1[2]]) as usize;
+    let l2 = u16::from_be_bytes([blob2[1], blob2[2]]) as usize;
+    let mut mix = blob1[..3 + l1].to_vec();
+    mix.extend_from_slice(&blob2[3 + l2..]);
+    assert!(b.c.decrypt_sealed(mix).is_err());
+    assert_eq!(b.c.decrypt_sealed(blob1).unwrap().plaintext, b"um");
+}
+
+#[test]
+fn mensagem_atrasada_da_cadeia_anterior_chega_depois_do_dh_ratchet() {
+    let (a, b, bob_cid, _) = setup();
+    let alice_cid = cid(&a);
+    let e1 = a.c.encrypt(bob_cid.clone(), b"a1".to_vec()).unwrap();
+    let e2 = a.c.encrypt(bob_cid.clone(), b"a2".to_vec()).unwrap(); // atrasada
+    assert_eq!(b.c.decrypt(alice_cid.clone(), e1).unwrap(), b"a1");
+    let r1 = b.c.encrypt(alice_cid.clone(), b"b1".to_vec()).unwrap();
+    assert_eq!(a.c.decrypt(bob_cid.clone(), r1).unwrap(), b"b1");
+    let e3 = a.c.encrypt(bob_cid, b"a3".to_vec()).unwrap(); // cadeia DH nova
+    assert_eq!(b.c.decrypt(alice_cid.clone(), e3).unwrap(), b"a3");
+    assert_eq!(b.c.decrypt(alice_cid, e2).unwrap(), b"a2", "recupera via PN");
 }

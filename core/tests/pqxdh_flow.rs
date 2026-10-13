@@ -17,7 +17,7 @@ fn fluxo_completo_alice_bob_pqxdh() {
     let bob_pq_pre_key = PqPreKeyPair::generate();
     let bob_one_time_pre_key = DhKeyPair::generate();
 
-    let signature = sign_pre_key(&bob_identity_signing, &bob_signed_pre_key.public, &bob_pq_pre_key.public_key_bytes());
+    let signature = sign_pre_key(&bob_identity_signing, &bob_identity.public, &bob_signed_pre_key.public, &bob_pq_pre_key.public_key_bytes());
     let bob_bundle = PqPreKeyBundle {
         identity_key: bob_identity.public,
         identity_signing_key: bob_identity_signing.verifying_key,

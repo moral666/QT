@@ -120,6 +120,7 @@ async fn mensagem_e2ee_atraves_de_websocket_real() {
 
     let msg_reconstruida = qt_core::ratchet::EncryptedMessage {
         dh_public: x25519_dalek::PublicKey::from(dh_public_bytes),
+        pn: 0, // so ha uma cadeia neste teste
         n,
         ciphertext,
     };

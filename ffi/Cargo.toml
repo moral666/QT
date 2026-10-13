@@ -26,6 +26,7 @@ qt_core = { path = "../core" }
 qt_transport = { path = "../transport" }
 qt_storage = { path = "../storage" }
 zeroize = "1"
+sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
@@ -39,3 +40,6 @@ uniffi = { version = "0.28", features = ["build"] }
 [[bin]]
 name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
+
+[dev-dependencies]
+x25519-dalek = { version = "2", features = ["static_secrets"] }

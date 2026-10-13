@@ -27,6 +27,18 @@ pub fn seal_sender_identity(
     sender_identity_pub: &PublicKey,
     recipient_identity_pub: &PublicKey,
 ) -> Result<Vec<u8>, CryptoError> {
+    seal_sender_identity_bound(sender_identity_pub, recipient_identity_pub, &[])
+}
+
+/// Como `seal_sender_identity`, mas liga a caixa a um `binding` (ex.: hash do
+/// envelope Double Ratchet que a acompanha). A caixa deixa de poder ser
+/// destacada e reutilizada com outro envelope. A identidade selada e so uma
+/// PISTA para escolher a sessao: quem autentica o remetente e a sessao.
+pub fn seal_sender_identity_bound(
+    sender_identity_pub: &PublicKey,
+    recipient_identity_pub: &PublicKey,
+    binding: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
     let ephemeral = DhKeyPair::generate();
     let shared_secret = dh(&ephemeral.private, recipient_identity_pub);
     let key_material = hkdf_derive(&shared_secret, &[], b"SealedSender_v1", 32);
@@ -35,7 +47,9 @@ pub fn seal_sender_identity(
 
     // O ephemeral_public serve de AAD - vincula o envelope a esta chave
     // efemera especifica, impedindo que um atacante troque o cabecalho.
-    let ciphertext = aead_encrypt(&key, sender_identity_pub.as_bytes(), ephemeral.public.as_bytes())?;
+    let mut aad = ephemeral.public.as_bytes().to_vec();
+    aad.extend_from_slice(binding);
+    let ciphertext = aead_encrypt(&key, sender_identity_pub.as_bytes(), &aad)?;
 
     let mut out = Vec::with_capacity(32 + ciphertext.len());
     out.extend_from_slice(ephemeral.public.as_bytes());
@@ -48,6 +62,15 @@ pub fn seal_sender_identity(
 pub fn unseal_sender_identity(
     my_identity: &DhKeyPair,
     envelope: &[u8],
+) -> Result<PublicKey, CryptoError> {
+    unseal_sender_identity_bound(my_identity, envelope, &[])
+}
+
+/// Contraparte de `seal_sender_identity_bound`: o `binding` tem de coincidir.
+pub fn unseal_sender_identity_bound(
+    my_identity: &DhKeyPair,
+    envelope: &[u8],
+    binding: &[u8],
 ) -> Result<PublicKey, CryptoError> {
     if envelope.len() < 32 {
         return Err(CryptoError::InvalidLength);
@@ -62,7 +85,9 @@ pub fn unseal_sender_identity(
     let mut key = [0u8; 32];
     key.copy_from_slice(&key_material);
 
-    let plaintext = aead_decrypt(&key, ciphertext, &ephemeral_pub_bytes)?;
+    let mut aad = ephemeral_pub_bytes.to_vec();
+    aad.extend_from_slice(binding);
+    let plaintext = aead_decrypt(&key, ciphertext, &aad)?;
     let sender_bytes: [u8; 32] =
         plaintext.try_into().map_err(|_| CryptoError::InvalidLength)?;
     Ok(PublicKey::from(sender_bytes))

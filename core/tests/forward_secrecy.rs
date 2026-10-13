@@ -145,6 +145,7 @@ fn decrypt_falhado_nao_altera_o_estado() {
     for n in [0u32, 1, 5, 999, 1_000_000] {
         let forjada = EncryptedMessage {
             dh_public: DhKeyPair::generate().public,
+            pn: 0,
             n,
             ciphertext: vec![0xAB; 48],
         };
@@ -178,12 +179,9 @@ fn salto_excessivo_e_rejeitado_sem_estragar_a_sessao() {
 }
 
 #[test]
-fn limitacao_fora_de_ordem_entre_cadeias_dh_perde_a_mensagem() {
-    // LIMITACAO CONHECIDA (formato de fio atual): o cabecalho nao leva `pn`
-    // (tamanho da cadeia anterior, como na especificacao do Signal), por isso,
-    // quando chega uma mensagem de uma cadeia DH NOVA antes de mensagens
-    // atrasadas da cadeia ANTERIOR, estas ultimas nao se conseguem decifrar.
-    // O estado nao e corrompido e a sessao continua. Corrigir exige mudar o formato.
+fn fora_de_ordem_entre_cadeias_dh_recupera_com_pn() {
+    // Com PN no cabecalho, uma mensagem atrasada da cadeia ANTERIOR e
+    // decifravel depois de chegar uma mensagem da cadeia DH nova.
     let (mut alice, mut bob) = par();
     let a1 = alice.encrypt(b"a1").unwrap();
     let a2 = alice.encrypt(b"a2").unwrap(); // vai chegar atrasada
@@ -191,8 +189,10 @@ fn limitacao_fora_de_ordem_entre_cadeias_dh_perde_a_mensagem() {
     let b1 = bob.encrypt(b"b1").unwrap();
     alice.decrypt(&b1).unwrap();
     let a3 = alice.encrypt(b"a3").unwrap(); // cadeia DH nova
+    assert_eq!(a3.pn, 2, "PN = tamanho da cadeia anterior");
     assert_eq!(bob.decrypt(&a3).unwrap(), b"a3");
-    assert!(bob.decrypt(&a2).is_err(), "a2 (cadeia antiga, atrasada) perde-se: limitacao conhecida");
+    assert_eq!(bob.decrypt(&a2).unwrap(), b"a2", "a2 recupera-se via PN");
+    assert!(bob.decrypt(&a2).is_err(), "a2 nao pode ser aceite duas vezes");
     // a sessao nao ficou danificada:
     let a4 = alice.encrypt(b"a4").unwrap();
     assert_eq!(bob.decrypt(&a4).unwrap(), b"a4");
@@ -236,4 +236,44 @@ fn estado_serializado_corrompido_nunca_entra_em_panic() {
     let off = b.len() - 4;
     b[off..].copy_from_slice(&u32::MAX.to_be_bytes());
     let _ = RatchetState::from_bytes(&b);
+}
+
+#[test]
+fn limite_global_de_chaves_puladas() {
+    use qt_core::ratchet::MAX_SKIPPED_TOTAL;
+    let (mut alice, mut bob) = par();
+    let primeira_pulada = alice.encrypt(b"primeira").unwrap(); // n=0, nunca entregue ate ao fim
+    let mut ultima = primeira_pulada.clone();
+    // 4 saltos legitimos de 900: acumulariam 3600 chaves sem limite global.
+    for _ in 0..4 {
+        for _ in 0..900 {
+            ultima = alice.encrypt(b"x").unwrap();
+        }
+        bob.decrypt(&ultima).unwrap();
+        assert!(bob.skipped_key_count() <= MAX_SKIPPED_TOTAL);
+    }
+    assert_eq!(bob.skipped_key_count(), MAX_SKIPPED_TOTAL);
+    // A mais antiga foi descartada para respeitar o limite.
+    assert!(bob.decrypt(&primeira_pulada).is_err());
+    // O estado serializado respeita o limite ao recarregar.
+    assert!(qt_core::ratchet::RatchetState::from_bytes(&bob.to_bytes()).is_some());
+}
+
+#[test]
+fn associated_data_diferente_nao_autentica() {
+    let (alice, bob) = par();
+    let mut alice = alice.with_associated_data(b"identidades-A".to_vec());
+    let mut bob = bob.with_associated_data(b"identidades-B".to_vec());
+    let m = alice.encrypt(b"oi").unwrap();
+    assert!(bob.decrypt(&m).is_err());
+}
+
+#[test]
+fn estado_antigo_sem_trailer_continua_a_carregar() {
+    let (_alice, bob) = par();
+    let novo = bob.to_bytes();
+    // formato antigo = sem os 4+2 bytes de PN e AD (AD vazio)
+    let antigo = &novo[..novo.len() - 6];
+    let r = qt_core::ratchet::RatchetState::from_bytes(antigo).expect("compat");
+    assert_eq!(r.to_bytes(), novo);
 }

@@ -50,7 +50,7 @@ fn setup_session() -> (RatchetState, RatchetState) {
 }
 
 fn clone_message(msg: &EncryptedMessage) -> EncryptedMessage {
-    EncryptedMessage { dh_public: msg.dh_public, n: msg.n, ciphertext: msg.ciphertext.clone() }
+    EncryptedMessage { dh_public: msg.dh_public, pn: msg.pn, n: msg.n, ciphertext: msg.ciphertext.clone() }
 }
 
 proptest! {
