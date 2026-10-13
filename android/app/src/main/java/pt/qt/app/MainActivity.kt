@@ -61,13 +61,30 @@ fun AppRoot(vm: MainViewModel) {
         openChat != null -> {
             BackHandler { openChat = null }
             val contact = ui.contacts.firstOrNull { it.contactId == openChat }
-            ChatScreen(ui, openChat!!, contact, onSend = vm::send, onBack = { openChat = null }, onAdd = vm::addContact)
+            ChatScreen(ui, openChat!!, contact, onSend = vm::send, onBack = { openChat = null }, onAdd = vm::addContact, onSafety = vm::showSafetyNumber)
         }
         showSettings -> {
             BackHandler { showSettings = false }
             SettingsScreen(ui, onSave = { u, k -> vm.saveRelay(u, k); showSettings = false })
         }
         else -> HomeScreen(ui, vm, onOpen = { openChat = it }, onSettings = { showSettings = true })
+    }
+    ui.safetyNumber?.let { text ->
+        AlertDialog(
+            onDismissRequest = vm::dismissSafetyNumber,
+            confirmButton = { TextButton(onClick = vm::dismissSafetyNumber) { Text("Fechar") } },
+            title = { Text("Safety number") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SelectionContainer { Text(text, style = MaterialTheme.typography.bodyLarge) }
+                    Text(
+                        "Compara estes 60 digitos com a outra pessoa por outro canal (voz, pessoalmente). " +
+                            "Se forem diferentes, alguem (ou o relay) esta no meio: nao confies nesta conversa.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            },
+        )
     }
     ui.error?.let { msg ->
         AlertDialog(onDismissRequest = vm::dismissError, confirmButton = { TextButton(onClick = vm::dismissError) { Text("OK") } }, text = { Text(msg) })
@@ -81,7 +98,7 @@ fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit) {
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("QT — protótipo", style = MaterialTheme.typography.headlineSmall)
         Text("Protótipo NÃO auditado. Não uses para conversas reais.", color = MaterialTheme.colorScheme.error)
-        OutlinedTextField(url, { url = it }, label = { Text("URL do relay (ws:// só em debug)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+        OutlinedTextField(url, { url = it }, label = { Text("URL do relay (wss://; ws:// só em debug)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
         OutlinedTextField(key, { key = it }, label = { Text("Chave pública do relay (hex, opcional — pinning)") }, modifier = Modifier.fillMaxWidth())
         Button(onClick = { onCreate(url, key) }) { Text("Criar identidade") }
     }
@@ -157,6 +174,7 @@ fun AddContactDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
 fun ChatScreen(
     ui: UiState, contactId: String, contact: Contact?,
     onSend: (Contact, String) -> Unit, onBack: () -> Unit, onAdd: (String, String) -> Unit,
+    onSafety: (Contact) -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
     var showAdd by remember { mutableStateOf(false) }
@@ -165,6 +183,7 @@ fun ChatScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("‹ Voltar") }
             Text(contact?.nickname ?: "Desconhecido ${contactId.take(8)}…", style = MaterialTheme.typography.titleMedium)
+            if (contact != null) TextButton(onClick = { onSafety(contact) }) { Text("Safety number") }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(msgs) { m ->

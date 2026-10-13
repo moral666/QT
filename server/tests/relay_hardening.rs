@@ -23,6 +23,7 @@ fn quick() -> RelayConfig {
         max_retries: 0,
         backoff_base: Duration::from_millis(50),
         expected_server_static: None,
+        allow_insecure_ws: false,
     }
 }
 async fn client(relay: &TestRelay, s: &SigningKeyPair, cfg: RelayConfig) -> RelayClient {
@@ -361,4 +362,15 @@ async fn encerramento_limpo_e_reuso() {
     c.close().await;
     assert!(!c.is_connected());
     assert!(c.fetch_messages().await.is_ok(), "pode voltar a usar-se apos close");
+}
+
+#[tokio::test]
+async fn cliente_recusa_ws_sem_tls_para_destino_remoto_sem_repetir() {
+    let n = generate_static_keypair().unwrap();
+    let s = SigningKeyPair::generate();
+    let cfg = RelayConfig { max_retries: 5, backoff_base: Duration::from_secs(5), ..quick() };
+    let t = std::time::Instant::now();
+    let r = RelayClient::connect("ws://192.0.2.1:9443", n.private, s.to_bytes(), cfg).await;
+    assert!(matches!(r, Err(RelayError::InsecureUrl)), "ws:// remoto tem de ser recusado");
+    assert!(t.elapsed() < Duration::from_secs(1), "erro permanente: sem backoff/repeticoes");
 }

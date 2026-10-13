@@ -28,3 +28,8 @@ __pycache__/
 *.db-journal
 peer.db*
 relay_noise_key*
+
+# Assinatura Android: NUNCA commitar keystores nem passwords
+*.jks
+*.keystore
+/android/keystore.properties

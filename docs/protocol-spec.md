@@ -346,14 +346,23 @@ Bob:   relay.fetch → decryptSealed → (sessão criada) → relay.ack
 Propriedades PQ exatas: ver `threat-model.md` §3.1 (híbrido para
 confidencialidade do segredo inicial; autenticação, cura e transporte são clássicos).
 
-## 9. Bundle de chaves públicas (v2)
+## 9. Bundle de chaves públicas (v3)
 
 Binário (1349 bytes), usado entre cliente e relay:
-`[2][IK 32][IK_sign 32][SPK 32][sig 64][pq_prekey_id u32 BE][ML-KEM-768 pub 1184]`.
-`sig = Ed25519(IK_sign, "QT-PQXDH-v1-bundle" ‖ SPK ‖ ML-KEM pub)`.
-O relay trata-o como opaco; o cliente verifica: `IK`/`IK_sign` iguais aos do
-QT Public ID, assinatura válida, chave ML-KEM canónica. Não inclui one-time
-prekeys (o relay não as distribui em modo single-use).
+`[3][IK 32][IK_sign 32][SPK 32][sig 64][pq_prekey_id u32 BE][ML-KEM-768 pub 1184]`.
+`sig = Ed25519(IK_sign, "QT-PQXDH-v2-bundle" ‖ IK ‖ SPK ‖ ML-KEM pub)` — a
+assinatura cobre a identidade X25519 (`IK`), por isso a chave Ed25519 **atesta**
+a X25519 e nenhuma das duas pode ser trocada isoladamente.
+
+* **Relay:** só aceita `RegisterPreKeyBundle` se `user_id` = utilizador
+  autenticado, `IK_sign` do bundle = a chave Ed25519 autenticada na ligação e a
+  assinatura validar. Ninguém escreve no slot de outro, nem regista um bundle
+  que reclame a identidade de outro.
+* **Cliente:** verifica `IK`/`IK_sign` iguais aos do QT Public ID, assinatura
+  válida, chave ML-KEM canónica.
+* **Safety number:** 60 dígitos (12×5) derivados de `IK ‖ IK_sign` de ambos
+  (SHA-512 iterado 5200×, ordenados para serem simétricos). Mostrado na app
+  para comparação fora de banda. Não inclui one-time prekeys.
 
 **QT Public ID:** `"qt1:" + hex(IK ‖ IK_sign)` (64 bytes → 128 hex).
 **contactId:** `hex(IK)`. **Caixa no relay (`user_id`):** `hex(IK_sign)`.
@@ -361,17 +370,27 @@ prekeys (o relay não as distribui em modo single-use).
 ## 10. Envelope v1 (o que o relay transporta)
 
 ```
-Envelope      = [1: versão=1][1: tipo][se tipo=1: Cabeçalho][Mensagem de ratchet]
+Envelope      = [1: versão=2][1: tipo][se tipo=1: Cabeçalho][Mensagem de ratchet]
 tipo          = 0 mensagem normal | 1 mensagem com cabeçalho PQXDH
 Cabeçalho     = [32: EK_A pública][4: opk_id BE (0 = nenhuma)][4: pq_prekey_id BE][1088: ct ML-KEM]
-Mensagem      = [32: chave DH do ratchet][4: n BE][N: nonce(12) ‖ AEAD ct ‖ tag(16)]
-Selado        = [1: versão=1][2: len BE][caixa selada (identidade do remetente)][Envelope]
-Caixa selada  = [32: efémera pública][nonce ‖ AEAD(IK_remetente, AAD = efémera)]  (chave = HKDF(X25519(efémera, IK_destinatário)))
+Mensagem      = [32: chave DH do ratchet][4: PN BE][4: n BE][N: nonce(12) ‖ AEAD ct ‖ tag(16)]
+Selado        = [1: versão=2][2: len BE][caixa selada (identidade do remetente)][Envelope]
+Caixa selada  = [32: efémera pública][nonce ‖ AEAD(IK_remetente, AAD = efémera ‖ SHA-256("QT-SEALED-BIND-v1" ‖ Envelope))]  (chave = HKDF(X25519(efémera, IK_destinatário)))
 ```
 * O cabeçalho **não** contém a identidade do remetente (vai na caixa selada,
   ou é indicada pelo relay no modo não selado).
 * Enquanto o iniciador não receber nada do contacto, **todas** as mensagens
   levam o cabeçalho (a 1.ª pode chegar fora de ordem ou perder-se).
+* **Remetente autenticado pela sessão:** a identidade na caixa selada é só uma
+  *pista* para escolher a sessão. O AAD de cada mensagem do ratchet inclui
+  `"QT-AD-v1" ‖ IK_iniciador ‖ IK_respondedor ‖ chave DH ‖ PN ‖ n`; só quem
+  tem as chaves da sessão (e as duas identidades certas) autentica. A caixa
+  está ligada ao envelope (hash no AAD) e não pode ser reutilizada com outro.
+* **Ratchet:** `PN` (tamanho da cadeia de envio anterior) permite decifrar
+  mensagens atrasadas da cadeia anterior após um DH ratchet. Salto máximo por
+  cadeia: 1000; limite global de chaves puladas guardadas: 2000 (as mais
+  antigas são descartadas). `decrypt` trabalha numa cópia do estado e só a
+  confirma se o AEAD autenticar.
 * ID do envelope para deduplicação = `(chave DH ‖ n)`; registado **depois** de
   decifrar com sucesso (para um forjador não poder “envenenar” a lista).
 * O destinatário só consome a one-time prekey **depois** de a 1.ª mensagem

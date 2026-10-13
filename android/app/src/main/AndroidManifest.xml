@@ -7,6 +7,7 @@
          aparelho; um backup na nuvem seria inutil e so aumentaria a superficie de ataque. -->
     <application
         android:allowBackup="false"
+        android:usesCleartextTraffic="false"
         android:label="QT"
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.QT">

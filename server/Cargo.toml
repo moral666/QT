@@ -7,7 +7,7 @@ description = "Servidor/relay: fila de mensagens cifradas + diretorio de pre-key
 publish = false
 
 [dependencies]
-qt_transport = { path = "../transport" }
+qt_transport = { path = "../transport", features = ["tls"] }
 qt_core = { path = "../core" }
 ed25519-dalek = { version = "2" }
 rand = "0.8"

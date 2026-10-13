@@ -2,11 +2,11 @@
 //! usando `tokio-tungstenite`. Cada mensagem Noise viaja como um frame
 //! binario do WebSocket.
 //!
-//! NOTA DE SEGURANCA: esta demo usa `ws://` (sem TLS) sobre localhost, para
-//! poder ser testada neste ambiente sem certificados. Em producao, usar
-//! sempre `wss://` (WebSocket sobre TLS) como primeira camada de defesa de
-//! rede, com o Noise por cima como segunda camada (autenticacao mutua que
-//! nao depende da CA/PKI do TLS).
+//! SEGURANCA: o cliente so aceita `wss://` (TLS) e, para desenvolvimento,
+//! `ws://` apenas em loopback (ver `check_url_policy`). O Noise corre POR
+//! CIMA do TLS como segunda camada (autenticacao mutua + pinning da chave
+//! do relay, independente da PKI/CA). O relay escuta em TCP simples e o TLS
+//! e terminado por um proxy inverso (ver docs/deploy-wss.md).
 
 use crate::noise_session::{NoiseError, NoiseHandshake, NoiseTransport};
 use futures_util::{SinkExt, StreamExt};
@@ -29,6 +29,8 @@ pub enum TransportError {
     ConnectionClosed,
     #[error("timeout")]
     Timeout,
+    #[error("URL recusado: usa wss:// (ws:// so e aceite para localhost)")]
+    InsecureUrl,
     #[error("chave estatica do servidor nao corresponde a chave esperada (pinning)")]
     ServerKeyMismatch,
 }
@@ -44,11 +46,14 @@ pub struct ClientOptions {
     pub connect_timeout: std::time::Duration,
     /// Se definido, o handshake falha se a chave estatica do servidor for diferente.
     pub expected_server_static: Option<Vec<u8>>,
+    /// Permite `ws://` (sem TLS) para destinos que NAO sejam loopback.
+    /// Por omissao `false`: fora de localhost so se aceita `wss://`.
+    pub allow_insecure_ws: bool,
 }
 
 impl Default for ClientOptions {
     fn default() -> Self {
-        Self { connect_timeout: std::time::Duration::from_secs(10), expected_server_static: None }
+        Self { connect_timeout: std::time::Duration::from_secs(10), expected_server_static: None, allow_insecure_ws: false }
     }
 }
 
@@ -58,6 +63,29 @@ fn ws_config() -> tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
         max_frame_size: Some(MAX_WS_MESSAGE),
         ..Default::default()
     }
+}
+
+/// Politica de esquema: `wss://` sempre; `ws://` so para loopback (testes/dev
+/// locais) ou com `allow_insecure_ws`. Qualquer outro esquema e recusado.
+pub fn check_url_policy(url: &str, allow_insecure_ws: bool) -> Result<(), TransportError> {
+    let lower = url.to_ascii_lowercase();
+    if lower.starts_with("wss://") {
+        return Ok(());
+    }
+    if let Some(rest) = lower.strip_prefix("ws://") {
+        let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+        let host = if let Some(v6) = authority.strip_prefix('[') {
+            v6.split(']').next().unwrap_or("")
+        } else {
+            authority.split(':').next().unwrap_or("")
+        };
+        let loopback = host == "localhost"
+            || host.parse::<std::net::IpAddr>().map(|ip| ip.is_loopback()).unwrap_or(false);
+        if loopback || allow_insecure_ws {
+            return Ok(());
+        }
+    }
+    Err(TransportError::InsecureUrl)
 }
 
 pub type ClientWsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -93,6 +121,7 @@ async fn client_connect_inner(
     local_static_private: &[u8],
     opts: &ClientOptions,
 ) -> Result<(ClientWsStream, NoiseTransport), TransportError> {
+    check_url_policy(url, opts.allow_insecure_ws)?;
     let (mut ws_stream, _response) =
         tokio_tungstenite::connect_async_with_config(url, Some(ws_config()), false)
             .await
@@ -250,4 +279,32 @@ where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     let _ = tokio::time::timeout(std::time::Duration::from_secs(2), ws_stream.close(None)).await;
+}
+
+#[cfg(test)]
+mod url_policy_tests {
+    use super::*;
+
+    #[test]
+    fn aceita_wss_e_ws_so_em_loopback() {
+        for ok in ["wss://relay.example.org", "WSS://x.y:443/p", "ws://127.0.0.1:9443", "ws://localhost:1", "ws://[::1]:9443"] {
+            assert!(check_url_policy(ok, false).is_ok(), "{ok}");
+        }
+    }
+
+    #[test]
+    fn recusa_ws_remoto_outros_esquemas_e_hosts_que_so_parecem_loopback() {
+        for bad in [
+            "ws://relay.example.org",
+            "ws://192.168.1.10:9443",
+            "http://x",
+            "relay.example.org",
+            "ws://127.0.0.1.evil.com:9443",
+            "ws://localhost.evil.org",
+            "ws://127.0.0.1@evil.com/",
+        ] {
+            assert!(check_url_policy(bad, false).is_err(), "{bad}");
+        }
+        assert!(check_url_policy("ws://192.168.1.10:9443", true).is_ok(), "opt-in explicito");
+    }
 }
