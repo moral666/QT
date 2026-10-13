@@ -23,7 +23,7 @@ data class UiState(
     val loading: Boolean = true,
     val hasIdentity: Boolean = false,
     val publicId: String = "",
-    val relayUrl: String = "ws://192.168.1.10:9443",
+    val relayUrl: String = if (BuildConfig.ALLOW_CLEARTEXT) "ws://192.168.1.10:9443" else "wss://",
     val relayKeyHex: String = "",
     val status: String = "",
     val error: String? = null,
@@ -32,6 +32,8 @@ data class UiState(
     val chats: Map<String, List<ChatMessage>> = emptyMap(),
     /** Remetentes que nos escreveram mas ainda nao adicionamos (contactId). */
     val unknownSenders: Set<String> = emptySet(),
+    /** Safety number a mostrar (nome + 60 digitos), ou null. */
+    val safetyNumber: String? = null,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -84,6 +86,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveRelay(relayUrl: String, relayKeyHex: String) {
+        val u = relayUrl.trim().lowercase()
+        if (!u.startsWith("wss://") && !(BuildConfig.ALLOW_CLEARTEXT && u.startsWith("ws://"))) {
+            error("O relay tem de usar wss:// (ws:// so na build debug)")
+            return
+        }
         prefs.edit().putString("relay_url", relayUrl.trim()).putString("relay_key", relayKeyHex.trim()).apply()
         _ui.update { it.copy(relayUrl = relayUrl.trim(), relayKeyHex = relayKeyHex.trim()) }
         // hasIdentity() toca no SQLCipher: nunca na thread principal.
@@ -124,6 +131,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             error("Public ID invalido")
         }
     }
+
+    // ---------------------------------------------------------- safety numbers
+
+    /** Mostra o safety number com este contacto (calculado no Rust a partir dos dois Public IDs). */
+    fun showSafetyNumber(contact: Contact) = io {
+        val client = qt ?: return@io
+        try {
+            val n = client.safetyNumber(contact.publicId)
+            _ui.update { it.copy(safetyNumber = "${contact.nickname}\n\n$n") }
+        } catch (e: Exception) {
+            error("Nao foi possivel calcular o safety number: ${e.safeMsg()}")
+        }
+    }
+
+    fun dismissSafetyNumber() = _ui.update { it.copy(safetyNumber = null) }
 
     // ---------------------------------------------------------------------- enviar
 

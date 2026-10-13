@@ -1,6 +1,11 @@
 //! Binario standalone do servidor/relay. Uso:
 //!   REDIS_URL=redis://127.0.0.1:6379 cargo run --bin relay_server
 //!
+//! TLS: o relay escuta em TCP simples e, POR OMISSAO, so em 127.0.0.1. Os
+//! clientes ligam por `wss://` a um proxy inverso que termina o TLS e
+//! encaminha para aqui (ver docs/deploy-wss.md). So uses RELAY_BIND_ADDR=0.0.0.0:...
+//! em redes de teste fechadas.
+//!
 //! Requer um Redis a correr (ver README.md) - a fila de mensagens e o
 //! diretorio de pre-keys sao persistidos la, nao em memoria.
 //!
@@ -70,7 +75,7 @@ fn redact_url(url: &str) -> String {
 
 #[tokio::main]
 async fn main() {
-    let bind_addr = std::env::var("RELAY_BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:9443".to_string());
+    let bind_addr = std::env::var("RELAY_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:9443".to_string());
     let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
     let noise_key_path = std::env::var("NOISE_KEY_PATH").unwrap_or_else(|_| "relay_noise_key.bin".to_string());
 

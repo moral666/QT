@@ -6,6 +6,24 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### Segurança (hardening)
+- **Quebra de formato:** bundle v3 (assinatura cobre a identidade X25519),
+  envelope v2 (cabeçalho do ratchet com `PN`, AD de sessão no AAD, caixa
+  selada ligada ao envelope). Sessões/bundles v2 existentes deixam de ser
+  compatíveis; estados de ratchet antigos em disco ainda carregam.
+- Safety numbers (`QtClient::safety_number`, ecrã na app Android).
+- Relay valida que o bundle registado pertence à identidade autenticada
+  (chave Ed25519 + assinatura) — ninguém escreve no bundle de outrem.
+- Remetente autenticado pela sessão (AD com as duas identidades), não pelo envelope.
+- Ratchet: `PN`, limite global de chaves puladas (2000), `decrypt` transacional
+  sobre cópia, rejeição explícita de mensagens repetidas/antigas.
+- Transporte: o cliente Rust só aceita `wss://` (ou `ws://` em loopback);
+  o relay escuta por omissão em `127.0.0.1` atrás de um proxy TLS
+  (`docs/deploy-wss.md`). Android: release só `wss://`, `usesCleartextTraffic=false`,
+  assinatura com keystore própria (o build falha sem ela).
+- Legado: a CLI (`cli/`, X3DH clássico) já não consegue registar bundles num relay
+  atualizado (formato v3 obrigatório).
+
 ### Adicionado
 - Modelo de ameaças completo (`docs/threat-model.md`)
 - Roadmap dedicado (`ROADMAP.md`)

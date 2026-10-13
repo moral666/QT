@@ -1,8 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// Assinatura de RELEASE com keystore propria (NUNCA no repositorio). Le, por ordem:
+// android/keystore.properties (storeFile, storePassword, keyAlias, keyPassword)
+// ou as variaveis de ambiente QT_KEYSTORE_FILE / QT_KEYSTORE_PASSWORD / QT_KEY_ALIAS / QT_KEY_PASSWORD.
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun signingProp(key: String, env: String): String? = keystoreProps.getProperty(key) ?: System.getenv(env)
 
 android {
     namespace = "pt.qt.app"
@@ -18,8 +29,29 @@ android {
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
+    buildFeatures { buildConfig = true }
+
+    signingConfigs {
+        create("release") {
+            val path = signingProp("storeFile", "QT_KEYSTORE_FILE")
+            if (path != null) {
+                storeFile = rootProject.file(path)
+                storePassword = signingProp("storePassword", "QT_KEYSTORE_PASSWORD")
+                keyAlias = signingProp("keyAlias", "QT_KEY_ALIAS")
+                keyPassword = signingProp("keyPassword", "QT_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            // So a build debug pode falar ws:// (ver src/debug/res/xml/network_security_config.xml).
+            buildConfigField("boolean", "ALLOW_CLEARTEXT", "true")
+        }
         release {
+            buildConfigField("boolean", "ALLOW_CLEARTEXT", "false")
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -46,4 +78,18 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
+}
+
+// Falha cedo (e claramente) se se tentar gerar um release sem keystore propria,
+// em vez de produzir um APK assinado com a chave de debug ou nao assinado.
+gradle.taskGraph.whenReady {
+    val wantsRelease = allTasks.any {
+        it.project == project && it.name.matches(Regex("(assemble|bundle|package)Release.*"))
+    }
+    if (wantsRelease && android.signingConfigs.getByName("release").storeFile == null) {
+        throw GradleException(
+            "Release sem keystore: cria android/keystore.properties (ver android/README.md, " +
+                "'Assinatura de release') ou define QT_KEYSTORE_FILE/QT_KEYSTORE_PASSWORD/QT_KEY_ALIAS/QT_KEY_PASSWORD."
+        )
+    }
 }

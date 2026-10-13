@@ -73,6 +73,11 @@ class RelayLink(
     }
 
     private suspend fun connect(): Conn {
+        // Defesa em profundidade alem do network_security_config: release so aceita wss://.
+        val scheme = url.trim().lowercase()
+        if (!scheme.startsWith("wss://") && !(BuildConfig.ALLOW_CLEARTEXT && scheme.startsWith("ws://"))) {
+            throw PermanentRelayException("URL do relay recusado: usa wss:// (ws:// so na build debug)")
+        }
         val noise = qt.relayNoiseSession()
         val inbox = Channel<ByteArray>(Channel.UNLIMITED)
         val listener = object : WebSocketListener() {

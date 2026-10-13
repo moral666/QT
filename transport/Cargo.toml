@@ -15,3 +15,9 @@ x25519-dalek = { version = "2", features = ["static_secrets"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
+
+[features]
+default = []
+# wss:// no cliente Rust (CLI/testes/peer). NAO e ativado na build Android
+# (a app usa OkHttp, que ja suporta wss com a PKI do sistema).
+tls = ["tokio-tungstenite/rustls-tls-webpki-roots"]

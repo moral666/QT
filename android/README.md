@@ -38,6 +38,8 @@ hostname -I          # o IP do PC, ex.: 192.168.1.23
 sudo ufw allow 9443/tcp   # se tiveres firewall
 ```
 Na app: URL `ws://192.168.1.23:9443` (o `ws://` só funciona na build *debug*) e a chave pública de pinning.
+Nota: o relay escuta por omissão só em `127.0.0.1`; para o telemóvel o alcançar em rede de teste usa
+`RELAY_BIND_ADDR=0.0.0.0:9443`. Em produção: `wss://` atrás de proxy TLS (`docs/deploy-wss.md`).
 
 ## Testar com UM só telemóvel: o PC faz de segundo utilizador
 
@@ -65,3 +67,26 @@ Verificou-se: (a) os bindings Kotlin gerados compilam; (b) toda a lógica (Keyst
 ViewModel) passa a verificação de tipos contra esses bindings, com *stubs* das bibliotecas Android;
 (c) o fluxo de rede equivalente em Rust. **Não** se verificou: o ecrã Compose, o Gradle, o Keystore em aparelho real.
 Espera ter de corrigir pequenos erros de compilação no primeiro build.
+
+## Assinatura de release (keystore própria)
+
+A build *release* **falha** se não houver keystore (não usa a chave de debug). Gera uma **uma vez**, guarda-a
+fora do repositório e faz cópia de segurança (se a perderes, não consegues publicar atualizações):
+
+```bash
+keytool -genkeypair -v -keystore ~/qt-release.jks -alias qt -keyalg RSA -keysize 4096 -validity 10000
+```
+Cria `android/keystore.properties` (ignorado pelo git) — ou usa as variáveis `QT_KEYSTORE_FILE`,
+`QT_KEYSTORE_PASSWORD`, `QT_KEY_ALIAS`, `QT_KEY_PASSWORD`:
+```
+storeFile=/home/tu/qt-release.jks
+storePassword=...
+keyAlias=qt
+keyPassword=...
+```
+Depois: `./gradlew assembleRelease`. A release só aceita `wss://` (`usesCleartextTraffic=false`,
+`network_security_config` sem cleartext e verificação em `RelayLink`/`saveRelay`).
+
+## Safety numbers
+Na conversa, *Safety number* mostra 60 dígitos calculados no Rust a partir dos Public IDs dos dois.
+Compara-os por outro canal; se diferirem, não confies na conversa.
