@@ -13,6 +13,7 @@
 //! Ver docs/protocol-spec.md para o que ainda falta antes de producao real
 //! (transporte, sealed sender, armazenamento persistente).
 
+pub mod identity;
 pub mod primitives;
 pub mod x3dh;
 pub mod ratchet;
@@ -23,5 +24,7 @@ pub mod pqxdh;
 
 pub use primitives::{CryptoError, DhKeyPair, SigningKeyPair};
 pub use ratchet::{EncryptedMessage, RatchetError, RatchetState};
-pub use sealed_sender::{seal_sender_identity, unseal_sender_identity};
+pub use sealed_sender::{
+    seal_sender_identity, seal_sender_identity_bound, unseal_sender_identity, unseal_sender_identity_bound,
+};
 pub use x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond, PreKeyBundle, X3dhError, X3dhInitResult};

@@ -91,17 +91,29 @@ async fn utilizadores_nao_acedem_a_filas_ou_bundles_de_outros() {
     let mut m = client(&relay, &mallory, quick()).await;
 
     a.send_message(&uid(&bob), vec![], b"envelope-1".to_vec()).await.unwrap();
-    b.register_bundle(b"bundle-do-bob".to_vec()).await.unwrap();
+    let bundle_bob = common::valid_bundle(&bob, 1);
+    b.register_bundle(bundle_bob.clone()).await.unwrap();
 
     // Mallory: ler / apagar a fila do Bob, sobrescrever o bundle do Bob.
     let r = m.request(ClientMessage::FetchMessages { user_id: uid(&bob) }).await.unwrap();
     assert!(matches!(r, ServerMessage::Error { .. }));
     let r = m.request(ClientMessage::AckMessages { user_id: uid(&bob), ids: vec![1, 2, 3] }).await.unwrap();
     assert!(matches!(r, ServerMessage::Error { .. }));
-    let r = m.request(ClientMessage::RegisterPreKeyBundle { user_id: uid(&bob), bundle_bytes: b"falso".to_vec() }).await.unwrap();
+    let r = m.request(ClientMessage::RegisterPreKeyBundle { user_id: uid(&bob), bundle_bytes: common::valid_bundle(&mallory, 9) }).await.unwrap();
+    assert!(matches!(r, ServerMessage::Error { .. }), "nao se escreve no slot do Bob");
+    // Mallory regista no SEU slot um bundle que reclama a chave do Bob (e assinado por Bob): recusado.
+    let r = m.request(ClientMessage::RegisterPreKeyBundle { user_id: uid(&mallory), bundle_bytes: bundle_bob.clone() }).await.unwrap();
+    assert!(matches!(r, ServerMessage::Error { .. }), "bundle de outra identidade");
+    // Mallory assina o seu bundle mas adultera a identidade X25519 depois: assinatura invalida.
+    let mut adulterado = common::valid_bundle(&mallory, 9);
+    adulterado[1] ^= 0xFF;
+    let r = m.request(ClientMessage::RegisterPreKeyBundle { user_id: uid(&mallory), bundle_bytes: adulterado }).await.unwrap();
+    assert!(matches!(r, ServerMessage::Error { .. }), "assinatura nao cobre a identidade");
+    // Lixo arbitrario no proprio slot tambem e recusado.
+    let r = m.request(ClientMessage::RegisterPreKeyBundle { user_id: uid(&mallory), bundle_bytes: b"falso".to_vec() }).await.unwrap();
     assert!(matches!(r, ServerMessage::Error { .. }));
 
-    assert_eq!(a.fetch_bundle(&uid(&bob)).await.unwrap().unwrap(), b"bundle-do-bob");
+    assert_eq!(a.fetch_bundle(&uid(&bob)).await.unwrap().unwrap(), bundle_bob);
     let msgs = b.fetch_messages().await.unwrap();
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].ciphertext, b"envelope-1");

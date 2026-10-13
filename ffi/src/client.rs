@@ -9,7 +9,7 @@
 //! Formato do ENVELOPE (v1) - e o unico que o relay ve (opaco para ele):
 //!   [1 versao=1][1 tipo: 0=mensagem, 1=mensagem com cabecalho PQXDH]
 //!   se tipo=1: [32 ephemeral_pub][4 opk_id BE (0=nenhuma)][4 pq_prekey_id BE][1088 ct ML-KEM]
-//!   [32 dh_public do ratchet][4 n BE][ciphertext AEAD]
+//!   [32 dh_public do ratchet][4 pn BE][4 n BE][ciphertext AEAD]
 //! Envelope SELADO: [1 versao=1][2 len BE][caixa selada com identidade do
 //! remetente][envelope]. O cabecalho PQXDH NAO contem a identidade do
 //! remetente (vai dentro da caixa selada, ou e dada pelo relay no modo normal).
@@ -20,14 +20,16 @@ use qt_core::pqxdh::{
     pq_ciphertext_from_bytes, pq_public_key_from_bytes, pqxdh_initiate, pqxdh_respond, PqPreKeyBundle,
     PqPreKeyPair, PQ_CIPHERTEXT_LEN, PQ_PUBLIC_KEY_LEN,
 };
+use qt_core::identity::{self, session_associated_data};
 use qt_core::primitives::{DhKeyPair, SigningKeyPair};
 use qt_core::ratchet::{EncryptedMessage, RatchetState};
-use qt_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
+use qt_core::sealed_sender::{seal_sender_identity_bound, unseal_sender_identity_bound};
+use sha2::{Digest, Sha256};
 use qt_storage as st;
 use x25519_dalek::PublicKey;
 use zeroize::Zeroize;
 
-const ENV_VERSION: u8 = 1;
+const ENV_VERSION: u8 = 2; // v2: cabecalho do ratchet com PN; AD de sessao; caixa selada ligada ao envelope
 const KIND_MSG: u8 = 0;
 const KIND_PREKEY_MSG: u8 = 1;
 const HEADER_LEN: usize = 32 + 4 + 4 + PQ_CIPHERTEXT_LEN;
@@ -168,17 +170,19 @@ fn contact_to_identity(contact_id: &str) -> Result<PublicKey, QtError> {
 }
 
 fn parse_ratchet_part(b: &[u8]) -> Result<EncryptedMessage, QtError> {
-    if b.len() < 36 {
+    if b.len() < 40 {
         return Err(QtError::InvalidEnvelope);
     }
     let dh: [u8; 32] = b[..32].try_into().map_err(|_| QtError::InvalidEnvelope)?;
-    let n = u32::from_be_bytes(b[32..36].try_into().map_err(|_| QtError::InvalidEnvelope)?);
-    Ok(EncryptedMessage { dh_public: PublicKey::from(dh), n, ciphertext: b[36..].to_vec() })
+    let pn = u32::from_be_bytes(b[32..36].try_into().map_err(|_| QtError::InvalidEnvelope)?);
+    let n = u32::from_be_bytes(b[36..40].try_into().map_err(|_| QtError::InvalidEnvelope)?);
+    Ok(EncryptedMessage { dh_public: PublicKey::from(dh), pn, n, ciphertext: b[40..].to_vec() })
 }
 
 fn ratchet_to_bytes(m: &EncryptedMessage) -> Vec<u8> {
-    let mut out = Vec::with_capacity(36 + m.ciphertext.len());
+    let mut out = Vec::with_capacity(40 + m.ciphertext.len());
     out.extend_from_slice(m.dh_public.as_bytes());
+    out.extend_from_slice(&m.pn.to_be_bytes());
     out.extend_from_slice(&m.n.to_be_bytes());
     out.extend_from_slice(&m.ciphertext);
     out
@@ -265,7 +269,7 @@ impl QtClient {
         }
         st::kv_set(&tx, "opk_next", &next.to_be_bytes())?;
         tx.commit()?;
-        let sig = qt_core::pqxdh::sign_pre_key(&ident.identity_signing, &ident.signed_pre_key.public, &pq.public_key_bytes());
+        let sig = qt_core::pqxdh::sign_pre_key(&ident.identity_signing, &ident.identity.public, &ident.signed_pre_key.public, &pq.public_key_bytes());
         Ok(PublishedBundle {
             identity_public: ident.identity.public.as_bytes().to_vec(),
             signing_public: ident.identity_signing.verifying_key.to_bytes().to_vec(),
@@ -321,7 +325,9 @@ impl QtClient {
             one_time_pre_key: opk_pub,
         };
         let mut init = pqxdh_initiate(&ident.identity, &pq_bundle).map_err(|_| QtError::InvalidBundle)?;
-        let ratchet = RatchetState::init_as_initiator(init.shared_secret, their_spk);
+        let ratchet = RatchetState::init_as_initiator(init.shared_secret, their_spk).with_associated_data(
+            session_associated_data(&ident.identity.public, &PublicKey::from(id_pub)),
+        );
         init.shared_secret.zeroize();
 
         let mut header = Vec::with_capacity(HEADER_LEN);
@@ -399,21 +405,43 @@ impl QtClient {
         self.decrypt_locked(&c, &contact_id, &envelope)
     }
 
-    /// Bundle PUBLICO para registar no relay (formato binario v2, 1349 bytes):
-    /// [1 ver][32 identity][32 signing][32 signed_prekey][64 assinatura][4 pq_id BE][1184 pq_pub].
+    /// Bundle PUBLICO para registar no relay (formato binario v3, 1349 bytes):
+    /// [1 ver=3][32 identity][32 signing][32 signed_prekey][64 assinatura][4 pq_id BE][1184 pq_pub].
+    /// A assinatura Ed25519 cobre a identidade X25519 (liga as duas chaves).
     /// Sem one-time prekeys: o relay atual nao as distribui de forma
     /// single-use (ver docs); PQXDH sem OTPK continua valido.
     pub fn publishable_bundle(&self) -> Result<Vec<u8>, QtError> {
-        let b = self.generate_prekey_bundle(0)?;
-        let mut out = Vec::with_capacity(BUNDLE_V1_LEN);
-        out.push(2);
-        out.extend_from_slice(&b.identity_public);
-        out.extend_from_slice(&b.signing_public);
-        out.extend_from_slice(&b.signed_pre_key_public);
-        out.extend_from_slice(&b.signed_pre_key_signature);
-        out.extend_from_slice(&b.pq_pre_key_id.to_be_bytes());
-        out.extend_from_slice(&b.pq_pre_key_public);
-        Ok(out)
+        let c = self.lock()?;
+        let ident = st::load_identity(&c)?;
+        let pq = st::load_pq_prekey(&c, PQ_PREKEY_ID)?.ok_or(QtError::Storage)?;
+        identity::encode_bundle(
+            &ident.identity.public,
+            &ident.identity_signing,
+            &ident.signed_pre_key.public,
+            PQ_PREKEY_ID,
+            &pq.public_key_bytes(),
+        )
+        .ok_or(QtError::Crypto)
+    }
+
+    /// SAFETY NUMBER (60 digitos) entre ti e o dono de `peer_public_id`, para
+    /// comparar por outro canal (voz, pessoalmente). Se ja existir sessao com
+    /// esse contacto, a identidade do ID tem de ser a da sessao.
+    pub fn safety_number(&self, peer_public_id: String) -> Result<String, QtError> {
+        let (peer_id, peer_sign) = parse_public_id(&peer_public_id)?;
+        let c = self.lock()?;
+        let ident = st::load_identity(&c)?;
+        if let Some(meta) = st::load_session_meta(&c, &hex(&peer_id))? {
+            if meta.peer_identity_public != peer_id {
+                return Err(QtError::InvalidBundle);
+            }
+        }
+        Ok(identity::safety_number(
+            &ident.identity.public.to_bytes(),
+            &ident.identity_signing.verifying_key.to_bytes(),
+            &peer_id,
+            &peer_sign,
+        ))
     }
 
     // ------------------------------------------------------------- relay
@@ -496,7 +524,7 @@ impl QtClient {
             let c = self.lock()?;
             st::load_identity(&c)?.identity.public
         };
-        let sealed = seal_sender_identity(&me, &recipient).map_err(|_| QtError::Crypto)?;
+        let sealed = seal_sender_identity_bound(&me, &recipient, &envelope_binding(&env)).map_err(|_| QtError::Crypto)?;
         let mut out = vec![ENV_VERSION];
         out.extend_from_slice(&(sealed.len() as u16).to_be_bytes());
         out.extend_from_slice(&sealed);
@@ -515,10 +543,14 @@ impl QtClient {
         }
         let c = self.lock()?;
         let ident = st::load_identity(&c)?;
-        let sender = unseal_sender_identity(&ident.identity, &sealed_envelope[3..3 + len])
+        let inner = &sealed_envelope[3 + len..];
+        // A identidade selada e so uma PISTA para escolher a sessao. O remetente
+        // so e dado como autenticado se o AEAD do ratchet (chaves + AD com as
+        // duas identidades) passar com essa sessao.
+        let hint = unseal_sender_identity_bound(&ident.identity, &sealed_envelope[3..3 + len], &envelope_binding(inner))
             .map_err(|_| QtError::InvalidEnvelope)?;
-        let contact_id = hex(sender.as_bytes());
-        let plaintext = self.decrypt_locked(&c, &contact_id, &sealed_envelope[3 + len..])?;
+        let contact_id = hex(hint.as_bytes());
+        let plaintext = self.decrypt_locked(&c, &contact_id, inner)?;
         Ok(SealedDecrypted { contact_id, plaintext })
     }
 }
@@ -625,11 +657,19 @@ impl QtClient {
             &ct,
         )
         .map_err(|_| QtError::Crypto)?;
-        let state = RatchetState::init_as_responder(secret, ident.signed_pre_key);
+        let state = RatchetState::init_as_responder(secret, ident.signed_pre_key)
+            .with_associated_data(session_associated_data(&their_identity, &ident.identity.public));
         secret.zeroize();
 
         Ok((state, if opk_id == 0 { None } else { Some(opk_id) }))
     }
+}
+
+fn envelope_binding(env: &[u8]) -> Vec<u8> {
+    let mut h = Sha256::new();
+    h.update(b"QT-SEALED-BIND-v1");
+    h.update(env);
+    h.finalize().to_vec()
 }
 
 fn public_identity(i: &st::StoredIdentity) -> PublicIdentity {
@@ -704,14 +744,14 @@ pub fn relay_id_of_public_id(public_id: String) -> Result<String, QtError> {
     Ok(hex(&sign))
 }
 
-const BUNDLE_V1_LEN: usize = 1 + 32 + 32 + 32 + 64 + 4 + PQ_PUBLIC_KEY_LEN;
+const BUNDLE_V1_LEN: usize = identity::BUNDLE_LEN;
 
 /// Interpreta o bundle devolvido pelo relay (formato de `publishable_bundle`).
 /// A verificacao criptografica (contra o QT Public ID e a assinatura) e feita
 /// por `start_session`.
 #[uniffi::export]
 pub fn peer_bundle_from_relay_bytes(bytes: Vec<u8>) -> Result<PeerBundle, QtError> {
-    if bytes.len() != BUNDLE_V1_LEN || bytes[0] != 2 {
+    if bytes.len() != BUNDLE_V1_LEN || bytes[0] != identity::BUNDLE_VERSION {
         return Err(QtError::InvalidBundle);
     }
     Ok(PeerBundle {

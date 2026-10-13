@@ -1239,6 +1239,7 @@ dependencies = [
  "qt_transport",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "uniffi",
  "x25519-dalek",

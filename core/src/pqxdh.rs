@@ -11,6 +11,7 @@
 //! Compilado e testado com sucesso com rustc 1.91.1 - ver
 //! core/tests/pqxdh_flow.rs (teste completo Alice<->Bob passando).
 
+use crate::identity::bundle_signed_message;
 use crate::primitives::{dh, hkdf_derive, verify_signature, DhKeyPair, SigningKeyPair};
 use ed25519_dalek::{Signature, VerifyingKey};
 use ml_kem::kem::{Decapsulate, Encapsulate};
@@ -140,27 +141,15 @@ pub struct PqPreKeyBundle {
     pub one_time_pre_key: Option<PublicKey>,
 }
 
-/// Contexto de dominio da assinatura do bundle PQXDH.
-const BUNDLE_SIG_CONTEXT: &[u8] = b"QT-PQXDH-v1-bundle";
-
-/// Mensagem assinada: `contexto || signed_pre_key || chave publica ML-KEM`.
-/// A chave ML-KEM TEM de estar coberta pela assinatura: caso contrario, um
-/// relay malicioso poderia substitui-la pela sua e anular a protecao
-/// pos-quantica (o segredo ML-KEM passaria a ser conhecido do atacante).
-fn bundle_signed_message(signed_pre_key: &PublicKey, pq_pre_key_bytes: &[u8]) -> Vec<u8> {
-    let mut m = BUNDLE_SIG_CONTEXT.to_vec();
-    m.extend_from_slice(signed_pre_key.as_bytes());
-    m.extend_from_slice(pq_pre_key_bytes);
-    m
-}
-
-/// Assina o bundle PQXDH (signed pre-key + prekey ML-KEM, 1184 bytes).
+/// Assina o bundle PQXDH: liga a chave Ed25519 a identidade X25519, a signed
+/// pre-key e a prekey ML-KEM (ver `identity::bundle_signed_message`).
 pub fn sign_pre_key(
     identity_signing: &SigningKeyPair,
+    identity_key: &PublicKey,
     signed_pre_key: &PublicKey,
     pq_pre_key_bytes: &[u8],
 ) -> Signature {
-    identity_signing.sign(&bundle_signed_message(signed_pre_key, pq_pre_key_bytes))
+    identity_signing.sign(&bundle_signed_message(identity_key, signed_pre_key, pq_pre_key_bytes))
 }
 
 pub struct PqxdhInitResult {
@@ -176,6 +165,7 @@ pub fn pqxdh_initiate(
     verify_signature(
         &their_bundle.identity_signing_key,
         &bundle_signed_message(
+            &their_bundle.identity_key,
             &their_bundle.signed_pre_key,
             &pq_public_key_to_bytes(&their_bundle.pq_pre_key),
         ),

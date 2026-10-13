@@ -6,6 +6,7 @@
 //! O servidor nunca ve o conteudo: o `ciphertext` que ele guarda e
 //! exatamente o que sai do Double Ratchet em `core/` - bytes opacos.
 
+mod common;
 use qt_core::primitives::{DhKeyPair, SigningKeyPair};
 use qt_core::ratchet::{EncryptedMessage, RatchetState};
 use qt_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
@@ -192,6 +193,7 @@ async fn entrega_assincrona_atraves_do_relay() {
 
     let msg_reconstruida = EncryptedMessage {
         dh_public: x25519_dalek::PublicKey::from(dh_public_bytes),
+        pn: 0, // so ha uma cadeia neste teste
         n,
         ciphertext: ratchet_ciphertext,
     };
@@ -204,7 +206,7 @@ async fn registo_e_consulta_de_prekey_bundle() {
     let server_url = spawn_test_server().await;
 
     let alice_signing = SigningKeyPair::generate();
-    let bundle_falso = b"bytes-opacos-representando-um-PreKeyBundle-serializado".to_vec();
+    let bundle_falso = common::valid_bundle(&alice_signing, 1);
 
     let response = send_one_message(
         &server_url,

@@ -95,3 +95,10 @@ pub fn fast_cfg() -> ServerConfig {
         idle_timeout: std::time::Duration::from_secs(60),
     }
 }
+
+/// Bundle v3 VALIDO (assinado) para a identidade de `signing`; `tag` varia o conteudo.
+pub fn valid_bundle(signing: &qt_core::primitives::SigningKeyPair, tag: u8) -> Vec<u8> {
+    let id = qt_core::primitives::DhKeyPair::generate();
+    let spk = qt_core::primitives::DhKeyPair::generate();
+    qt_core::identity::encode_bundle(&id.public, signing, &spk.public, 1, &[tag; qt_core::identity::PQ_PUBLIC_KEY_BYTES]).unwrap()
+}

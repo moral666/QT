@@ -58,3 +58,14 @@ fn envelope_adulterado_falha_a_decifrar() {
     let resultado = unseal_sender_identity(&bob_identity, &envelope);
     assert!(resultado.is_err(), "envelope adulterado deveria falhar a decifragem (deteção do AEAD)");
 }
+
+#[test]
+fn caixa_selada_ligada_a_um_binding_nao_pode_ser_reutilizada() {
+    use qt_core::sealed_sender::{seal_sender_identity_bound, unseal_sender_identity_bound};
+    let alice = DhKeyPair::generate();
+    let bob = DhKeyPair::generate();
+    let env = seal_sender_identity_bound(&alice.public, &bob.public, b"envelope-1").unwrap();
+    assert_eq!(unseal_sender_identity_bound(&bob, &env, b"envelope-1").unwrap().as_bytes(), alice.public.as_bytes());
+    assert!(unseal_sender_identity_bound(&bob, &env, b"envelope-2").is_err());
+    assert!(unseal_sender_identity(&bob, &env).is_err());
+}

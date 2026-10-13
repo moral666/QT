@@ -114,6 +114,17 @@ pub async fn handle_connection_with(
     Ok(())
 }
 
+fn signing_public_of(user_id: &str) -> Option<[u8; 32]> {
+    if !is_valid_user_id(user_id) {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        out[i] = u8::from_str_radix(&user_id[2 * i..2 * i + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
 fn verify_auth(signing_public: &[u8], signature: &[u8], handshake_hash: &[u8]) -> bool {
     let Ok(pk): Result<[u8; 32], _> = signing_public.try_into() else { return false };
     let Ok(sig): Result<[u8; 64], _> = signature.try_into() else { return false };
@@ -150,6 +161,17 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
             }
             if bundle_bytes.is_empty() || bundle_bytes.len() > MAX_BUNDLE {
                 return err("bundle com tamanho invalido");
+            }
+            // O bundle tem de pertencer a identidade AUTENTICADA: a chave Ed25519
+            // embebida e a da ligacao, e a assinatura (que cobre a identidade
+            // X25519, a signed pre-key e a prekey ML-KEM) tem de validar.
+            let Some(signing) = signing_public_of(me) else { return err("identidade invalida") };
+            if let Err(e) = qt_core::identity::verify_published_bundle(&bundle_bytes, &signing) {
+                return err(match e {
+                    qt_core::identity::IdentityError::WrongOwner => "o bundle nao pertence a esta identidade",
+                    qt_core::identity::IdentityError::BadSignature => "assinatura do bundle invalida",
+                    qt_core::identity::IdentityError::BadFormat => "bundle com formato invalido",
+                });
             }
             match store.register_bundle(user_id, bundle_bytes).await {
                 Ok(()) => ServerMessage::Ack,

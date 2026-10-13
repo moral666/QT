@@ -131,6 +131,7 @@ fn split_public_id(id: &str) -> (String, String) {
 fn serialize_ratchet_message(msg: &EncryptedMessage) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(msg.dh_public.as_bytes());
+    out.extend_from_slice(&msg.pn.to_be_bytes());
     out.extend_from_slice(&msg.n.to_be_bytes());
     out.extend_from_slice(&msg.ciphertext);
     out
@@ -138,11 +139,13 @@ fn serialize_ratchet_message(msg: &EncryptedMessage) -> Vec<u8> {
 
 fn deserialize_ratchet_message(bytes: &[u8]) -> EncryptedMessage {
     let dh_public_bytes: [u8; 32] = bytes[0..32].try_into().unwrap();
-    let n = u32::from_be_bytes(bytes[32..36].try_into().unwrap());
+    let pn = u32::from_be_bytes(bytes[32..36].try_into().unwrap());
+    let n = u32::from_be_bytes(bytes[36..40].try_into().unwrap());
     EncryptedMessage {
         dh_public: x25519_dalek::PublicKey::from(dh_public_bytes),
+        pn,
         n,
-        ciphertext: bytes[36..].to_vec(),
+        ciphertext: bytes[40..].to_vec(),
     }
 }
 

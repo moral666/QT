@@ -206,6 +206,7 @@ async fn main() {
     let ratchet_ciphertext = recebido[36..].to_vec();
     let msg = EncryptedMessage {
         dh_public: x25519_dalek::PublicKey::from(dh_public_bytes),
+        pn: 0, // so ha uma cadeia neste teste
         n,
         ciphertext: ratchet_ciphertext,
     };

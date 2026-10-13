@@ -67,7 +67,7 @@ alice_ratchet_state = resultado_cifra.new_state
 print(f"  Alice cifrou a mensagem ({len(resultado_cifra.ciphertext)} bytes de ciphertext)")
 
 resultado_decifra = ffi.ratchet_decrypt(
-    bob_ratchet_state, resultado_cifra.dh_public, resultado_cifra.n, resultado_cifra.ciphertext
+    bob_ratchet_state, resultado_cifra.dh_public, resultado_cifra.pn, resultado_cifra.n, resultado_cifra.ciphertext
 )
 bob_ratchet_state = resultado_decifra.new_state
 texto_recebido = bytes(resultado_decifra.plaintext)

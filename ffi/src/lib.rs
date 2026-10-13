@@ -223,6 +223,7 @@ pub fn ratchet_init_as_responder(
 pub struct RatchetEncryptResult {
     pub new_state: Vec<u8>,
     pub dh_public: Vec<u8>,
+    pub pn: u32,
     pub n: u32,
     pub ciphertext: Vec<u8>,
 }
@@ -238,6 +239,7 @@ pub fn ratchet_encrypt(state_bytes: Vec<u8>, plaintext: Vec<u8>) -> Result<Ratch
     Ok(RatchetEncryptResult {
         new_state: state.to_bytes(),
         dh_public: encrypted.dh_public.as_bytes().to_vec(),
+        pn: encrypted.pn,
         n: encrypted.n,
         ciphertext: encrypted.ciphertext,
     })
@@ -255,6 +257,7 @@ pub struct RatchetDecryptResult {
 pub fn ratchet_decrypt(
     state_bytes: Vec<u8>,
     dh_public: Vec<u8>,
+    pn: u32,
     n: u32,
     ciphertext: Vec<u8>,
 ) -> Result<RatchetDecryptResult, FfiError> {
@@ -262,6 +265,7 @@ pub fn ratchet_decrypt(
         .ok_or(FfiError::InvalidLength { field: "state_bytes".into() })?;
     let msg = EncryptedMessage {
         dh_public: PublicKey::from(to_array32(&dh_public, "dh_public")?),
+        pn,
         n,
         ciphertext,
     };

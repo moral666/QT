@@ -27,7 +27,7 @@ impl Bob {
             identity_key: self.identity.public,
             identity_signing_key: self.signing.verifying_key,
             signed_pre_key: self.spk.public,
-            signed_pre_key_signature: sign_pre_key(&self.signing, &self.spk.public, &self.pq.public_key_bytes()),
+            signed_pre_key_signature: sign_pre_key(&self.signing, &self.identity.public, &self.spk.public, &self.pq.public_key_bytes()),
             pq_pre_key: pq_public_key_from_bytes(&self.pq.public_key_bytes()).unwrap(),
             one_time_pre_key: if with_opk { Some(self.opk.public) } else { None },
         }
