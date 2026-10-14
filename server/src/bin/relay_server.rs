@@ -65,6 +65,60 @@ fn load_or_generate_static_keys(path: &str) -> NoiseStaticKeyPair {
     }
 }
 
+/// Host de um URL `esquema://[user[:pass]@]host[:porta][/...]`, sem
+/// parentesis retos no caso IPv6. `None` para URLs sem autoridade.
+fn url_host(url: &str) -> Option<String> {
+    let rest = url.split_once("://")?.1;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let authority = authority.rsplit_once('@').map(|(_, h)| h).unwrap_or(authority);
+    let host = if let Some(v6) = authority.strip_prefix('[') {
+        v6.split(']').next()?
+    } else {
+        authority.split(':').next()?
+    };
+    (!host.is_empty()).then(|| host.to_ascii_lowercase())
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    host == "localhost" || host.parse::<std::net::IpAddr>().map(|ip| ip.is_loopback()).unwrap_or(false)
+}
+
+fn env_flag(name: &str) -> bool {
+    matches!(std::env::var(name).as_deref(), Ok("1") | Ok("true") | Ok("yes"))
+}
+
+/// Isolamento de rede: por omissao o relay SO aceita um Redis local
+/// (loopback ou socket Unix). Um Redis remoto (ex.: ElastiCache numa VPC
+/// privada) exige opt-in explicito QT_ALLOW_REMOTE_REDIS=1 E TLS (`rediss://`).
+fn enforce_redis_url_policy(redis_url: &str) {
+    let lower = redis_url.to_ascii_lowercase();
+    if lower.starts_with("unix://") || lower.starts_with("redis+unix://") {
+        return;
+    }
+    let Some(host) = url_host(redis_url) else { fatal("REDIS_URL invalido") };
+    if is_loopback_host(&host) {
+        return;
+    }
+    if !env_flag("QT_ALLOW_REMOTE_REDIS") {
+        fatal("REDIS_URL aponta para um host nao-loopback; o Redis deve escutar so em 127.0.0.1 (ou define QT_ALLOW_REMOTE_REDIS=1 com rediss://)");
+    }
+    if !lower.starts_with("rediss://") {
+        fatal("Redis remoto exige TLS (rediss://)");
+    }
+}
+
+/// O relay fala TCP simples (sem TLS): so pode escutar em loopback, atras
+/// do proxy inverso que termina o TLS. Abrir noutra interface exige
+/// QT_ALLOW_PUBLIC_BIND=1 (apenas redes de teste fechadas).
+fn enforce_bind_policy(bind_addr: &str) {
+    let addr: std::net::SocketAddr = bind_addr
+        .parse()
+        .unwrap_or_else(|_| fatal("RELAY_BIND_ADDR invalido (esperado IP:porta, ex.: 127.0.0.1:9443)"));
+    if !addr.ip().is_loopback() && !env_flag("QT_ALLOW_PUBLIC_BIND") {
+        fatal("RELAY_BIND_ADDR nao e loopback: o relay nao tem TLS proprio e tem de ficar atras do proxy (ou QT_ALLOW_PUBLIC_BIND=1 em testes)");
+    }
+}
+
 /// Remove credenciais de um URL do Redis antes de o mostrar (redis://user:pass@host).
 fn redact_url(url: &str) -> String {
     match (url.find("://"), url.rfind('@')) {
@@ -78,6 +132,9 @@ async fn main() {
     let bind_addr = std::env::var("RELAY_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:9443".to_string());
     let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
     let noise_key_path = std::env::var("NOISE_KEY_PATH").unwrap_or_else(|_| "relay_noise_key.bin".to_string());
+
+    enforce_bind_policy(&bind_addr);
+    enforce_redis_url_policy(&redis_url);
 
     let static_keys = load_or_generate_static_keys(&noise_key_path);
 
@@ -118,4 +175,23 @@ async fn main() {
 
 fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extrai_host_e_deteta_loopback() {
+        assert_eq!(url_host("redis://127.0.0.1:6379").as_deref(), Some("127.0.0.1"));
+        assert_eq!(url_host("redis://:segredo@127.0.0.1:6379/0").as_deref(), Some("127.0.0.1"));
+        assert_eq!(url_host("redis://u:p@[::1]:6379").as_deref(), Some("::1"));
+        assert_eq!(url_host("rediss://cache.xyz.amazonaws.com:6379").as_deref(), Some("cache.xyz.amazonaws.com"));
+        // A password com '@' nao pode enganar o parser.
+        assert_eq!(url_host("redis://u:p@ss@10.0.0.5:6379").as_deref(), Some("10.0.0.5"));
+        assert!(is_loopback_host("127.0.0.1") && is_loopback_host("::1") && is_loopback_host("localhost"));
+        for h in ["0.0.0.0", "10.0.0.5", "127.0.0.1.evil.com", "localhost.evil.org"] {
+            assert!(!is_loopback_host(h), "{h}");
+        }
+    }
 }

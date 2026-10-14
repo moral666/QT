@@ -100,13 +100,13 @@ cargo test -p qt_core --features pq              # incluindo pós-quântico
 ```bash
 cargo run --bin relay_server &
 
-cargo run -p qt_cli --bin messenger -- identity --db bob.sqlite --passphrase "..."
-cargo run -p qt_cli --bin messenger -- register --db bob.sqlite --passphrase "..." --server ws://127.0.0.1:9443
+cargo run -p qt_cli --bin messenger -- identity --db bob.sqlite
+cargo run -p qt_cli --bin messenger -- register --db bob.sqlite --server ws://127.0.0.1:9443  # build debug; em release so wss://
 
-cargo run -p qt_cli --bin messenger -- identity --db alice.sqlite --passphrase "..."
-cargo run -p qt_cli --bin messenger -- send --db alice.sqlite --passphrase "..." --to <ID-DO-BOB> --message "Ola!" --server ws://127.0.0.1:9443
+cargo run -p qt_cli --bin messenger -- identity --db alice.sqlite
+cargo run -p qt_cli --bin messenger -- send --db alice.sqlite --to <ID-DO-BOB> --message "Ola!" --server ws://127.0.0.1:9443  # build debug; em release so wss://
 
-cargo run -p qt_cli --bin messenger -- receive --db bob.sqlite --passphrase "..." --server ws://127.0.0.1:9443
+cargo run -p qt_cli --bin messenger -- receive --db bob.sqlite --server ws://127.0.0.1:9443  # build debug; em release so wss://
 ```
 
 O identificador de cada pessoa nasce da sua chave pública — ninguém escolhe um "nome de utilizador", de propósito.

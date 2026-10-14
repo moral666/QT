@@ -12,10 +12,13 @@ path = "src/lib.rs"
 
 [dependencies]
 qt_core = { path = "../core" }
-qt_transport = { path = "../transport" }
+qt_transport = { path = "../transport", features = ["tls"] }
 qt_server = { path = "../server" }
 qt_storage = { path = "../storage" }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 ed25519-dalek = { version = "2" }
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
+# Prompt interativo da passphrase, mascarado com '*'.
+inquire = "0.7"
+zeroize = "1"

@@ -24,8 +24,6 @@ pub struct RelayConfig {
     pub backoff_base: Duration,
     /// Pinning da chave estatica Noise do relay (recomendado em producao).
     pub expected_server_static: Option<Vec<u8>>,
-    /// Permite `ws://` para destinos nao-loopback (so redes de teste). Por omissao `false`.
-    pub allow_insecure_ws: bool,
 }
 
 impl Default for RelayConfig {
@@ -36,7 +34,6 @@ impl Default for RelayConfig {
             max_retries: 3,
             backoff_base: Duration::from_millis(200),
             expected_server_static: None,
-            allow_insecure_ws: false,
         }
     }
 }
@@ -106,14 +103,13 @@ impl RelayClient {
         let opts = ClientOptions {
             connect_timeout: self.cfg.connect_timeout,
             expected_server_static: self.cfg.expected_server_static.clone(),
-            allow_insecure_ws: self.cfg.allow_insecure_ws,
         };
         let (mut ws, mut noise) = ws_transport::client_connect_with(&self.url, &self.noise_private, &opts)
             .await
             .map_err(|e| match e {
                 TransportError::ServerKeyMismatch => RelayError::SessionInvalid,
                 TransportError::Timeout => RelayError::Timeout,
-                TransportError::InsecureUrl => RelayError::InsecureUrl,
+                TransportError::InsecureUrl | TransportError::TlsNotCompiled => RelayError::InsecureUrl,
                 _ => RelayError::Unavailable,
             })?;
         // Autenticacao ligada ao hash do handshake desta sessao.

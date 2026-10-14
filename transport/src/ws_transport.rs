@@ -2,8 +2,10 @@
 //! usando `tokio-tungstenite`. Cada mensagem Noise viaja como um frame
 //! binario do WebSocket.
 //!
-//! SEGURANCA: o cliente so aceita `wss://` (TLS) e, para desenvolvimento,
-//! `ws://` apenas em loopback (ver `check_url_policy`). O Noise corre POR
+//! SEGURANCA: o cliente exige `wss://` (TLS). Em builds de RELEASE qualquer
+//! `ws://` e recusado, incluindo localhost. So em builds de debug/teste
+//! (`debug_assertions`) se aceita `ws://` e APENAS para loopback, para os
+//! testes de integracao locais (ver `check_url_policy`). O Noise corre POR
 //! CIMA do TLS como segunda camada (autenticacao mutua + pinning da chave
 //! do relay, independente da PKI/CA). O relay escuta em TCP simples e o TLS
 //! e terminado por um proxy inverso (ver docs/deploy-wss.md).
@@ -29,8 +31,10 @@ pub enum TransportError {
     ConnectionClosed,
     #[error("timeout")]
     Timeout,
-    #[error("URL recusado: usa wss:// (ws:// so e aceite para localhost)")]
+    #[error("URL recusado: o transporte exige wss:// (TLS)")]
     InsecureUrl,
+    #[error("wss:// pedido mas este binario foi compilado sem a feature `tls` de qt_transport")]
+    TlsNotCompiled,
     #[error("chave estatica do servidor nao corresponde a chave esperada (pinning)")]
     ServerKeyMismatch,
 }
@@ -46,14 +50,11 @@ pub struct ClientOptions {
     pub connect_timeout: std::time::Duration,
     /// Se definido, o handshake falha se a chave estatica do servidor for diferente.
     pub expected_server_static: Option<Vec<u8>>,
-    /// Permite `ws://` (sem TLS) para destinos que NAO sejam loopback.
-    /// Por omissao `false`: fora de localhost so se aceita `wss://`.
-    pub allow_insecure_ws: bool,
 }
 
 impl Default for ClientOptions {
     fn default() -> Self {
-        Self { connect_timeout: std::time::Duration::from_secs(10), expected_server_static: None, allow_insecure_ws: false }
+        Self { connect_timeout: std::time::Duration::from_secs(10), expected_server_static: None }
     }
 }
 
@@ -65,27 +66,50 @@ fn ws_config() -> tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
     }
 }
 
-/// Politica de esquema: `wss://` sempre; `ws://` so para loopback (testes/dev
-/// locais) ou com `allow_insecure_ws`. Qualquer outro esquema e recusado.
-pub fn check_url_policy(url: &str, allow_insecure_ws: bool) -> Result<(), TransportError> {
+/// `true` se este binario aceita `ws://` para loopback (so builds de
+/// debug/teste). Em release e sempre `false`: nao ha forma de configurar
+/// um binario de producao para falar sem TLS.
+pub const DEV_LOOPBACK_WS_ALLOWED: bool = cfg!(debug_assertions);
+
+/// Politica de esquema do cliente:
+/// * `wss://` -> aceite (exige a feature `tls`, senao `TlsNotCompiled`);
+/// * `ws://`  -> recusado; excecao UNICA: builds de debug/teste para um
+///   destino loopback literal (`localhost`, `127.0.0.0/8`, `[::1]`);
+/// * qualquer outro esquema -> recusado.
+pub fn check_url_policy(url: &str) -> Result<(), TransportError> {
+    check_url_policy_for(url, DEV_LOOPBACK_WS_ALLOWED)
+}
+
+fn check_url_policy_for(url: &str, dev_loopback_ws: bool) -> Result<(), TransportError> {
+    // Normaliza so para DECIDIR; nao se aceitam espacos a volta do URL.
+    if url.trim() != url {
+        return Err(TransportError::InsecureUrl);
+    }
     let lower = url.to_ascii_lowercase();
     if lower.starts_with("wss://") {
-        return Ok(());
+        return if cfg!(feature = "tls") { Ok(()) } else { Err(TransportError::TlsNotCompiled) };
     }
     if let Some(rest) = lower.strip_prefix("ws://") {
-        let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-        let host = if let Some(v6) = authority.strip_prefix('[') {
-            v6.split(']').next().unwrap_or("")
-        } else {
-            authority.split(':').next().unwrap_or("")
-        };
-        let loopback = host == "localhost"
-            || host.parse::<std::net::IpAddr>().map(|ip| ip.is_loopback()).unwrap_or(false);
-        if loopback || allow_insecure_ws {
+        if dev_loopback_ws && is_loopback_authority(rest) {
             return Ok(());
         }
     }
     Err(TransportError::InsecureUrl)
+}
+
+/// Extrai o host da autoridade (`host[:porta]`, `[v6][:porta]`) e diz se e
+/// loopback. Autoridades com userinfo (`a@b`) sao sempre recusadas.
+fn is_loopback_authority(rest: &str) -> bool {
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.contains('@') {
+        return false;
+    }
+    let host = if let Some(v6) = authority.strip_prefix('[') {
+        v6.split(']').next().unwrap_or("")
+    } else {
+        authority.split(':').next().unwrap_or("")
+    };
+    host == "localhost" || host.parse::<std::net::IpAddr>().map(|ip| ip.is_loopback()).unwrap_or(false)
 }
 
 pub type ClientWsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -121,7 +145,7 @@ async fn client_connect_inner(
     local_static_private: &[u8],
     opts: &ClientOptions,
 ) -> Result<(ClientWsStream, NoiseTransport), TransportError> {
-    check_url_policy(url, opts.allow_insecure_ws)?;
+    check_url_policy(url)?;
     let (mut ws_stream, _response) =
         tokio_tungstenite::connect_async_with_config(url, Some(ws_config()), false)
             .await
@@ -286,25 +310,41 @@ mod url_policy_tests {
     use super::*;
 
     #[test]
-    fn aceita_wss_e_ws_so_em_loopback() {
-        for ok in ["wss://relay.example.org", "WSS://x.y:443/p", "ws://127.0.0.1:9443", "ws://localhost:1", "ws://[::1]:9443"] {
-            assert!(check_url_policy(ok, false).is_ok(), "{ok}");
+    fn wss_e_sempre_aceite_com_tls_compilado() {
+        for ok in ["wss://relay.example.org", "WSS://x.y:443/p"] {
+            let r = check_url_policy_for(ok, false);
+            if cfg!(feature = "tls") {
+                assert!(r.is_ok(), "{ok}");
+            } else {
+                assert!(matches!(r, Err(TransportError::TlsNotCompiled)), "{ok}");
+            }
         }
     }
 
     #[test]
-    fn recusa_ws_remoto_outros_esquemas_e_hosts_que_so_parecem_loopback() {
+    fn release_recusa_todo_o_ws_incluindo_loopback() {
+        for bad in ["ws://127.0.0.1:9443", "ws://localhost:1", "ws://[::1]:9443", "ws://relay.example.org"] {
+            assert!(matches!(check_url_policy_for(bad, false), Err(TransportError::InsecureUrl)), "{bad}");
+        }
+    }
+
+    #[test]
+    fn debug_so_aceita_ws_em_loopback_literal() {
+        for ok in ["ws://127.0.0.1:9443", "ws://localhost:1", "ws://[::1]:9443"] {
+            assert!(check_url_policy_for(ok, true).is_ok(), "{ok}");
+        }
         for bad in [
             "ws://relay.example.org",
             "ws://192.168.1.10:9443",
             "http://x",
+            "https://x",
             "relay.example.org",
             "ws://127.0.0.1.evil.com:9443",
             "ws://localhost.evil.org",
             "ws://127.0.0.1@evil.com/",
+            "ws://evil.com@127.0.0.1/",
         ] {
-            assert!(check_url_policy(bad, false).is_err(), "{bad}");
+            assert!(check_url_policy_for(bad, true).is_err(), "{bad}");
         }
-        assert!(check_url_policy("ws://192.168.1.10:9443", true).is_ok(), "opt-in explicito");
     }
 }

@@ -33,3 +33,9 @@ relay_noise_key*
 *.jks
 *.keystore
 /android/keystore.properties
+
+# Dumps do Redis (contem filas/metadados do relay): NUNCA commitar
+dump.rdb
+*.rdb
+appendonly.aof
+appendonlydir/

@@ -3,30 +3,33 @@
 //! entre execucoes - ao contrario de `messenger_demo.rs`, que corre tudo
 //! num unico processo.
 //!
-//! Uso tipico (duas "pessoas", cada uma com a sua base de dados):
+//! Uso tipico (duas "pessoas", cada uma com a sua base de dados). A
+//! passphrase NUNCA vai na linha de comandos: e pedida no terminal,
+//! mascarada com '*' (ou lida de UMA linha do stdin com --passphrase-stdin).
 //!
 //!   # Bob:
-//!   messenger identity --db bob.sqlite --passphrase "pw-bob"
-//!   messenger register --db bob.sqlite --passphrase "pw-bob" --server ws://127.0.0.1:9443
+//!   messenger identity --db bob.sqlite
+//!   messenger register --db bob.sqlite --server wss://relay.exemplo.org
 //!
 //!   # Alice:
-//!   messenger identity --db alice.sqlite --passphrase "pw-alice"
-//!   messenger send --db alice.sqlite --passphrase "pw-alice" \
-//!       --to <ID-DO-BOB-IMPRESSO-POR-'identity'> \
-//!       --message "Ola Bob!" --server ws://127.0.0.1:9443
+//!   messenger identity --db alice.sqlite
+//!   messenger send --db alice.sqlite --to <ID-DO-BOB-IMPRESSO-POR-'identity'> \
+//!       --server wss://relay.exemplo.org          # a mensagem e pedida no terminal
 //!
 //!   # Bob, mais tarde, processo completamente separado:
-//!   messenger receive --db bob.sqlite --passphrase "pw-bob" --server ws://127.0.0.1:9443
+//!   messenger receive --db bob.sqlite --server wss://relay.exemplo.org
 //!
-//! NAO usar em produção: a passphrase e passada na linha de comandos (fica
-//! no historico do shell!) so por simplicidade de demo - ver
-//! docs/protocol-spec.md secao 5 sobre a origem correta da passphrase
+//!   # Scripts/CI (sem TTY):
+//!   pass show qt/bob | messenger --passphrase-stdin receive --db bob.sqlite --server wss://...
+//!
+//! Transporte: so `wss://`. `ws://127.0.0.1` so funciona em builds de debug.
+//! Ver docs/protocol-spec.md secao 5 sobre a origem da chave em apps reais
 //! (Keystore/Secure Enclave). O identificador de utilizador e derivado
 //! automaticamente da chave publica de identidade (nao e escolhido pelo
 //! utilizador) - consistente com o objetivo de nao ter "usernames".
 
 use clap::{Parser, Subcommand};
-use qt_cli::wire_format;
+use qt_cli::{passphrase, wire_format};
 use qt_core::primitives::{DhKeyPair, SigningKeyPair};
 use qt_core::ratchet::{EncryptedMessage, RatchetState};
 use qt_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
@@ -39,6 +42,11 @@ use qt_storage::{load_identity, load_session, open_database, save_identity, save
 #[derive(Parser)]
 #[command(name = "messenger", about = "CLI persistente do secure-messenger (demo)")]
 struct Cli {
+    /// Le a passphrase de UMA linha do stdin em vez de a pedir no terminal
+    /// (para scripts). Nunca existe uma flag com a passphrase em claro.
+    #[arg(long, global = true)]
+    passphrase_stdin: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -49,15 +57,11 @@ enum Command {
     Identity {
         #[arg(long)]
         db: String,
-        #[arg(long)]
-        passphrase: String,
     },
     /// Publica o bundle de pre-keys no servidor, para outros poderem iniciar uma conversa.
     Register {
         #[arg(long)]
         db: String,
-        #[arg(long)]
-        passphrase: String,
         #[arg(long)]
         server: String,
     },
@@ -66,11 +70,11 @@ enum Command {
         #[arg(long)]
         db: String,
         #[arg(long)]
-        passphrase: String,
-        #[arg(long)]
         to: String,
+        /// Texto da mensagem. Se omitido, e pedido no terminal (assim nao fica
+        /// visivel em `ps`/historico do shell).
         #[arg(long)]
-        message: String,
+        message: Option<String>,
         #[arg(long)]
         server: String,
     },
@@ -78,8 +82,6 @@ enum Command {
     Receive {
         #[arg(long)]
         db: String,
-        #[arg(long)]
-        passphrase: String,
         #[arg(long)]
         server: String,
     },
@@ -104,7 +106,13 @@ fn hex_to_pubkey(hex_str: &str) -> x25519_dalek::PublicKey {
 }
 
 async fn enviar_ao_servidor(url: &str, signing: [u8; 32], msg: ClientMessage) -> ServerMessage {
-    qt_server::client::one_shot(url, signing, msg).await.expect("falha ao falar com o relay")
+    match qt_server::client::one_shot(url, signing, msg).await {
+        Ok(r) => r,
+        Err(qt_server::client::RelayError::InsecureUrl) => {
+            fatal("o servidor tem de usar wss:// (TLS); ws:// so e aceite em builds de debug para localhost")
+        }
+        Err(e) => fatal(&format!("falha ao falar com o relay: {e}")),
+    }
 }
 
 /// ID publico da CLI = "<identidade_hex>:<assinatura_hex>". A caixa de
@@ -149,13 +157,27 @@ fn deserialize_ratchet_message(bytes: &[u8]) -> EncryptedMessage {
     }
 }
 
+/// Erro fatal: mensagem curta e saida != 0 (sem panic/backtrace que possa
+/// incluir dados sensiveis).
+fn fatal(msg: &str) -> ! {
+    eprintln!("erro: {msg}");
+    std::process::exit(1);
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
 
+    // Identity cria a base de dados -> confirmacao + comprimento minimo.
+    let mode = match cli.command {
+        Command::Identity { .. } => passphrase::Mode::Create,
+        _ => passphrase::Mode::Unlock,
+    };
+    let passphrase = passphrase::obtain(mode, cli.passphrase_stdin).unwrap_or_else(|e| fatal(&e.to_string()));
+
     match cli.command {
-        Command::Identity { db, passphrase } => {
-            let conn = open_database(&db, &passphrase).expect("falha ao abrir a base de dados");
+        Command::Identity { db } => {
+            let conn = open_database(&db, passphrase.as_str()).expect("falha ao abrir a base de dados");
 
             let identity = StoredIdentity {
                 identity: DhKeyPair::generate(),
@@ -171,8 +193,8 @@ async fn main() {
             println!("  {user_id}");
         }
 
-        Command::Register { db, passphrase, server } => {
-            let conn = open_database(&db, &passphrase).expect("falha ao abrir a base de dados");
+        Command::Register { db, server } => {
+            let conn = open_database(&db, passphrase.as_str()).expect("falha ao abrir a base de dados");
             let identity = load_identity(&conn).expect("identidade nao encontrada - corre 'identity' primeiro");
             let user_id = mailbox_of(&identity);
 
@@ -194,8 +216,12 @@ async fn main() {
             println!("Registado como {user_id} - servidor respondeu: {resp:?}");
         }
 
-        Command::Send { db, passphrase, to, message, server } => {
-            let conn = open_database(&db, &passphrase).expect("falha ao abrir a base de dados");
+        Command::Send { db, to, message, server } => {
+            let message = match message {
+                Some(m) => m,
+                None => inquire::Text::new("Mensagem:").prompt().unwrap_or_else(|_| fatal("mensagem nao fornecida")),
+            };
+            let conn = open_database(&db, passphrase.as_str()).expect("falha ao abrir a base de dados");
             let identity = load_identity(&conn).expect("identidade nao encontrada - corre 'identity' primeiro");
 
             let (to_identity_hex, to_mailbox) = split_public_id(&to);
@@ -262,8 +288,8 @@ async fn main() {
             save_session(&conn, &to_identity_hex, &ratchet).expect("falha ao guardar a sessao atualizada");
         }
 
-        Command::Receive { db, passphrase, server } => {
-            let conn = open_database(&db, &passphrase).expect("falha ao abrir a base de dados");
+        Command::Receive { db, server } => {
+            let conn = open_database(&db, passphrase.as_str()).expect("falha ao abrir a base de dados");
             let identity = load_identity(&conn).expect("identidade nao encontrada - corre 'identity' primeiro");
             let my_user_id = mailbox_of(&identity);
 
