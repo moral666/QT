@@ -1,0 +1,18 @@
+# Bibliotecas nativas Android alinhadas a paginas de 16 KB.
+#
+# Android 15+ suporta aparelhos com paginas de memoria de 16 KB, e a Google
+# Play exige-o para apps novas. Um .so com segmentos LOAD alinhados a 4 KB
+# corre em "modo de compatibilidade" (ou nao carrega). O NDK r28+ ja usa 16 KB
+# por omissao; esta flag garante o mesmo com qualquer NDK (incluindo r26d).
+# Num aparelho de 4 KB, um .so alinhado a 16 KB funciona na mesma.
+#
+# Verificar (ver scripts/build-android.sh):
+#   llvm-readelf -l libqt_ffi.so | grep LOAD   -> ultima coluna 0x4000
+[target.aarch64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+[target.armv7-linux-androideabi]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+[target.x86_64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]

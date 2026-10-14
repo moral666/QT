@@ -65,5 +65,13 @@ for abi in $ABIS; do
   [ -f "$f" ] || { echo "FALTA $f"; exit 1; }
   # nenhum segredo/caminho de debug embutido
   ls -l "$f" | awk '{print "  "$9" ("$5" bytes)"}'
+  # Paginas de 16 KB: todos os segmentos LOAD tem de estar alinhados a 0x4000.
+  # (armeabi-v7a e 32 bits: so aparelhos 64 bits usam paginas de 16 KB, mas
+  #  verificamos todas as ABIs na mesma.)
+  READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$HOST_TAG/bin/llvm-readelf"
+  if grep -E "^ +LOAD" <("$READELF" -lW "$f") | awk '{print $NF}' | grep -qv '^0x4000$\|^0x10000$'; then
+    echo "ERRO: $f nao esta alinhado a 16 KB:"; "$READELF" -lW "$f" | grep -E "^ +LOAD"; exit 1
+  fi
+  echo "    alinhamento 16 KB: OK"
 done
 echo ">>> OK. Copia $OUT/jniLibs para app/src/main/jniLibs e $OUT/kotlin para app/src/main/java."

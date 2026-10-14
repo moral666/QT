@@ -86,12 +86,16 @@ android {
 
 dependencies {
     // UniFFI (Kotlin) carrega libqt_ffi.so via JNA - exige o artefacto AAR
-    implementation("net.java.dev.jna:jna:5.14.0@aar")
+    // >= 5.17.0: libjnidispatch.so alinhado a paginas de 16 KB (JNA #1618/#1647).
+    implementation("net.java.dev.jna:jna:5.17.0@aar")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     implementation(platform("androidx.compose:compose-bom:2024.09.00"))
     implementation("androidx.compose.ui:ui")
+    // libandroidx.graphics.path.so (dependencia do Compose): forca a versao mais
+    // recente em vez da 1.0.1 de 2024 (alinhamento de 16 KB).
+    implementation("androidx.graphics:graphics-path:1.1.0")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.activity:activity-compose:1.9.2")
