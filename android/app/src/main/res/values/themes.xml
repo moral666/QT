@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.QT" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Barra de estado no roxo escuro da marca (o conteudo e Compose: ver Theme.kt). -->
+    <style name="Theme.QT" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#FF4F378B</item>
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
 </resources>
