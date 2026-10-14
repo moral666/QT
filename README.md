@@ -26,30 +26,26 @@ Quase todos os mensageiros populares pedem o teu número de telefone para te reg
 
 O QT tenta responder a isto com engenharia, não só com uma política de privacidade: identidade baseada numa chave criptográfica (sem telefone, sem email), cifra ponta-a-ponta que nem o servidor consegue quebrar, e código aberto para que qualquer pessoa possa verificar que não há truques escondidos.
 
-Se preferires uma explicação totalmente sem jargão técnico, começa por [`apresentacao-projeto.md`](../apresentacao-projeto.md).
-
 ## Sê honesto comigo: isto já funciona?
 
-O QT é um protótipo técnico de mensageiro E2EE. O núcleo criptográfico e de transporte está implementado em Rust, mas a aplicação completa ainda não foi validada de ponta a ponta.
+Sim, de ponta a ponta — como protótipo. **Não foi auditado de forma independente e não deve ser usado para conversas reais ou informação sensível.**
 
-### Estado até 14 de outubro de 2026
+### Validado até 14 de outubro de 2026
 
-- Implementação do núcleo criptográfico, transporte, relay, armazenamento local e FFI.
-- Publicação das alterações de reforço de segurança na branch `security-hardening`, commits `01c4819` e `b4473dc`.
-- Os testes Rust executados com `cargo test --workspace --features qt_ffi/pq` passaram.
+- Núcleo criptográfico (PQXDH + Double Ratchet + Sealed Sender), transporte, relay, armazenamento local e FFI implementados em Rust, com a suite de testes a passar (`cargo test --workspace`).
+- Relay a correr numa instância AWS EC2, atrás de TLS real (`wss://`, certificado Let's Encrypt via Caddy), com o Redis acessível apenas em `127.0.0.1` e protegido por ACL.
+- App Android compilada em versão *release* assinada (esquemas V2/V3), bibliotecas nativas alinhadas a páginas de 16 KB, sem deteções no VirusTotal (0/68).
+- **Mensagens trocadas entre dois telemóveis reais, através do relay na AWS.**
 
-### O que falta validar
+### O que ainda falta
 
-- Implantação e execução do relay numa instância AWS EC2.
-- Configuração e teste de TLS real através de `wss://`.
-- Confirmação de que o Redis não está acessível publicamente.
-- Compilação e teste da aplicação Android com o núcleo atualizado.
-- Comunicação de ponta a ponta entre dois clientes.
-- Testes de integração, carga e auditoria de segurança independente.
-
-**Estado atual:** os testes Rust passaram, mas isso não prova que toda a aplicação funciona de ponta a ponta. A implantação AWS, o TLS real e a integração Android ainda precisam de validação.
-
-**Aviso:** o QT não foi auditado de forma independente e não deve ser utilizado para conversas reais ou informações sensíveis nesta fase.
+- **Histórico de conversas persistente** — hoje as mensagens recebidas só vivem em memória enquanto a app está aberta.
+- **Notificações push** — a app só recebe mensagens enquanto está aberta.
+- **Infraestrutura de produção** — domínio próprio (o atual é provisório), redundância, backups e alertas do servidor.
+- Bloqueio da app com PIN/biometria, adição de contactos por QR code, interface mais cuidada.
+- Distribuição pela Play Store (hoje alguns antivírus avisam por ser uma app de origem desconhecida).
+- O cliente de terminal `messenger` ainda usa o formato antigo de registo e não funciona com o relay atual (o `messenger_demo` e o cliente de teste `peer` funcionam).
+- Testes de carga e **auditoria de segurança independente**.
 
 ## O que já está construído
 
@@ -59,17 +55,17 @@ O QT é um protótipo técnico de mensageiro E2EE. O núcleo criptográfico e de
 | `transport/` | Protecção da ligação em rede (Noise Protocol) sobre WebSocket | ✅ Testado com ligações WebSocket reais, não simuladas |
 | `server/` | O "carteiro": entrega mensagens sem nunca ver o conteúdo nem saber quem as enviou | ✅ Testado, incluindo sobreviver a ser desligado à força (`kill -9`) |
 | `storage/` | Guarda a tua identidade e conversas no disco, cifradas | ✅ Testado, incluindo confirmar que uma password errada não abre nada |
-| `cli/` | Uma versão de terminal, para experimentar sem precisar de telemóvel | ✅ Testado com processos completamente separados a falar entre si |
+| `cli/` | Uma versão de terminal, para experimentar sem precisar de telemóvel | ⚠️ `messenger_demo` funciona; o cliente persistente `messenger` precisa de ser atualizado para o protocolo atual do relay |
 | `ffi/` | A ponte que liga tudo isto a Kotlin (Android), Swift (iOS) e Python | ✅ Testado a partir do Python |
-| App Android | Usa essa ponte para provar que tudo funciona num telemóvel real | ✅ Já correu num emulador Android real |
+| `android/` | App Android (Kotlin/Compose) — toda a criptografia continua no Rust | ✅ Release assinada testada entre dois telemóveis reais através do relay na AWS |
+| `deploy/` | Instalação do relay numa EC2: Redis só em localhost com ACL, serviço systemd isolado, TLS automático | ✅ Usado no deploy atual |
 
 ## O que falta, sem rodeios
 
-- Um ecrã de conversa a sério na app (hoje é só um botão de demonstração)
-- Um servidor acessível pela internet, não só na tua rede local
-- Ligação protegida por TLS (`wss://`) — hoje usa `ws://` simples, adequado só para testes
-- Vários servidores independentes a colaborar entre si (federação), para que nenhum governo consiga desligar a rede inteira desligando só um
-- A password da base de dados vir do sistema de segurança do telemóvel (Keystore/Secure Enclave), não de um argumento de linha de comandos
+Para além da lista acima ("O que ainda falta"), a mais longo prazo:
+
+- Vários servidores independentes a colaborar entre si (federação), para que ninguém consiga desligar a rede inteira desligando só um
+- App iOS (os bindings Swift já são gerados, mas nunca foram usados numa app)
 - Uma auditoria de segurança independente, feita por alguém que não sou eu
 
 ## Experimenta tu mesmo
@@ -95,21 +91,18 @@ cargo test --workspace                          # tudo, exceto pós-quântico
 cargo test -p qt_core --features pq              # incluindo pós-quântico
 ```
 
-### Usar como cliente persistente (duas pessoas, processos separados)
+### Duas pessoas a falar através do relay (no PC)
 
 ```bash
-cargo run --bin relay_server &
+cargo run --release -p qt_server --bin relay_server &       # relay local em 127.0.0.1:9443
 
-cargo run -p qt_cli --bin messenger -- identity --db bob.sqlite
-cargo run -p qt_cli --bin messenger -- register --db bob.sqlite --server ws://127.0.0.1:9443  # build debug; em release so wss://
-
-cargo run -p qt_cli --bin messenger -- identity --db alice.sqlite
-cargo run -p qt_cli --bin messenger -- send --db alice.sqlite --to <ID-DO-BOB> --message "Ola!" --server ws://127.0.0.1:9443  # build debug; em release so wss://
-
-cargo run -p qt_cli --bin messenger -- receive --db bob.sqlite --server ws://127.0.0.1:9443  # build debug; em release so wss://
+# em dois terminais diferentes (cada um e uma "pessoa"):
+cargo run -p qt_server --example peer -- --relay ws://127.0.0.1:9443 --db alice.db
+cargo run -p qt_server --example peer -- --relay ws://127.0.0.1:9443 --db bob.db
+# em cada um: /id mostra o Public ID; /add <ID do outro>; depois escreve mensagens
 ```
 
-O identificador de cada pessoa nasce da sua chave pública — ninguém escolhe um "nome de utilizador", de propósito.
+O cliente `peer` usa exatamente o mesmo protocolo da app Android. O identificador de cada pessoa nasce da sua chave pública — ninguém escolhe um "nome de utilizador", de propósito. `ws://` só é aceite para `localhost` em builds de debug; fora disso o transporte exige `wss://`.
 
 ### Gerar os bindings para Android/iOS/Python
 
@@ -117,25 +110,34 @@ O identificador de cada pessoa nasce da sua chave pública — ninguém escolhe 
 ./ffi/generate_bindings.sh
 ```
 
-## Estado atual: integração Android (v0.2)
+## App Android
 
-O core Rust está preparado para servir de backend criptográfico de uma app
-Android (Kotlin/Compose) **sem criptografia em Kotlin**: API `QtClient`
-via UniFFI, storage SQLCipher com chave do Android Keystore, PQXDH
-(X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, relay autenticado com
-entrega *at-least-once*. **Continua a ser um protótipo não auditado.**
+O core Rust é o único backend criptográfico da app Android (Kotlin/Compose): API `QtClient` via UniFFI, storage SQLCipher com chave do Android Keystore, PQXDH (X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, relay autenticado com entrega *at-least-once*. **Continua a ser um protótipo não auditado.**
+
+```bash
+export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/<versao>
+ABIS="arm64-v8a armeabi-v7a" ./scripts/build-android.sh   # libqt_ffi.so (16 KB) + bindings Kotlin
+cd android && ./sync-native.sh ..                          # copia para a app
+# depois: abrir a pasta android/ no Android Studio
+```
+
+A build *release* exige uma keystore própria e o relay de produção (`qtRelayUrl` / `qtRelayPin` em `android/gradle.properties`); nessa build o relay é fixo e não aparece na interface. Passo a passo em [`android/README.md`](android/README.md).
 
 * Guia de integração e build: [`docs/android-integration.md`](docs/android-integration.md)
 * Referência da API: [`docs/ffi-api.md`](docs/ffi-api.md)
 * Protocolo (§8–11 = v0.2): [`docs/protocol-spec.md`](docs/protocol-spec.md)
 * Ameaças e limitações: [`docs/threat-model.md`](docs/threat-model.md), [`docs/known-limitations.md`](docs/known-limitations.md)
-* Relatório da fase: [`docs/final-report.md`](docs/final-report.md)
+
+## Relay na AWS
+
+Numa EC2 nova com Ubuntu 24.04 (Security Group só com 22, 80 e 443):
 
 ```bash
-redis-server --daemonize yes && cargo test --workspace   # testes (Redis local)
-./ffi/generate_bindings.sh                                # bindings Kotlin/Swift/Python
-./scripts/build-android.sh app/src/main                   # .so para 3 ABIs (requer NDK)
+curl -fsSLO https://raw.githubusercontent.com/moral666/QT/security-hardening/deploy/aws/setup-ec2.sh
+sudo bash setup-ec2.sh
 ```
+
+Instala o Redis (só `127.0.0.1`, utilizador com ACL mínima), o relay como serviço systemd isolado e o Caddy com certificado TLS automático, e imprime o URL `wss://` e a chave de pinning para a app. Detalhes em [`docs/deploy-wss.md`](docs/deploy-wss.md).
 
 ## Como o projeto está organizado
 
@@ -147,10 +149,13 @@ storage/     Guarda tudo em disco, cifrado
 cli/         Um cliente de terminal, para testar sem telemóvel
 demo/        Junta core+transport num único teste, para ver tudo em ação
 ffi/         A ponte para Kotlin, Swift e Python
+android/     A app Android (Kotlin/Compose)
+deploy/      Instalação do relay em servidor (AWS, Redis, systemd)
+scripts/     Compilação das bibliotecas nativas para Android
 docs/        A especificação técnica completa, e o histórico de decisões
 ```
 
-Cada peça tem os seus próprios testes, guardados ao lado do código (`tests/`). A app Android existe e já correu num dispositivo real (ver tabela de estado acima), mas por agora vive só na máquina onde foi feita, sem repositório próprio nem publicação — trata-a como uma prova de conceito técnica, não como algo que já podes instalar. Quando for publicada, deve ganhar o seu próprio repositório, que usa este aqui como dependência (é o mesmo princípio de separação explicado em `CONTRIBUTING.md`).
+Cada peça tem os seus próprios testes, guardados ao lado do código (`tests/`).
 
 ## Queres perceber os detalhes técnicos?
 

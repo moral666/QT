@@ -35,24 +35,24 @@ can verify there are no hidden tricks.
 
 ## Be honest with me: does this actually work?
 
-Yes and no — and it's worth being clear about this before you invest time
-exploring the project.
+Yes, end to end — as a prototype. **It has not been independently audited and must not be used for real conversations or sensitive information.**
 
-**Already working and genuinely tested** (not just code that "should
-work"): end-to-end encryption, the network layer, a server that delivers
-messages without ever being able to read them, an Android app that has
-already run on a real device. All of this has automated tests passing,
-and several parts were tested manually in the most rigorous way I could
-manage (e.g.: killing the server mid-operation and confirming the data
-survives).
+### Validated as of 14 October 2026
 
-**Not yet usable day-to-day**: the full user interface is missing (today
-the Android app only has a "run demo" button), the server still needs to
-be placed somewhere reachable over the internet, and an external security
-audit is needed before anyone should trust this with real conversations.
+- Cryptographic core (PQXDH + Double Ratchet + Sealed Sender), transport, relay, local storage and FFI implemented in Rust, with the test suite passing (`cargo test --workspace`).
+- Relay running on an AWS EC2 instance behind real TLS (`wss://`, Let's Encrypt certificate via Caddy), with Redis reachable only on `127.0.0.1` and protected by ACLs.
+- Android app built as a signed *release* (V2/V3 schemes), native libraries aligned to 16 KB pages, no detections on VirusTotal (0/68).
+- **Messages exchanged between two real phones through the relay on AWS.**
 
-In other words: the foundations are solid and tested; the building
-doesn't have a roof yet.
+### Still missing
+
+- **Persistent chat history** — received messages currently live only in memory while the app is open.
+- **Push notifications** — the app only receives messages while it is open.
+- **Production infrastructure** — own domain (the current one is temporary), redundancy, backups and server alerts.
+- App lock with PIN/biometrics, adding contacts via QR code, a more polished interface.
+- Distribution through the Play Store (some antivirus apps currently warn because the app comes from an unknown source).
+- The `messenger` terminal client still uses the old registration format and does not work with the current relay (`messenger_demo` and the `peer` test client do).
+- Load testing and an **independent security audit**.
 
 ## What's already built
 
@@ -62,17 +62,17 @@ doesn't have a roof yet.
 | `transport/` | Network connection protection (Noise Protocol) over WebSocket | ✅ Tested with real WebSocket connections, not simulated |
 | `server/` | The "mailman": delivers messages without ever seeing the content or knowing who sent them | ✅ Tested, including surviving being force-killed (`kill -9`) |
 | `storage/` | Stores your identity and conversations on disk, encrypted | ✅ Tested, including confirming a wrong password opens nothing |
-| `cli/` | A terminal version, to try it out without a phone | ✅ Tested with completely separate processes talking to each other |
+| `cli/` | A terminal version, to try it out without a phone | ⚠️ `messenger_demo` works; the persistent `messenger` client needs updating to the relay's current protocol |
 | `ffi/` | The bridge connecting all of this to Kotlin (Android), Swift (iOS) and Python | ✅ Tested from Python |
-| Android app | Uses that bridge to prove everything works on a real device | ✅ Already ran on a real Android emulator |
+| `android/` | Android app (Kotlin/Compose) — all cryptography stays in Rust | ✅ Signed release tested between two real phones through the relay on AWS |
+| `deploy/` | Relay install on EC2: Redis on localhost only with ACLs, sandboxed systemd service, automatic TLS | ✅ Used in the current deployment |
 
 ## What's missing, plainly
 
-- A real chat screen in the app (today it's just a demo button)
-- A server reachable over the internet, not just on your local network
-- TLS-protected connection (`wss://`) — currently uses plain `ws://`, fine for testing only
-- Several independent servers collaborating (federation), so no single government can take down the whole network by shutting down just one
-- The database password coming from the phone's security system (Keystore/Secure Enclave), not a command-line argument
+Beyond the list above ("Still missing"), longer term:
+
+- Several independent servers collaborating (federation), so no one can take down the whole network by shutting down just one
+- An iOS app (Swift bindings are generated but have never been used in an app)
 - An independent security audit, done by someone other than me
 
 ## Try it yourself
@@ -100,28 +100,46 @@ cargo test --workspace                          # everything except post-quantum
 cargo test -p qt_core --features pq              # including post-quantum
 ```
 
-### Using it as a persistent client (two people, separate processes)
+### Two people talking through the relay (on your PC)
 
 ```bash
-cargo run --bin relay_server &
+cargo run --release -p qt_server --bin relay_server &       # local relay on 127.0.0.1:9443
 
-cargo run -p qt_cli --bin messenger -- identity --db bob.sqlite
-cargo run -p qt_cli --bin messenger -- register --db bob.sqlite --server ws://127.0.0.1:9443  # debug build only; release requires wss://
-
-cargo run -p qt_cli --bin messenger -- identity --db alice.sqlite
-cargo run -p qt_cli --bin messenger -- send --db alice.sqlite --to <BOB-ID> --message "Hi!" --server ws://127.0.0.1:9443  # debug build only; release requires wss://
-
-cargo run -p qt_cli --bin messenger -- receive --db bob.sqlite --server ws://127.0.0.1:9443  # debug build only; release requires wss://
+# in two separate terminals (each one is a "person"):
+cargo run -p qt_server --example peer -- --relay ws://127.0.0.1:9443 --db alice.db
+cargo run -p qt_server --example peer -- --relay ws://127.0.0.1:9443 --db bob.db
+# in each: /id shows the Public ID; /add <the other's ID>; then type messages
 ```
 
-Each person's identifier is derived from their public key — nobody
-chooses a "username," on purpose.
+The `peer` client uses exactly the same protocol as the Android app. Each person's identifier is derived from their public key — nobody chooses a "username," on purpose. `ws://` is only accepted for `localhost` in debug builds; otherwise the transport requires `wss://`.
 
 ### Generating Android/iOS/Python bindings
 
 ```bash
 ./ffi/generate_bindings.sh
 ```
+
+## Android app
+
+```bash
+export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/<version>
+ABIS="arm64-v8a armeabi-v7a" ./scripts/build-android.sh   # libqt_ffi.so (16 KB) + Kotlin bindings
+cd android && ./sync-native.sh ..                          # copy into the app
+# then open the android/ folder in Android Studio
+```
+
+The *release* build requires your own keystore and the production relay (`qtRelayUrl` / `qtRelayPin` in `android/gradle.properties`); in that build the relay is fixed and not shown in the UI. Step by step in [`android/README.md`](android/README.md) (Portuguese).
+
+## Relay on AWS
+
+On a fresh EC2 instance with Ubuntu 24.04 (Security Group with only 22, 80 and 443):
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/moral666/QT/security-hardening/deploy/aws/setup-ec2.sh
+sudo bash setup-ec2.sh
+```
+
+It installs Redis (`127.0.0.1` only, minimal-ACL user), the relay as a sandboxed systemd service and Caddy with automatic TLS, and prints the `wss://` URL and pinning key for the app. Details in [`docs/deploy-wss.md`](docs/deploy-wss.md).
 
 ## How the project is organized
 
@@ -133,16 +151,13 @@ storage/     Stores everything on disk, encrypted
 cli/         A terminal client, for testing without a phone
 demo/        Combines core+transport into a single test, to see it all in action
 ffi/         The bridge to Kotlin, Swift and Python
+android/     The Android app (Kotlin/Compose)
+deploy/      Relay server install (AWS, Redis, systemd)
+scripts/     Building the native libraries for Android
 docs/        The full technical specification, and the design history
 ```
 
-Each piece has its own tests, kept next to the code (`tests/`). The
-Android app exists and has already run on a real device (see the status
-table above), but for now it only lives on the machine it was built on,
-with no repository of its own and nothing published — treat it as a
-technical proof of concept, not as something you can install yet. When
-published, it should get its own repository that uses this one as a
-dependency (the same separation principle explained in `CONTRIBUTING.md`).
+Each piece has its own tests, kept next to the code (`tests/`).
 
 ## Want the technical details?
 
