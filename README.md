@@ -30,13 +30,26 @@ Se preferires uma explicação totalmente sem jargão técnico, começa por [`ap
 
 ## Sê honesto comigo: isto já funciona?
 
-Sim e não — e vale a pena seres claro sobre isto antes de investires tempo a explorar o projeto.
+O QT é um protótipo técnico de mensageiro E2EE. O núcleo criptográfico e de transporte está implementado em Rust, mas a aplicação completa ainda não foi validada de ponta a ponta.
 
-**Já funciona e já foi testado a sério** (não é só código que "devia funcionar"): a cifra ponta-a-ponta, a camada de rede, um servidor que entrega mensagens sem nunca conseguir lê-las, uma app Android que já correu num telemóvel real. Tudo isto tem testes automáticos a passar, e várias partes foram testadas manualmente da forma mais rigorosa que consegui (por exemplo: matar o servidor a meio e confirmar que os dados sobrevivem).
+### Estado até 14 de outubro de 2026
 
-**Ainda não dá para usar no dia a dia**: falta a interface de utilizador completa (hoje a app Android só tem um botão de "correr demonstração"), falta pôr o servidor num sítio acessível pela internet, e falta uma auditoria de segurança externa antes de qualquer pessoa confiar nisto com conversas reais.
+- Implementação do núcleo criptográfico, transporte, relay, armazenamento local e FFI.
+- Publicação das alterações de reforço de segurança na branch `security-hardening`, commits `01c4819` e `b4473dc`.
+- Os testes Rust executados com `cargo test --workspace --features qt_ffi/pq` passaram.
 
-Por outras palavras: as fundações estão sólidas e testadas; o prédio ainda não tem telhado.
+### O que falta validar
+
+- Implantação e execução do relay numa instância AWS EC2.
+- Configuração e teste de TLS real através de `wss://`.
+- Confirmação de que o Redis não está acessível publicamente.
+- Compilação e teste da aplicação Android com o núcleo atualizado.
+- Comunicação de ponta a ponta entre dois clientes.
+- Testes de integração, carga e auditoria de segurança independente.
+
+**Estado atual:** os testes Rust passaram, mas isso não prova que toda a aplicação funciona de ponta a ponta. A implantação AWS, o TLS real e a integração Android ainda precisam de validação.
+
+**Aviso:** o QT não foi auditado de forma independente e não deve ser utilizado para conversas reais ou informações sensíveis nesta fase.
 
 ## O que já está construído
 
