@@ -63,7 +63,7 @@ fun AppRoot(vm: MainViewModel) {
             val contact = ui.contacts.firstOrNull { it.contactId == openChat }
             ChatScreen(ui, openChat!!, contact, onSend = vm::send, onBack = { openChat = null }, onAdd = vm::addContact, onSafety = vm::showSafetyNumber)
         }
-        showSettings -> {
+        showSettings && BuildConfig.RELAY_EDITABLE -> {
             BackHandler { showSettings = false }
             SettingsScreen(ui, onSave = { u, k -> vm.saveRelay(u, k); showSettings = false })
         }
@@ -98,8 +98,10 @@ fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit) {
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("QT — protótipo", style = MaterialTheme.typography.headlineSmall)
         Text("Protótipo NÃO auditado. Não uses para conversas reais.", color = MaterialTheme.colorScheme.error)
-        OutlinedTextField(url, { url = it }, label = { Text("URL do relay (wss://; ws:// só em debug)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-        OutlinedTextField(key, { key = it }, label = { Text("Chave pública do relay (hex, opcional — pinning)") }, modifier = Modifier.fillMaxWidth())
+        if (BuildConfig.RELAY_EDITABLE) {   // so na build debug
+            OutlinedTextField(url, { url = it }, label = { Text("URL do relay (wss://; ws:// só em debug)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(key, { key = it }, label = { Text("Chave pública do relay (hex, opcional — pinning)") }, modifier = Modifier.fillMaxWidth())
+        }
         Button(onClick = { onCreate(url, key) }) { Text("Criar identidade") }
     }
 }
@@ -127,7 +129,7 @@ fun HomeScreen(ui: UiState, vm: MainViewModel, onOpen: (String) -> Unit, onSetti
                 SelectionContainer { Text(ui.publicId, style = MaterialTheme.typography.bodySmall) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { clipboard.setText(AnnotatedString(ui.publicId)) }) { Text("Copiar") }
-                    OutlinedButton(onClick = onSettings) { Text("Relay") }
+                    if (BuildConfig.RELAY_EDITABLE) OutlinedButton(onClick = onSettings) { Text("Relay") }
                 }
                 Text(ui.status, style = MaterialTheme.typography.bodySmall)
             }

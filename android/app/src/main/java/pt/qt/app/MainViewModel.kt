@@ -23,8 +23,8 @@ data class UiState(
     val loading: Boolean = true,
     val hasIdentity: Boolean = false,
     val publicId: String = "",
-    val relayUrl: String = if (BuildConfig.ALLOW_CLEARTEXT) "ws://192.168.1.10:9443" else "wss://",
-    val relayKeyHex: String = "",
+    val relayUrl: String = BuildConfig.RELAY_URL,
+    val relayKeyHex: String = BuildConfig.RELAY_PIN,
     val status: String = "",
     val error: String? = null,
     val contacts: List<Contact> = emptyList(),
@@ -58,8 +58,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val key = provider.storageKey()
                 val client = try { QtClient.open(dbFile.path, key) } finally { key.fill(0) }
                 qt = client
-                val url = prefs.getString("relay_url", null) ?: _ui.value.relayUrl
-                val pin = prefs.getString("relay_key", "") ?: ""
+                // Release: relay fixo da build, ignora preferencias antigas. Debug: editavel.
+                val url = if (BuildConfig.RELAY_EDITABLE) prefs.getString("relay_url", null) ?: BuildConfig.RELAY_URL else BuildConfig.RELAY_URL
+                val pin = if (BuildConfig.RELAY_EDITABLE) prefs.getString("relay_key", null) ?: BuildConfig.RELAY_PIN else BuildConfig.RELAY_PIN
                 val has = client.hasIdentity()
                 _ui.update {
                     it.copy(
@@ -89,6 +90,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveRelay(relayUrl: String, relayKeyHex: String) {
+        if (!BuildConfig.RELAY_EDITABLE) return   // release: relay fixo, nunca alteravel
         val u = relayUrl.trim().lowercase()
         if (!u.startsWith("wss://") && !(BuildConfig.ALLOW_CLEARTEXT && u.startsWith("ws://"))) {
             error("O relay tem de usar wss:// (ws:// so na build debug)")

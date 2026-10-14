@@ -15,6 +15,14 @@ val keystoreProps = Properties().apply {
 }
 fun signingProp(key: String, env: String): String? = keystoreProps.getProperty(key) ?: System.getenv(env)
 
+// Relay de PRODUCAO, fixo na build release (o utilizador nao o ve nem o muda).
+// Definir em android/gradle.properties (nao sao segredos: URL publico e chave PUBLICA):
+//   qtRelayUrl=wss://3-250-10-20.sslip.io
+//   qtRelayPin=<chave publica Noise do relay, 64 caracteres hex>
+// ou nas variaveis de ambiente QT_RELAY_URL / QT_RELAY_PIN.
+val relayUrl: String = (findProperty("qtRelayUrl") as String?) ?: System.getenv("QT_RELAY_URL") ?: ""
+val relayPin: String = ((findProperty("qtRelayPin") as String?) ?: System.getenv("QT_RELAY_PIN") ?: "").lowercase()
+
 android {
     namespace = "pt.qt.app"
     compileSdk = 34
@@ -55,9 +63,17 @@ android {
         debug {
             // So a build debug pode falar ws:// (ver src/debug/res/xml/network_security_config.xml).
             buildConfigField("boolean", "ALLOW_CLEARTEXT", "true")
+            // Debug: relay editavel na app. 10.0.2.2 = o PC visto de dentro do emulador.
+            buildConfigField("boolean", "RELAY_EDITABLE", "true")
+            buildConfigField("String", "RELAY_URL", "\"${relayUrl.ifBlank { "ws://10.0.2.2:9443" }}\"")
+            buildConfigField("String", "RELAY_PIN", "\"$relayPin\"")
         }
         release {
             buildConfigField("boolean", "ALLOW_CLEARTEXT", "false")
+            // Release: relay FIXO (sem ecra de configuracao); pinning obrigatorio.
+            buildConfigField("boolean", "RELAY_EDITABLE", "false")
+            buildConfigField("String", "RELAY_URL", "\"$relayUrl\"")
+            buildConfigField("String", "RELAY_PIN", "\"$relayPin\"")
             isDebuggable = false
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
@@ -132,6 +148,12 @@ tasks.register("verifyReleaseSignature") {
 gradle.taskGraph.whenReady {
     val wantsRelease = allTasks.any {
         it.project == project && it.name.matches(Regex("(assemble|bundle|package)Release.*"))
+    }
+    if (wantsRelease && !relayUrl.startsWith("wss://")) {
+        throw GradleException("Release sem relay: define qtRelayUrl=wss://... em android/gradle.properties (ou QT_RELAY_URL).")
+    }
+    if (wantsRelease && !Regex("^[0-9a-f]{64}$").matches(relayPin)) {
+        throw GradleException("Release sem pinning: define qtRelayPin=<64 hex da chave publica Noise do relay> em android/gradle.properties (ou QT_RELAY_PIN).")
     }
     if (wantsRelease && android.signingConfigs.getByName("release").storeFile == null) {
         throw GradleException(
