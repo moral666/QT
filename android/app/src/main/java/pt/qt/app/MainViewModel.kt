@@ -11,13 +11,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import uniffi.qt_ffi.ChatMessage
+import uniffi.qt_ffi.ConversationSummary
 import uniffi.qt_ffi.QtClient
 import uniffi.qt_ffi.QtException
+import uniffi.qt_ffi.ReceiveResult
 import uniffi.qt_ffi.RelayResponse
 import uniffi.qt_ffi.peerBundleFromRelayBytes
 import uniffi.qt_ffi.relayIdOfPublicId
-
-data class ChatMessage(val fromMe: Boolean, val text: String, val pending: Boolean = false)
 
 data class UiState(
     val loading: Boolean = true,
@@ -28,10 +31,15 @@ data class UiState(
     val status: String = "",
     val error: String? = null,
     val contacts: List<Contact> = emptyList(),
-    /** Conversas por contactId. SO EM MEMORIA nesta versao (ver docs). */
-    val chats: Map<String, List<ChatMessage>> = emptyMap(),
-    /** Remetentes que nos escreveram mas ainda nao adicionamos (contactId). */
-    val unknownSenders: Set<String> = emptySet(),
+    /** Conversas com historico (vem do SQLCipher, no Rust), a mais recente primeiro. */
+    val conversations: List<ConversationSummary> = emptyList(),
+    /** Conversa aberta (contactId) e a janela de mensagens carregada, da MAIS RECENTE para a mais antiga. */
+    val openChatId: String? = null,
+    val chatMessages: List<ChatMessage> = emptyList(),
+    /** Ainda ha mensagens mais antigas por carregar na conversa aberta. */
+    val chatHasMore: Boolean = false,
+    /** Enviar recibos "Visto" (o utilizador pode desligar). */
+    val readReceipts: Boolean = true,
     /** Safety number a mostrar (nome + 60 digitos), ou null. */
     val safetyNumber: String? = null,
 )
@@ -46,9 +54,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var qt: QtClient? = null
     private var link: RelayLink? = null
     private var poller: Job? = null
+    /** Um so envio da outbox de cada vez (declarado ANTES do init, que ja usa a rede). */
+    private val flushLock = Mutex()
 
-    /** Envelopes JA CIFRADOS (ratchet ja avancou) a espera de rede. Sao ciphertext, nao plaintext. */
-    private val outbox = mutableMapOf<String, MutableList<Pair<Contact, ByteArray>>>()
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
@@ -67,6 +75,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         loading = false, hasIdentity = has, relayUrl = url, relayKeyHex = pin,
                         publicId = if (has) client.exportPublicIdentity().publicId else "",
                         contacts = contactStore.load(),
+                        conversations = client.conversations(),
+                        readReceipts = prefs.getBoolean("read_receipts", true),
                     )
                 }
                 if (has) startLink()
@@ -131,7 +141,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (c.publicId == _ui.value.publicId) { error("Esse e o teu proprio ID"); return@io }
             val list = (_ui.value.contacts.filter { it.contactId != c.contactId }) + c
             contactStore.save(list)
-            _ui.update { it.copy(contacts = list, unknownSenders = it.unknownSenders - c.contactId, error = null) }
+            _ui.update { it.copy(contacts = list, error = null) }
+            flushOutbox()   // recibos que estavam a espera de saber o endereco deste contacto
         } catch (e: QtException) {
             error("Public ID invalido")
         }
@@ -152,19 +163,69 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissSafetyNumber() = _ui.update { it.copy(safetyNumber = null) }
 
+    // ------------------------------------------------------------------ conversas
+
+    /** Abre uma conversa: carrega as mensagens mais recentes e marca-as como lidas. */
+    fun openChat(contactId: String) = io {
+        val client = qt ?: return@io
+        val page = client.messagesPage(contactId, null, PAGE.toUInt())
+        _ui.update { it.copy(openChatId = contactId, chatMessages = page, chatHasMore = page.size == PAGE) }
+        markRead(client, contactId)
+    }
+
+    fun closeChat() = _ui.update { it.copy(openChatId = null, chatMessages = emptyList(), chatHasMore = false) }
+
+    /** Scroll ate ao topo: carrega mais uma pagina de mensagens antigas (do disco, cifrado). */
+    fun loadOlder() = io {
+        val client = qt ?: return@io
+        val st = _ui.value
+        val cid = st.openChatId ?: return@io
+        if (!st.chatHasMore) return@io
+        val oldest = st.chatMessages.lastOrNull()?.seq ?: return@io
+        val older = client.messagesPage(cid, oldest, PAGE.toUInt())
+        _ui.update {
+            if (it.openChatId != cid) it
+            else it.copy(chatMessages = it.chatMessages + older, chatHasMore = older.size == PAGE)
+        }
+    }
+
+    fun setReadReceipts(on: Boolean) {
+        prefs.edit().putBoolean("read_receipts", on).apply()
+        _ui.update { it.copy(readReceipts = on) }
+    }
+
+    private suspend fun markRead(client: QtClient, contactId: String) {
+        if (client.markConversationRead(contactId, _ui.value.readReceipts) > 0u) {
+            flushOutbox()
+        }
+        refreshViews(client)
+    }
+
+    /** Recarrega a lista de conversas e a janela da conversa aberta (estados ✓/✓✓ e mensagens novas). */
+    private fun refreshViews(client: QtClient) {
+        val st = _ui.value
+        val cid = st.openChatId
+        val window = if (cid != null) client.messagesPage(cid, null, maxOf(PAGE, st.chatMessages.size).toUInt()) else null
+        _ui.update {
+            it.copy(
+                conversations = client.conversations(),
+                chatMessages = if (window != null && it.openChatId == cid) window else it.chatMessages,
+            )
+        }
+    }
+
     // ---------------------------------------------------------------------- enviar
 
     fun send(contact: Contact, text: String) = io {
         val client = qt ?: return@io
-        val bytes = text.toByteArray(Charsets.UTF_8)
+        val bytes = text.trim().toByteArray(Charsets.UTF_8)
         if (bytes.isEmpty() || bytes.size > MAX_TEXT_BYTES) { error("Mensagem vazia ou maior que $MAX_TEXT_BYTES bytes"); return@io }
         try {
             ensureSession(client, contact)
-            val blob = client.encryptSealed(contact.contactId, bytes)      // o ratchet avanca e persiste aqui
-            appendChat(contact.contactId, ChatMessage(true, text, pending = true))
-            val ok = trySend(contact, blob)
-            if (!ok) outbox.getOrPut(contact.contactId) { mutableListOf() }.add(contact to blob)
-            else markSent(contact.contactId)
+            // Numa so transacao no Rust: ratchet avanca + mensagem guardada + envelope na outbox.
+            client.sendText(contact.contactId, text.trim())
+            refreshViews(client)
+            flushOutbox()
         } catch (e: Exception) {
             error("Nao foi possivel enviar: ${e.safeMsg()}")
         }
@@ -180,10 +241,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun trySend(c: Contact, blob: ByteArray): Boolean = try {
-        val r = link!!.request(qt!!.relayRequestSend(c.relayId, blob))
-        r is RelayResponse.Ack
-    } catch (e: Exception) { false }
+    /**
+     * Envia ao relay tudo o que esta na outbox (mensagens e recibos), pela ordem
+     * de criacao. So sai da outbox o que o relay confirmar; o resto fica guardado
+     * (cifrado) e volta a ser tentado no proximo ciclo - mesmo depois de reiniciar a app.
+     */
+    private suspend fun flushOutbox() = flushLock.withLock {
+        val client = qt ?: return@withLock
+        val l = link ?: return@withLock
+        var changed = false
+        for (item in client.outbox()) {
+            // O relay identifica caixas pela chave de assinatura (do Public ID do contacto).
+            val relayId = _ui.value.contacts.firstOrNull { it.contactId == item.contactId }?.relayId ?: continue
+            val r = try {
+                l.request(client.relayRequestSend(relayId, item.blob))
+            } catch (e: Exception) {
+                break   // sem rede: tenta no proximo ciclo, mantendo a ordem
+            }
+            if (r is RelayResponse.Ack) {
+                client.outboxSent(item.outboxId)
+                changed = true
+            }
+            // Outra resposta (ex.: fila do destinatario cheia): fica na outbox e segue para o proximo.
+        }
+        if (changed) refreshViews(client)
+    }
 
     // --------------------------------------------------------------------- receber
 
@@ -192,26 +274,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val l = link ?: return
         try {
             flushOutbox()
-            repeat(MAX_PAGES) {
+            var received = false
+            for (page in 0 until MAX_PAGES) {
                 val r = l.request(client.relayRequestFetch())
-                val msgs = (r as? RelayResponse.Messages)?.messages ?: return
-                if (msgs.isEmpty()) return
+                val msgs = (r as? RelayResponse.Messages)?.messages ?: break
+                if (msgs.isEmpty()) break
                 val ackIds = mutableListOf<ULong>()
                 for (m in msgs) {
                     try {
-                        val d = client.decryptSealed(m.ciphertext)
-                        appendChat(d.contactId, ChatMessage(false, String(d.plaintext, Charsets.UTF_8)))
-                        if (_ui.value.contacts.none { it.contactId == d.contactId })
-                            _ui.update { it.copy(unknownSenders = it.unknownSenders + d.contactId) }
+                        // Decifrar + guardar no historico + agendar o recibo, tudo numa transacao.
+                        when (client.receiveSealed(m.ciphertext)) {
+                            is ReceiveResult.NewMessage, is ReceiveResult.StatusChanged -> received = true
+                            is ReceiveResult.NoChange -> {}
+                        }
                         ackIds += m.id
                     } catch (e: QtException.Storage) {
                         // Problema local: NAO confirmar, o relay volta a entregar mais tarde.
                     } catch (e: QtException) {
-                        // Replay (ja processada) ou envelope invalido: nao ha nada a recuperar -> confirmar.
+                        // Replay (ja processada) ou envelope invalido: nada a recuperar -> confirmar.
                         ackIds += m.id
                     }
                 }
-                if (ackIds.isNotEmpty()) l.request(client.relayRequestAck(ackIds))   // so DEPOIS de processar
+                if (ackIds.isNotEmpty()) l.request(client.relayRequestAck(ackIds))   // so DEPOIS de guardar
+            }
+            if (received) {
+                client.prepareDeliveryReceipts()
+                val open = _ui.value.openChatId
+                if (open != null) markRead(client, open) else refreshViews(client)
+                flushOutbox()
             }
             status("Ligado ao relay")
         } catch (e: Exception) {
@@ -219,25 +309,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun flushOutbox() {
-        for ((cid, list) in outbox.toMap()) {
-            val remaining = mutableListOf<Pair<Contact, ByteArray>>()
-            for (p in list) if (!trySend(p.first, p.second)) remaining += p else markSent(cid)
-            if (remaining.isEmpty()) outbox.remove(cid) else outbox[cid] = remaining
-        }
-    }
-
     // ------------------------------------------------------------------ utilitarios
-
-    private fun appendChat(contactId: String, m: ChatMessage) = _ui.update {
-        it.copy(chats = it.chats + (contactId to ((it.chats[contactId] ?: emptyList()) + m)))
-    }
-
-    private fun markSent(contactId: String) = _ui.update {
-        val msgs = it.chats[contactId] ?: return@update it
-        val i = msgs.indexOfFirst { m -> m.fromMe && m.pending }
-        if (i < 0) it else it.copy(chats = it.chats + (contactId to msgs.toMutableList().also { l -> l[i] = l[i].copy(pending = false) }))
-    }
 
     fun dismissError() = _ui.update { it.copy(error = null) }
     private fun status(s: String) = _ui.update { it.copy(status = s) }
@@ -249,7 +321,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val POLL_MS = 3_000L
         private const val MAX_PAGES = 20
-        private const val MAX_TEXT_BYTES = 10_000
+        private const val MAX_TEXT_BYTES = 9_000
+        private const val PAGE = 50
     }
 }
 

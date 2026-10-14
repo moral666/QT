@@ -14,6 +14,7 @@
 //! codigo nem escrita em disco em texto plano - deve vir do Android
 //! Keystore / iOS Secure Enclave (ver docs/protocol-spec.md secao 5).
 
+pub mod messages;
 pub use rusqlite;
 use rusqlite::Connection;
 use qt_core::primitives::{DhKeyPair, SigningKeyPair};
@@ -156,8 +157,10 @@ fn init_connection(conn: &Connection) -> Result<(), StorageError> {
             PRIMARY KEY (contact_id, envelope_id)
         );",
     )?;
-    // NOTA: nao existe (de proposito) nenhuma tabela de mensagens: o
-    // plaintext das mensagens nunca e guardado por este crate.
+    // Historico de mensagens e outbox (ver messages.rs): o texto passou a ser
+    // guardado, SEMPRE dentro desta base cifrada e na mesma transacao que o
+    // avanco do ratchet, para nunca se perder uma mensagem ja decifrada.
+    conn.execute_batch(messages::SCHEMA)?;
     Ok(())
 }
 
@@ -472,7 +475,7 @@ pub fn wipe_all(conn: &Connection) -> Result<(), StorageError> {
     conn.execute_batch(
         "DELETE FROM identity; DELETE FROM sessions; DELETE FROM one_time_prekeys;
          DELETE FROM pq_prekeys; DELETE FROM noise_static; DELETE FROM session_meta;
-         DELETE FROM seen_envelopes; DELETE FROM kv; VACUUM;",
+         DELETE FROM seen_envelopes; DELETE FROM kv; DELETE FROM messages; DELETE FROM outbox; VACUUM;",
     )?;
     Ok(())
 }

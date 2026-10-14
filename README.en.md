@@ -46,7 +46,7 @@ Yes, end to end — as an **alpha** release. **It has not been independently aud
 
 ### Still missing
 
-- **Persistent chat history** — received messages currently live only in memory while the app is open.
+- ~~Persistent history~~ — **done**: history stored in SQLCipher (in the same transaction that advances the ratchet), with *Sent / Delivered / Read* indicators via encrypted receipts and a persistent outbox.
 - **Push notifications** — the app only receives messages while it is open.
 - **Production infrastructure** — own domain (the current one is temporary), redundancy, backups and server alerts.
 - App lock with PIN/biometrics, adding contacts via QR code, a more polished interface.
