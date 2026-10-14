@@ -96,8 +96,8 @@ fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit) {
     var url by remember { mutableStateOf(ui.relayUrl) }
     var key by remember { mutableStateOf(ui.relayKeyHex) }
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("QT — protótipo", style = MaterialTheme.typography.headlineSmall)
-        Text("Protótipo NÃO auditado. Não uses para conversas reais.", color = MaterialTheme.colorScheme.error)
+        Text("QT — alpha", style = MaterialTheme.typography.headlineSmall)
+        Text("Versão alpha, ainda não auditada. Não uses para informação sensível.", color = MaterialTheme.colorScheme.error)
         if (BuildConfig.RELAY_EDITABLE) {   // so na build debug
             OutlinedTextField(url, { url = it }, label = { Text("URL do relay (wss://; ws:// só em debug)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(key, { key = it }, label = { Text("Chave pública do relay (hex, opcional — pinning)") }, modifier = Modifier.fillMaxWidth())

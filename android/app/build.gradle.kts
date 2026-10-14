@@ -32,7 +32,7 @@ android {
         minSdk = 24            // igual ao `-P 24` do cargo-ndk
         targetSdk = 34
         versionCode = 1
-        versionName = "0.1-prototipo"
+        versionName = "0.1-alpha"
         // So as ABIs que o Rust compilou. Adiciona "x86_64" quando tiveres esse .so (emulador).
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }

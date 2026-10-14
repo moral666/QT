@@ -1,11 +1,11 @@
 # QT
 
-**A technical prototype** of the cryptographic and transport core of an
-E2EE messenger — X3DH, PQXDH (post-quantum), Double Ratchet, Sealed
-Sender, Noise Protocol, all implemented in Rust, compiled and genuinely
-tested. **This is not a finished product, not ready for real
-conversations** — see "Be honest with me: does this actually work?"
-below before spending time exploring it.
+**Alpha version — not audited.** An E2EE messenger with post-quantum
+cryptography — X3DH, PQXDH, Double Ratchet, Sealed Sender, Noise Protocol,
+all implemented in Rust — with an Android app and a cloud relay, already
+working end to end. **It is not a finished product yet and must not be
+used for sensitive information** — see "Be honest with me: does this
+actually work?" below.
 
 [Ler isto em português →](README.md)
 
@@ -35,7 +35,7 @@ can verify there are no hidden tricks.
 
 ## Be honest with me: does this actually work?
 
-Yes, end to end — as a prototype. **It has not been independently audited and must not be used for real conversations or sensitive information.**
+Yes, end to end — as an **alpha** release. **It has not been independently audited and must not be used for real conversations or sensitive information.**
 
 ### Validated as of 14 October 2026
 
@@ -53,6 +53,8 @@ Yes, end to end — as a prototype. **It has not been independently audited and 
 - Distribution through the Play Store (some antivirus apps currently warn because the app comes from an unknown source).
 - The `messenger` terminal client still uses the old registration format and does not work with the current relay (`messenger_demo` and the `peer` test client do).
 - Load testing and an **independent security audit**.
+
+**Next stages:** *alpha* (now: works end to end, tested with a few people) → *beta* (persistent history, notifications, Play Store testing) → *1.0* (after an external audit).
 
 ## What's already built
 
