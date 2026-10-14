@@ -50,14 +50,17 @@ Por outras palavras: as fundações estão sólidas e testadas; o prédio ainda 
 | `ffi/` | A ponte que liga tudo isto a Kotlin (Android), Swift (iOS) e Python | ✅ Testado a partir do Python |
 | App Android | Usa essa ponte para provar que tudo funciona num telemóvel real | ✅ Já correu num emulador Android real |
 
-## O que falta, sem rodeios
+## ## O que falta, sem rodeios
 
-- Um ecrã de conversa a sério na app (hoje é só um botão de demonstração)
-- Um servidor acessível pela internet, não só na tua rede local
-- Ligação protegida por TLS (`wss://`) — hoje usa `ws://` simples, adequado só para testes
-- Vários servidores independentes a colaborar entre si (federação), para que nenhum governo consiga desligar a rede inteira desligando só um
-- A password da base de dados vir do sistema de segurança do telemóvel (Keystore/Secure Enclave), não de um argumento de linha de comandos
-- Uma auditoria de segurança independente, feita por alguém que não sou eu
+- Interface de conversa completa:** a app Android continua a precisar de uma interface de mensagens utilizável, para além da demonstração técnica.
+- Servidor acessível pela internet:** falta implantar e validar o relay numa instância AWS EC2.
+- TLS (`wss://`):** a branch `security-hardening` inclui uma política de cliente que exige ligações seguras em produção, mas falta validar uma ligação real com TLS.
+- Testes de integração:** falta confirmar o envio e a receção de mensagens entre dois clientes, usando o núcleo atualizado e o relay remoto.
+- Armazenamento e gestão de chaves:** é necessário validar a integração com os mecanismos de segurança do Android, incluindo Android Keystore, e confirmar o comportamento da aplicação.
+- Federação entre servidores:** continua por implementar ou validar uma arquitetura de vários relays independentes que colaborem entre si.
+- Auditoria independente:** o projeto ainda não foi auditado externamente e não deve ser considerado seguro para conversas reais.
+
+Os testes automáticos do núcleo Rust passaram, mas ainda não comprovam o funcionamento de toda a aplicação. Cada componente tem de ser validado no ambiente em que será utilizado.
 
 ## Experimenta tu mesmo
 
