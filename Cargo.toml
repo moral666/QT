@@ -1,3 +1,13 @@
 [workspace]
 resolver = "2"
 members = ["core", "transport", "server", "demo", "cli", "storage", "ffi"]
+
+# Binarios de release (incluindo libqt_ffi.so para Android): sem simbolos de
+# debug, otimizacao entre crates. NAO usar panic = "abort": o UniFFI apanha
+# panics do Rust e converte-os em excecoes Kotlin; com abort a app morria.
+# Os bindings UniFFI tem de ser gerados a partir da build DEBUG (como faz
+# ffi/generate_bindings.sh): de um .so "stripped" o uniffi-bindgen nao gera nada.
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
