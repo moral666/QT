@@ -75,12 +75,27 @@ fn secure_delete_esta_ativo_na_configuracao_real() {
 }
 
 #[test]
-fn nao_existe_tabela_de_mensagens() {
-    let p = tmp("nomsg");
+fn texto_das_mensagens_nunca_fica_em_claro_no_ficheiro() {
+    // O historico passou a ser guardado (desenho novo), mas SO dentro da base
+    // cifrada: o texto nao pode aparecer nos bytes do ficheiro, nem no WAL/journal.
+    let p = tmp("msgcifrada");
+    let segredo = "TEXTO-SECRETO-QT-9f3a";
+    {
+        let c = open_database_with_key(&p, &KEY).unwrap();
+        qt_storage::messages::insert_message(&c, &[9u8; 16], "alice", false, 1, segredo, 0, 0, 10).unwrap();
+    }
+    for f in [p.clone(), format!("{p}-wal"), format!("{p}-journal")] {
+        if let Ok(bytes) = std::fs::read(&f) {
+            assert!(
+                !bytes.windows(segredo.len()).any(|w| w == segredo.as_bytes()),
+                "texto em claro encontrado em {f}"
+            );
+        }
+    }
+    // E a base reabre com a chave certa e devolve o texto.
     let c = open_database_with_key(&p, &KEY).unwrap();
-    let mut st = c.prepare("SELECT name FROM sqlite_master WHERE type='table'").unwrap();
-    let nomes: Vec<String> = st.query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect();
-    assert!(!nomes.iter().any(|n| n.contains("message") || n.contains("plaintext")), "{nomes:?}");
+    let m = qt_storage::messages::messages_page(&c, "alice", None, 10).unwrap();
+    assert_eq!(m[0].body, segredo);
     std::fs::remove_file(&p).ok();
 }
 

@@ -39,7 +39,7 @@ Sim, de ponta a ponta — em versão **alpha**. **Não foi auditado de forma ind
 
 ### O que ainda falta
 
-- **Histórico de conversas persistente** — hoje as mensagens recebidas só vivem em memória enquanto a app está aberta.
+- ~~Histórico persistente~~ — **feito**: histórico guardado no SQLCipher (na mesma transação que o avanço do ratchet), com indicadores *Enviado / Entregue / Visto* através de recibos cifrados e fila de saída persistente.
 - **Notificações push** — a app só recebe mensagens enquanto está aberta.
 - **Infraestrutura de produção** — domínio próprio (o atual é provisório), redundância, backups e alertas do servidor.
 - Bloqueio da app com PIN/biometria, adição de contactos por QR code, interface mais cuidada.

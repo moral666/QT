@@ -83,15 +83,15 @@ impl From<st::rusqlite::Error> for QtError {
     }
 }
 
-fn bad(field: &str) -> QtError {
+pub(crate) fn bad(field: &str) -> QtError {
     QtError::InvalidInput { field: field.to_string() }
 }
 
-fn hex(b: &[u8]) -> String {
+pub(crate) fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{:02x}", x)).collect()
 }
-fn unhex(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 || !s.is_ascii() {
+pub(crate) fn unhex(s: &str) -> Option<Vec<u8>> {
+    if s.len() & 1 != 0 || !s.is_ascii() {
         return None;
     }
     (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).ok()).collect()
@@ -164,7 +164,7 @@ fn parse_public_id(id: &str) -> Result<([u8; 32], [u8; 32]), QtError> {
     Ok((arr32(&bytes[..32], "public_id")?, arr32(&bytes[32..], "public_id")?))
 }
 
-fn contact_to_identity(contact_id: &str) -> Result<PublicKey, QtError> {
+pub(crate) fn contact_to_identity(contact_id: &str) -> Result<PublicKey, QtError> {
     let b = unhex(contact_id).ok_or_else(|| bad("contact_id"))?;
     Ok(PublicKey::from(arr32(&b, "contact_id")?))
 }
@@ -370,25 +370,9 @@ impl QtClient {
     /// Cifra para um contacto e AVANCA o ratchet (estado persistido
     /// atomicamente). Devolve o envelope opaco a enviar ao relay.
     pub fn encrypt(&self, contact_id: String, plaintext: Vec<u8>) -> Result<Vec<u8>, QtError> {
-        if plaintext.len() > MAX_PLAINTEXT_LEN {
-            return Err(bad("plaintext"));
-        }
         let c = self.lock()?;
-        let mut state = st::load_session(&c, &contact_id)?.ok_or(QtError::UnknownSession)?;
-        let msg = state.encrypt(&plaintext).map_err(|_| QtError::Crypto)?;
-        let pending = st::kv_get(&c, &format!("pending:{contact_id}"))?;
-        let mut env = vec![ENV_VERSION, if pending.is_some() { KIND_PREKEY_MSG } else { KIND_MSG }];
-        if let Some(h) = pending {
-            env.extend_from_slice(&h);
-        }
-        env.extend_from_slice(&ratchet_to_bytes(&msg));
-
         let tx = c.unchecked_transaction()?;
-        st::save_session(&tx, &contact_id, &state)?;
-        if let Some(mut m) = st::load_session_meta(&tx, &contact_id)? {
-            m.send_seq += 1;
-            st::save_session_meta(&tx, &m)?;
-        }
+        let env = self.encrypt_with(&tx, &contact_id, &plaintext)?;
         tx.commit()?;
         Ok(env)
     }
@@ -518,12 +502,53 @@ impl QtClient {
     /// Como `encrypt`, mas esconde o remetente do relay: a identidade do
     /// remetente segue numa caixa selada para o destinatario.
     pub fn encrypt_sealed(&self, contact_id: String, plaintext: Vec<u8>) -> Result<Vec<u8>, QtError> {
-        let recipient = contact_to_identity(&contact_id)?;
-        let env = self.encrypt(contact_id, plaintext)?;
-        let me = {
-            let c = self.lock()?;
-            st::load_identity(&c)?.identity.public
-        };
+        let c = self.lock()?;
+        let tx = c.unchecked_transaction()?;
+        let out = self.seal_with(&tx, &contact_id, &plaintext)?;
+        tx.commit()?;
+        Ok(out)
+    }
+
+    /// Abre a caixa selada, descobre o remetente e decifra.
+    pub fn decrypt_sealed(&self, sealed_envelope: Vec<u8>) -> Result<SealedDecrypted, QtError> {
+        let c = self.lock()?;
+        let (contact_id, plaintext) = self.open_sealed_with(&c, &sealed_envelope, &mut |_, _, _, _| Ok(()))?;
+        Ok(SealedDecrypted { contact_id, plaintext })
+    }
+}
+
+impl QtClient {
+    pub(crate) fn lock(&self) -> Result<std::sync::MutexGuard<'_, st::rusqlite::Connection>, QtError> {
+        self.conn.lock().map_err(|_| QtError::Storage)
+    }
+
+    /// Cifra e avanca o ratchet usando `c` (o CHAMADOR abre e confirma a
+    /// transacao: assim pode guardar mais coisas na mesma transacao).
+    pub(crate) fn encrypt_with(&self, c: &st::rusqlite::Connection, contact_id: &str, plaintext: &[u8]) -> Result<Vec<u8>, QtError> {
+        if plaintext.len() > MAX_PLAINTEXT_LEN {
+            return Err(bad("plaintext"));
+        }
+        let mut state = st::load_session(c, contact_id)?.ok_or(QtError::UnknownSession)?;
+        let msg = state.encrypt(plaintext).map_err(|_| QtError::Crypto)?;
+        let pending = st::kv_get(c, &format!("pending:{contact_id}"))?;
+        let mut env = vec![ENV_VERSION, if pending.is_some() { KIND_PREKEY_MSG } else { KIND_MSG }];
+        if let Some(h) = pending {
+            env.extend_from_slice(&h);
+        }
+        env.extend_from_slice(&ratchet_to_bytes(&msg));
+        st::save_session(c, contact_id, &state)?;
+        if let Some(mut m) = st::load_session_meta(c, contact_id)? {
+            m.send_seq += 1;
+            st::save_session_meta(c, &m)?;
+        }
+        Ok(env)
+    }
+
+    /// `encrypt_with` + caixa selada com a identidade do remetente.
+    pub(crate) fn seal_with(&self, c: &st::rusqlite::Connection, contact_id: &str, plaintext: &[u8]) -> Result<Vec<u8>, QtError> {
+        let recipient = contact_to_identity(contact_id)?;
+        let env = self.encrypt_with(c, contact_id, plaintext)?;
+        let me = st::load_identity(c)?.identity.public;
         let sealed = seal_sender_identity_bound(&me, &recipient, &envelope_binding(&env)).map_err(|_| QtError::Crypto)?;
         let mut out = vec![ENV_VERSION];
         out.extend_from_slice(&(sealed.len() as u16).to_be_bytes());
@@ -532,8 +557,16 @@ impl QtClient {
         Ok(out)
     }
 
-    /// Abre a caixa selada, descobre o remetente e decifra.
-    pub fn decrypt_sealed(&self, sealed_envelope: Vec<u8>) -> Result<SealedDecrypted, QtError> {
+    /// Abre um envelope selado e decifra-o. `after` corre DENTRO da transacao
+    /// que avanca o ratchet (recebe a ligacao, o contacto, o id do envelope e
+    /// o plaintext): se `after` falhar, nada e persistido e o relay volta a
+    /// entregar a mensagem mais tarde.
+    pub(crate) fn open_sealed_with(
+        &self,
+        c: &st::rusqlite::Connection,
+        sealed_envelope: &[u8],
+        after: &mut AfterDecrypt<'_>,
+    ) -> Result<(String, Vec<u8>), QtError> {
         if sealed_envelope.len() < 3 || sealed_envelope.len() > MAX_ENVELOPE_LEN || sealed_envelope[0] != ENV_VERSION {
             return Err(QtError::InvalidEnvelope);
         }
@@ -541,8 +574,7 @@ impl QtClient {
         if sealed_envelope.len() < 3 + len {
             return Err(QtError::InvalidEnvelope);
         }
-        let c = self.lock()?;
-        let ident = st::load_identity(&c)?;
+        let ident = st::load_identity(c)?;
         let inner = &sealed_envelope[3 + len..];
         // A identidade selada e so uma PISTA para escolher a sessao. O remetente
         // so e dado como autenticado se o AEAD do ratchet (chaves + AD com as
@@ -550,14 +582,8 @@ impl QtClient {
         let hint = unseal_sender_identity_bound(&ident.identity, &sealed_envelope[3..3 + len], &envelope_binding(inner))
             .map_err(|_| QtError::InvalidEnvelope)?;
         let contact_id = hex(hint.as_bytes());
-        let plaintext = self.decrypt_locked(&c, &contact_id, inner)?;
-        Ok(SealedDecrypted { contact_id, plaintext })
-    }
-}
-
-impl QtClient {
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, st::rusqlite::Connection>, QtError> {
-        self.conn.lock().map_err(|_| QtError::Storage)
+        let plaintext = self.decrypt_locked_with(c, &contact_id, inner, after)?;
+        Ok((contact_id, plaintext))
     }
 
     fn decrypt_locked(
@@ -565,6 +591,16 @@ impl QtClient {
         c: &st::rusqlite::Connection,
         contact_id: &str,
         env: &[u8],
+    ) -> Result<Vec<u8>, QtError> {
+        self.decrypt_locked_with(c, contact_id, env, &mut |_, _, _, _| Ok(()))
+    }
+
+    fn decrypt_locked_with(
+        &self,
+        c: &st::rusqlite::Connection,
+        contact_id: &str,
+        env: &[u8],
+        after: &mut AfterDecrypt<'_>,
     ) -> Result<Vec<u8>, QtError> {
         if env.len() < 2 || env[0] != ENV_VERSION {
             return Err(QtError::InvalidEnvelope);
@@ -627,6 +663,8 @@ impl QtClient {
             m.last_recv_seq += 1;
             st::save_session_meta(&tx, &m)?;
         }
+        // Ganchos do chamador (ex.: guardar a mensagem no historico) na MESMA transacao.
+        after(&tx, contact_id, &env_id, &plaintext)?;
         tx.commit()?;
         Ok(plaintext)
     }
@@ -664,6 +702,10 @@ impl QtClient {
         Ok((state, if opk_id == 0 { None } else { Some(opk_id) }))
     }
 }
+
+/// Gancho chamado dentro da transacao de decifragem:
+/// (ligacao, contact_id, id do envelope, plaintext).
+pub(crate) type AfterDecrypt<'a> = dyn FnMut(&st::rusqlite::Connection, &str, &[u8], &[u8]) -> Result<(), QtError> + 'a;
 
 fn envelope_binding(env: &[u8]) -> Vec<u8> {
     let mut h = Sha256::new();

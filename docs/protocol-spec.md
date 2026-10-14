@@ -423,6 +423,22 @@ Timeouts do servidor (omissão): handshake 10 s, autenticação 10 s, inatividad
 Qualquer frame Noise inválido/repetido/fora de ordem encerra a sessão.
 Entrega *at-least-once*: o cliente tem de deduplicar (o `QtClient` faz-o).
 
+## 12. Mensagem dentro do ratchet (payload v1) e estados
+
+O plaintext cifrado pelo Double Ratchet tem agora um formato próprio (o relay nunca o vê):
+
+```
+[1 versão=0x01][1 tipo][16 msg_id][8 sent_at ms, BE]
+tipo 1 = texto:  [texto UTF-8, máx. 9000 bytes]
+tipo 2 = recibo: [1 estado: 2=entregue, 3=vista][2 n BE][n × 16 msg_id], n ≤ 400
+```
+
+Um plaintext fora deste formato (clientes antigos) é tratado como texto simples, com `msg_id` derivado do envelope.
+
+**Estados** de uma mensagem enviada: *por enviar* (na outbox) → *enviada* (o relay deu `Ack`) → *entregue* (recibo cifrado do destinatário) → *vista* (recibo cifrado, opcional). Os estados só sobem e um recibo só afeta mensagens enviadas ao próprio remetente do recibo.
+
+**Atomicidade** (`ffi/src/history.rs`): enviar = avançar o ratchet + guardar a mensagem + pôr o envelope na outbox, numa transação; receber = avançar o ratchet + marcar o envelope como visto + guardar a mensagem/aplicar o recibo + agendar o recibo "entregue", numa transação. A outbox só é limpa quando o relay confirma. Testes: `ffi/tests/history_flow.rs`.
+
 ## Documentos relacionados
 
 - [`threat-model.md`](threat-model.md) — modelo de ameaças formal: quem

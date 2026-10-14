@@ -63,7 +63,7 @@ Chave do SQLCipher gerada aleatoriamente e protegida pelo Android Keystore (Stro
 pinning opcional da chave do relay; confirmação (`Ack`) só depois de processar; deduplicação feita pelo Rust.
 
 ## Limitações (ver `QT/docs/known-limitations.md`, itens 29–34)
-Sessões cruzadas se ambos enviarem a 1.ª mensagem em simultâneo; histórico só em memória; poll de 3 s;
+Sessões cruzadas se ambos enviarem a 1.ª mensagem em simultâneo; poll de 3 s;
 sem notificações; sem x86_64 (emulador x86 só com imagens ARM); **sem auditoria**.
 
 ## O que foi verificado

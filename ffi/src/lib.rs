@@ -20,6 +20,7 @@ uniffi::setup_scaffolding!();
 
 #[cfg(feature = "pq")]
 pub mod client;
+pub mod history;
 #[cfg(feature = "pq")]
 pub use client::*;
 

@@ -11,6 +11,7 @@
 //! ATENCAO: a chave do storage fica num ficheiro `<db>.key` (so para testes; a app usa o Keystore).
 
 use futures_util::{SinkExt, StreamExt};
+use qt_ffi::history::ReceiveResult;
 use qt_ffi::*;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -66,6 +67,26 @@ async fn rpc(qt: &Arc<QtClient>, url: &str, pin: &Option<String>, req: Vec<u8>) 
     let _ = ws.close(None).await;
     r
 }
+
+/// Envia tudo o que esta na outbox (mensagens e recibos) e limpa o que o relay confirmar.
+async fn flush_outbox(qt: &Arc<QtClient>, url: &str, pin: &Option<String>) {
+    let Ok(items) = qt.outbox() else { return };
+    for it in items {
+        let Ok(relay_id) = relay_id_of_contact(qt, &it.contact_id) else { continue };
+        let Ok(req) = qt.relay_request_send(relay_id, it.blob) else { continue };
+        if let Ok(RelayResponse::Ack) = rpc(qt, url, pin, req).await {
+            let _ = qt.outbox_sent(it.outbox_id);
+        }
+    }
+}
+
+/// O relay identifica caixas pela chave de assinatura; guardamo-la ao definir o contacto.
+fn relay_id_of_contact(_qt: &Arc<QtClient>, contact_id: &str) -> Result<String, ()> {
+    RELAY_IDS.lock().unwrap().get(contact_id).cloned().ok_or(())
+}
+
+static RELAY_IDS: std::sync::LazyLock<Mutex<std::collections::HashMap<String, String>>> =
+    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 
 fn desc(r: &Result<RelayResponse, String>) -> String {
     match r {
@@ -126,8 +147,14 @@ async fn main() {
                 }
                 let mut ids = Vec::new();
                 for m in messages {
-                    match qt.decrypt_sealed(m.ciphertext) {
-                        Ok(d) => println!("<< [{}…] {}", &d.contact_id[..8], String::from_utf8_lossy(&d.plaintext)),
+                    match qt.receive_sealed(m.ciphertext) {
+                        Ok(ReceiveResult::NewMessage { message }) => {
+                            println!("<< [{}…] {}", &message.contact_id[..8], message.text)
+                        }
+                        Ok(ReceiveResult::StatusChanged { message_ids, status, .. }) => {
+                            println!("[{} mensagem(ns) agora: {:?}]", message_ids.len(), status)
+                        }
+                        Ok(ReceiveResult::NoChange { .. }) => {}
                         Err(QtError::Storage) => continue, // nao confirmar: o relay volta a entregar
                         Err(e) => println!("[mensagem descartada: {e}]"),
                     }
@@ -136,6 +163,9 @@ async fn main() {
                 if let Ok(req) = qt.relay_request_ack(ids) {
                     let _ = rpc(&qt, &url, &pin, req).await;
                 }
+                // Recibos "entregue" e o que ficou por enviar.
+                let _ = qt.prepare_delivery_receipts();
+                flush_outbox(&qt, &url, &pin).await;
             }
         });
     }
@@ -151,8 +181,10 @@ async fn main() {
             println!("{}", me.public_id);
         } else if let Some(pid) = line.strip_prefix("/add ") {
             match relay_id_of_public_id(pid.trim().to_string()) {
-                Ok(_) => {
-                    *contact.lock().unwrap() = Some(pid.trim().to_string());
+                Ok(rid) => {
+                    let p = pid.trim().to_string();
+                    RELAY_IDS.lock().unwrap().insert(p[4..68].to_string(), rid);
+                    *contact.lock().unwrap() = Some(p);
                     println!("[contacto definido]");
                 }
                 Err(e) => println!("[Public ID invalido: {e}]"),
@@ -180,11 +212,11 @@ async fn main() {
                     }
                 }
             }
-            match qt.encrypt_sealed(cid, line.into_bytes()) {
-                Ok(blob) => match rpc(&qt, &url, &pin, qt.relay_request_send(relay_id, blob).expect("req")).await {
-                    Ok(RelayResponse::Ack) => println!(">> enviada"),
-                    other => println!("[falha ao enviar: {}]", desc(&other)),
-                },
+            match qt.send_text(cid, line) {
+                Ok(_) => {
+                    flush_outbox(&qt, &url, &pin).await;
+                    println!(">> enviada");
+                }
                 Err(e) => println!("[erro a cifrar: {e}]"),
             }
         }

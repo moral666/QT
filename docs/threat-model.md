@@ -49,7 +49,7 @@ Cada linha indica o mecanismo e **o teste que o demonstra** (corre com
 | One-time prekey reutilizada / consumida por um forjador | Só é apagada depois de a 1.ª mensagem autenticar | `prekey_reutilizada_e_rejeitada`, `cabecalho_forjado_nao_gasta_a_prekey` |
 | Estado comprometido expõe mensagens passadas | Forward secrecy do Double Ratchet (chaves de mensagem apagadas após uso) | `core/tests/forward_secrecy.rs` |
 | Estado comprometido expõe mensagens futuras | Post-compromise security após um novo passo DH (limites em §4) | `post_compromise_security_cura_apos_novo_passo_dh` |
-| Cópia do ficheiro da base de dados | SQLCipher com chave binária de 32 bytes vinda do Android Keystore; sem cabeçalho SQLite em claro; sem tabela de mensagens | `storage/tests/storage_extended.rs` |
+| Cópia do ficheiro da base de dados | SQLCipher com chave binária de 32 bytes vinda do Android Keystore; sem cabeçalho SQLite em claro. O histórico de mensagens é guardado **só** dentro da base cifrada (com `secure_delete`), nunca em claro | `storage/tests/storage_extended.rs::texto_das_mensagens_nunca_fica_em_claro_no_ficheiro` |
 | Lixo / entradas malformadas | Todas as entradas de rede e disco devolvem erro (sem `unwrap` em caminhos de rede/cripto); limites de tamanho | `sessao_inexistente_e_lixo_nao_fazem_panic`, `limites_e_validacao_de_entrada`, fuzz do estado em `forward_secrecy.rs` |
 
 ### 3.1 Segurança pós-quântica — o que exatamente se afirma
