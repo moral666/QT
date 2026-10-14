@@ -105,13 +105,13 @@ cargo test -p qt_core --features pq              # including post-quantum
 ```bash
 cargo run --bin relay_server &
 
-cargo run -p qt_cli --bin messenger -- identity --db bob.sqlite --passphrase "..."
-cargo run -p qt_cli --bin messenger -- register --db bob.sqlite --passphrase "..." --server ws://127.0.0.1:9443
+cargo run -p qt_cli --bin messenger -- identity --db bob.sqlite
+cargo run -p qt_cli --bin messenger -- register --db bob.sqlite --server ws://127.0.0.1:9443  # debug build only; release requires wss://
 
-cargo run -p qt_cli --bin messenger -- identity --db alice.sqlite --passphrase "..."
-cargo run -p qt_cli --bin messenger -- send --db alice.sqlite --passphrase "..." --to <BOB-ID> --message "Hi!" --server ws://127.0.0.1:9443
+cargo run -p qt_cli --bin messenger -- identity --db alice.sqlite
+cargo run -p qt_cli --bin messenger -- send --db alice.sqlite --to <BOB-ID> --message "Hi!" --server ws://127.0.0.1:9443  # debug build only; release requires wss://
 
-cargo run -p qt_cli --bin messenger -- receive --db bob.sqlite --passphrase "..." --server ws://127.0.0.1:9443
+cargo run -p qt_cli --bin messenger -- receive --db bob.sqlite --server ws://127.0.0.1:9443  # debug build only; release requires wss://
 ```
 
 Each person's identifier is derived from their public key — nobody

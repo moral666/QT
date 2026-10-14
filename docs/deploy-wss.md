@@ -29,3 +29,24 @@ Na app: URL `wss://relay.exemplo.org` + chave pública de pinning.
 * O proxy vê o tráfego já cifrado pelo Noise; o conteúdo continua E2EE.
 * `ws://` só é aceite no cliente Rust para loopback (ou com `allow_insecure_ws`
   em testes) e na build *debug* Android.
+
+## Deploy na AWS (EC2) — isolamento de rede
+
+Topologia: Internet → `443/tcp` → Caddy/nginx (TLS) → `127.0.0.1:9443` relay → `127.0.0.1:6379` Redis.
+Só a porta 443 (e 80, se o Caddy fizer o desafio HTTP-01 do Let's Encrypt) fica exposta.
+
+1. **Security Group da EC2**: inbound apenas `443/tcp` (e `80/tcp` se necessário) de `0.0.0.0/0`;
+   SSH só a partir do teu IP (ou nenhum, usando SSM Session Manager). **Nunca** abrir `6379` nem `9443`.
+2. **Redis**: `deploy/redis/qt-redis.conf` — `bind 127.0.0.1 -::1`, `protected-mode yes`,
+   utilizador `default` desligado e utilizador `qt-relay` com ACL mínima (só os comandos e o
+   prefixo de chaves do relay). Confirmar com `sudo ss -tlnp | grep 6379`.
+3. **Relay**: `deploy/systemd/qt-relay.service` + `/etc/qt/relay.env`. O próprio binário recusa
+   arrancar se `RELAY_BIND_ADDR` não for loopback ou se `REDIS_URL` apontar para fora da máquina
+   (exceções só com `QT_ALLOW_PUBLIC_BIND=1` / `QT_ALLOW_REMOTE_REDIS=1` + `rediss://`).
+4. **Clientes**: o transporte Rust só aceita `wss://` em builds de release (até `ws://localhost`
+   é recusado); `ws://` em loopback só existe em builds de debug para os testes locais.
+   A app Android release já só aceita `wss://` (network_security_config + verificação no código).
+
+Se mais tarde usares ElastiCache em vez de Redis local: VPC privada, Security Group que só aceita
+o SG da EC2 na 6379, *in-transit encryption* ligada e `REDIS_URL=rediss://...` com
+`QT_ALLOW_REMOTE_REDIS=1`.

@@ -1,0 +1,52 @@
+# Relay QT na EC2, atras de Caddy/nginx (TLS) e com Redis local.
+#
+#   sudo useradd --system --home /var/lib/qt --shell /usr/sbin/nologin qt
+#   sudo install -d -o qt -g qt -m 700 /var/lib/qt
+#   sudo install -o root -g root -m 755 target/release/relay_server /usr/local/bin/qt-relay
+#   sudo install -o root -g qt -m 640 deploy/systemd/qt-relay.env.example /etc/qt/relay.env   # e edita
+#   sudo cp deploy/systemd/qt-relay.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now qt-relay
+#
+# Os segredos (password do Redis) vivem so em /etc/qt/relay.env (0640), nunca
+# na linha de comandos nem no unit file.
+
+[Unit]
+Description=QT relay (WebSocket + Noise, store-and-forward)
+After=network-online.target redis-server.service
+Requires=redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=qt
+Group=qt
+EnvironmentFile=/etc/qt/relay.env
+ExecStart=/usr/local/bin/qt-relay
+Restart=on-failure
+RestartSec=2
+
+# --- Isolamento ---
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/qt
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+UMask=0077
+# So sockets IP e Unix; e so pode falar com loopback (Redis + proxy local).
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

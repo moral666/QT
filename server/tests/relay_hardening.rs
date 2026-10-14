@@ -23,7 +23,6 @@ fn quick() -> RelayConfig {
         max_retries: 0,
         backoff_base: Duration::from_millis(50),
         expected_server_static: None,
-        allow_insecure_ws: false,
     }
 }
 async fn client(relay: &TestRelay, s: &SigningKeyPair, cfg: RelayConfig) -> RelayClient {

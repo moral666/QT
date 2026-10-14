@@ -53,10 +53,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val provider = StorageKeyProvider(getApplication(), box)
+                val dbFile = getApplication<Application>().noBackupFilesDir.resolve("qt.db")
+                val provider = StorageKeyProvider(getApplication(), box, dbFile)
                 val key = provider.storageKey()
-                val dbPath = getApplication<Application>().noBackupFilesDir.resolve("qt.db").path
-                val client = try { QtClient.open(dbPath, key) } finally { key.fill(0) }
+                val client = try { QtClient.open(dbFile.path, key) } finally { key.fill(0) }
                 qt = client
                 val url = prefs.getString("relay_url", null) ?: _ui.value.relayUrl
                 val pin = prefs.getString("relay_key", "") ?: ""
@@ -69,6 +69,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
                 if (has) startLink()
+            } catch (e: StorageKeyUnavailableException) {
+                // Nunca se cria uma chave nova por cima: o utilizador decide se apaga os dados locais.
+                _ui.update { it.copy(loading = false, error = "Chave do armazenamento seguro indisponivel: ${e.message}") }
             } catch (e: Exception) {
                 _ui.update { it.copy(loading = false, error = "Nao foi possivel abrir o armazenamento seguro: ${e.safeMsg()}") }
             }

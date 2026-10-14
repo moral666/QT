@@ -40,6 +40,14 @@ android {
                 keyAlias = signingProp("keyAlias", "QT_KEY_ALIAS")
                 keyPassword = signingProp("keyPassword", "QT_KEY_PASSWORD")
             }
+            // Esquemas de assinatura modernos. minSdk = 24, por isso o JAR signing (v1)
+            // nao e necessario: v2 (APK Signature Scheme v2, Android 7+) assina o APK
+            // inteiro incluindo os .so em lib/, e v3 (Android 9+) acrescenta suporte a
+            // rotacao da chave de assinatura. v4 so serve para `adb install --incremental`.
+            enableV1Signing = false
+            enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = false
         }
     }
 
@@ -62,7 +70,18 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
-    packaging { jniLibs { useLegacyPackaging = false } }
+    packaging {
+        jniLibs {
+            // .so guardados SEM compressao e alinhados a pagina dentro do APK (carregados
+            // por mmap a partir do APK, sem extracao para disco). Evita o padrao "extrai
+            // binario nativo e executa" que alguns motores heuristicos marcam.
+            useLegacyPackaging = false
+        }
+        resources {
+            // Metadados desnecessarios que so aumentam o APK.
+            excludes += setOf("META-INF/*.kotlin_module", "META-INF/AL2.0", "META-INF/LGPL2.1", "DebugProbesKt.bin")
+        }
+    }
 }
 
 dependencies {
@@ -78,6 +97,31 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
+}
+
+// Verificacao da assinatura do APK de release: `./gradlew :app:verifyReleaseSignature`
+// Corre o apksigner das build-tools e falha se v2 OU v3 nao estiverem presentes.
+tasks.register<Exec>("verifyReleaseSignature") {
+    group = "verification"
+    description = "Verifica que o APK de release esta assinado com os esquemas v2 e v3."
+    dependsOn("assembleRelease")
+    val apkDir = layout.buildDirectory.dir("outputs/apk/release")
+    val apksigner = android.sdkDirectory.resolve("build-tools/${android.buildToolsVersion}/apksigner")
+    isIgnoreExitValue = false
+    doFirst {
+        val apk = apkDir.get().asFile.listFiles { f -> f.name.endsWith(".apk") }?.singleOrNull()
+            ?: throw GradleException("APK de release nao encontrado em ${apkDir.get().asFile}")
+        commandLine(apksigner.path, "verify", "--verbose", "--print-certs", apk.path)
+    }
+    val out = java.io.ByteArrayOutputStream()
+    standardOutput = out
+    doLast {
+        val text = out.toString()
+        println(text)
+        listOf("(APK Signature Scheme v2): true", "(APK Signature Scheme v3): true").forEach {
+            if (!text.contains(it)) throw GradleException("Assinatura em falta: $it")
+        }
+    }
 }
 
 // Falha cedo (e claramente) se se tentar gerar um release sem keystore propria,
