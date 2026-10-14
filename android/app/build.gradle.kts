@@ -101,23 +101,22 @@ dependencies {
 
 // Verificacao da assinatura do APK de release: `./gradlew :app:verifyReleaseSignature`
 // Corre o apksigner das build-tools e falha se v2 OU v3 nao estiverem presentes.
-tasks.register<Exec>("verifyReleaseSignature") {
+tasks.register("verifyReleaseSignature") {
     group = "verification"
     description = "Verifica que o APK de release esta assinado com os esquemas v2 e v3."
     dependsOn("assembleRelease")
     val apkDir = layout.buildDirectory.dir("outputs/apk/release")
     val apksigner = android.sdkDirectory.resolve("build-tools/${android.buildToolsVersion}/apksigner")
-    isIgnoreExitValue = false
-    doFirst {
-        val apk = apkDir.get().asFile.listFiles { f -> f.name.endsWith(".apk") }?.singleOrNull()
-            ?: throw GradleException("APK de release nao encontrado em ${apkDir.get().asFile}")
-        commandLine(apksigner.path, "verify", "--verbose", "--print-certs", apk.path)
-    }
-    val out = java.io.ByteArrayOutputStream()
-    standardOutput = out
     doLast {
-        val text = out.toString()
-        println(text)
+        val apk = apkDir.get().asFile.listFiles()?.filter { it.name.endsWith(".apk") }?.singleOrNull()
+            ?: throw GradleException("APK de release nao encontrado em ${apkDir.get().asFile}")
+        val proc = ProcessBuilder(apksigner.path, "verify", "--verbose", "--print-certs", apk.path)
+            .redirectErrorStream(true)
+            .start()
+        val text = proc.inputStream.bufferedReader().readText()
+        val code = proc.waitFor()
+        logger.lifecycle(text)
+        if (code != 0) throw GradleException("apksigner verify falhou (codigo $code)")
         listOf("(APK Signature Scheme v2): true", "(APK Signature Scheme v3): true").forEach {
             if (!text.contains(it)) throw GradleException("Assinatura em falta: $it")
         }
