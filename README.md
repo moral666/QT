@@ -1,11 +1,11 @@
 # QT
 
-**Um protótipo técnico** do núcleo criptográfico e de transporte de um
-mensageiro E2EE — X3DH, PQXDH (pós-quântico), Double Ratchet, Sealed
-Sender, Noise Protocol, tudo implementado em Rust, compilado e testado a
-sério. **Não é um produto acabado nem pronto para conversas reais** — ver
-a secção "Sê honesto comigo: isto já funciona?" já a seguir, antes de
-investires tempo a explorar isto.
+**Versão alpha — não auditada.** Um mensageiro E2EE com criptografia
+pós-quântica — X3DH, PQXDH, Double Ratchet, Sealed Sender, Noise Protocol,
+tudo implementado em Rust — com app Android e relay na nuvem, já a
+funcionar de ponta a ponta. **Ainda não é um produto acabado nem deve ser
+usado para informação sensível** — ver a secção "Sê honesto comigo: isto
+já funciona?" já a seguir.
 
 [Read this in English →](README.en.md)
 
@@ -28,7 +28,7 @@ O QT tenta responder a isto com engenharia, não só com uma política de privac
 
 ## Sê honesto comigo: isto já funciona?
 
-Sim, de ponta a ponta — como protótipo. **Não foi auditado de forma independente e não deve ser usado para conversas reais ou informação sensível.**
+Sim, de ponta a ponta — em versão **alpha**. **Não foi auditado de forma independente e não deve ser usado para conversas reais ou informação sensível.**
 
 ### Validado até 14 de outubro de 2026
 
@@ -46,6 +46,8 @@ Sim, de ponta a ponta — como protótipo. **Não foi auditado de forma independ
 - Distribuição pela Play Store (hoje alguns antivírus avisam por ser uma app de origem desconhecida).
 - O cliente de terminal `messenger` ainda usa o formato antigo de registo e não funciona com o relay atual (o `messenger_demo` e o cliente de teste `peer` funcionam).
 - Testes de carga e **auditoria de segurança independente**.
+
+**Próximas etapas:** *alpha* (agora: funciona de ponta a ponta, testado com poucas pessoas) → *beta* (histórico persistente, notificações, teste na Play Store) → *1.0* (depois de auditoria externa).
 
 ## O que já está construído
 
@@ -112,7 +114,7 @@ O cliente `peer` usa exatamente o mesmo protocolo da app Android. O identificado
 
 ## App Android
 
-O core Rust é o único backend criptográfico da app Android (Kotlin/Compose): API `QtClient` via UniFFI, storage SQLCipher com chave do Android Keystore, PQXDH (X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, relay autenticado com entrega *at-least-once*. **Continua a ser um protótipo não auditado.**
+O core Rust é o único backend criptográfico da app Android (Kotlin/Compose): API `QtClient` via UniFFI, storage SQLCipher com chave do Android Keystore, PQXDH (X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, relay autenticado com entrega *at-least-once*. **Versão alpha, não auditada.**
 
 ```bash
 export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/<versao>

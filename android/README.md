@@ -1,6 +1,6 @@
 # QT — app Android de referência (Kotlin / Jetpack Compose)
 
-**Protótipo NÃO auditado. Não uses para conversas reais.**
+**Versão alpha, NÃO auditada. Não uses para informação sensível.**
 Toda a criptografia está no Rust (`libqt_ffi.so`); o Kotlin só move bytes e desenha ecrãs.
 
 ```
