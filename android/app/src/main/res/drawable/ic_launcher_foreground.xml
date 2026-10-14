@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- aro do cadeado -->
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="5"
+        android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M43,51 L43,43 A11,11 0 0 1 65,43 L65,51" />
+    <!-- corpo -->
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M38,50 L70,50 Q74,50 74,54 L74,74 Q74,78 70,78 L38,78 Q34,78 34,74 L34,54 Q34,50 38,50 Z" />
+    <!-- fechadura -->
+    <path android:fillColor="#FF6750A4"
+        android:pathData="M54,58 A4,4 0 1 1 53.99,58 Z M52,63 L56,63 L56,70 L52,70 Z" />
+</vector>

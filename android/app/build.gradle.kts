@@ -113,6 +113,8 @@ dependencies {
     // recente em vez da 1.0.1 de 2024 (alinhamento de 16 KB).
     implementation("androidx.graphics:graphics-path:1.1.0")
     implementation("androidx.compose.material3:material3")
+    // Icones (seta, enviar, cadeado, +, partilhar). Versao vem do BOM do Compose.
+    implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")

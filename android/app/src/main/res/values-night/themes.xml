@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.QT" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#FF1E1A24</item>
+        <item name="android:windowBackground">#FF141218</item>
+    </style>
+</resources>
