@@ -6,6 +6,37 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### Outubro de 2026: apps, relay na AWS, imagens
+
+- **Apps Android e iPhone** (o nome que aparece no telemóvel é SEALER), com o
+  mesmo núcleo Rust: lista de conversas, chat, histórico persistente no SQLCipher, estados
+  *enviada / entregue / vista* por recibos cifrados, fila de saída que
+  sobrevive a reinícios, apagar conversa e apagar contacto.
+- Sessões cruzadas (as duas pessoas a escreverem primeiro ao mesmo tempo):
+  desempate determinístico e reenvio, com testes.
+- **Relay na AWS** (`deploy/aws/setup-ec2.sh`): Redis só em localhost com
+  ACL, relay como serviço systemd isolado, Caddy com TLS automático. Build
+  *release* das apps com o relay fixo e pinning obrigatório.
+- `messenger` (terminal) passa a usar o mesmo núcleo das apps e fala com
+  elas pelo relay.
+- **Bloqueio da app no Android**: código próprio (Argon2id) e desbloqueio com
+  biometria.
+- Marca SEALER: logotipo, nome, tema roxo e logotipo a rodar.
+- **Adicionar contactos por código QR**, nas duas apps.
+- **Imagens e GIFs até 25 MB**, cifrados ponta a ponta com uma chave por
+  ficheiro, guardados cifrados no disco do relay no máximo 24 horas
+  (`docs/protocol-spec.md`, secção 14).
+- Apps: a opção do menu "Recibos de leitura" passa a chamar-se
+  "Notificações" (continua a decidir só se a app envia o aviso de "vista").
+- Relay: respostas sem Nagle (`TCP_NODELAY`); guardar uma mensagem com 2
+  idas ao Redis em vez de 4; confirmar mensagens sem ler a fila inteira.
+  Medições em `docs/performance.md`.
+- Redis: comandos dos anexos acrescentados ao utilizador `qt-relay` (sem eles
+  o envio de imagens dava "erro interno" no servidor), com um teste que usa
+  a lista de comandos de produção (`server/tests/redis_acl.rs`).
+- Testes de campo com cinco aparelhos em três plataformas
+  (`docs/field-tests.md`) e medições com 10 000 ligações em simultâneo.
+
 ### Segurança (hardening)
 - **Quebra de formato:** bundle v3 (assinatura cobre a identidade X25519),
   envelope v2 (cabeçalho do ratchet com `PN`, AD de sessão no AAD, caixa
@@ -28,20 +59,24 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - Modelo de ameaças completo (`docs/threat-model.md`)
 - Roadmap dedicado (`ROADMAP.md`)
 - Este changelog
-- Testes de robustez contra bytes malformados: `core/tests/fuzz_lite.rs`
-  (40.000 tentativas), `cli/tests/fuzz_lite.rs` (20.000 tentativas), e
-  alvos reais de `cargo-fuzz` em `core/fuzz/` (prontos, não corridos
-  ainda por falta de Rust nightly no ambiente de desenvolvimento)
+- Testes por propriedades do Double Ratchet (`core/tests/proptest_ratchet.rs`)
+  e testes com entradas inválidas e forjadas (ver `docs/threat-model.md`, §3)
 
 ### Corrigido
 - `SECURITY.md` já não tem placeholders por preencher: usa o mecanismo
   de report privado do GitHub em vez de um email/PGP que nunca existiu
-- **Crash real corrigido**: `cli/src/bin/messenger.rs` entrava em pânico
-  ao processar uma mensagem vazia ou demasiado curta vinda do servidor
-  (indexação direta `bytes[0]` sem verificação de tamanho), encontrado
-  através do trabalho de testes de robustez acima. Corrigido para
-  devolver um erro controlado, sem derrubar o processo nem impedir o
-  processamento das restantes mensagens da fila.
+- `cli/src/bin/messenger.rs` entrava em pânico ao processar uma mensagem
+  vazia vinda do servidor (`bytes[0]` sem verificação de tamanho). O
+  problema desapareceu quando o `messenger` foi reescrito sobre o núcleo
+  das apps (commit `84c0b62`).
+
+> **Correção a este registo (outubro de 2026):** uma versão anterior deste
+> ficheiro dizia que existiam testes `core/tests/fuzz_lite.rs` e
+> `cli/tests/fuzz_lite.rs`, alvos de `cargo-fuzz` em `core/fuzz/` e uma
+> correção do `bytes[0]` na CLI antiga. Esses ficheiros e essa correção
+> nunca chegaram a este repositório (o commit `7daee18` só alterou
+> documentação). O fuzzing guiado por cobertura continua por fazer
+> (`ROADMAP.md`).
 
 ## Núcleo e infraestrutura (fundação técnica)
 

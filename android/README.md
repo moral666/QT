@@ -1,13 +1,27 @@
-# QT: app Android de referência (Kotlin / Jetpack Compose)
+# SEALER para Android (Kotlin / Jetpack Compose)
 
 **Versão alpha, NÃO auditada. Não uses para informação sensível.**
 Toda a criptografia está no Rust (`libqt_ffi.so`); o Kotlin só move bytes e desenha ecrãs.
+No telemóvel a app chama-se **SEALER**; por dentro o pacote continua a ser `pt.qt.app`.
 
 ```
 Compose UI -> MainViewModel -> QtClient (UniFFI/Rust: identidade, PQXDH, ratchet, sealed sender, SQLCipher)
                   |
                   +-> RelayLink (OkHttp WebSocket <-> NoiseSession do Rust) -> relay_server -> Redis
+                  +-> 2.ª RelayLink só para imagens (blocos de 40 KB)  -> relay_server -> disco do relay
 ```
+
+| Ficheiro | O que faz |
+|---|---|
+| `MainActivity.kt` | Ecrãs (lista de conversas, chat, diálogos) |
+| `MainViewModel.kt` | Estado da app, envio e receção, transferência de imagens |
+| `RelayLink.kt` | Ligação WebSocket + Noise ao relay |
+| `Attachments.kt` | Imagens e GIFs: preparar, mostrar, enviar |
+| `Qr.kt` | Código QR do ID (gerar e ler) |
+| `AppLock.kt` | Bloqueio da app (código próprio e biometria) |
+| `Keystore.kt` | Chave do SQLCipher protegida pelo Android Keystore |
+| `ContactStore.kt` | Lista de contactos cifrada |
+| `Theme.kt` | Cores, logotipo e barra de topo |
 
 ## O que tens de ter
 
@@ -16,14 +30,17 @@ Compose UI -> MainViewModel -> QtClient (UniFFI/Rust: identidade, PQXDH, ratchet
 2. **Android Studio** (inclui JDK e SDK). Sem `snap`, no Pop!_OS:
    descarrega o `.tar.gz` em https://developer.android.com/studio e depois
    `sudo tar -xzf ~/Transferências/android-studio-*.tar.gz -C /opt && /opt/android-studio/bin/studio.sh`
-3. Um **telemóvel Android arm64** (quase todos) com *Opções de programador* + *Depuração USB*.
-   (Emulador x86_64 ainda não: falta esse `.so`.)
+3. Um **telemóvel Android** (Android 7 ou mais recente) com *Opções de programador* + *Depuração USB*.
+   A APK só leva as bibliotecas `arm64-v8a` e `armeabi-v7a` (quase todos os telemóveis). O emulador do
+   Android Studio também correu esta APK no teste de campo.
+4. O **NDK 27 ou mais recente** (*SDK Manager* → *SDK Tools* → *NDK*). Com o r26d a compilação do
+   OpenSSL incluído falhou.
 
 ## Passos
 
 ```bash
 cd QT
-export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/<versao>
+export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/<versao 27 ou mais recente>
 ABIS="arm64-v8a armeabi-v7a" ./scripts/build-android.sh   # .so alinhados a 16 KB + bindings
 cd android
 ./sync-native.sh ..   # copia os .so e os bindings Kotlin para app/src/main/
@@ -41,6 +58,8 @@ hostname -I          # o IP do PC, ex.: 192.168.1.23
 sudo ufw allow 9443/tcp   # se tiveres firewall
 ```
 Na app: URL `ws://192.168.1.23:9443` (o `ws://` só funciona na build *debug*) e a chave pública de pinning.
+As imagens enviadas ficam na pasta `anexos/` ao lado da chave Noise (aqui `$HOME/anexos`), ou em
+`RELAY_BLOB_DIR` se a definires; o relay apaga-as ao fim de 24 horas.
 Nota: o relay escuta por omissão só em `127.0.0.1` e recusa outro endereço sem `QT_ALLOW_PUBLIC_BIND=1`
 (usar só em redes de teste). **No emulador** não é preciso: o PC é `10.0.2.2`, por isso basta o relay em
 `127.0.0.1` e na app `ws://10.0.2.2:9443` (é o valor por omissão da build debug quando `qtRelayUrl` não está definido).
@@ -51,11 +70,21 @@ Em produção: `wss://` atrás de proxy TLS (`docs/deploy-wss.md`, `deploy/aws/s
 ```bash
 cd ~/QT && cargo run -p qt_server --example peer -- --relay ws://127.0.0.1:9443 --pin <chave hex> --db ~/peer.db
 ```
-1. O `peer` mostra o **QT Public ID** dele. Na app: *Adicionar contacto* e cola-o.
-2. Na app copia o **teu** Public ID; no `peer` escreve `/add qt1:...`
+1. O `peer` mostra o **QT Public ID** dele. Na app: botão do logotipo (*Novo contacto*) e cola-o.
+2. Na app, em ⋮ → *O meu ID*, copia o **teu** Public ID; no `peer` escreve `/add qt1:...`
 3. Escreve mensagens nos dois lados. Recebidas no `peer` aparecem como `<< texto`.
 
 Este fluxo (dois processos + relay verdadeiro + pinning) já foi testado de ponta a ponta no PC.
+O `peer` só troca texto: uma imagem enviada pela app aparece lá só como `📷 Foto` ou `GIF`.
+
+## O menu ⋮
+
+- **O meu ID**: o teu QT Public ID, em texto e em código QR.
+- **Notificações**: decide se a app avisa o outro lado de que leste as mensagens (o visto ✓✓ azul).
+  Ainda não há notificações push (ver Limitações).
+- **Bloqueio da app** e **Bloquear agora** (este só com o bloqueio ativo).
+- **Relay (teste)**: só na build *debug*.
+- **Apagar todos os dados**: apaga a identidade, as conversas e as imagens deste telemóvel.
 
 ## Adicionar alguém que está ao teu lado (código QR)
 
@@ -78,20 +107,23 @@ imagem em claro só existe em memória enquanto está no ecrã. Detalhes em
 `docs/protocol-spec.md`, secção 14; limitações em `docs/known-limitations.md`, 36.
 
 O relay tem de ser atualizado para aceitar imagens; com um relay antigo a app avisa
-"O servidor ainda não aceita imagens".
+"O servidor ainda não aceita imagens". O relay da AWS já foi atualizado.
 
 ## Segurança já tratada na app
 Chave do SQLCipher gerada aleatoriamente e protegida pelo Android Keystore (StrongBox se existir);
 `allowBackup=false`; conversas escondidas na lista de apps recentes (Android 13+; as capturas de ecrã são permitidas); sem logs de conteúdo/chaves; TLS obrigatório na build *release*;
-bloqueio da app opcional (código próprio que cifra a chave do SQLCipher e a lista de contactos, com Argon2id no Rust, mais desbloqueio com impressão digital, rosto ou PIN do telemóvel através de uma chave do Keystore que só funciona depois de autenticar); pinning opcional da chave do relay; confirmação (`Ack`) só depois de processar; deduplicação feita pelo Rust.
+bloqueio da app opcional (código próprio que cifra a chave do SQLCipher e a lista de contactos, com Argon2id no Rust, mais desbloqueio com impressão digital, rosto ou PIN do telemóvel através de uma chave do Keystore que só funciona depois de autenticar; ao bloquear, as imagens em memória são esquecidas); pinning da chave do relay (obrigatório na *release*); confirmação (`Ack`) só depois de processar; deduplicação feita pelo Rust.
 
-## Limitações (ver `QT/docs/known-limitations.md`, itens 29–34)
-Sessões cruzadas se ambos enviarem a 1.ª mensagem em simultâneo; poll de 3 s;
-sem notificações; sem x86_64 (emulador x86 só com imagens ARM); **sem auditoria**.
+## Limitações (ver `docs/known-limitations.md`, itens 30 a 36)
+Poll de 3 s em vez de notificações push, e enquanto o Android não fecha a app ela continua a perguntar
+ao relay em segundo plano (gasta bateria e dados); imagens: o relay vê o tamanho aproximado e quem envia
+e descarrega cada ficheiro, e um anexo não descarregado em 24 horas perde-se; **sem auditoria**.
 
 ## O que foi verificado
 Compilada no Android Studio em *debug* e *release* (R8 ativo), instalada num emulador e em telemóveis reais,
 e testada com mensagens trocadas entre dois telemóveis através do relay na AWS (`wss://` + pinning).
+As imagens, os GIFs e o código QR foram compilados e instalados, mas a troca de imagens entre dois
+telemóveis através da AWS ainda está por confirmar.
 **Não** foram feitos testes automáticos de interface, testes em muitos modelos/versões de Android, nem auditoria.
 
 ## Assinatura de release (keystore própria)
@@ -122,6 +154,6 @@ Depois: no Android Studio, *Build Variants* → `release` → *Build → Build A
 A release só aceita `wss://` (`usesCleartextTraffic=false`, `network_security_config` sem cleartext e
 verificação em `RelayLink`/`saveRelay`). `./gradlew :app:verifyReleaseSignature` confirma as assinaturas V2/V3.
 
-## Safety numbers
-Na conversa, *Safety number* mostra 60 dígitos calculados no Rust a partir dos Public IDs dos dois.
-Compara-os por outro canal; se diferirem, não confies na conversa.
+## Verificar segurança (safety number)
+Na conversa, o cadeado (*Verificar segurança*) mostra 60 dígitos calculados no Rust a partir dos Public
+IDs dos dois. Compara-os por outro canal; se diferirem, não confies na conversa.

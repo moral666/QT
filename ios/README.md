@@ -5,16 +5,20 @@ O projeto Xcode continua a chamar-se `SealerMessenger` por dentro (pastas, alvo 
 
 A mesma app que a versão Android: o **mesmo núcleo Rust** (PQXDH + ML-KEM-768, Double Ratchet,
 Sealed Sender, Noise com pinning, SQLCipher, histórico, recibos ✓/✓✓) e o **mesmo ecrã**
-(lista de conversas estilo WhatsApp, chat com bolhas, roxo, "O meu ID", "Verificar segurança").
-Só a interface é reescrita em SwiftUI. As duas apps falam entre si pelo mesmo relay.
+(lista de conversas estilo WhatsApp, chat com bolhas, tema roxo com o logotipo a rodar, "O meu ID"
+com código QR, "Verificar segurança", imagens e GIFs). Só a interface é reescrita em SwiftUI. As duas
+apps falam entre si pelo mesmo relay.
 
 | Android (Kotlin)            | iPhone (Swift)                         |
 |-----------------------------|----------------------------------------|
 | `MainViewModel.kt`          | `Model/AppModel.swift`                 |
 | `MainActivity.kt`           | `Views/*.swift`                        |
 | `RelayLink.kt` (OkHttp)     | `Network/RelayLink.swift` (URLSession) |
+| `Attachments.kt`            | `Views/AttachmentViews.swift`          |
+| `Qr.kt` (ZXing)             | `Views/QrViews.swift` (câmara do sistema, sem bibliotecas extra) |
 | `Keystore.kt` (Keystore)    | `Security/SecureBox.swift` (Secure Enclave) |
 | `ContactStore.kt`           | `Security/ContactStore.swift`          |
+| `AppLock.kt`                | ainda não existe (ver Limitações)      |
 | `Theme.kt`                  | `App/Theme.swift`                      |
 | `BuildConfig` (gradle)      | `Configs/*.xcconfig` → `Info.plist` → `App/Config.swift` |
 
@@ -66,6 +70,18 @@ Para testar no iPhone com o relay da AWS em Debug: "Opções de teste" → URL
 O build Release falha de propósito se `QT_RELAY_URL` não for `wss://` ou se `QT_RELAY_PIN`
 não tiver 64 hex.
 
+## Imagens, GIFs e código QR
+
+* No chat, o botão **+** abre um menu: **Galeria** (escolher fotos, sem pedir acesso a todas as
+  fotos) ou **Colar imagem ou GIF**. Os GIFs do teclado (por exemplo o do Gboard) entram copiando-os
+  primeiro no teclado e depois escolhendo *Colar imagem ou GIF*.
+* Antes de enviar há uma pré-visualização com a opção **Qualidade original**. Máximo 25 MB. O resto
+  (cifra, blocos de 40 KB, 24 horas no relay) é igual ao Android: ver `android/README.md`.
+* **O meu ID** mostra também o código QR; em **Novo contacto** (o botão com o logotipo) há
+  *Ler código QR*. A câmara só é pedida nesse momento (`NSCameraUsageDescription` no `Info.plist`).
+* O interruptor **Notificações** no menu decide se a app avisa o outro lado de que leste as
+  mensagens (o visto azul). Ainda não há notificações push.
+
 ## Segurança (o que muda em relação ao Android)
 
 * **Chave do SQLCipher**: 32 bytes aleatórios, cifrados por uma chave P-256 **dentro do Secure
@@ -80,9 +96,12 @@ não tiver 64 hex.
 
 ## Limitações desta versão
 
-* **Escrito sem acesso a um Mac**: o código Swift foi verificado contra os bindings gerados a partir
-  do Rust real (nomes e tipos) e a sintaxe foi validada, mas **ainda não foi compilado no Xcode**.
-  Se o primeiro build der erros, copia-os e eu corrijo.
+* **Compilada e testada até ao teste de campo** de 15 de outubro de 2026 (commit `d3a48ef`, no iPhone
+  e no simulador do Mac). O que veio depois foi escrito sem acesso a um Mac e **ainda não foi
+  compilado no Xcode**: apagar conversa e contacto, a marca SEALER e o tema, o código QR, as imagens
+  e os GIFs, e o botão com o logotipo. O código Swift foi verificado contra os bindings gerados a
+  partir do Rust real (nomes e tipos). Se o build der erros, copia-os e eu corrijo.
+* **Sem bloqueio da app** (código próprio e Face ID), que já existe no Android.
 * Como no Android, as mensagens só chegam com a app aberta (verificação a cada 3 s).
   Notificações push no iPhone exigem a conta paga (APNs) e um serviço no relay; está na lista.
 * Exportação: a app usa criptografia. Ao enviar para TestFlight/App Store a Apple pergunta pela

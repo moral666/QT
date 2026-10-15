@@ -5,8 +5,8 @@
 //! continua verdadeira em todas elas - "toda a mensagem entregue decifra
 //! para o texto original exato, seja qual for a ordem".
 //!
-//! Isto e diferente do fuzzing em fuzz_lite.rs (que testa bytes
-//! ALEATORIOS/invalidos contra parsers) - aqui os dados sao sempre
+//! Isto e diferente de fuzzing (bytes ALEATORIOS/invalidos contra
+//! parsers) - aqui os dados sao sempre
 //! criptograficamente validos, o que varia e a ORDEM e os PADROES de
 //! entrega, que e precisamente a superficie onde bugs de estado (Double
 //! Ratchet) costumam esconder-se.

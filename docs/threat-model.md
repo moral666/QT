@@ -107,10 +107,10 @@ e depois alimenta a root key do Double Ratchet.
   SQLCipher faz o ratchet recuar (reabrindo janelas de replay/chaves antigas).
   O SQLCipher protege confidencialidade e integridade das páginas, não a
   *frescura*.
-* **Ratchet:** mensagens da cadeia DH anterior que cheguem *depois* de uma
-  mensagem da cadeia nova perdem-se (o cabeçalho não tem `pn`); chaves de
-  mensagens puladas ficam no estado até serem usadas (o roubo do estado nesse
-  momento expõe-nas); `MAX_SKIP` = 1000.
+* **Ratchet:** chaves de mensagens puladas ficam no estado até serem usadas
+  (o roubo do estado nesse momento expõe-nas); no máximo 1000 por cadeia e
+  2000 no total. (As mensagens atrasadas da cadeia DH anterior já não se
+  perdem: o cabeçalho leva `PN`.)
 * **Tamanho:** plaintext máximo de 10 000 bytes por mensagem de texto (limite
   do enquadramento Noise + JSON). Imagens e GIFs até 25 MiB vão cifrados por
   ficheiro, com o tamanho arredondado; o relay vê o tamanho aproximado e quem
@@ -119,15 +119,18 @@ e depois alimenta a root key do Double Ratchet.
   zeroizados nos caminhos controlados pelo QT; as chaves privadas das
   dependências (`x25519-dalek`, `ml-kem`) e cópias feitas pela JVM/alocador
   não são garantidamente limpas.
-* **Reinstalação do contacto:** se o outro lado perder o estado e iniciar uma
-  sessão nova, o cabeçalho PQXDH novo é ignorado enquanto existir sessão
-  antiga (não há fluxo de *session reset* nem *safety numbers*).
+* **Reinício de sessão incompleto:** uma sessão nova e autêntica é adotada
+  automaticamente (sessões cruzadas, contacto que apagou e voltou a
+  escrever), mas falta o caso em que quem apagou o contacto recebe primeiro
+  (ver `known-limitations.md`, 10). Uma reinstalação da app gera uma
+  identidade nova.
 * **Verificação de identidade fora de banda:** o QT Public ID tem de ser
-  trocado por um canal autêntico. Não há comparação de impressões digitais na
-  interface.
-* **Transporte de teste sem TLS** (`ws://`). Em produção usar `wss://` (o
-  Noise protege o conteúdo, mas TLS evita expor o padrão Noise e aproveita a
-  infraestrutura de certificados).
+  trocado por um canal autêntico (pessoalmente, o código QR resolve isto). As
+  apps mostram um *safety number* de 60 dígitos para comparar por outro
+  canal, mas ninguém é obrigado a fazê-lo.
+* **`ws://` só em testes locais** (builds de debug). As builds de release só
+  aceitam `wss://`; o Noise protege o conteúdo e o TLS evita expor o padrão
+  Noise.
 * **Sem auditoria externa**, sem análise de canais laterais, sem fuzzing
   contínuo; o código foi escrito e revisto por um único autor (e assistido por
   IA).
@@ -140,10 +143,10 @@ e depois alimenta a root key do Double Ratchet.
 | Componente | Confiado para… | Não confiado para… |
 |---|---|---|
 | Rust `core` (+ dependências) | Toda a criptografia | - (sem auditoria) |
-| Android Keystore | Proteger a chave que cifra o storage | Resistir a um dispositivo comprometido |
+| Android Keystore / Secure Enclave do iPhone | Proteger a chave que cifra o storage | Resistir a um dispositivo comprometido |
 | Relay + Redis | Entregar o que recebe, quando quiser | Confidencialidade, autenticidade de bundles, ordem, disponibilidade |
 | Rede | Nada | Tudo |
-| App Kotlin | Mover bytes, UI, ciclo de vida | Qualquer criptografia (proibido) |
+| Apps Kotlin e Swift | Mover bytes, UI, ciclo de vida, preparar imagens antes de as cifrar | Qualquer criptografia (proibido) |
 
 ## 6. Auditoria interna realizada nesta fase
 
@@ -160,4 +163,4 @@ e depois alimenta a root key do Double Ratchet.
   transacional, SQLCipher dependente do sistema (inutilizável no Android),
   API legacy a expor chaves, permissões da chave Noise do relay.
 * **Não** feito: revisão formal, análise de tempo constante, fuzzing
-  prolongado, revisão de dependências (`cargo audit` não corrido).
+  prolongado, revisão manual de dependências (o CI corre o `cargo audit`).

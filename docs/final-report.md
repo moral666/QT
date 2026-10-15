@@ -1,5 +1,10 @@
 # Relatório final: fase "core seguro + FFI para Android"
 
+> **Registo de uma fase anterior (13 de outubro de 2026).** Ficou
+> como estava na altura: por exemplo, o histórico de mensagens passou depois
+> para o SQLCipher do Rust, o bundle passou à v3 e há hoje mais de 160 testes.
+> O estado atual está no `README.md` e em `known-limitations.md`.
+
 > **Este trabalho NÃO está auditado e NÃO deve ser descrito como "seguro" ou
 > "production-ready".** Os testes passam; isso demonstra que o código faz o
 > que os testes verificam, não que o protocolo ou a implementação sejam

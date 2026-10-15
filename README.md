@@ -6,8 +6,8 @@ As apps chamam-se **SEALER**; QT é o nome do protocolo e deste repositório.
 
 **Versão alpha, não auditada.** Um mensageiro E2EE com criptografia
 pós-quântica (X3DH, PQXDH, Double Ratchet, Sealed Sender, Noise Protocol),
-tudo implementado em Rust, com app Android e relay na nuvem, já a
-funcionar de ponta a ponta. **Ainda não é um produto acabado nem deve ser
+tudo implementado em Rust, com apps Android e iPhone e relay na nuvem, já
+a funcionar de ponta a ponta. **Ainda não é um produto acabado nem deve ser
 usado para informação sensível.** Ver a secção "Sê honesto comigo: isto
 já funciona?" já a seguir.
 
@@ -44,35 +44,43 @@ Sim, de ponta a ponta em versão alpha. Não foi auditado de forma independente 
 - Teste de campo com cinco aparelhos em três plataformas (2 Android reais, 1 emulador Android, 1 iPhone e 1 Mac), com envios simultâneos e contínuos: nenhuma mensagem perdida. Detalhes, problemas encontrados e o que ficou por testar em [`docs/field-tests.md`](docs/field-tests.md).
 - Relay com 10 000 ligações em simultâneo (cada uma a pedir mensagens de 3 em 3 segundos, como as apps): nenhuma falha, cerca de 14 KB de memória por ligação. Ver a secção "O relay em números" mais abaixo.
 
+### Acabado de juntar, ainda por confirmar no uso real
+
+- **Imagens e GIFs até 25 MB**, nas duas apps. Cada ficheiro é cifrado no telemóvel com uma chave própria, segue para o relay em blocos e é apagado de lá quando o outro telemóvel o descarrega, ou ao fim de 24 horas. Testado nos testes automáticos (incluindo com a lista de comandos do Redis de produção); a troca entre telemóveis através da AWS ainda está a ser confirmada. Detalhes em [`docs/protocol-spec.md`](docs/protocol-spec.md), secção 14.
+- **Adicionar contactos por código QR**, nas duas apps (o código é gerado e lido no telemóvel, sem rede).
+- Marca SEALER nas apps (logotipo, nome e tema).
+
+A app iPhone com estas novidades ainda não foi compilada no Xcode (ver [`ios/README.md`](ios/README.md)).
+
 ### O que ainda falta
 
 - ~~Histórico persistente~~ (feito): histórico guardado no SQLCipher (na mesma transação que o avanço do ratchet), com indicadores *Enviado / Entregue / Visto* através de recibos cifrados e fila de saída persistente.
-- **Notificações push** - a app só recebe mensagens enquanto está aberta.
-- **Infraestrutura de produção** - domínio próprio (o atual é provisório), redundância, backups e alertas do servidor.
+- ~~Adição de contactos por código QR~~ (feito nas duas apps).
+- **Notificações push**: a app só recebe mensagens enquanto está aberta.
+- **Infraestrutura de produção**: domínio próprio (o atual é provisório), redundância, backups e alertas do servidor.
 - ~~Bloqueio da app~~ (feito no Android): código de acesso próprio, que cifra a chave das conversas (Argon2id), e desbloqueio opcional com impressão digital, rosto ou PIN do telemóvel. Falta no iPhone.
-- Adição de contactos por QR code, interface mais cuidada.
 - Distribuição pela Play Store (hoje alguns antivírus avisam por ser uma app de origem desconhecida).
 - Teste de carga no relay da AWS (já medido numa máquina local, ver [`docs/performance.md`](docs/performance.md)) e **auditoria de segurança independente**.
 
-**Próximas etapas:** *alpha* (agora: funciona de ponta a ponta, testado com poucas pessoas) → *beta* (histórico persistente, notificações, teste na Play Store) → *1.0* (depois de auditoria externa).
+**Próximas etapas:** *alpha* (agora: funciona de ponta a ponta, testado com poucas pessoas) → *beta* (notificações, bloqueio da app no iPhone, teste na Play Store) → *1.0* (depois de auditoria externa).
 
 ## O que já está construído
 
 | Peça | O que faz | Confiança |
 |---|---|---|
-| `core/` | Estabelecimento de sessão (X3DH + variante pós-quântica) e cifra contínua (Double Ratchet), o mesmo desenho usado pelo Signal | ✅ Testado (14+ testes automáticos, incluindo casos que devem falhar propositadamente) |
-| `transport/` | Protecção da ligação em rede (Noise Protocol) sobre WebSocket | ✅ Testado com ligações WebSocket reais, não simuladas |
-| `server/` | O "carteiro": entrega mensagens sem nunca ver o conteúdo nem saber quem as enviou | ✅ Testado, incluindo sobreviver a ser desligado à força (`kill -9`) |
+| `core/` | Estabelecimento de sessão (X3DH + variante pós-quântica) e cifra contínua (Double Ratchet), o mesmo desenho usado pelo Signal | ✅ Testado (mais de 40 testes automáticos, incluindo casos que devem falhar propositadamente) |
+| `transport/` | Proteção da ligação em rede (Noise Protocol) sobre WebSocket | ✅ Testado com ligações WebSocket reais, não simuladas |
+| `server/` | O "carteiro": entrega mensagens sem nunca ver o conteúdo nem saber quem as enviou, e guarda as imagens cifradas no máximo 24 horas | ✅ Testado, incluindo sobreviver a ser desligado à força (`kill -9`) e com a lista de comandos do Redis de produção |
 | `storage/` | Guarda a tua identidade e conversas no disco, cifradas | ✅ Testado, incluindo confirmar que uma password errada não abre nada |
 | `cli/` | O mensageiro no terminal (`messenger`), com o mesmo núcleo das apps, e uma demonstração visível do protocolo (`messenger_demo`) | ✅ Testado de ponta a ponta com um relay real: terminal ↔ terminal e terminal ↔ cliente igual ao das apps |
-| `ffi/` | A ponte que liga tudo isto a Kotlin (Android), Swift (iOS) e Python | ✅ Testado a partir do Python |
+| `ffi/` | A ponte que liga tudo isto a Kotlin (Android), Swift (iOS) e Python: histórico, fila de saída, imagens, bloqueio da app | ✅ Testado em Rust (incluindo sessões cruzadas e imagens) e a partir do Python |
 | `android/` | App Android (Kotlin/Compose); toda a criptografia continua no Rust | ✅ Release assinada testada entre dois telemóveis reais através do relay na AWS |
-| `ios/` | App iPhone (SwiftUI), igual à Android, com o mesmo núcleo Rust | ✅ Compilada num Mac e a trocar mensagens através do relay na AWS |
+| `ios/` | App iPhone (SwiftUI), igual à Android, com o mesmo núcleo Rust | ✅ Compilada num Mac e a trocar mensagens através do relay na AWS (as novidades mais recentes ainda por compilar) |
 | `deploy/` | Instalação do relay numa EC2: Redis só em localhost com ACL, serviço systemd isolado, TLS automático | ✅ Usado no deploy atual |
 
 ## O relay em números
 
-O relay é pequeno de propósito: só passa mensagens cifradas, não guarda histórico e a criptografia pesada corre nos telemóveis. Medição com 10 000 ligações abertas em simultâneo, cada uma a pedir mensagens de 3 em 3 segundos, como as apps fazem enquanto estão abertas:
+O relay é pequeno de propósito: só passa mensagens cifradas, não guarda histórico (as imagens cifradas ficam lá no máximo 24 horas) e a criptografia pesada corre nos telemóveis. Medição com 10 000 ligações abertas em simultâneo, cada uma a pedir mensagens de 3 em 3 segundos, como as apps fazem enquanto estão abertas:
 
 | | Resultado |
 |---|---|
@@ -81,6 +89,8 @@ O relay é pequeno de propósito: só passa mensagens cifradas, não guarda hist
 | Pedidos respondidos | **~3 300 por segundo, 0 erros** |
 | CPU por pedido | cerca de 0,05 ms no relay e 0,02 ms no Redis (24 % de um núcleo para as 10 000 ligações) |
 | CPU com as ligações paradas | 0 % |
+
+Com mensagens sempre a circular (50 pares de ligações a enviar o mais depressa possível), o relay entregou cerca de **16 900 mensagens de 200 B por segundo** e **6 000 de 4 KB**, com 95 % das mensagens a chegar ao destinatário em menos de 10 ms (200 B) e 26 ms (4 KB). Uma imagem de 25 MB foi enviada ao relay em 0,3 s e descarregada em 0,4 s.
 
 Medido numa máquina local de 2 vCPU, sem o TLS do Caddy e sem rede real pelo meio, por isso o servidor completo gasta mais do que isto. Como foi medido, como repetir e o que ficou de fora: [`docs/performance.md`](docs/performance.md).
 
@@ -105,14 +115,16 @@ cargo run -p qt_cli --bin messenger_demo
 sudo apt install redis-server libsqlcipher-dev
 redis-server --daemonize yes
 ```
-Rust via [rustup](https://rustup.rs). Qualquer versão recente serve, exceto a variante pós-quântica do núcleo, que exige Rust 1.81 ou mais recente.
+Rust 1.81 ou mais recente, via [rustup](https://rustup.rs) (a parte pós-quântica exige-o).
 
 ### Correr os testes
 
 ```bash
-cargo test --workspace                          # tudo, exceto pós-quântico
-cargo test -p qt_core --features pq              # incluindo pós-quântico
+cargo test --workspace                          # tudo, incluindo o pós-quântico (precisa do Redis acima)
+cargo test -p qt_core --features pq              # só o núcleo criptográfico
 ```
+
+O teste `server/tests/redis_acl.rs` arranca um Redis próprio com a lista de comandos de produção; sem `redis-server` instalado é saltado.
 
 ### Duas pessoas a falar através do relay (no PC)
 
@@ -163,12 +175,23 @@ cd android && ./sync-native.sh ..                          # copia para a app
 # depois: abrir a pasta android/ no Android Studio
 ```
 
-A build *release* exige uma keystore própria e o relay de produção (`qtRelayUrl` / `qtRelayPin` em `android/gradle.properties`); nessa build o relay é fixo e não aparece na interface. Passo a passo em [`android/README.md`](android/README.md).
+A build *release* exige uma keystore própria e o relay de produção (`qtRelayUrl` / `qtRelayPin` em `android/gradle.properties`); nessa build o relay é fixo e não aparece na interface. Usa o NDK 27 ou mais recente (com o r26d a compilação do OpenSSL incluído falhou). Passo a passo em [`android/README.md`](android/README.md).
 
 * Guia de integração e build: [`docs/android-integration.md`](docs/android-integration.md)
 * Referência da API: [`docs/ffi-api.md`](docs/ffi-api.md)
-* Protocolo (§8–11 = v0.2): [`docs/protocol-spec.md`](docs/protocol-spec.md)
+* Protocolo (§8–14 = formatos atuais): [`docs/protocol-spec.md`](docs/protocol-spec.md)
 * Ameaças e limitações: [`docs/threat-model.md`](docs/threat-model.md), [`docs/known-limitations.md`](docs/known-limitations.md)
+
+## App iPhone
+
+Precisa de um Mac com Xcode e do [XcodeGen](https://github.com/yonaskolb/XcodeGen):
+
+```bash
+./scripts/build-ios.sh          # compila o núcleo Rust para iPhone e simulador
+cd ios && xcodegen && open SealerMessenger.xcodeproj
+```
+
+Passo a passo, contas Apple e diferenças em relação ao Android em [`ios/README.md`](ios/README.md).
 
 ## Relay na AWS
 
@@ -179,7 +202,9 @@ curl -fsSLO https://raw.githubusercontent.com/moral666/QT/security-hardening/dep
 sudo bash setup-ec2.sh
 ```
 
-Instala o Redis (só `127.0.0.1`, utilizador com ACL mínima), o relay como serviço systemd isolado e o Caddy com certificado TLS automático, e imprime o URL `wss://` e a chave de pinning para a app. Detalhes em [`docs/deploy-wss.md`](docs/deploy-wss.md).
+Instala o Redis (só `127.0.0.1`, utilizador com ACL mínima), o relay como serviço systemd isolado e o Caddy com certificado TLS automático, e imprime o URL `wss://` e a chave de pinning para a app. As imagens cifradas ficam em `/var/lib/qt/anexos` (no máximo 2 GB no total e 24 horas cada, por omissão).
+
+Para atualizar um relay já instalado, corre o mesmo script: vai buscar o código novo e recompila, mas mantém a chave Noise (o pin das apps não muda) e a password do Redis. A compilação é feita na própria instância e precisa de espaço: num disco de 8 GB ficou quase cheio, o relay atual usa 20 GB. Detalhes em [`docs/deploy-wss.md`](docs/deploy-wss.md).
 
 ## Como o projeto está organizado
 
@@ -192,8 +217,10 @@ cli/         O mensageiro no terminal (mesmo núcleo e relay que as apps)
 demo/        Junta core+transport num único teste, para ver tudo em ação
 ffi/         A ponte para Kotlin, Swift e Python
 android/     A app Android (Kotlin/Compose)
+ios/         A app iPhone (SwiftUI)
+branding/    Logotipo, ícones e fonte da marca SEALER
 deploy/      Instalação do relay em servidor (AWS, Redis, systemd)
-scripts/     Compilação das bibliotecas nativas para Android
+scripts/     Compilação para Android e iPhone, e medições (relay e telemóvel)
 docs/        A especificação técnica completa, e o histórico de decisões
 ```
 
@@ -203,6 +230,8 @@ Cada peça tem os seus próprios testes, guardados ao lado do código (`tests/`)
 
 - [`docs/protocol-spec.md`](docs/protocol-spec.md) explica, secção a secção, exatamente como cada peça funciona por dentro: que algoritmos, que decisões e o que ainda falta em cada uma.
 - [`docs/threat-model.md`](docs/threat-model.md) explica contra quem e contra o quê isto protege e, tão importante quanto isso, contra quem e contra o quê **não** protege. Leitura recomendada antes de confiares em qualquer alegação de segurança feita aqui.
+- [`docs/known-limitations.md`](docs/known-limitations.md) lista as limitações conhecidas, por ordem de impacto.
+- [`docs/field-tests.md`](docs/field-tests.md) e [`docs/performance.md`](docs/performance.md) registam os testes com aparelhos reais e as medições do relay.
 - [`ROADMAP.md`](ROADMAP.md) mostra o que falta, por ordem de prioridade.
 - [`CHANGELOG.md`](CHANGELOG.md) mostra o histórico do que já mudou.
 

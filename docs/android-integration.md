@@ -5,10 +5,14 @@ mostra UI e gere o ciclo de vida. Todas as chaves, o ratchet, o PQXDH, o
 Sealed Sender, o storage cifrado e a chave estática Noise vivem no Rust.
 
 ```
-Compose UI ─► ViewModel ─► QtClient (UniFFI, Rust)   ◄── storage SQLCipher (ficheiro)
+Compose UI ─► ViewModel ─► QtClient (UniFFI, Rust)   ◄── storage SQLCipher (ficheiro) + anexos cifrados
                   │
-                  └─► RelayLink (OkHttp WebSocket ⇄ NoiseSession do Rust) ─► Relay
+                  ├─► RelayLink (OkHttp WebSocket ⇄ NoiseSession do Rust) ─► Relay
+                  └─► 2.ª RelayLink, só para imagens e GIFs               ─► Relay
 ```
+
+A app de referência está em `android/` (ver `android/README.md`); a app
+iPhone em `ios/` segue o mesmo desenho em Swift.
 
 ## 1. Construir `libqt_ffi.so` (3 ABIs) e os bindings
 
@@ -16,7 +20,7 @@ Compose UI ─► ViewModel ─► QtClient (UniFFI, Rust)   ◄── storage S
 Rust → cargo build → cargo-ndk → libqt_ffi.so → UniFFI → qt_ffi.kt → app
 ```
 
-Pré-requisitos no PC de build: Rust ≥ 1.81 (`rustup`), Android NDK r26+,
+Pré-requisitos no PC de build: Rust ≥ 1.81 (`rustup`), Android NDK r27+ (com o r26d a compilação do OpenSSL falhou),
 `perl` e `make` (compilam SQLCipher + OpenSSL a partir do código-fonte),
 `cargo install cargo-ndk --locked`.
 
@@ -42,19 +46,18 @@ cp -r ffi/bindings/kotlin/uniffi app/src/main/java/
 * O `generate_bindings.sh` **falha** se o Kotlin gerado expuser alguma função
   que faça chaves privadas ou estados de ratchet atravessarem a FFI.
 
-> ⚠️ O `build-android.sh` não foi executado no ambiente onde o código foi
-> escrito (sem NDK/rustup). Os testes correram no host com as mesmas features
-> (`pq` + SQLCipher embebido). Valida o primeiro build no teu CI.
-
 `app/build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("net.java.dev.jna:jna:5.14.0@aar")   // exigido pelo UniFFI Kotlin
+    implementation("net.java.dev.jna:jna:5.17.0@aar")   // exigido pelo UniFFI Kotlin
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
-android { defaultConfig { ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") } } }
+android { defaultConfig { ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") } } }
 ```
+
+(A app de referência só leva as duas ABIs ARM; acrescenta `x86_64` se a
+compilares e quiseres um emulador sem tradução de ARM.)
 
 `proguard-rules.pro`:
 
@@ -140,30 +143,36 @@ suspend fun addContact(publicId: String): String {
     return qt.startSession(publicId, bundle)             // contactId; verifica o bundle contra o Public ID
 }
 
-// Enviar
-val blob = qt.encryptSealed(contactId, text.toByteArray())   // ratchet avança e persiste
-relay.send(relayIdOfPublicId(publicId), blob)                // se falhar: guardar `blob` (cifrado!) e reenviar o MESMO blob
+// Enviar: cifra, guarda no histórico e põe na fila de saída, numa transação
+val item = qt.sendText(contactId, text)
+relay.send(relayIdOfPublicId(publicId), item.blob)           // se falhar: fica em qt.outbox() e reenvia-se o MESMO blob
+qt.outboxSent(item.outboxId)                                 // só depois do Ack do relay
 
 // Receber (ver §4)
-val r = qt.decryptSealed(delivered.ciphertext)               // r.contactId, r.plaintext
+when (val r = qt.receiveSealed(delivered.ciphertext)) {      // decifra e guarda, numa transação
+    is ReceiveResult.NewMessage -> mostrar(r.message)
+    is ReceiveResult.StatusChanged -> atualizarVistos(r)
+    is ReceiveResult.NoChange -> {}
+}
 ```
 
 * `contactId` = hex da chave pública de identidade do contacto.
-* `decryptSealed` cria a sessão sozinho quando recebe a 1.ª mensagem de um
+* `receiveSealed` cria a sessão sozinho quando recebe a 1.ª mensagem de um
   contacto novo (o cabeçalho PQXDH vai dentro do envelope).
 * Apagar conta: `qt.deleteIdentity()` (apaga tudo, `secure_delete` + `VACUUM`)
   e apagar o ficheiro + a chave do Keystore.
-* **A app não deve guardar plaintext fora de storage cifrado.** O storage do
-  Rust nunca guarda mensagens; o histórico para a UI é responsabilidade da
-  app (ex.: Room com SQLCipher usando outra chave derivada do Keystore).
-  Esta é uma exigência da app e um risco se for ignorada.
+* **A app não deve guardar plaintext fora de storage cifrado.** O histórico
+  fica no SQLCipher do Rust (`messagesPage`, `conversations`) e as imagens
+  ficam cifradas no disco; `attachmentRead` devolve a imagem em claro só
+  para mostrar. A app não deve escrever nem uma nem outra noutro lado.
+* API completa (histórico, recibos, anexos, bloqueio): `docs/ffi-api.md`.
 
 ## 4. Ligação ao relay (WebSocket + Noise): máquina de estados
 
 O Kotlin **não** implementa Noise: usa `NoiseSession` do Rust. A lógica de
 referência (testada) está em `server/src/client.rs` (`RelayClient`) e
-`server/tests/two_clients_over_relay.rs::caminho_android_*`; o Kotlin tem de a
-replicar.
+`server/tests/two_clients_over_relay.rs::caminho_android_*`; na app está
+replicada em `RelayLink.kt` e `MainViewModel.kt`.
 
 ```
 Disconnected ─► Connecting ─► NoiseHandshake ─► Authenticating ─► Ready
@@ -182,24 +191,26 @@ Disconnected ─► Connecting ─► NoiseHandshake ─► Authenticating ─�
 5. **Pedidos** (um de cada vez, resposta sequencial): construir com
    `qt.relayRequest*`, `ws.send(noise.encrypt(req))`, esperar frame com
    **timeout** (≈ 15 s), `relayParseResponse(noise.decrypt(frame))`.
-   Ignorar frames Ping/Pong.
+   Ignorar frames Ping/Pong. Exceção: na ligação dos anexos a app envia até 8
+   blocos seguidos antes de ler as respostas (o relay responde pela ordem).
 6. **Qualquer erro** (timeout, falha de `decrypt`, frame inesperado, fecho):
    fechar o WebSocket, **descartar a `NoiseSession`** (nunca reutilizar) e
    voltar a *Connecting* com backoff exponencial + jitter (200 ms … 30 s).
    Um pedido pendente repete-se na nova ligação (é idempotente: o destinatário
    deduplica).
 7. **Receber:** `relayRequestFetch()` → `Messages(list)`; para cada mensagem
-   `decryptSealed(...)`; tratar `QtException.Replay` como já processada;
+   `receiveSealed(...)`; tratar `QtException.Replay` como já processada;
    **só depois** de persistir/mostrar tudo: `relayRequestAck(ids)`. Repetir
    fetch→ack até vir lista vazia (o relay devolve páginas).
    Mensagens permanentemente inválidas (`InvalidEnvelope`/`Crypto`) também
    se confirmam (senão ficam em fila e são re-entregues indefinidamente).
 8. **Encerrar:** enviar Close (`ws.close(1000, null)`) e descartar a sessão.
-   Em segundo plano usar `WorkManager`/foreground service conforme a política
-   do Android; o estado criptográfico persiste no storage, nunca na ligação.
+   O estado criptográfico persiste no storage, nunca na ligação. Hoje a app
+   continua a perguntar ao relay de 3 em 3 s enquanto o Android não a fecha;
+   notificações push (ou `WorkManager`) estão por fazer.
 9. **Rede perdida:** tratar como erro (passo 6). Ao reconectar nada se perde:
-   mensagens por enviar ficam na *outbox* da app (blobs já cifrados) e as por
-   receber ficam na fila do relay até ao `Ack`.
+   mensagens por enviar ficam na fila de saída do Rust (`outbox()`, blobs já
+   cifrados) e as por receber ficam na fila do relay até ao `Ack`.
 10. **Chamadas bloqueantes:** todas as chamadas a `QtClient` são síncronas
     (SQLCipher + cripto): correr em `Dispatchers.IO`. São *thread-safe*
     (serializadas por um mutex).

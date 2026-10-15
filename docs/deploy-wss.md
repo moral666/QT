@@ -25,7 +25,8 @@ REDIS_URL=redis://127.0.0.1:6379 NOISE_KEY_PATH=/var/lib/qt/relay_noise_key.bin 
 Na app: URL `wss://relay.exemplo.org` + chave pública de pinning.
 
 ## Notas
-* O Redis deve escutar só em localhost/rede privada e ter `requirepass`.
+* O Redis deve escutar só em localhost/rede privada, com um utilizador ACL só
+  com os comandos do relay (`deploy/redis/qt-redis.conf`).
 * O proxy vê o tráfego já cifrado pelo Noise; o conteúdo continua E2EE.
 * `ws://` só é aceite no cliente Rust para loopback (ou com `allow_insecure_ws`
   em testes) e na build *debug* Android.
@@ -46,6 +47,34 @@ Só a porta 443 (e 80, se o Caddy fizer o desafio HTTP-01 do Let's Encrypt) fica
 4. **Clientes**: o transporte Rust só aceita `wss://` em builds de release (até `ws://localhost`
    é recusado); `ws://` em loopback só existe em builds de debug para os testes locais.
    A app Android release já só aceita `wss://` (network_security_config + verificação no código).
+
+## Imagens e GIFs (anexos)
+
+O relay guarda os anexos, já cifrados pelas apps, em ficheiros no disco e
+apaga-os quando o destinatário os descarrega ou ao fim de 24 horas (um varrimento
+de 10 em 10 minutos apanha os que ficaram para trás). Configuração em
+`/etc/qt/relay.env` (exemplo em `deploy/systemd/qt-relay.env.example`):
+
+| Variável | Omissão | Para quê |
+|---|---|---|
+| `RELAY_BLOB_DIR` | `anexos/` ao lado da chave Noise (`/var/lib/qt/anexos`) | Pasta dos ficheiros (o serviço só pode escrever em `/var/lib/qt`) |
+| `RELAY_BLOB_MAX_TOTAL_MB` | 2048 | Total em disco; acima disto, anexos novos são recusados |
+| `RELAY_BLOB_USER_DAILY_MB` | 1024 | Quota diária por utilizador |
+| `RELAY_BLOB_MIN_FREE_MB` | 1024 | Espaço que fica sempre livre no disco |
+| `RELAY_BLOBS=0` | | Desliga os anexos |
+
+O utilizador `qt-relay` do Redis precisa dos comandos de hash, `DEL` e
+`DECRBY` para os anexos; sem eles o envio de imagens falha com "erro interno"
+(o teste `server/tests/redis_acl.rs` usa a lista de produção para o apanhar).
+
+## Atualizar o relay
+
+Corre de novo `deploy/aws/setup-ec2.sh`: vai buscar o código ao GitHub,
+recompila e reinicia o serviço, mantendo a chave Noise (o pin das apps não
+muda) e a password do Redis. A compilação é feita na instância: deixa
+espaço em disco (com 8 GB ficou quase cheio).
+
+## ElastiCache
 
 Se mais tarde usares ElastiCache em vez de Redis local: VPC privada, Security Group que só aceita
 o SG da EC2 na 6379, *in-transit encryption* ligada e `REDIS_URL=rediss://...` com
