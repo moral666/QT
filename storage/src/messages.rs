@@ -23,6 +23,9 @@ pub const ST_RECEIVED: i64 = 10; // usado tambem no indice parcial `messages_unr
 pub const ST_READ_BY_ME: i64 = 11;
 
 pub const KIND_TEXT: i64 = 1;
+/// Imagem ou GIF. `body` guarda os metadados em JSON (chave do ficheiro,
+/// tamanho, tipo, estado do envio/descarga); os bytes ficam num ficheiro cifrado.
+pub const KIND_ATTACHMENT: i64 = 2;
 
 /// Tipo de entrada na outbox (o que a app tem de fazer quando o relay confirma).
 pub const OUTBOX_MESSAGE: i64 = 1;
@@ -224,6 +227,37 @@ pub fn mark_incoming_read(conn: &Connection, contact_id: &str) -> Result<Vec<Vec
         params![ST_READ_BY_ME, contact_id],
     )?;
     Ok(ids)
+}
+
+/// Muda o `body` de uma mensagem (metadados de um anexo). Devolve se mudou.
+pub fn update_body(conn: &Connection, contact_id: &str, msg_id: &[u8], body: &str) -> Result<bool, StorageError> {
+    Ok(conn.execute(
+        "UPDATE messages SET body = ?1 WHERE contact_id = ?2 AND msg_id = ?3",
+        params![body, contact_id, msg_id],
+    )? == 1)
+}
+
+/// Anexos cujo `body` contem `body_fragment` (ex.: o estado `"st":0`), enviados
+/// (`outgoing`) ou recebidos. Devolve (contacto, msg_id), dos mais antigos para
+/// os mais recentes.
+pub fn attachments_matching(
+    conn: &Connection,
+    outgoing: bool,
+    body_fragment: &str,
+) -> Result<Vec<(String, Vec<u8>)>, StorageError> {
+    let pattern = format!("%{}%", body_fragment.replace(['%', '_'], ""));
+    let mut stmt = conn.prepare(
+        "SELECT contact_id, msg_id FROM messages WHERE kind = ?1 AND outgoing = ?2 AND body LIKE ?3 ORDER BY seq LIMIT 200",
+    )?;
+    let rows = stmt.query_map(params![KIND_ATTACHMENT, outgoing as i64, pattern], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// `msg_id` de todos os anexos de um contacto (para apagar os ficheiros).
+pub fn attachment_ids(conn: &Connection, contact_id: &str) -> Result<Vec<Vec<u8>>, StorageError> {
+    let mut stmt = conn.prepare("SELECT msg_id FROM messages WHERE contact_id = ?1 AND kind = ?2")?;
+    let rows = stmt.query_map(params![contact_id, KIND_ATTACHMENT], |r| r.get(0))?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
 /// Apaga o historico (e a outbox) de um contacto.
