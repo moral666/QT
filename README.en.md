@@ -37,12 +37,14 @@ can verify there are no hidden tricks.
 
 Yes, end to end — as an **alpha** release. **It has not been independently audited and must not be used for real conversations or sensitive information.**
 
-### Validated as of 14 October 2026
+### Validated as of 15 October 2026
 
 - Cryptographic core (PQXDH + Double Ratchet + Sealed Sender), transport, relay, local storage and FFI implemented in Rust, with the test suite passing (`cargo test --workspace`).
 - Relay running on an AWS EC2 instance behind real TLS (`wss://`, Let's Encrypt certificate via Caddy), with Redis reachable only on `127.0.0.1` and protected by ACLs.
 - Android app built as a signed *release* (V2/V3 schemes), native libraries aligned to 16 KB pages, no detections on VirusTotal (0/68).
 - **Messages exchanged between two real phones through the relay on AWS.**
+- **iPhone app (SwiftUI) on the same core, exchanging messages with the Android apps.**
+- **Field test with five devices on three platforms** (2 real Android phones, 1 Android emulator, 1 iPhone and 1 Mac), with simultaneous, continuous sending: no messages lost. Details, problems found and what is still untested in [`docs/field-tests.md`](docs/field-tests.md) (in Portuguese).
 
 ### Still missing
 
@@ -51,7 +53,6 @@ Yes, end to end — as an **alpha** release. **It has not been independently aud
 - **Production infrastructure** — own domain (the current one is temporary), redundancy, backups and server alerts.
 - App lock with PIN/biometrics, adding contacts via QR code, a more polished interface.
 - Distribution through the Play Store (some antivirus apps currently warn because the app comes from an unknown source).
-- The `messenger` terminal client still uses the old registration format and does not work with the current relay (`messenger_demo` and the `peer` test client do).
 - Load testing and an **independent security audit**.
 
 **Next stages:** *alpha* (now: works end to end, tested with a few people) → *beta* (persistent history, notifications, Play Store testing) → *1.0* (after an external audit).

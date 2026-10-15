@@ -30,12 +30,14 @@ O QT tenta responder a isto com engenharia, não só com uma política de privac
 
 Sim, de ponta a ponta — em versão **alpha**. **Não foi auditado de forma independente e não deve ser usado para conversas reais ou informação sensível.**
 
-### Validado até 14 de outubro de 2026
+### Validado até 15 de outubro de 2026
 
 - Núcleo criptográfico (PQXDH + Double Ratchet + Sealed Sender), transporte, relay, armazenamento local e FFI implementados em Rust, com a suite de testes a passar (`cargo test --workspace`).
 - Relay a correr numa instância AWS EC2, atrás de TLS real (`wss://`, certificado Let's Encrypt via Caddy), com o Redis acessível apenas em `127.0.0.1` e protegido por ACL.
 - App Android compilada em versão *release* assinada (esquemas V2/V3), bibliotecas nativas alinhadas a páginas de 16 KB, sem deteções no VirusTotal (0/68).
 - **Mensagens trocadas entre dois telemóveis reais, através do relay na AWS.**
+- **App iPhone (SwiftUI) com o mesmo núcleo, a trocar mensagens com as apps Android.**
+- **Teste de campo com cinco aparelhos em três plataformas** (2 Android reais, 1 emulador Android, 1 iPhone e 1 Mac), com envios simultâneos e contínuos: nenhuma mensagem perdida. Detalhes, problemas encontrados e o que ficou por testar em [`docs/field-tests.md`](docs/field-tests.md).
 
 ### O que ainda falta
 
@@ -44,7 +46,6 @@ Sim, de ponta a ponta — em versão **alpha**. **Não foi auditado de forma ind
 - **Infraestrutura de produção** — domínio próprio (o atual é provisório), redundância, backups e alertas do servidor.
 - Bloqueio da app com PIN/biometria, adição de contactos por QR code, interface mais cuidada.
 - Distribuição pela Play Store (hoje alguns antivírus avisam por ser uma app de origem desconhecida).
-- O cliente de terminal `messenger` ainda usa o formato antigo de registo e não funciona com o relay atual (o `messenger_demo` e o cliente de teste `peer` funcionam).
 - Testes de carga e **auditoria de segurança independente**.
 
 **Próximas etapas:** *alpha* (agora: funciona de ponta a ponta, testado com poucas pessoas) → *beta* (histórico persistente, notificações, teste na Play Store) → *1.0* (depois de auditoria externa).
