@@ -22,26 +22,26 @@ que diz que faz.
 
 ## Porque é que isto existe (o objetivo, para além do exercício técnico)
 
-Quase todos os mensageiros populares pedem o teu número de telefone para te registares. Mesmo quando o conteúdo das mensagens é privado, esse registo cria um rasto — quem fala com quem, quando, com que frequência. Para empresas, isto é também uma questão de conformidade: o RGPD exige proteção de dados desde a conceção e minimização de dados, e cada dado que um serviço guarda é um dado que pode ser exposto numa fuga.
+Quase todos os mensageiros populares pedem o teu número de telefone para te registares. Mesmo quando o conteúdo das mensagens é privado, esse registo cria um rasto quem fala com quem, quando, com que frequência. Para empresas, isto é também uma questão de conformidade: o RGPD exige proteção de dados desde a conceção e minimização de dados, e cada dado que um serviço guarda é um dado que pode ser exposto numa fuga.
 
-O QT tenta responder a isto com engenharia, não só com uma política de privacidade: identidade baseada numa chave criptográfica (sem telefone, sem email), cifra ponta-a-ponta que nem o servidor consegue quebrar, e código aberto para que qualquer pessoa possa verificar que não há truques escondidos.
+O QT tenta responder a isto com engenharia, não só com uma política de privacidade: identidade baseada numa chave criptográfica (sem telefone, sem email), cifra ponta a ponta que nem o servidor consegue quebrar, e código aberto para que qualquer pessoa possa verificar que não há truques escondidos.
 
 ## Sê honesto comigo: isto já funciona?
 
-Sim, de ponta a ponta — em versão **alpha**. **Não foi auditado de forma independente e não deve ser usado para conversas reais ou informação sensível.**
+Sim, de ponta a ponta em versão alpha. Não foi auditado de forma independente e não deve ser usado para conversas reais ou informação sensível.
 
 ### Validado até 14 de outubro de 2026
 
 - Núcleo criptográfico (PQXDH + Double Ratchet + Sealed Sender), transporte, relay, armazenamento local e FFI implementados em Rust, com a suite de testes a passar (`cargo test --workspace`).
 - Relay a correr numa instância AWS EC2, atrás de TLS real (`wss://`, certificado Let's Encrypt via Caddy), com o Redis acessível apenas em `127.0.0.1` e protegido por ACL.
 - App Android compilada em versão *release* assinada (esquemas V2/V3), bibliotecas nativas alinhadas a páginas de 16 KB, sem deteções no VirusTotal (0/68).
-- **Mensagens trocadas entre dois telemóveis reais, através do relay na AWS.**
+- Mensagens trocadas entre dois telemóveis reais, através do relay na AWS.
 
 ### O que ainda falta
 
-- ~~Histórico persistente~~ — **feito**: histórico guardado no SQLCipher (na mesma transação que o avanço do ratchet), com indicadores *Enviado / Entregue / Visto* através de recibos cifrados e fila de saída persistente.
-- **Notificações push** — a app só recebe mensagens enquanto está aberta.
-- **Infraestrutura de produção** — domínio próprio (o atual é provisório), redundância, backups e alertas do servidor.
+- ~~Histórico persistente~~ — "feito": histórico guardado no SQLCipher (na mesma transação que o avanço do ratchet), com indicadores *Enviado / Entregue / Visto* através de recibos cifrados e fila de saída persistente.
+- **Notificações push** - a app só recebe mensagens enquanto está aberta.
+- **Infraestrutura de produção** - domínio próprio (o atual é provisório), redundância, backups e alertas do servidor.
 - Bloqueio da app com PIN/biometria, adição de contactos por QR code, interface mais cuidada.
 - Distribuição pela Play Store (hoje alguns antivírus avisam por ser uma app de origem desconhecida).
 - O cliente de terminal `messenger` ainda usa o formato antigo de registo e não funciona com o relay atual (o `messenger_demo` e o cliente de teste `peer` funcionam).
