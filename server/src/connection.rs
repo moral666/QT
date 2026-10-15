@@ -16,7 +16,9 @@ use crate::protocol::{
     deserialize_client_message, is_valid_user_id, serialize_server_message,
     user_id_from_signing_public, ClientMessage, DeliveredMessage, ServerMessage, AUTH_CONTEXT,
 };
+use crate::blobs::{b64, BlobError};
 use crate::stats::{self, STATS};
+use base64::Engine;
 use crate::store::{Store, StoreError};
 use ed25519_dalek::{Signature, VerifyingKey};
 use qt_core::primitives::verify_signature;
@@ -263,5 +265,47 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
                 Err(e) => internal(e),
             }
         }
+        ClientMessage::BlobCreate { size } => match store.blob_create(me, size).await {
+            Ok((blob_id, token)) => {
+                stats::inc(&STATS.blob_uploads);
+                ServerMessage::BlobCreated { blob_id, token }
+            }
+            Err(e) => blob_err(e),
+        },
+        ClientMessage::BlobPut { blob_id, token, offset, data } => {
+            match store.blob_put(&blob_id, &token, offset, &data).await {
+                Ok(s) => ServerMessage::BlobStatus { size: s.size, received: s.received, complete: s.complete },
+                Err(e) => blob_err(e),
+            }
+        }
+        ClientMessage::BlobInfo { blob_id } => match store.blob_info(&blob_id).await {
+            Ok(s) => ServerMessage::BlobStatus { size: s.size, received: s.received, complete: s.complete },
+            Err(e) => blob_err(e),
+        },
+        ClientMessage::BlobGet { blob_id, offset } => match store.blob_get(&blob_id, offset).await {
+            Ok((size, data)) => {
+                if offset == 0 {
+                    stats::inc(&STATS.blob_downloads);
+                }
+                ServerMessage::BlobData { offset, size, data: b64().encode(data) }
+            }
+            Err(e) => blob_err(e),
+        },
+        ClientMessage::BlobDelete { blob_id } => match store.blob_delete(&blob_id).await {
+            Ok(()) => ServerMessage::Ack,
+            Err(e) => blob_err(e),
+        },
+    }
+}
+
+/// Erros dos anexos: mensagens curtas, sem detalhes internos.
+fn blob_err(e: BlobError) -> ServerMessage {
+    match e {
+        BlobError::NotFound => ServerMessage::BlobNotFound,
+        BlobError::Io(_) | BlobError::Store(_) => {
+            stats::inc(&STATS.internal_errors);
+            err("erro interno")
+        }
+        other => err(&other.to_string()),
     }
 }

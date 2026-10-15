@@ -145,7 +145,26 @@ async fn main() {
         hex_encode(&static_keys.public)
     );
 
-    let store = Arc::new(Store::new(&redis_url).unwrap_or_else(|_| fatal("URL do Redis invalido")));
+    let mut store = Store::new(&redis_url).unwrap_or_else(|_| fatal("URL do Redis invalido"));
+    configure_blobs(&mut store, &noise_key_path);
+    let store = Arc::new(store);
+    if store.blobs_enabled() {
+        // Limpeza dos anexos: ao arrancar e de 10 em 10 minutos (expirados e orfaos).
+        let s = store.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(600));
+            loop {
+                tick.tick().await;
+                match s.sweep_blobs().await {
+                    Ok((removed, used)) if removed > 0 => {
+                        println!("anexos: {removed} expirados apagados, {} MB reservados", used / 1_048_576)
+                    }
+                    Ok(_) => {}
+                    Err(_) => eprintln!("anexos: falha na limpeza (Redis/disco)"),
+                }
+            }
+        });
+    }
     let listener = TcpListener::bind(&bind_addr)
         .await
         .unwrap_or_else(|_| fatal("nao foi possivel abrir o socket TCP (porta ocupada/permissoes?)"));
@@ -199,6 +218,35 @@ async fn main() {
             stats.active.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
             drop(permit);
         });
+    }
+}
+
+fn env_u64(name: &str, default: u64) -> u64 {
+    std::env::var(name).ok().and_then(|v| v.trim().parse().ok()).unwrap_or(default)
+}
+
+/// Anexos (imagens/GIFs cifrados) no disco, no maximo 24 h. Pasta por omissao:
+/// `anexos/` ao lado da chave Noise (em producao /var/lib/qt/anexos). Se a pasta
+/// nao puder ser criada, o relay arranca na mesma, sem anexos.
+fn configure_blobs(store: &mut Store, noise_key_path: &str) {
+    if matches!(std::env::var("RELAY_BLOBS").as_deref(), Ok("0") | Ok("false") | Ok("no")) {
+        println!("Anexos desativados (RELAY_BLOBS=0)");
+        return;
+    }
+    let dir = std::env::var("RELAY_BLOB_DIR").map(std::path::PathBuf::from).unwrap_or_else(|_| {
+        std::path::Path::new(noise_key_path)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(|p| p.join("anexos"))
+            .unwrap_or_else(|| std::path::PathBuf::from("anexos"))
+    });
+    let mut cfg = qt_server::BlobConfig::new(&dir);
+    cfg.max_total_bytes = env_u64("RELAY_BLOB_MAX_TOTAL_MB", 2048) * 1_048_576;
+    cfg.max_user_bytes_per_day = env_u64("RELAY_BLOB_USER_DAILY_MB", 1024) * 1_048_576;
+    let (total_mb, user_mb) = (cfg.max_total_bytes / 1_048_576, cfg.max_user_bytes_per_day / 1_048_576);
+    match store.enable_blobs(cfg) {
+        Ok(()) => println!("Anexos em {} (24 h; ate {total_mb} MB no total, {user_mb} MB por utilizador por dia)", dir.display()),
+        Err(_) => eprintln!("AVISO: nao foi possivel criar {}: anexos desativados", dir.display()),
     }
 }
 

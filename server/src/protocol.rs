@@ -54,6 +54,19 @@ pub enum ClientMessage {
     /// agora o relay as apaga. Duplicados na entrega sao apanhados pelo
     /// cliente (replay protection no Double Ratchet/storage).
     AckMessages { user_id: UserId, ids: Vec<u64> },
+
+    // ----- Anexos (ver blobs.rs). Os bytes vao JA CIFRADOS pelo cliente. -----
+    /// Reserva um ficheiro de `size` bytes. Resposta: `BlobCreated`.
+    BlobCreate { size: u64 },
+    /// Escreve um bloco (base64, ate `BLOB_CHUNK` bytes) a partir de `offset`.
+    /// So quem tem o `token` de `BlobCreated` escreve. Resposta: `BlobStatus`.
+    BlobPut { blob_id: String, token: String, offset: u64, data: String },
+    /// Quantos bytes ja chegaram. Resposta: `BlobStatus` ou `BlobNotFound`.
+    BlobInfo { blob_id: String },
+    /// Le um bloco de um ficheiro completo. Resposta: `BlobData` ou `BlobNotFound`.
+    BlobGet { blob_id: String, offset: u64 },
+    /// Apaga o ficheiro (o destinatario ja o descarregou). Resposta: `Ack`.
+    BlobDelete { blob_id: String },
 }
 
 /// Contexto de dominio da assinatura de autenticacao.
@@ -85,6 +98,11 @@ pub enum ServerMessage {
     PreKeyBundleNotFound,
     Messages { messages: Vec<DeliveredMessage> },
     Error { reason: String },
+    BlobCreated { blob_id: String, token: String },
+    BlobStatus { size: u64, received: u64, complete: bool },
+    /// `data` em base64.
+    BlobData { offset: u64, size: u64, data: String },
+    BlobNotFound,
 }
 
 pub fn serialize_client_message(msg: &ClientMessage) -> Vec<u8> {
