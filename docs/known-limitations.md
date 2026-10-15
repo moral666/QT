@@ -34,8 +34,8 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
 16. **A chave estática Noise do relay está em ficheiro** (0600), sem HSM.
 17. **Redis:** sem TLS/ACL configurados por este projeto; as filas são
     ciphertext, mas o Redis exposto permite apagar/atrasar mensagens.
-18. **Mensagens ≤ 10 000 bytes** (JSON dentro de um frame Noise de 64 KiB);
-    sem anexos nem fragmentação.
+18. **Mensagens de texto ≤ 10 000 bytes** (JSON dentro de um frame Noise de 64 KiB).
+    Imagens e GIFs ate 25 MiB seguem por outro caminho (ver 36).
 
 ## Android / app
 19. **`build-android.sh` não foi executado** pelo autor desta fase (sem
@@ -77,3 +77,13 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     dias, não anos. Códigos mais longos protegem mais. A espera crescente depois de 5 erros só trava
     tentativas pela interface. Com o desbloqueio por impressão digital ativo, quem souber o PIN do
     telemóvel também abre a app (é uma escolha do utilizador). Ainda não existe na app iPhone.
+36. **Imagens e GIFs (anexos).** O conteúdo e a chave são cifrados ponta a ponta, mas o relay vê:
+    o tamanho arredondado (Padme, revela cerca de metade dos bits do tamanho), a hora do envio e
+    da descarga e, enquanto a ligação está aberta, que utilizador enviou e que utilizador
+    descarregou cada ficheiro. Correlacionar isto liga quem fala com quem, que o Sealed Sender
+    esconde nas mensagens de texto. O relay não guarda esta ligação (nem nos registos), mas um
+    relay malicioso podia guardá-la. Quem tiver o `blob_id` consegue ler (cifrado) e apagar o
+    ficheiro. Um anexo não descarregado em 24 horas perde-se. Ainda sem miniatura antes da
+    descarga, sem vídeos nem outros ficheiros, e a app iPhone só recebe GIFs do teclado colando-os.
+    O tamanho e as dimensões da imagem vão dentro da mensagem cifrada; a localização da foto
+    é removida ao recomprimir (as originais PNG/WebP/GIF vão como estão).
