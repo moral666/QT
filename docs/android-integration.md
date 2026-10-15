@@ -64,7 +64,7 @@ android { defaultConfig { ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a",
 ```
 
 `AndroidManifest.xml`: `android:allowBackup="false"` (o ficheiro cifrado não
-é restaurável noutro dispositivo — a chave está no Keystore desse aparelho).
+é restaurável noutro dispositivo: a chave está no Keystore desse aparelho).
 
 ## 2. Android Keystore → chave do SQLCipher
 
@@ -118,7 +118,7 @@ exceções nem para o Git. Depois de `QtClient.open(...)` faz `key.fill(0)`.
 A chave passa brevemente pela memória da JVM (limitação inevitável: o Rust
 não pode usar uma chave não exportável do Keystore diretamente). Perder a
 chave do Keystore (reset de fábrica, nova biometria se exigires autenticação)
-torna o ficheiro irrecuperável — é o comportamento esperado.
+torna o ficheiro irrecuperável. É o comportamento esperado.
 
 ## 3. Ciclo de vida da identidade e dos contactos
 
@@ -128,7 +128,7 @@ val qt = QtClient.open(File(filesDir, "qt.db").path, key).also { key.fill(0) }
 // 1.º arranque
 if (!qt.hasIdentity()) {
     val me = qt.createIdentity()           // PublicIdentity
-    showToUser(me.publicId)                // "qt1:…" — o que o utilizador partilha (QR/texto)
+    showToUser(me.publicId)                // "qt1:…": o que o utilizador partilha (QR/texto)
     relay.registerBundle(qt.publishableBundle())   // publicar no relay (ver §4)
 }
 
@@ -158,7 +158,7 @@ val r = qt.decryptSealed(delivered.ciphertext)               // r.contactId, r.p
   app (ex.: Room com SQLCipher usando outra chave derivada do Keystore).
   Esta é uma exigência da app e um risco se for ignorada.
 
-## 4. Ligação ao relay (WebSocket + Noise) — máquina de estados
+## 4. Ligação ao relay (WebSocket + Noise): máquina de estados
 
 O Kotlin **não** implementa Noise: usa `NoiseSession` do Rust. A lógica de
 referência (testada) está em `server/src/client.rs` (`RelayClient`) e

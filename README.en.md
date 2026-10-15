@@ -1,10 +1,10 @@
 # QT
 
-**Alpha version — not audited.** An E2EE messenger with post-quantum
-cryptography — X3DH, PQXDH, Double Ratchet, Sealed Sender, Noise Protocol,
-all implemented in Rust — with an Android app and a cloud relay, already
+**Alpha version, not audited.** An E2EE messenger with post-quantum
+cryptography (X3DH, PQXDH, Double Ratchet, Sealed Sender, Noise Protocol),
+all implemented in Rust, with an Android app and a cloud relay, already
 working end to end. **It is not a finished product yet and must not be
-used for sensitive information** — see "Be honest with me: does this
+used for sensitive information.** See "Be honest with me: does this
 actually work?" below.
 
 [Ler isto em português →](README.md)
@@ -12,18 +12,18 @@ actually work?" below.
 ## Context
 
 This project grew out of a genuine interest in privacy and systems
-security — specifically, the question of how to build communication
+security, specifically the question of how to build communication
 where privacy is guaranteed by technical design and not only by a
 written policy (the "data protection by design" that the GDPR asks for).
 Rather than stopping at theory, the goal was to actually
-implement and test every piece: not pseudocode, not diagrams — code that
+implement and test every piece: not pseudocode, not diagrams, but code that
 compiles, runs, and has automated tests confirming it does what it claims.
 
 ## Why this exists (beyond the technical exercise)
 
 Almost every popular messenger asks for your phone number to sign up.
 Even when message content is private, that registration creates a
-trail — who talks to whom, when, how often. For companies this is also
+trail: who talks to whom, when, how often. For companies this is also
 a compliance matter: the GDPR requires data protection by design and data
 minimisation, and every piece of data a service keeps is data that can be
 exposed in a breach.
@@ -35,7 +35,7 @@ can verify there are no hidden tricks.
 
 ## Be honest with me: does this actually work?
 
-Yes, end to end — as an **alpha** release. **It has not been independently audited and must not be used for real conversations or sensitive information.**
+Yes, end to end, as an **alpha** release. **It has not been independently audited and must not be used for real conversations or sensitive information.**
 
 ### Validated as of 15 October 2026
 
@@ -49,9 +49,9 @@ Yes, end to end — as an **alpha** release. **It has not been independently aud
 
 ### Still missing
 
-- ~~Persistent history~~ — **done**: history stored in SQLCipher (in the same transaction that advances the ratchet), with *Sent / Delivered / Read* indicators via encrypted receipts and a persistent outbox.
-- **Push notifications** — the app only receives messages while it is open.
-- **Production infrastructure** — own domain (the current one is temporary), redundancy, backups and server alerts.
+- ~~Persistent history~~ (**done**): history stored in SQLCipher (in the same transaction that advances the ratchet), with *Sent / Delivered / Read* indicators via encrypted receipts and a persistent outbox.
+- **Push notifications**: the app only receives messages while it is open.
+- **Production infrastructure**: own domain (the current one is temporary), redundancy, backups and server alerts.
 - App lock with PIN/biometrics, adding contacts via QR code, a more polished interface.
 - Distribution through the Play Store (some antivirus apps currently warn because the app comes from an unknown source).
 - Load testing on the AWS relay (already measured on a local machine, see [`docs/performance.md`](docs/performance.md), in Portuguese) and an **independent security audit**.
@@ -62,13 +62,13 @@ Yes, end to end — as an **alpha** release. **It has not been independently aud
 
 | Piece | What it does | Confidence |
 |---|---|---|
-| `core/` | Session establishment (X3DH + post-quantum variant) and continuous encryption (Double Ratchet) — the same design used by Signal | ✅ Tested (14+ automated tests, including cases designed to fail) |
+| `core/` | Session establishment (X3DH + post-quantum variant) and continuous encryption (Double Ratchet), the same design used by Signal | ✅ Tested (14+ automated tests, including cases designed to fail) |
 | `transport/` | Network connection protection (Noise Protocol) over WebSocket | ✅ Tested with real WebSocket connections, not simulated |
 | `server/` | The "mailman": delivers messages without ever seeing the content or knowing who sent them | ✅ Tested, including surviving being force-killed (`kill -9`) |
 | `storage/` | Stores your identity and conversations on disk, encrypted | ✅ Tested, including confirming a wrong password opens nothing |
 | `cli/` | The messenger in the terminal (`messenger`), on the same core as the apps, plus a visible protocol demo (`messenger_demo`) | ✅ Tested end to end against a real relay: terminal ↔ terminal and terminal ↔ a client identical to the apps' |
 | `ffi/` | The bridge connecting all of this to Kotlin (Android), Swift (iOS) and Python | ✅ Tested from Python |
-| `android/` | Android app (Kotlin/Compose) — all cryptography stays in Rust | ✅ Signed release tested between two real phones through the relay on AWS |
+| `android/` | Android app (Kotlin/Compose); all cryptography stays in Rust | ✅ Signed release tested between two real phones through the relay on AWS |
 | `ios/` | iPhone app (SwiftUI), same as the Android one, on the same Rust core | ✅ Built on a Mac and exchanging messages through the relay on AWS |
 | `deploy/` | Relay install on EC2: Redis on localhost only with ACLs, sandboxed systemd service, automatic TLS | ✅ Used in the current deployment |
 
@@ -108,7 +108,7 @@ cargo run -p qt_cli --bin messenger_demo
 sudo apt install redis-server libsqlcipher-dev
 redis-server --daemonize yes
 ```
-Rust via [rustup](https://rustup.rs) — any recent version works, except
+Rust via [rustup](https://rustup.rs). Any recent version works, except
 the post-quantum variant of the core, which requires Rust 1.81 or newer.
 
 ### Running the tests
@@ -129,7 +129,7 @@ cargo run -p qt_server --example peer -- --relay ws://127.0.0.1:9443 --db bob.db
 # in each: /id shows the Public ID; /add <the other's ID>; then type messages
 ```
 
-The `peer` client uses exactly the same protocol as the Android app. Each person's identifier is derived from their public key — nobody chooses a "username," on purpose. `ws://` is only accepted for `localhost` in debug builds; otherwise the transport requires `wss://`.
+The `peer` client uses exactly the same protocol as the Android app. Each person's identifier is derived from their public key: nobody chooses a "username," on purpose. `ws://` is only accepted for `localhost` in debug builds; otherwise the transport requires `wss://`.
 
 ### The messenger in the terminal (talks to the phones)
 
@@ -198,15 +198,15 @@ Each piece has its own tests, kept next to the code (`tests/`).
 
 ## Want the technical details?
 
-- [`docs/protocol-spec.md`](docs/protocol-spec.md) explains, section by section, exactly how each piece works internally — which algorithms, which decisions, and what's still missing in each one.
-- [`docs/threat-model.md`](docs/threat-model.md) explains who and what this protects against — and, just as importantly, who and what it does **not** protect against. Recommended reading before trusting any security claim made here.
+- [`docs/protocol-spec.md`](docs/protocol-spec.md) explains, section by section, exactly how each piece works internally: which algorithms, which decisions, and what's still missing in each one.
+- [`docs/threat-model.md`](docs/threat-model.md) explains who and what this protects against and, just as importantly, who and what it does **not** protect against. Recommended reading before trusting any security claim made here.
 - [`ROADMAP.md`](ROADMAP.md) shows what's left, in priority order.
 - [`CHANGELOG.md`](CHANGELOG.md) shows the history of what's already changed.
 
 ## License
 
 AGPL-3.0-or-later. In plain terms: anyone can use, study and modify this
-code freely — but if someone takes it to offer a service (even just over
+code freely, but if someone takes it to offer a service (even just over
 the internet, without "distributing" software in the traditional sense),
 they're required to also share the source of those modifications. This
 closes a door that more permissive licenses leave open: someone taking an
@@ -216,5 +216,5 @@ open project and turning it into a closed service.
 
 - `CONTRIBUTING.md` explains how to propose changes, and has extra
   (reasonable) rules for anyone touching cryptography code
-- `SECURITY.md` explains how to report a vulnerability privately — please
+- `SECURITY.md` explains how to report a vulnerability privately. Please
   don't open a public issue for that

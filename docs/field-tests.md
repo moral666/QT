@@ -10,7 +10,7 @@ continua a exigir uma auditoria externa (ver `known-limitations.md`).
 
 ---
 
-## 15 de outubro de 2026 — cinco aparelhos, três plataformas
+## 15 de outubro de 2026: cinco aparelhos, três plataformas
 
 **Resultado:** troca contínua de mensagens entre todos os aparelhos, incluindo
 envios simultâneos e em rajada a partir de vários aparelhos ao mesmo tempo.

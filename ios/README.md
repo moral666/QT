@@ -81,6 +81,6 @@ não tiver 64 hex.
   do Rust real (nomes e tipos) e a sintaxe foi validada, mas **ainda não foi compilado no Xcode**.
   Se o primeiro build der erros, copia-os e eu corrijo.
 * Como no Android, as mensagens só chegam com a app aberta (verificação a cada 3 s).
-  Notificações push no iPhone exigem a conta paga (APNs) e um serviço no relay — está na lista.
+  Notificações push no iPhone exigem a conta paga (APNs) e um serviço no relay; está na lista.
 * Exportação: a app usa criptografia. Ao enviar para TestFlight/App Store a Apple pergunta pela
   conformidade de exportação (responde que usa encriptação; ver a documentação da Apple).

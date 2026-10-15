@@ -30,14 +30,14 @@ Na app: URL `wss://relay.exemplo.org` + chave pública de pinning.
 * `ws://` só é aceite no cliente Rust para loopback (ou com `allow_insecure_ws`
   em testes) e na build *debug* Android.
 
-## Deploy na AWS (EC2) — isolamento de rede
+## Deploy na AWS (EC2): isolamento de rede
 
 Topologia: Internet → `443/tcp` → Caddy/nginx (TLS) → `127.0.0.1:9443` relay → `127.0.0.1:6379` Redis.
 Só a porta 443 (e 80, se o Caddy fizer o desafio HTTP-01 do Let's Encrypt) fica exposta.
 
 1. **Security Group da EC2**: inbound apenas `443/tcp` (e `80/tcp` se necessário) de `0.0.0.0/0`;
    SSH só a partir do teu IP (ou nenhum, usando SSM Session Manager). **Nunca** abrir `6379` nem `9443`.
-2. **Redis**: `deploy/redis/qt-redis.conf` — `bind 127.0.0.1 -::1`, `protected-mode yes`,
+2. **Redis**: `deploy/redis/qt-redis.conf` com `bind 127.0.0.1 -::1`, `protected-mode yes`,
    utilizador `default` desligado e utilizador `qt-relay` com ACL mínima (só os comandos e o
    prefixo de chaves do relay). Confirmar com `sudo ss -tlnp | grep 6379`.
 3. **Relay**: `deploy/systemd/qt-relay.service` + `/etc/qt/relay.env`. O próprio binário recusa

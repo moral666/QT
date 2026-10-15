@@ -41,7 +41,7 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
 19. **`build-android.sh` não foi executado** pelo autor desta fase (sem
     NDK/rustup no ambiente). Testado só no host com as mesmas features.
 20. **A chave do storage passa pela memória da JVM** no arranque.
-21. **O histórico em claro para a UI não é gerido pelo Rust** — tem de ser
+21. **O histórico em claro para a UI não é gerido pelo Rust**: tem de ser
     protegido pela app (risco se ignorado).
 22. **Lógica de reconnect/ack do Kotlin ainda por escrever**; a referência
     testada está em Rust (`RelayClient`).
@@ -50,7 +50,7 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
 
 ## Código
 25. **CLI e demos** (`cli/`) usam `expect`/`unwrap` e a passphrase por argumento
-    de linha de comandos — são ferramentas de demonstração, não de produção.
+    de linha de comandos: são ferramentas de demonstração, não de produção.
 26. **`legacy-api`** (FFI antiga) expõe chaves privadas; só para testes.
 27. `cargo audit`/`cargo deny` não foram corridos; dependências não revistas.
 28. Os testes de relay precisam de um Redis local em `127.0.0.1:6379`.

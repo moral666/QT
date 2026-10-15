@@ -1,8 +1,8 @@
-# Modelo de Ameaças (v0.2 — fase Android)
+# Modelo de Ameaças (v0.2: fase Android)
 
 > **Estado: protótipo técnico, NÃO auditado.** Nada neste documento é uma
 > alegação de segurança de produção. Descreve o que o código faz hoje, o que
-> os testes demonstram, e — com igual peso — o que **não** está protegido.
+> os testes demonstram e, com igual peso, o que **não** está protegido.
 > Uma auditoria criptográfica externa continua a ser necessária antes de o QT
 > ser apresentado como sistema de comunicação seguro.
 
@@ -28,7 +28,7 @@
 | **Quem obtém o *estado* de uma sessão num instante T** | Cópia do estado do ratchet nesse momento. |
 | *Fora de âmbito* | Dispositivo totalmente comprometido; o outro participante da conversa; ver §4. |
 
-## 3. O que o QT protege — e a evidência
+## 3. O que o QT protege, e a evidência
 
 Cada linha indica o mecanismo e **o teste que o demonstra** (corre com
 `cargo test --workspace`; os testes de relay precisam de Redis).
@@ -52,7 +52,7 @@ Cada linha indica o mecanismo e **o teste que o demonstra** (corre com
 | Cópia do ficheiro da base de dados | SQLCipher com chave binária de 32 bytes vinda do Android Keystore; sem cabeçalho SQLite em claro. O histórico de mensagens é guardado **só** dentro da base cifrada (com `secure_delete`), nunca em claro | `storage/tests/storage_extended.rs::texto_das_mensagens_nunca_fica_em_claro_no_ficheiro` |
 | Lixo / entradas malformadas | Todas as entradas de rede e disco devolvem erro (sem `unwrap` em caminhos de rede/cripto); limites de tamanho | `sessao_inexistente_e_lixo_nao_fazem_panic`, `limites_e_validacao_de_entrada`, fuzz do estado em `forward_secrecy.rs` |
 
-### 3.1 Segurança pós-quântica — o que exatamente se afirma
+### 3.1 Segurança pós-quântica: o que exatamente se afirma
 
 O segredo inicial da sessão é
 `HKDF-SHA256(DH1 ‖ DH2 ‖ DH3 [‖ DH4] ‖ ss_ML-KEM-768)`, com info `PQXDH_v1`,
@@ -92,7 +92,7 @@ e depois alimenta a root key do Double Ratchet.
 * **Metadados no relay:** o relay vê o destinatário (`to`), o tamanho, o
   instante e o endereço IP de cada ligação (o relay **não** os regista, mas um
   operador mal-intencionado pode). Sealed Sender esconde só o remetente, e só
-  contra o relay — não contra análise de tráfego/correlação temporal.
+  contra o relay, não contra análise de tráfego/correlação temporal.
 * **O relay pode censurar, atrasar, descartar ou reordenar** (disponibilidade
   não é garantida). Não há federação.
 * **Spam / abuso:** qualquer utilizador autenticado pode enfileirar mensagens
@@ -137,7 +137,7 @@ e depois alimenta a root key do Double Ratchet.
 
 | Componente | Confiado para… | Não confiado para… |
 |---|---|---|
-| Rust `core` (+ dependências) | Toda a criptografia | — (sem auditoria) |
+| Rust `core` (+ dependências) | Toda a criptografia | - (sem auditoria) |
 | Android Keystore | Proteger a chave que cifra o storage | Resistir a um dispositivo comprometido |
 | Relay + Redis | Entregar o que recebe, quando quiser | Confidencialidade, autenticidade de bundles, ordem, disponibilidade |
 | Rede | Nada | Tudo |

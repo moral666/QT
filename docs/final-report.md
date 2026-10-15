@@ -1,4 +1,4 @@
-# Relatório final — fase "core seguro + FFI para Android"
+# Relatório final: fase "core seguro + FFI para Android"
 
 > **Este trabalho NÃO está auditado e NÃO deve ser descrito como "seguro" ou
 > "production-ready".** Os testes passam; isso demonstra que o código faz o
@@ -9,7 +9,7 @@
 - **PQXDH** (X25519 + ML-KEM-768) sem `expect`/panic, com erros tipados;
   **serialização/persistência** das chaves ML-KEM com a API real do `ml-kem 0.2.3`
   (`EncodedSizeUser`, 2400/1184/1088 bytes) e validação canónica.
-- **Bundle PQXDH assinado incluindo a chave ML-KEM** (v2) — corrige a possibilidade de um relay anular a proteção PQ.
+- **Bundle PQXDH assinado incluindo a chave ML-KEM** (v2): corrige a possibilidade de um relay anular a proteção PQ.
 - **`QtClient`** (UniFFI): identidade (criar/exportar/apagar), QT Public ID, bundles,
   `startSession` (verifica bundle + PQXDH), `encrypt/decrypt`, `encryptSealed/decryptSealed`,
   sessão Noise com chave guardada no Rust, mensagens de autenticação/pedidos ao relay e codec.
@@ -29,7 +29,7 @@
 
 ## TESTADO (88 testes Rust + 2 scripts Python via UniFFI; 0 falhas)
 - PQXDH Alice→Bob com segredos iguais; dependência dos componentes clássico e PQ; chave pública/privada/ciphertext inválidos; assinatura inválida; substituição da chave ML-KEM; persistência com "reinício" (12 testes + fluxo).
-- Double Ratchet: ida e volta, restauro de estado, replay, corrupção, fora de ordem, estado forjado, estado serializado corrompido (fuzz de truncagem/bit-flip) — e **forward secrecy / post-compromise** (11 testes).
+- Double Ratchet: ida e volta, restauro de estado, replay, corrupção, fora de ordem, estado forjado, estado serializado corrompido (fuzz de truncagem/bit-flip) e **forward secrecy / post-compromise** (11 testes).
 - Storage: chave errada, ficheiro corrompido/truncado, ficheiro sem cabeçalho SQLite, `secure_delete`, prekey reutilizada, dedup, `wipe_all` (14 + 3).
 - API `QtClient` diretamente (13): conversa nos dois sentidos, reinício, replay, adulteração, prekey reutilizada/forjada, bundles inválidos, Sealed Sender (relay sem plaintext nem identidade), ciclo de vida da identidade.
 - Relay (16 + 2): sem autenticação, assinatura reutilizada, acesso cruzado, at-least-once, limites, fila cheia, frames Noise corrompidos/repetidos/fora de ordem, Ping, timeouts, reconnect, relay em baixo e recuperado, pinning.
@@ -47,7 +47,7 @@
 Ver `docs/known-limitations.md` (28 itens) e `docs/threat-model.md` §4.
 
 ## RISCOS
-1. **Criptografia não auditada** (inclui `ml-kem 0.2.3`) — risco principal.
+1. **Criptografia não auditada** (inclui `ml-kem 0.2.3`): risco principal.
 2. `build-android.sh` por validar; o cross-compile de OpenSSL/SQLCipher pode exigir ajustes.
 3. A app pode anular as garantias guardando histórico em claro ou mantendo a chave do storage em memória/logs.
 4. Metadados expostos ao relay; relay malicioso pode censurar e atrasar.
