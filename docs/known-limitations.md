@@ -56,18 +56,18 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
 28. Os testes de relay precisam de um Redis local em `127.0.0.1:6379`.
 
 ## App Android de referência (`QTApp/`)
-29. **Sessões cruzadas:** se duas pessoas enviarem a *primeira* mensagem uma à outra ao mesmo tempo,
-    cada lado inicia a sua sessão PQXDH e as mensagens iniciais ficam indecifráveis (o core não
-    resolve sessões simultâneas). A app mitiga: "adicionar contacto" só guarda o Public ID e a
-    sessão só é criada ao enviar a 1.ª mensagem; mesmo assim o caso simultâneo continua por tratar
-    (precisa de uma regra de desempate ou de um *session reset*).
+29. ~~**Sessões cruzadas**~~ (resolvido): quando as duas pessoas enviam a primeira mensagem ao mesmo
+    tempo, um desempate determinístico fica com uma das sessões e as mensagens cifradas com a outra
+    são reenviadas (teste `sessoes_cruzadas_nao_perdem_mensagens`; no teste prolongado de 30 minutos,
+    nenhuma mensagem perdida).
 30. **Para responder a quem nos escreveu primeiro** é preciso o QT Public ID dessa pessoa (o Sealed
     Sender só revela a chave de identidade, não a caixa de correio no relay).
-31. **Histórico só em memória** na app de referência (o Rust nunca guarda plaintext). Persistir
-    histórico exige uma base cifrada própria da app.
-32. **Mensagens por enviar** (*outbox*) só existem em memória: se a app morrer entre cifrar e enviar,
-    a mensagem perde-se (o ratchet já avançou; o destinatário tolera a falha na numeração).
-33. **Poll de 3 s** em vez de *push*; sem serviço em segundo plano nem notificações.
+31. ~~**Histórico só em memória**~~ (resolvido): o histórico fica no SQLCipher, na mesma transação
+    que o avanço do ratchet.
+32. ~~**Mensagens por enviar só em memória**~~ (resolvido): a outbox fica no SQLCipher e sobrevive
+    ao reinício da app.
+33. **Poll de 3 s** em vez de *push*; sem notificações. Enquanto o Android não termina a app, ela
+    continua a perguntar ao relay em segundo plano, o que gasta bateria e dados.
 34. Sem ABI `x86_64` com o NDK r26d (o OpenSSL embebido não compila o assembly x86 de SM3/SM4);
     testar em telemóvel arm64, ou compilar com um NDK mais recente.
 35. **Bloqueio da app (Android):** o código só tem números (mínimo 6). Fora do telemóvel não serve

@@ -19,7 +19,7 @@ pub const ST_PENDING: i64 = 0;
 pub const ST_SENT: i64 = 1;
 pub const ST_DELIVERED: i64 = 2;
 pub const ST_READ: i64 = 3;
-pub const ST_RECEIVED: i64 = 10;
+pub const ST_RECEIVED: i64 = 10; // usado tambem no indice parcial `messages_unread`
 pub const ST_READ_BY_ME: i64 = 11;
 
 pub const KIND_TEXT: i64 = 1;
@@ -42,6 +42,10 @@ pub(crate) const SCHEMA: &str = "
         UNIQUE (contact_id, msg_id)
     );
     CREATE INDEX IF NOT EXISTS messages_by_contact ON messages (contact_id, seq);
+    -- Sem estes dois indices, confirmar um envio e marcar uma conversa como
+    -- lida percorriam o historico inteiro (o tempo crescia com cada mensagem).
+    CREATE INDEX IF NOT EXISTS messages_by_msg_id ON messages (msg_id);
+    CREATE INDEX IF NOT EXISTS messages_unread ON messages (contact_id) WHERE outgoing = 0 AND status = 10;
     CREATE TABLE IF NOT EXISTS outbox (
         seq        INTEGER PRIMARY KEY AUTOINCREMENT,
         outbox_id  BLOB    NOT NULL UNIQUE,
@@ -186,11 +190,15 @@ pub fn get_message(conn: &Connection, contact_id: &str, msg_id: &[u8]) -> Result
 /// Uma linha por contacto: ultima mensagem + numero de mensagens por ler,
 /// ordenado pela conversa com atividade mais recente.
 pub fn conversations(conn: &Connection) -> Result<Vec<ConversationSummary>, StorageError> {
+    // A ultima mensagem de cada contacto vem do indice (contact_id, seq) e a
+    // contagem por ler do indice parcial `messages_unread`: antes, a consulta
+    // percorria todas as mensagens de todas as conversas.
     let mut stmt = conn.prepare(&format!(
         "SELECT {COLS},
-                (SELECT COUNT(*) FROM messages u WHERE u.contact_id = m.contact_id AND u.status = {ST_RECEIVED})
+                (SELECT COUNT(*) FROM messages u
+                  WHERE u.contact_id = m.contact_id AND u.outgoing = 0 AND u.status = {ST_RECEIVED})
          FROM messages m
-         WHERE m.seq = (SELECT MAX(seq) FROM messages x WHERE x.contact_id = m.contact_id)
+         WHERE m.seq IN (SELECT MAX(seq) FROM messages GROUP BY contact_id)
          ORDER BY m.seq DESC"
     ))?;
     let rows = stmt.query_map([], |r| {
@@ -203,14 +211,17 @@ pub fn conversations(conn: &Connection) -> Result<Vec<ConversationSummary>, Stor
 /// Marca como lidas as mensagens recebidas de `contact_id` e devolve os seus
 /// `msg_id` (para o recibo "vista").
 pub fn mark_incoming_read(conn: &Connection, contact_id: &str) -> Result<Vec<Vec<u8>>, StorageError> {
-    let mut stmt =
-        conn.prepare("SELECT msg_id FROM messages WHERE contact_id = ?1 AND outgoing = 0 AND status = ?2 ORDER BY seq")?;
+    // O estado vai como constante no SQL (e nao como parametro) para o SQLite
+    // poder usar o indice parcial `messages_unread`.
+    let mut stmt = conn.prepare(&format!(
+        "SELECT msg_id FROM messages WHERE contact_id = ?1 AND outgoing = 0 AND status = {ST_RECEIVED} ORDER BY seq"
+    ))?;
     let ids = stmt
-        .query_map(params![contact_id, ST_RECEIVED], |r| r.get::<_, Vec<u8>>(0))?
+        .query_map(params![contact_id], |r| r.get::<_, Vec<u8>>(0))?
         .collect::<Result<Vec<_>, _>>()?;
     conn.execute(
-        "UPDATE messages SET status = ?1 WHERE contact_id = ?2 AND outgoing = 0 AND status = ?3",
-        params![ST_READ_BY_ME, contact_id, ST_RECEIVED],
+        &format!("UPDATE messages SET status = ?1 WHERE contact_id = ?2 AND outgoing = 0 AND status = {ST_RECEIVED}"),
+        params![ST_READ_BY_ME, contact_id],
     )?;
     Ok(ids)
 }

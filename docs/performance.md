@@ -5,6 +5,29 @@ medido, como repetir a medição e o que ficou de fora.
 
 ---
 
+## 15 de outubro de 2026: a app deixa de abrandar com o histórico
+
+Três consultas à base de dados percorriam o histórico inteiro sempre que eram
+chamadas, por isso demoravam mais a cada mensagem guardada. Foram acrescentados
+dois índices (`messages_by_msg_id` e o parcial `messages_unread`) e a lista de
+conversas passou a ler a última mensagem de cada contacto pelo índice. As bases
+existentes ganham os índices sozinhas ao abrir.
+
+Tempo de cada operação no núcleo (chamada pelos bindings, num PC; num telemóvel
+médio conta com 3 a 5 vezes mais), com poucas mensagens por ler:
+
+| Operação | 0 mensagens | 12 000 mensagens, antes | 12 000 mensagens, depois |
+|---|---|---|---|
+| Receber uma mensagem e confirmar o envio | 4,8 ms | 17,5 ms | **5,1 ms** |
+| Marcar a conversa como lida | 0,5 ms | 24,9 ms | **0,6 ms** |
+| Lista de conversas | 0,1 ms | 16,7 ms | **2,5 ms** |
+| Enviar uma mensagem | 2,1 ms | 3,2 ms | 3,1 ms |
+| Página de 50 mensagens | 0,2 ms | 0,5 ms | 0,7 ms |
+
+O teste `storage/tests/query_plans.rs` confirma que estas consultas usam os índices.
+
+---
+
 ## 15 de outubro de 2026: ligação ao Redis partilhada
 
 Até aqui, o relay abria uma ligação TCP nova ao Redis em cada pedido. Passou a
