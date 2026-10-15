@@ -77,9 +77,9 @@ struct HomeScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(c.background.ignoresSafeArea())
         .overlay(alignment: .bottomTrailing) {
+            // O logotipo a rodar como um piao, em vez do "+" (como no Android).
             Button { showAdd = true } label: {
-                Image(systemName: "plus").font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(c.onPrimary)
+                BrandMark(size: 34)
                     .frame(width: 56, height: 56)
                     .background(RoundedRectangle(cornerRadius: 16).fill(c.primary))
                     .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
