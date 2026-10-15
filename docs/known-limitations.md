@@ -19,8 +19,11 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
    um relay pode servir um bundle antigo.
 8. **Rollback do ficheiro SQLCipher** não é detetado (sem contador monotónico).
 9. **Zeroização incompleta** de chaves nas dependências e na JVM.
-10. **Sem *safety numbers* nem fluxo de *session reset***; reinstalação do
-    contacto exige apagar a sessão manualmente (`deleteSession`).
+10. **Reinício de sessão incompleto.** Já existem *safety numbers* e a adoção
+    automática de uma sessão nova autêntica (sessões cruzadas, contacto que
+    apagou e voltou a escrever). Falta o caso em que quem apagou o contacto
+    recebe primeiro: hoje essas mensagens são descartadas (ver
+    `field-tests.md`). Uma reinstalação da app gera uma identidade nova.
 11. **Sem verificação de tempo constante / canais laterais** das dependências.
 
 ## Relay / rede
