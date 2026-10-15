@@ -161,22 +161,53 @@ impl Store {
     }
 
     /// Apaga da fila as mensagens confirmadas (por id).
+    ///
+    /// O cliente confirma o que acabou de ler, que esta no INICIO da fila: le so
+    /// essas entradas (antes lia a fila inteira a cada confirmacao, o que ficava
+    /// mais lento quanto maior a fila) e apaga-as todas num so pedido ao Redis.
+    /// So se alguma nao estiver no inicio e que procura no resto da fila.
+    /// LREM apaga a entrada exata: duas confirmacoes ao mesmo tempo (ex.: uma
+    /// ligacao antiga e a nova) nunca apagam mensagens por confirmar.
     pub async fn ack_messages(&self, user_id: &str, ids: &[u64]) -> Result<usize, StoreError> {
         if ids.is_empty() {
             return Ok(0);
         }
         let mut conn = self.connection().await?;
         let key = format!("{}:queue:{}", self.key_prefix, user_id);
-        let raw_entries: Vec<Vec<u8>> = conn.lrange(&key, 0, -1).await?;
-        let mut removed = 0usize;
-        for raw in raw_entries {
+        let mut wanted: std::collections::HashSet<u64> = ids.iter().copied().collect();
+        let mut pipe = redis::pipe();
+        let mut pending = 0usize;
+        let first = wanted.len();
+        let head: Vec<Vec<u8>> = conn.lrange(&key, 0, first as isize - 1).await?;
+        let scanned = head.len();
+        for raw in head {
             if let Some(m) = decode_entry(&raw) {
-                if ids.contains(&m.id) {
-                    removed += conn.lrem::<_, _, usize>(&key, 1, raw).await?;
+                if wanted.remove(&m.id) {
+                    pipe.lrem(&key, 1, raw);
+                    pending += 1;
                 }
             }
         }
-        Ok(removed)
+        // A fila tem mais entradas para la das que lemos: procura as que faltam.
+        if !wanted.is_empty() && scanned == first {
+            let rest: Vec<Vec<u8>> = conn.lrange(&key, scanned as isize, -1).await?;
+            for raw in rest {
+                if wanted.is_empty() {
+                    break;
+                }
+                if let Some(m) = decode_entry(&raw) {
+                    if wanted.remove(&m.id) {
+                        pipe.lrem(&key, 1, raw);
+                        pending += 1;
+                    }
+                }
+            }
+        }
+        if pending == 0 {
+            return Ok(0);
+        }
+        let removed: Vec<usize> = pipe.query_async(&mut conn).await?;
+        Ok(removed.into_iter().sum())
     }
 }
 
