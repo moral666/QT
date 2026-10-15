@@ -16,6 +16,8 @@ pq = ["qt_core/pq", "qt_storage/pq"]
 legacy-api = []
 # Build Android: SQLCipher+OpenSSL embebidos (sem dependencias do sistema).
 android = ["pq", "qt_storage/bundled-sqlcipher"]
+# Build iOS: igual ao Android (SQLCipher+OpenSSL embebidos, sem dependencias do sistema).
+ios = ["pq", "qt_storage/bundled-sqlcipher"]
 
 [lib]
 name = "qt_ffi"

@@ -1,0 +1,52 @@
+# Projeto Xcode gerado pelo XcodeGen (brew install xcodegen):
+#   ./scripts/build-ios.sh      # 1) nucleo Rust -> Frameworks/QtFFI.xcframework + Generated/qt_ffi.swift
+#   cd ios && xcodegen          # 2) cria SealerMessenger.xcodeproj
+#   open SealerMessenger.xcodeproj
+name: SealerMessenger
+options:
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  developmentLanguage: pt-PT
+configs:
+  Debug: debug
+  Release: release
+configFiles:
+  Debug: Configs/Debug.xcconfig
+  Release: Configs/Release.xcconfig
+targets:
+  SealerMessenger:
+    type: application
+    platform: iOS
+    configFiles:
+      Debug: Configs/Debug.xcconfig
+      Release: Configs/Release.xcconfig
+    sources:
+      - path: SealerMessenger
+        excludes:
+          - Info.plist
+      - path: Generated
+        optional: true        # criado pelo scripts/build-ios.sh
+    dependencies:
+      - framework: Frameworks/QtFFI.xcframework
+        embed: false          # biblioteca estatica: fica dentro do executavel
+      - sdk: Security.framework
+      - sdk: SystemConfiguration.framework
+    preBuildScripts:
+      - name: Verificar nucleo Rust e relay
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ ! -d "${SRCROOT}/Frameworks/QtFFI.xcframework" ] || [ ! -f "${SRCROOT}/Generated/qt_ffi.swift" ]; then
+            echo "error: falta o nucleo Rust. Corre primeiro: ./scripts/build-ios.sh"
+            exit 1
+          fi
+          if [ "${CONFIGURATION}" = "Release" ]; then
+            case "${QT_RELAY_URL}" in
+              wss://*) ;;
+              *) echo "error: QT_RELAY_URL (ios/Configs/Relay.xcconfig) tem de comecar por wss://"; exit 1 ;;
+            esac
+            if ! echo "${QT_RELAY_PIN}" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+              echo "error: QT_RELAY_PIN (ios/Configs/Relay.xcconfig) tem de ter 64 caracteres hex"
+              exit 1
+            fi
+          fi

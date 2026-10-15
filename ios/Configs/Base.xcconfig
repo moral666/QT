@@ -1,0 +1,25 @@
+// Definicoes comuns (Debug e Release). Valores do relay em Relay.xcconfig.
+//
+// Para assinar no teu iPhone cria ios/Configs/Local.xcconfig (NAO vai para o git) com:
+//   DEVELOPMENT_TEAM = <o teu Team ID, ver Xcode > Settings > Accounts>
+//   PRODUCT_BUNDLE_IDENTIFIER = pt.<teunome>.sealermessenger   // se o id abaixo estiver ocupado
+// (ou escolhe a equipa no separador "Signing & Capabilities" do Xcode).
+
+PRODUCT_NAME = SealerMessenger
+PRODUCT_BUNDLE_IDENTIFIER = pt.qt.sealermessenger
+MARKETING_VERSION = 0.1-alpha
+CURRENT_PROJECT_VERSION = 1
+IPHONEOS_DEPLOYMENT_TARGET = 17.0
+TARGETED_DEVICE_FAMILY = 1
+SWIFT_VERSION = 5.0
+CODE_SIGN_STYLE = Automatic
+INFOPLIST_FILE = SealerMessenger/Info.plist
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
+ENABLE_BITCODE = NO
+DEAD_CODE_STRIPPING = YES
+// O script de verificacao do relay so le variaveis de build (nao precisa de ficheiros).
+ENABLE_USER_SCRIPT_SANDBOXING = NO
+
+#include "Relay.xcconfig"
+#include? "Local.xcconfig"
