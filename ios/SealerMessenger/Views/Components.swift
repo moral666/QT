@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Logotipo SEALER (bolha de vidro com o S e os tres pontos), de Assets.xcassets/Logo,
-/// sempre a rodar devagar (uma volta a cada 6 s), como na app Android. Parado se o
+/// sempre a rodar devagar como um piao, a volta do eixo vertical (uma volta a cada 6 s),
+/// como na app Android. Parado se o
 /// utilizador tiver "Reduzir movimento" ativo nas definicoes de acessibilidade.
 struct BrandMark: View {
     let size: CGFloat
@@ -11,7 +12,7 @@ struct BrandMark: View {
         Image("Logo")
             .resizable().scaledToFit()
             .frame(width: size, height: size)
-            .rotationEffect(.degrees(spinning ? 360 : 0))
+            .rotation3DEffect(.degrees(spinning ? 360 : 0), axis: (x: 0, y: 1, z: 0), perspective: 0.3)
             .animation(reduceMotion ? nil : .linear(duration: 6).repeatForever(autoreverses: false), value: spinning)
             .onAppear { spinning = !reduceMotion }
             .accessibilityHidden(true)
