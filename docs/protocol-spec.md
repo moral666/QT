@@ -417,8 +417,18 @@ Um pedido ↔ uma resposta, sequenciais.
    página (≈ 40 kB de JSON) de `{id, sealed_from, ciphertext}`.
 6. `AckMessages{user_id, ids}`: só a própria fila; ≤ 200 ids; apaga as confirmadas.
 
+7. **Anexos** (ver secção 14), com o ficheiro JÁ cifrado pelo cliente:
+   `BlobCreate{size}` (≤ 27 MiB) → `BlobCreated{blob_id, token}`;
+   `BlobPut{blob_id, token, offset, data}` (blocos de 40 KiB em base64, por ordem;
+   repetir um bloco já recebido é aceite) → `BlobStatus{size, received, complete}`;
+   `BlobInfo{blob_id}` → `BlobStatus` (para retomar); `BlobGet{blob_id, offset}` →
+   `BlobData{offset, size, data}` (só ficheiros completos); `BlobDelete{blob_id}` → `Ack`.
+   Ficheiro inexistente ou expirado → `BlobNotFound`.
+
 Respostas: `Ack`, `PreKeyBundle`, `PreKeyBundleNotFound`, `Messages`, `Error{reason}`
-(`reason` genérico, nunca detalhes internos).
+(`reason` genérico, nunca detalhes internos), e as dos anexos acima.
+O cliente pode enviar vários pedidos seguidos antes de ler as respostas: o relay
+responde pela mesma ordem (as apps usam isto para os blocos dos anexos).
 Timeouts do servidor (omissão): handshake 10 s, autenticação 10 s, inatividade 300 s.
 Qualquer frame Noise inválido/repetido/fora de ordem encerra a sessão.
 Entrega *at-least-once*: o cliente tem de deduplicar (o `QtClient` faz-o).
@@ -431,6 +441,8 @@ O plaintext cifrado pelo Double Ratchet tem agora um formato próprio (o relay n
 [1 versão=0x01][1 tipo][16 msg_id][8 sent_at ms, BE]
 tipo 1 = texto:  [texto UTF-8, máx. 9000 bytes]
 tipo 2 = recibo: [1 estado: 2=entregue, 3=vista][2 n BE][n × 16 msg_id], n ≤ 400
+tipo 3 = anexo:  [1 versão=1][32 chave][16 blob_id][8 tamanho BE][8 tamanho cifrado BE]
+                 [4 largura BE][4 altura BE][1 n][n bytes do tipo MIME]
 ```
 
 Um plaintext fora deste formato (clientes antigos) é tratado como texto simples, com `msg_id` derivado do envelope.
@@ -466,6 +478,39 @@ continua a ser reconhecido, sem o contacto ficar em claro. Tudo com
 
 **Tipos desconhecidos.** Um payload v1 com tipo que a versao nao conhece e
 guardado como aviso ("atualiza a app"), nunca como texto.
+
+## 14. Anexos: imagens e GIFs (ate 25 MiB)
+
+Implementado em `ffi/src/attachments.rs` (cliente) e `server/src/blobs.rs` (relay).
+Testes: `server/tests/attachments_e2e.rs` e `server/tests/relay_blobs.rs`.
+
+**Cifra do ficheiro.** Cada anexo tem uma chave nova de 32 bytes (CSPRNG). O
+conteudo e arredondado para cima com Padme (no maximo ~12% a mais, preenchido
+com zeros) e cifrado em blocos de 40 944 bytes com ChaCha20-Poly1305, AAD
+`QT-ATT-v1` e nonce = `[8 numero do bloco BE][3 zeros][1 ultimo bloco? 1 : 0]`.
+Cada bloco cifrado tem 40 KiB, o tamanho de um `BlobPut`. Trocar, repetir,
+reordenar ou cortar blocos faz a verificacao falhar; o recetor so marca o
+anexo como pronto depois de verificar o ficheiro inteiro. Tipos aceites:
+`image/jpeg`, `image/png`, `image/gif`, `image/webp`.
+
+**Envio.** O cliente guarda o ficheiro cifrado, reserva espaco no relay, envia
+os blocos e so depois manda, pelo Double Ratchet (com Sealed Sender), a
+mensagem tipo 3 com a chave, o `blob_id`, os tamanhos e o tipo. O `token` de
+escrita nunca sai do telemovel de quem envia.
+
+**Rececao.** A mensagem tipo 3 entra no historico como "a descarregar"; o
+cliente descarrega os blocos, verifica tudo e pede ao relay `BlobDelete`.
+
+**No relay.** Bytes opacos num ficheiro por anexo (`anexos/<blob_id>`, 0600),
+registo no Redis com TTL de 24 h (`size`, hash do token, completo/incompleto) e
+limpeza do disco de 10 em 10 minutos. Nao fica registado quem criou cada
+ficheiro. Limites: 27 MiB por ficheiro, espaco total configuravel, espaco minimo livre
+no disco (1 GiB por omissao) e bytes enviados por utilizador por dia (contador `blobquota:<user>:<dia>`, 2 dias).
+
+**No telemovel.** Os ficheiros ficam cifrados em `<base de dados>.anexos/`, com
+nomes derivados de `SHA-256("QT-ATT-FILE" || contacto || msg_id)`; a chave fica
+no SQLCipher. A imagem em claro so existe em memoria, para o ecra. Eliminar a
+conversa, o contacto ou todos os dados apaga os ficheiros.
 
 ## Documentos relacionados
 

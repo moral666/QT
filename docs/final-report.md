@@ -38,7 +38,7 @@
 ## NÃO IMPLEMENTADO
 - Compilação/execução real dos `.so` Android (script escrito, **não executado**) e a app Kotlin.
 - One-time prekeys *single-use* servidas pelo relay; rotação de prekeys; validade de bundles.
-- Fragmentação (anexos); *session reset*; *safety numbers*; backup.
+- Anexos além de imagens e GIFs (estes já existem, até 25 MiB: ver `protocol-spec.md`, 14); *session reset*; *safety numbers*; backup.
 - Rate limiting/anti-spam; federação; TLS configurado de fábrica.
 - Correção do `pn` do ratchet (exige mudar o formato); *transcript binding* no HKDF.
 - Fuzzing contínuo, `cargo audit`, análise de canais laterais, auditoria externa.

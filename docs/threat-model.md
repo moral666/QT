@@ -111,8 +111,10 @@ e depois alimenta a root key do Double Ratchet.
   mensagem da cadeia nova perdem-se (o cabeçalho não tem `pn`); chaves de
   mensagens puladas ficam no estado até serem usadas (o roubo do estado nesse
   momento expõe-nas); `MAX_SKIP` = 1000.
-* **Tamanho:** plaintext máximo de 10 000 bytes por mensagem (limite do
-  enquadramento Noise + JSON). Sem anexos.
+* **Tamanho:** plaintext máximo de 10 000 bytes por mensagem de texto (limite
+  do enquadramento Noise + JSON). Imagens e GIFs até 25 MiB vão cifrados por
+  ficheiro, com o tamanho arredondado; o relay vê o tamanho aproximado e quem
+  envia e descarrega cada ficheiro (ver `known-limitations.md`, 36).
 * **Zeroização parcial:** o segredo inicial e a chave de storage são
   zeroizados nos caminhos controlados pelo QT; as chaves privadas das
   dependências (`x25519-dalek`, `ml-kem`) e cópias feitas pela JVM/alocador
