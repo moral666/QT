@@ -282,8 +282,9 @@ fun LoadingScreen() {
 
 /**
  * Logotipo SEALER (bolha de vidro com o S e os tres pontos), sempre a rodar
- * devagar: uma volta completa a cada 6 segundos. A rotacao e aplicada so na
- * camada de desenho (graphicsLayer), sem recompor o ecra a cada frame.
+ * devagar como um piao, a volta do eixo vertical: uma volta completa a cada 6
+ * segundos. A rotacao e aplicada so na camada de desenho (graphicsLayer), sem
+ * recompor o ecra a cada frame.
  */
 @Composable
 fun BrandMark(sizeDp: Int) {
@@ -297,7 +298,10 @@ fun BrandMark(sizeDp: Int) {
     Image(
         painter = painterResource(R.drawable.sealer_logo),
         contentDescription = null,
-        modifier = Modifier.size(sizeDp.dp).graphicsLayer { rotationZ = angle },
+        modifier = Modifier.size(sizeDp.dp).graphicsLayer {
+            rotationY = angle
+            cameraDistance = 12f * density   // perspetiva suave, sem deformar o logo
+        },
     )
 }
 
