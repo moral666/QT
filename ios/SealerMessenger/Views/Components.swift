@@ -1,19 +1,13 @@
 import SwiftUI
 
-/// Logotipo simples: cadeado branco num circulo roxo.
+/// Logotipo SEALER (bolha de vidro com o S e os tres pontos), de Assets.xcassets/Logo.
 struct BrandMark: View {
     let size: CGFloat
-    @Environment(\.chat) private var c
     var body: some View {
-        ZStack {
-            Circle().fill(c.primary)
-            Image(systemName: "lock.fill")
-                .resizable().scaledToFit()
-                .frame(width: size / 2.6, height: size / 2.6)
-                .foregroundStyle(c.onPrimary)
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
+        Image("Logo")
+            .resizable().scaledToFit()
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 

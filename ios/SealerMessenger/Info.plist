@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>pt-PT</string>
 	<key>CFBundleDisplayName</key>
-	<string>SealerMessenger</string>
+	<string>SEALER</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

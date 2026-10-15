@@ -10,7 +10,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /** Nome da app (titulo, ecra inicial). O nome no telemovel vem do AndroidManifest. */
-const val APP_NAME = "SealerMessenger"
+const val APP_NAME = "SEALER"
 
 /** Roxo da marca (o mesmo tom que a app ja usava). */
 private val Purple = Color(0xFF6750A4)

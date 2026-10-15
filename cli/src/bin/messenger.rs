@@ -1,4 +1,4 @@
-//! `messenger`: o SealerMessenger no terminal.
+//! `messenger`: o SEALER no terminal.
 //!
 //! Usa EXATAMENTE o mesmo nucleo que as apps Android e iPhone (`QtClient`:
 //! PQXDH + Double Ratchet + Sealed Sender, historico em SQLCipher, recibos)
@@ -32,7 +32,7 @@ use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
 
 #[derive(Parser)]
-#[command(name = "messenger", about = "SealerMessenger no terminal (mesmo nucleo e relay que as apps)")]
+#[command(name = "messenger", about = "SEALER no terminal (mesmo nucleo e relay que as apps)")]
 struct Cli {
     /// Le a passphrase de UMA linha do stdin em vez de a pedir no terminal
     /// (para scripts). Nunca existe uma flag com a passphrase em claro.

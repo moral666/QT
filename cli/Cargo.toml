@@ -3,7 +3,7 @@ name = "qt_cli"
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
-description = "SealerMessenger no terminal (messenger) e demo visivel do protocolo (messenger_demo)"
+description = "SEALER no terminal (messenger) e demo visivel do protocolo (messenger_demo)"
 publish = false
 
 [lib]

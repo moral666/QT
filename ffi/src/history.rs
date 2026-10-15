@@ -438,7 +438,7 @@ impl QtClient {
 
 /// Texto mostrado quando chega um tipo de mensagem que esta versao nao conhece.
 pub const UNSUPPORTED_TEXT: &str =
-    "⚠️ Esta mensagem usa uma funcionalidade que esta versão da app ainda não suporta. Atualiza o SealerMessenger para a ver.";
+    "⚠️ Esta mensagem usa uma funcionalidade que esta versão da app ainda não suporta. Atualiza o SEALER para a ver.";
 
 /// A sessao com `contact_id` foi substituida por uma nova (sessoes cruzadas ou
 /// o contacto reiniciou a dele): os envelopes da outbox e as mensagens ainda
