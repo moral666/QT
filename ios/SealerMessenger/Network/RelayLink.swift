@@ -66,6 +66,32 @@ actor RelayLink {
         }
     }
 
+    /// Varios pedidos seguidos e so depois as respostas, pela mesma ordem: para os blocos
+    /// dos anexos, sem esperar uma volta inteira a rede por cada bloco. Sem repeticao
+    /// automatica: se falhar, quem chama retoma (o relay diz onde ficou).
+    func requestMany(_ requests: [Data]) async throws -> [RelayResponse] {
+        await lock.lock()
+        do {
+            let c: Conn
+            if let existing = conn { c = existing } else { c = try await connect(); conn = c }
+            for r in requests {
+                try await c.ws.send(.data(try c.noise.encrypt(plaintext: r)))
+            }
+            var out: [RelayResponse] = []
+            out.reserveCapacity(requests.count)
+            for _ in requests {
+                let frame = try await Self.withTimeout(Self.requestSeconds, ws: c.ws) { try await Self.receiveData(c.ws) }
+                out.append(try relayParseResponse(bytes: try c.noise.decrypt(ciphertext: frame)))
+            }
+            await lock.unlock()
+            return out
+        } catch {
+            close()
+            await lock.unlock()
+            throw error
+        }
+    }
+
     func close() {
         conn?.ws.cancel(with: .normalClosure, reason: nil)
         conn = nil

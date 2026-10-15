@@ -21,6 +21,8 @@ struct UiState {
     var readReceipts = true
     /// Safety number a mostrar (nome + 60 digitos), ou nil.
     var safetyNumber: String?
+    /// Progresso (0 a 1) dos anexos a enviar/descarregar, por message_id.
+    var transfers: [String: Double] = [:]
 }
 
 /// Mesma logica que o MainViewModel.kt do Android. O estado vive na thread principal;
@@ -33,6 +35,10 @@ final class AppModel: ObservableObject {
     private var qt: QtClient?
     private var link: RelayLink?
     private var poller: Task<Void, Never>?
+    /// Segunda ligacao ao relay, so para anexos: um envio grande nao atrasa as mensagens.
+    private var fileLink: RelayLink?
+    private var transferTask: Task<Void, Never>?
+    private var transferKick: AsyncStream<Void>.Continuation?
     /// Um so envio da outbox de cada vez.
     private let flushLock = AsyncLock()
 
@@ -40,6 +46,10 @@ final class AppModel: ObservableObject {
     private static let maxPages = 20
     private static let maxTextBytes = 9_000
     private static let page = 50
+    /// Bytes cifrados por bloco de anexo (igual ao Rust e ao relay).
+    private static let chunk: UInt64 = 40 * 1024
+    /// Blocos em transito ao mesmo tempo (~320 KB).
+    private static let window = 8
 
     init() {
         Task { await start() }
@@ -130,6 +140,8 @@ final class AppModel: ObservableObject {
         if let old = link { await old.close() }
         let l = RelayLink(qt: client, url: ui.relayUrl, pinnedRelayKeyHex: ui.relayKeyHex.isEmpty ? nil : ui.relayKeyHex)
         link = l
+        if let old = fileLink { await old.close() }
+        fileLink = RelayLink(qt: client, url: ui.relayUrl, pinnedRelayKeyHex: ui.relayKeyHex.isEmpty ? nil : ui.relayKeyHex)
         status("A ligar ao relay…")
         do {
             // Publicar (ou re-publicar) o bundle publico para que outros nos possam contactar.
@@ -145,11 +157,13 @@ final class AppModel: ObservableObject {
                 try? await Task.sleep(nanoseconds: AppModel.pollSeconds * 1_000_000_000)
             }
         }
+        startTransfers()
     }
 
     /// A app voltou ao primeiro plano: verifica ja se ha mensagens (sem esperar pelo proximo ciclo).
     func becameActive() {
         Task { await pollOnce() }
+        kickTransfers()   // envios/descargas que o iOS interrompeu em segundo plano
     }
 
     // ------------------------------------------------------------------- contactos
@@ -273,10 +287,13 @@ final class AppModel: ObservableObject {
         Task {
             guard let client = qt else { return }
             poller?.cancel()
+            transferTask?.cancel()
             if let l = link { await l.close() }
             link = nil
+            if let f = fileLink { await f.close() }
+            fileLink = nil
             do {
-                try await background { try client.deleteIdentity() }
+                try await background { try client.deleteIdentity() }   // tambem os ficheiros dos anexos
                 try? await background { try ContactStore.wipe() }
                 for k in ["relay_url", "relay_key", "read_receipts"] { prefs.removeObject(forKey: k) }
                 ui = UiState()
@@ -333,6 +350,183 @@ final class AppModel: ObservableObject {
                 showError("Nao foi possivel enviar: \(safeMessage(error))")
             }
         }
+    }
+
+
+    // ---------------------------------------------------------------- imagens/GIFs
+
+    /// Envia uma imagem/GIF (da galeria ou colada). Preparada no iPhone, cifrada pelo
+    /// Rust e enviada em segundo plano (ver `runTransfers`).
+    func sendImage(_ contact: Contact, data: Data, original: Bool, pasted: Bool) {
+        Task {
+            guard let client = qt else { return }
+            let prepared: PreparedImage
+            do {
+                prepared = try await background { try ImagePrep.prepare(data, original: original, keepAsIs: pasted) }
+            } catch ImagePrepError.tooBig {
+                showError("A imagem tem mais de 25 MB."); return
+            } catch {
+                showError("Não foi possível ler esta imagem."); return
+            }
+            defer { try? FileManager.default.removeItem(at: prepared.url) }
+            do {
+                try await ensureSession(client, contact)
+                _ = try await background {
+                    try client.attachmentCreate(contactId: contact.contactId, sourcePath: prepared.url.path,
+                                                mime: prepared.mime, width: prepared.width, height: prepared.height)
+                }
+                await refreshViews(client)
+                kickTransfers()
+            } catch {
+                showError("Não foi possível enviar a imagem: \(safeMessage(error))")
+            }
+        }
+    }
+
+    /// A imagem decifrada, so em memoria, para mostrar no ecra.
+    func attachmentBytes(_ m: ChatMessage) async -> Data? {
+        guard let client = qt else { return nil }
+        let cid = m.contactId, mid = m.messageId
+        return try? await background { try client.attachmentRead(contactId: cid, messageId: mid) }
+    }
+
+    private func kickTransfers() { transferKick?.yield() }
+
+    private func setProgress(_ messageId: String, _ p: Double?) {
+        ui.transfers[messageId] = p
+    }
+
+    private func startTransfers() {
+        transferTask?.cancel()
+        let (stream, cont) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        transferKick = cont
+        transferTask = Task { [weak self] in
+            for await _ in stream {
+                guard let self, !Task.isCancelled else { return }
+                if await self.runTransfers() {
+                    // Falha de rede: tenta de novo daqui a 15 s (ou antes, se houver novidades).
+                    Task { [weak self] in
+                        try? await Task.sleep(nanoseconds: 15_000_000_000)
+                        self?.kickTransfers()
+                    }
+                }
+            }
+        }
+        cont.yield()
+    }
+
+    /// Envia e descarrega os anexos pendentes (tambem os que ficaram a meio antes de a app
+    /// fechar). Devolve true se algo falhou por rede e deve ser tentado de novo.
+    private func runTransfers() async -> Bool {
+        guard let client = qt, let l = fileLink else { return false }
+        let ups = (try? await background { try client.attachmentsPendingUpload() }) ?? []
+        for r in ups {
+            guard let contact = ui.contacts.first(where: { $0.contactId == r.contactId }) else { continue }
+            do { try await upload(client, l, r, contact) } catch { setProgress(r.messageId, nil); return true }
+        }
+        let downs = (try? await background { try client.attachmentsPendingDownload() }) ?? []
+        for r in downs {
+            do { try await download(client, l, r) } catch { setProgress(r.messageId, nil); return true }
+        }
+        return false
+    }
+
+    private func upload(_ client: QtClient, _ l: RelayLink, _ r: AttachmentRef, _ contact: Contact) async throws {
+        let cid = r.contactId, mid = r.messageId
+        guard let total = try await background({ try client.message(contactId: cid, messageId: mid)?.attachment?.transferSize }) else { return }
+        var start: UInt64 = 0
+        if try await background({ try client.attachmentBlobId(contactId: cid, messageId: mid) }) == nil {
+            let req = try await background { try client.blobCreateRequest(contactId: cid, messageId: mid) }
+            switch try await l.request(req) {
+            case .blobCreated(let blobId, let token):
+                try await background { try client.attachmentSetBlob(contactId: cid, messageId: mid, blobId: blobId, token: token) }
+            case .error(let reason):
+                _ = try? await background { try client.attachmentFailed(contactId: cid, messageId: mid, expired: false) }
+                await refreshViews(client)
+                showError(Self.relayRefusal(reason))
+                return
+            default:
+                throw SessionError("resposta inesperada do relay")
+            }
+        } else {
+            let req = try await background { try client.blobInfoRequest(contactId: cid, messageId: mid) }
+            switch try await l.request(req) {
+            case .blobStatus(_, let received, _):
+                start = received - received % Self.chunk
+            case .blobNotFound:
+                // Passaram mais de 24 h sem conseguir acabar o envio.
+                _ = try? await background { try client.attachmentFailed(contactId: cid, messageId: mid, expired: false) }
+                await refreshViews(client)
+                return
+            default:
+                throw SessionError("resposta inesperada do relay")
+            }
+        }
+        var offset = start
+        while offset < total {
+            let batch = Array(stride(from: offset, to: total, by: Int(Self.chunk)).prefix(Self.window))
+            let reqs = try await background { try batch.map { try client.blobPutRequest(contactId: cid, messageId: mid, offset: $0) } }
+            let answers = try await l.requestMany(reqs)
+            guard answers.allSatisfy({ if case .blobStatus = $0 { return true } else { return false } }) else {
+                throw SessionError("bloco recusado")
+            }
+            offset = (batch.last ?? offset) + Self.chunk
+            setProgress(mid, Double(min(offset, total)) / Double(total))
+        }
+        try await ensureSession(client, contact)
+        _ = try await background { try client.attachmentUploaded(contactId: cid, messageId: mid) }   // mensagem com a chave na outbox
+        setProgress(mid, nil)
+        await refreshViews(client)
+        await flushOutbox()
+    }
+
+    private func download(_ client: QtClient, _ l: RelayLink, _ r: AttachmentRef) async throws {
+        let cid = r.contactId, mid = r.messageId
+        var have = try await background { try client.attachmentDownloadedBytes(contactId: cid, messageId: mid) }
+        var total: UInt64?
+        while true {
+            if let t = total, have >= t { break }
+            let offsets: [UInt64]
+            if let t = total {
+                offsets = Array(stride(from: have, to: t, by: Int(Self.chunk)).prefix(Self.window))
+            } else {
+                offsets = [have]
+            }
+            let reqs = try await background { try offsets.map { try client.blobGetRequest(contactId: cid, messageId: mid, offset: $0) } }
+            for resp in try await l.requestMany(reqs) {
+                switch resp {
+                case .blobData(let off, let size, let data):
+                    total = size
+                    have = try await background { try client.attachmentWriteChunk(contactId: cid, messageId: mid, offset: off, data: data) }
+                case .blobNotFound:
+                    _ = try? await background { try client.attachmentFailed(contactId: cid, messageId: mid, expired: true) }   // expirou (24 h)
+                    setProgress(mid, nil)
+                    await refreshViews(client)
+                    return
+                default:
+                    throw SessionError("resposta inesperada do relay")
+                }
+            }
+            if let t = total, t > 0 { setProgress(mid, Double(have) / Double(t)) }
+        }
+        let done = try await background { try client.attachmentDownloadFinished(contactId: cid, messageId: mid) }
+        setProgress(mid, nil)
+        await refreshViews(client)
+        // Ja esta no iPhone (e verificado): o relay pode apagar a copia dele.
+        if done.attachment?.state == .ready {
+            if let req = try? await background({ try client.blobDeleteRequest(contactId: cid, messageId: mid) }) {
+                _ = try? await l.request(req)
+            }
+        }
+    }
+
+    private static func relayRefusal(_ reason: String) -> String {
+        if reason.contains("invalida") || reason.contains("desativados") {
+            return "O servidor ainda não aceita imagens (tem de ser atualizado)."
+        }
+        if reason.contains("limite") { return "Atingiste o limite diário de imagens. Tenta amanhã." }
+        if reason.contains("espaco") { return "O servidor está sem espaço para imagens. Tenta mais tarde." }
+        return "Não foi possível enviar a imagem: \(reason)"
     }
 
     private struct SessionError: LocalizedError {
@@ -422,6 +616,7 @@ final class AppModel: ObservableObject {
                 }
             }
             if received {
+                kickTransfers()   // imagens recebidas: descarregar ja
                 _ = try? await background { try client.prepareDeliveryReceipts() }
                 if let open = ui.openChatId { await markRead(client, open) } else { await refreshViews(client) }
                 await flushOutbox()
