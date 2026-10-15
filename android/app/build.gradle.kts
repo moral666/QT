@@ -25,14 +25,15 @@ val relayPin: String = ((findProperty("qtRelayPin") as String?) ?: System.getenv
 
 android {
     namespace = "pt.qt.app"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "pt.qt.app"
         minSdk = 24            // igual ao `-P 24` do cargo-ndk
-        targetSdk = 34
-        versionCode = 1
-        versionName = "0.1-alpha"
+        // Android 16. Exigido pela Play Store para apps novas e atualizacoes.
+        targetSdk = 36
+        versionCode = 2
+        versionName = "0.2-alpha"
         // So as ABIs que o Rust compilou. Adiciona "x86_64" quando tiveres esse .so (emulador).
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
