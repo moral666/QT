@@ -57,5 +57,10 @@
 	<string>$(QT_RELAY_EDITABLE)</string>
 	<key>QTAllowCleartext</key>
 	<string>$(QT_ALLOW_CLEARTEXT)</string>
+	<!-- Fonte da marca (barra de topo) -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>Manrope-Bold.ttf</string>
+	</array>
 </dict>
 </plist>

@@ -59,6 +59,19 @@ private struct SpinningLogo: View {
     }
 }
 
+/// Marca na barra de topo: logo pequeno (parado) e "Sealer" em Manrope Bold
+/// (SIL Open Font License 1.1, ver Resources/Manrope-OFL.txt), igual ao Android.
+struct SealerWordmark: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Image("Logo").resizable().scaledToFit().frame(width: 30, height: 30)
+            Text("Sealer").font(.custom("Manrope-Bold", size: 22))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Sealer")
+    }
+}
+
 /// Barra de topo roxa (como a TopAppBar do Android), com voltar opcional e acoes.
 struct SealerTopBar<Title: View, Actions: View>: View {
     var onBack: (() -> Void)?

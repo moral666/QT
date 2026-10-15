@@ -95,6 +95,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -340,6 +341,23 @@ fun BrandMark(sizeDp: Int) {
     }
 }
 
+/** Fonte da marca: Manrope Bold (SIL Open Font License 1.1, ver assets/licencas/manrope-OFL.txt). */
+val ManropeBold = FontFamily(Font(R.font.manrope_bold, FontWeight.Bold))
+
+/** Marca na barra de topo: logo pequeno (parado) e "Sealer" em Manrope Bold. */
+@Composable
+fun SealerWordmark() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Image(
+            painter = painterResource(R.drawable.sealer_logo),
+            contentDescription = null,
+            modifier = Modifier.size(30.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text("Sealer", fontFamily = ManropeBold, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+    }
+}
+
 // ========================================================================= entrada
 
 @Composable
@@ -446,7 +464,7 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             SealerTopBar(
-                title = { Text(APP_NAME, fontWeight = FontWeight.SemiBold) },
+                title = { SealerWordmark() },
                 actions = {
                     IconButton(onClick = onMyId) { Icon(Icons.Filled.Share, contentDescription = "O meu ID") }
                     Box {
