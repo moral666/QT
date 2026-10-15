@@ -16,6 +16,7 @@ use crate::protocol::{
     deserialize_client_message, is_valid_user_id, serialize_server_message,
     user_id_from_signing_public, ClientMessage, DeliveredMessage, ServerMessage, AUTH_CONTEXT,
 };
+use crate::stats::{self, STATS};
 use crate::store::{Store, StoreError};
 use ed25519_dalek::{Signature, VerifyingKey};
 use qt_core::primitives::verify_signature;
@@ -72,7 +73,13 @@ pub async fn handle_connection_with(
     cfg: &ServerConfig,
 ) -> Result<(), ConnectionError> {
     let (mut ws, mut noise) =
-        ws_transport::server_accept_with(tcp_stream, &server_static_private, cfg.handshake_timeout).await?;
+        match ws_transport::server_accept_with(tcp_stream, &server_static_private, cfg.handshake_timeout).await {
+            Ok(x) => x,
+            Err(e) => {
+                stats::inc(&STATS.handshake_failed);
+                return Err(e.into());
+            }
+        };
 
     // ---------- Autenticacao obrigatoria (1.a mensagem) ----------
     let first = ws_transport::receive_encrypted_timeout(&mut ws, &mut noise, cfg.auth_timeout).await?;
@@ -81,6 +88,7 @@ pub async fn handle_connection_with(
             match verify_auth(&signing_public, &signature, noise.handshake_hash()) {
                 true => user_id_from_signing_public(&signing_public),
                 false => {
+                    stats::inc(&STATS.auth_failed);
                     reply(&mut ws, &mut noise, &err("autenticacao invalida")).await?;
                     ws_transport::close_gracefully(&mut ws).await;
                     return Err(ConnectionError::AuthFailed);
@@ -88,11 +96,13 @@ pub async fn handle_connection_with(
             }
         }
         _ => {
+            stats::inc(&STATS.auth_failed);
             reply(&mut ws, &mut noise, &err("autenticacao necessaria")).await?;
             ws_transport::close_gracefully(&mut ws).await;
             return Err(ConnectionError::AuthFailed);
         }
     };
+    stats::inc(&STATS.auth_ok);
     reply(&mut ws, &mut noise, &ServerMessage::Ack).await?;
 
     // ---------- Loop principal ----------
@@ -104,7 +114,10 @@ pub async fn handle_connection_with(
         };
         let response = match deserialize_client_message(&payload) {
             Ok(m) => handle_client_message(&store, &user_id, m).await,
-            Err(_) => err("mensagem invalida"),
+            Err(_) => {
+                stats::inc(&STATS.invalid_requests);
+                err("mensagem invalida")
+            }
         };
         if reply(&mut ws, &mut noise, &response).await.is_err() {
             break;
@@ -149,6 +162,7 @@ fn err(reason: &str) -> ServerMessage {
 
 /// Erros internos nunca chegam ao cliente em detalhe.
 fn internal(_e: StoreError) -> ServerMessage {
+    stats::inc(&STATS.internal_errors);
     err("erro interno")
 }
 
@@ -174,7 +188,10 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
                 });
             }
             match store.register_bundle(user_id, bundle_bytes).await {
-                Ok(()) => ServerMessage::Ack,
+                Ok(()) => {
+                    stats::inc(&STATS.bundles_registered);
+                    ServerMessage::Ack
+                }
                 Err(e) => internal(e),
             }
         }
@@ -183,8 +200,14 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
                 return err("user_id invalido");
             }
             match store.get_bundle(&user_id).await {
-                Ok(Some(bundle_bytes)) => ServerMessage::PreKeyBundle { bundle_bytes },
-                Ok(None) => ServerMessage::PreKeyBundleNotFound,
+                Ok(Some(bundle_bytes)) => {
+                    stats::inc(&STATS.bundles_fetched);
+                    ServerMessage::PreKeyBundle { bundle_bytes }
+                }
+                Ok(None) => {
+                    stats::inc(&STATS.bundles_not_found);
+                    ServerMessage::PreKeyBundleNotFound
+                }
                 Err(e) => internal(e),
             }
         }
@@ -196,8 +219,14 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
                 return err("mensagem com tamanho invalido");
             }
             match store.enqueue_message(to, sealed_from, ciphertext).await {
-                Ok(()) => ServerMessage::Ack,
-                Err(StoreError::QueueFull) => err("fila do destinatario cheia"),
+                Ok(()) => {
+                    stats::inc(&STATS.sends);
+                    ServerMessage::Ack
+                }
+                Err(StoreError::QueueFull) => {
+                    stats::inc(&STATS.queue_full);
+                    err("fila do destinatario cheia")
+                }
                 Err(e) => internal(e),
             }
         }
@@ -206,12 +235,16 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
                 return err("so podes ler a tua propria fila");
             }
             match store.peek_messages(&user_id, MAX_PAGE_BYTES).await {
-                Ok(raw) => ServerMessage::Messages {
+                Ok(raw) => {
+                    stats::inc(&STATS.fetches);
+                    stats::add(&STATS.delivered, raw.len() as u64);
+                    ServerMessage::Messages {
                     messages: raw
                         .into_iter()
                         .map(|m| DeliveredMessage { id: m.id, sealed_from: m.sealed_from, ciphertext: m.ciphertext })
                         .collect(),
-                },
+                    }
+                }
                 Err(e) => internal(e),
             }
         }
@@ -223,7 +256,10 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
                 return err("demasiados ids");
             }
             match store.ack_messages(&user_id, &ids).await {
-                Ok(_) => ServerMessage::Ack,
+                Ok(n) => {
+                    stats::add(&STATS.acked, n as u64);
+                    ServerMessage::Ack
+                }
                 Err(e) => internal(e),
             }
         }

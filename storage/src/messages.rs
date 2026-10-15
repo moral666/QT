@@ -222,6 +222,36 @@ pub fn delete_conversation(conn: &Connection, contact_id: &str) -> Result<(), St
     Ok(())
 }
 
+/// Mensagens ENVIADAS a `contact_id` que ainda nao chegaram (por enviar ou so
+/// "enviadas" ao relay, sem recibo "entregue"), da mais antiga para a mais
+/// recente. Usado quando a sessao com o contacto e reiniciada: estas
+/// mensagens foram cifradas com a sessao antiga e tem de ser reenviadas.
+pub fn outgoing_undelivered(conn: &Connection, contact_id: &str, limit: u32) -> Result<Vec<StoredMessage>, StorageError> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLS} FROM messages WHERE contact_id = ?1 AND outgoing = 1 AND status < ?2
+         ORDER BY seq DESC LIMIT ?3"
+    ))?;
+    let rows = stmt.query_map(params![contact_id, ST_DELIVERED, limit.clamp(1, 1000) as i64], row_to_msg)?;
+    let mut v = rows.collect::<Result<Vec<_>, _>>()?;
+    v.reverse();
+    Ok(v)
+}
+
+/// Volta a por uma mensagem enviada no estado "por enviar" (reenvio).
+pub fn reset_outgoing_to_pending(conn: &Connection, contact_id: &str, msg_id: &[u8]) -> Result<(), StorageError> {
+    conn.execute(
+        "UPDATE messages SET status = ?1 WHERE contact_id = ?2 AND msg_id = ?3 AND outgoing = 1",
+        params![ST_PENDING, contact_id, msg_id],
+    )?;
+    Ok(())
+}
+
+/// Apaga da outbox tudo o que ia para `contact_id` (envelopes de uma sessao antiga).
+pub fn outbox_delete_contact(conn: &Connection, contact_id: &str) -> Result<(), StorageError> {
+    conn.execute("DELETE FROM outbox WHERE contact_id = ?1", [contact_id])?;
+    Ok(())
+}
+
 // --------------------------------------------------------------------- outbox
 
 pub fn outbox_put(conn: &Connection, outbox_id: &[u8], contact_id: &str, kind: i64, blob: &[u8]) -> Result<(), StorageError> {

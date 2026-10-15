@@ -28,7 +28,10 @@ struct ChatScreen: View {
     let onAdd: (String, String) -> Void
     let onSafety: (Contact) -> Void
     let onLoadOlder: () -> Void
+    let onDeleteConversation: (String) -> Void
+    let onDeleteContact: (String) -> Void
 
+    @State private var deleteTarget: DeleteTarget?
     @State private var text = ""
     @State private var showAdd = false
     @FocusState private var inputFocused: Bool
@@ -74,6 +77,19 @@ struct ChatScreen: View {
                 if let contact {
                     TopBarIcon(systemName: "lock.fill", label: "Verificar segurança") { onSafety(contact) }
                 }
+                Menu {
+                    Button("Eliminar conversa", systemImage: "trash") {
+                        deleteTarget = .conversation(id: contactId, name: name)
+                    }
+                    .disabled(ui.chatMessages.isEmpty)
+                    Button("Apagar contacto", systemImage: "person.crop.circle.badge.minus", role: .destructive) {
+                        deleteTarget = .contact(id: contactId, name: name)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis").rotationEffect(.degrees(90))
+                        .font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Mais opções")
             })
 
             ScrollViewReader { proxy in
@@ -117,6 +133,7 @@ struct ChatScreen: View {
             }
         )
         .sheet(isPresented: $showAdd) { AddContactSheet(onAdd: onAdd) }
+        .deleteConfirmation($deleteTarget, onDeleteConversation: onDeleteConversation, onDeleteContact: onDeleteContact)
     }
 
     @ViewBuilder

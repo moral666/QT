@@ -155,6 +155,11 @@ fn init_connection(conn: &Connection) -> Result<(), StorageError> {
             envelope_id BLOB NOT NULL,
             seen_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
             PRIMARY KEY (contact_id, envelope_id)
+        );
+        -- Envelopes de contactos APAGADOS: so um hash (sem o contact_id em claro),
+        -- para que o relay nao consiga reentregar mensagens antigas e recriar a sessao.
+        CREATE TABLE IF NOT EXISTS seen_tombstones (
+            digest BLOB PRIMARY KEY
         );",
     )?;
     // Historico de mensagens e outbox (ver messages.rs): o texto passou a ser
@@ -465,6 +470,35 @@ pub fn prune_seen_envelopes(conn: &Connection, older_than_secs: i64) -> Result<u
 pub fn delete_session(conn: &Connection, contact_id: &str) -> Result<(), StorageError> {
     conn.execute("DELETE FROM sessions WHERE contact_id = ?1", [contact_id])?;
     conn.execute("DELETE FROM session_meta WHERE contact_id = ?1", [contact_id])?;
+    tombstone_seen_envelopes(conn, contact_id)?;
+    Ok(())
+}
+
+fn tombstone_digest(contact_id: &str, envelope_id: &[u8]) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"QT-SEEN-TOMBSTONE-v1");
+    h.update((contact_id.len() as u32).to_be_bytes());
+    h.update(contact_id.as_bytes());
+    h.update(envelope_id);
+    h.finalize().to_vec()
+}
+
+/// Troca os registos anti-replay de um contacto por hashes anonimos e apaga-os.
+/// O contacto deixa de aparecer em claro na base de dados, mas um envelope
+/// antigo reentregue pelo relay continua a ser reconhecido como repetido.
+pub fn tombstone_seen_envelopes(conn: &Connection, contact_id: &str) -> Result<(), StorageError> {
+    let ids: Vec<Vec<u8>> = {
+        let mut stmt = conn.prepare("SELECT envelope_id FROM seen_envelopes WHERE contact_id = ?1")?;
+        let rows = stmt.query_map([contact_id], |r| r.get::<_, Vec<u8>>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    {
+        let mut ins = conn.prepare("INSERT OR IGNORE INTO seen_tombstones (digest) VALUES (?1)")?;
+        for id in &ids {
+            ins.execute([tombstone_digest(contact_id, id)])?;
+        }
+    }
     conn.execute("DELETE FROM seen_envelopes WHERE contact_id = ?1", [contact_id])?;
     Ok(())
 }
@@ -475,7 +509,8 @@ pub fn wipe_all(conn: &Connection) -> Result<(), StorageError> {
     conn.execute_batch(
         "DELETE FROM identity; DELETE FROM sessions; DELETE FROM one_time_prekeys;
          DELETE FROM pq_prekeys; DELETE FROM noise_static; DELETE FROM session_meta;
-         DELETE FROM seen_envelopes; DELETE FROM kv; DELETE FROM messages; DELETE FROM outbox; VACUUM;",
+         DELETE FROM seen_envelopes; DELETE FROM seen_tombstones; DELETE FROM kv;
+         DELETE FROM messages; DELETE FROM outbox; VACUUM;",
     )?;
     Ok(())
 }
@@ -526,7 +561,15 @@ pub fn is_envelope_seen(conn: &Connection, contact_id: &str, envelope_id: &[u8])
         rusqlite::params![contact_id, envelope_id],
         |r| r.get(0),
     )?;
-    Ok(n > 0)
+    if n > 0 {
+        return Ok(true);
+    }
+    let t: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM seen_tombstones WHERE digest = ?1",
+        [tombstone_digest(contact_id, envelope_id)],
+        |r| r.get(0),
+    )?;
+    Ok(t > 0)
 }
 
 pub fn identity_exists(conn: &Connection) -> Result<bool, StorageError> {

@@ -150,6 +150,23 @@ async fn main() {
         .await
         .unwrap_or_else(|_| fatal("nao foi possivel abrir o socket TCP (porta ocupada/permissoes?)"));
 
+    // Estatisticas anonimas (so contagens), uma linha por minuto.
+    tokio::spawn(async {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            if let Some(line) = qt_server::stats::take_line(&qt_server::stats::STATS) {
+                println!("{line}");
+            }
+        }
+    });
+
+    // Limite de ligacoes simultaneas: protege a memoria e os descritores de
+    // ficheiro (um cliente mal comportado nao derruba o relay para todos).
+    let max_conns: usize = std::env::var("RELAY_MAX_CONNECTIONS").ok().and_then(|v| v.parse().ok()).unwrap_or(4096);
+    let slots = Arc::new(tokio::sync::Semaphore::new(max_conns));
+
     // LOGS: so informacao operacional. NUNCA enderecos IP/identificadores de
     // utilizadores, conteudo, chaves ou tokens.
     loop {
@@ -162,13 +179,25 @@ async fn main() {
             }
         };
 
+        let Ok(permit) = slots.clone().try_acquire_owned() else {
+            // Cheio: fecha logo (o cliente volta a tentar com backoff).
+            qt_server::stats::inc(&qt_server::stats::STATS.rejected_busy);
+            drop(tcp_stream);
+            continue;
+        };
+        qt_server::stats::inc(&qt_server::stats::STATS.connections);
+
         let store = store.clone();
         let static_private = static_keys.private.clone();
 
         tokio::spawn(async move {
+            let stats = &qt_server::stats::STATS;
+            stats.active.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             // O erro e descartado de proposito: nao e registado para nao
             // criar um log de metadados por ligacao.
             let _ = qt_server::handle_connection(tcp_stream, store, static_private).await;
+            stats.active.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            drop(permit);
         });
     }
 }

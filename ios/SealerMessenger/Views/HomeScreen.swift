@@ -9,7 +9,12 @@ struct HomeScreen: View {
     let onMyId: () -> Void
     let onSettings: () -> Void
     let onReadReceipts: (Bool) -> Void
+    let onDeleteConversation: (String) -> Void
+    let onDeleteContact: (String) -> Void
+    let onWipeAll: () -> Void
     @State private var showAdd = false
+    @State private var deleteTarget: DeleteTarget?
+    @State private var showWipe = false
     @Environment(\.chat) private var c
 
     var body: some View {
@@ -22,6 +27,8 @@ struct HomeScreen: View {
                     if Config.relayEditable {
                         Button("Relay (teste)", action: onSettings)
                     }
+                    Divider()
+                    Button("Apagar todos os dados", role: .destructive) { showWipe = true }
                 } label: {
                     Image(systemName: "ellipsis").rotationEffect(.degrees(90))
                         .font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44)
@@ -43,10 +50,23 @@ struct HomeScreen: View {
                             ConversationRow(name: name ?? "Desconhecido", contactId: conv.contactId, conv: conv) {
                                 onOpen(conv.contactId)
                             }
+                            .contextMenu {   // toque longo, como no Android
+                                Button("Eliminar conversa", systemImage: "trash") {
+                                    deleteTarget = .conversation(id: conv.contactId, name: name ?? "Desconhecido")
+                                }
+                                Button("Apagar contacto", systemImage: "person.crop.circle.badge.minus", role: .destructive) {
+                                    deleteTarget = .contact(id: conv.contactId, name: name ?? "Desconhecido")
+                                }
+                            }
                         }
                         ForEach(idle) { contact in
                             ConversationRow(name: contact.nickname, contactId: contact.contactId, conv: nil) {
                                 onOpen(contact.contactId)
+                            }
+                            .contextMenu {
+                                Button("Apagar contacto", systemImage: "person.crop.circle.badge.minus", role: .destructive) {
+                                    deleteTarget = .contact(id: contact.contactId, name: contact.nickname)
+                                }
                             }
                         }
                     }
@@ -68,6 +88,8 @@ struct HomeScreen: View {
             .padding(16)
         }
         .sheet(isPresented: $showAdd) { AddContactSheet(onAdd: onAddContact) }
+        .sheet(isPresented: $showWipe) { WipeAllSheet(onConfirm: onWipeAll) }
+        .deleteConfirmation($deleteTarget, onDeleteConversation: onDeleteConversation, onDeleteContact: onDeleteContact)
     }
 }
 

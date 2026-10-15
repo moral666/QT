@@ -11,6 +11,7 @@ rusqlite = { version = "0.31", features = ["sqlcipher"] }
 thiserror = "1"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 zeroize = "1"
+sha2 = "0.10"
 
 [features]
 default = []

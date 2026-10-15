@@ -439,6 +439,34 @@ Um plaintext fora deste formato (clientes antigos) é tratado como texto simples
 
 **Atomicidade** (`ffi/src/history.rs`): enviar = avançar o ratchet + guardar a mensagem + pôr o envelope na outbox, numa transação; receber = avançar o ratchet + marcar o envelope como visto + guardar a mensagem/aplicar o recibo + agendar o recibo "entregue", numa transação. A outbox só é limpa quando o relay confirma. Testes: `ffi/tests/history_flow.rs`.
 
+## 13. Sessoes cruzadas, reinicio de sessao e eliminacao
+
+**Sessoes cruzadas.** Se A e B iniciam uma sessao PQXDH um com o outro ao mesmo
+tempo, cada um recebe uma mensagem com cabecalho PQXDH (tipo 1) que a sua
+sessao nao decifra. Desempate deterministico, igual nos dois lados: fica a
+sessao iniciada por quem tem a chave de identidade X25519 *menor* (comparacao
+byte a byte). Quem perde adota a sessao do outro e volta a cifrar, com a sessao
+nova, as mensagens que ainda nao tinham recibo "entregue" (mesmo `msg_id`, por
+isso o destinatario nunca as mostra em duplicado). Quem ganha descarta a
+mensagem do outro (ela volta a chegar, ja na sessao certa).
+
+**Reinicio de sessao.** Com uma sessao estabelecida, uma mensagem tipo 1 que a
+sessao atual nao decifra, mas que abre uma sessao nova valida a partir do seu
+cabecalho, substitui a sessao (o contacto apagou-a e voltou a escrever). So o
+dono da chave privada de identidade do contacto consegue produzir isto (o
+PQXDH usa-a e o AEAD autentica as duas identidades). Um cabecalho com a mesma
+chave efemera que criou a sessao atual nunca a substitui (seria voltar atras).
+
+**Eliminacao.** *Eliminar conversa* apaga mensagens e outbox do contacto (a
+sessao mantem-se). *Apagar contacto* apaga tambem a sessao, os metadados e os
+registos anti-repeticao, que sao trocados por `SHA-256("QT-SEEN-TOMBSTONE-v1"
+|| len || contact_id || envelope_id)`: um envelope antigo reentregue pelo relay
+continua a ser reconhecido, sem o contacto ficar em claro. Tudo com
+`secure_delete` (paginas apagadas sobrescritas).
+
+**Tipos desconhecidos.** Um payload v1 com tipo que a versao nao conhece e
+guardado como aviso ("atualiza a app"), nunca como texto.
+
 ## Documentos relacionados
 
 - [`threat-model.md`](threat-model.md) — modelo de ameaças formal: quem

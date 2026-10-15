@@ -42,6 +42,8 @@ const MAX_ENVELOPE_LEN: usize = 1024 * 1024;
 pub const MAX_PLAINTEXT_LEN: usize = 10_000;
 const AUTH_CONTEXT: &[u8] = b"QT-RELAY-AUTH-v1";
 const MAX_OTPK_BATCH: u32 = 500;
+/// Chave efemera PQXDH do contacto que criou a sessao atual (lado que respondeu).
+pub(crate) const KV_PEER_EPH: &str = "peer_eph:";
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum QtError {
@@ -363,6 +365,7 @@ impl QtClient {
         let tx = c.unchecked_transaction()?;
         st::delete_session(&tx, &contact_id)?;
         st::kv_delete(&tx, &format!("pending:{contact_id}"))?;
+        st::kv_delete(&tx, &format!("{KV_PEER_EPH}{contact_id}"))?;
         tx.commit()?;
         Ok(())
     }
@@ -624,21 +627,58 @@ impl QtClient {
             return Err(QtError::Replay);
         }
 
+        // `state` e sempre uma copia carregada do disco: se a decifragem falhar,
+        // nada e persistido.
         let mut used_opk: Option<u32> = None;
         let mut new_session = false;
-        let mut state = match st::load_session(c, contact_id)? {
-            Some(s) => s,
+        // A sessao antiga foi substituida (sessoes cruzadas ou o contacto
+        // reiniciou a dele): as nossas mensagens ainda nao entregues tem de ser
+        // cifradas de novo com a sessao nova.
+        let mut replaced = false;
+        let (state, plaintext) = match st::load_session(c, contact_id)? {
             None => {
                 let h = header.ok_or(QtError::UnknownSession)?;
-                let (s, opk) = self.establish_responder(c, contact_id, h)?;
+                let (mut s, opk) = self.establish_responder(c, contact_id, h)?;
+                let p = s.decrypt(&msg).map_err(|_| QtError::Crypto)?;
                 used_opk = opk;
                 new_session = true;
-                s
+                (s, p)
             }
+            Some(mut s) => match s.decrypt(&msg) {
+                Ok(p) => (s, p),
+                Err(_) => {
+                    // So uma mensagem com cabecalho PQXDH pode abrir uma sessao nova.
+                    // Forjar uma exige a chave privada de identidade do contacto
+                    // (o PQXDH usa-a e o AEAD autentica as duas identidades), logo
+                    // nem o relay nem terceiros conseguem provocar isto.
+                    let h = header.ok_or(QtError::Crypto)?;
+                    // O mesmo cabecalho que criou a sessao atual NAO e uma sessao nova
+                    // (seria voltar atras no tempo): e so uma mensagem que ja nao se
+                    // consegue decifrar.
+                    if st::kv_get(c, &format!("{KV_PEER_EPH}{contact_id}"))?.as_deref() == Some(&h[..32]) {
+                        return Err(QtError::Crypto);
+                    }
+                    let (mut ns, opk) = self.establish_responder(c, contact_id, h).map_err(|_| QtError::Crypto)?;
+                    let p = ns.decrypt(&msg).map_err(|_| QtError::Crypto)?;
+                    let ours_pending = st::kv_get(c, &format!("pending:{contact_id}"))?.is_some();
+                    if ours_pending {
+                        // SESSOES CRUZADAS: os dois iniciaram uma sessao ao mesmo tempo.
+                        // Desempate deterministico e igual nos dois lados: fica a sessao
+                        // iniciada por quem tem a chave de identidade "menor". O outro
+                        // lado adota-a ao receber a nossa mensagem e reenvia as dele.
+                        let mine = st::load_identity(c)?.identity.public.to_bytes();
+                        let theirs = contact_to_identity(contact_id)?.to_bytes();
+                        if theirs >= mine {
+                            return Err(QtError::Crypto);
+                        }
+                    }
+                    used_opk = opk;
+                    new_session = true;
+                    replaced = true;
+                    (ns, p)
+                }
+            },
         };
-        // `state` e uma copia carregada do disco: se a decifragem falhar,
-        // nada e persistido (o ratchet em memoria pode ficar alterado, mas e descartado).
-        let plaintext = state.decrypt(&msg).map_err(|_| QtError::Crypto)?;
 
         let tx = c.unchecked_transaction()?;
         st::save_session(&tx, contact_id, &state)?;
@@ -662,6 +702,12 @@ impl QtClient {
         if let Some(mut m) = st::load_session_meta(&tx, contact_id)? {
             m.last_recv_seq += 1;
             st::save_session_meta(&tx, &m)?;
+        }
+        if let (true, Some(h)) = (new_session, header) {
+            st::kv_set(&tx, &format!("{KV_PEER_EPH}{contact_id}"), &h[..32])?;
+        }
+        if replaced {
+            crate::history::requeue_after_session_reset(self, &tx, contact_id)?;
         }
         // Ganchos do chamador (ex.: guardar a mensagem no historico) na MESMA transacao.
         after(&tx, contact_id, &env_id, &plaintext)?;

@@ -8,7 +8,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
@@ -110,6 +113,7 @@ fun AppRoot(vm: MainViewModel) {
                 ui, chatId, ui.contacts.firstOrNull { it.contactId == chatId },
                 onSend = vm::send, onBack = vm::closeChat, onAdd = vm::addContact,
                 onSafety = vm::showSafetyNumber, onLoadOlder = vm::loadOlder,
+                onDeleteConversation = vm::deleteConversation, onDeleteContact = vm::deleteContact,
             )
         }
         showSettings && BuildConfig.RELAY_EDITABLE -> {
@@ -120,6 +124,8 @@ fun AppRoot(vm: MainViewModel) {
             ui, onOpen = vm::openChat, onAddContact = vm::addContact,
             onMyId = { showMyId = true }, onSettings = { showSettings = true },
             onReadReceipts = vm::setReadReceipts,
+            onDeleteConversation = vm::deleteConversation, onDeleteContact = vm::deleteContact,
+            onWipeAll = vm::wipeAllData,
         )
     }
     if (showMyId) MyIdDialog(ui.publicId, onDismiss = { showMyId = false })
@@ -265,9 +271,15 @@ fun HomeScreen(
     onMyId: () -> Unit,
     onSettings: () -> Unit,
     onReadReceipts: (Boolean) -> Unit,
+    onDeleteConversation: (String) -> Unit,
+    onDeleteContact: (String) -> Unit,
+    onWipeAll: () -> Unit,
 ) {
     var showAdd by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    /** Conversa escolhida com toque longo: (contactId, nome). */
+    var actionsFor by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var showWipe by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             SealerTopBar(
@@ -286,6 +298,11 @@ fun HomeScreen(
                             if (BuildConfig.RELAY_EDITABLE) {
                                 DropdownMenuItem(text = { Text("Relay (teste)") }, onClick = { menu = false; onSettings() })
                             }
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Apagar todos os dados", color = MaterialTheme.colorScheme.error) },
+                                onClick = { menu = false; showWipe = true },
+                            )
                         }
                     }
                 },
@@ -309,16 +326,34 @@ fun HomeScreen(
                 LazyColumn(Modifier.fillMaxSize()) {
                     items(ui.conversations, key = { it.contactId }) { conv ->
                         val name = ui.contacts.firstOrNull { it.contactId == conv.contactId }?.nickname
-                        ConversationRow(name ?: "Desconhecido", conv.contactId, conv, onClick = { onOpen(conv.contactId) })
+                        ConversationRow(
+                            name ?: "Desconhecido", conv.contactId, conv,
+                            onClick = { onOpen(conv.contactId) },
+                            onLongClick = { actionsFor = conv.contactId to (name ?: "Desconhecido") },
+                        )
                     }
                     items(idle, key = { "idle-" + it.contactId }) { c ->
-                        ConversationRow(c.nickname, c.contactId, null, onClick = { onOpen(c.contactId) })
+                        ConversationRow(
+                            c.nickname, c.contactId, null,
+                            onClick = { onOpen(c.contactId) },
+                            onLongClick = { actionsFor = c.contactId to c.nickname },
+                        )
                     }
                 }
             }
         }
     }
     if (showAdd) AddContactDialog(onDismiss = { showAdd = false }, onAdd = { n, p -> onAddContact(n, p); showAdd = false })
+    actionsFor?.let { (cid, name) ->
+        DeleteActions(
+            name = name,
+            hasHistory = ui.conversations.any { it.contactId == cid },
+            onDismiss = { actionsFor = null },
+            onDeleteConversation = { onDeleteConversation(cid); actionsFor = null },
+            onDeleteContact = { onDeleteContact(cid); actionsFor = null },
+        )
+    }
+    if (showWipe) WipeAllDialog(onDismiss = { showWipe = false }, onConfirm = { showWipe = false; onWipeAll() })
 }
 
 @Composable
@@ -364,11 +399,15 @@ fun Avatar(name: String, seed: String, sizeDp: Int = 48) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ConversationRow(name: String, contactId: String, conv: ConversationSummary?, onClick: () -> Unit) {
+fun ConversationRow(
+    name: String, contactId: String, conv: ConversationSummary?,
+    onClick: () -> Unit, onLongClick: () -> Unit = {},
+) {
     val last = conv?.lastMessage
     val unread = conv?.unread ?: 0u
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    Column(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Avatar(name, contactId)
             Spacer(Modifier.width(14.dp))
@@ -479,10 +518,13 @@ fun ChatScreen(
     ui: UiState, contactId: String, contact: Contact?,
     onSend: (Contact, String) -> Unit, onBack: () -> Unit, onAdd: (String, String) -> Unit,
     onSafety: (Contact) -> Unit, onLoadOlder: () -> Unit,
+    onDeleteConversation: (String) -> Unit, onDeleteContact: (String) -> Unit,
 ) {
     val colors = LocalChatColors.current
     var text by remember { mutableStateOf("") }
     var showAdd by remember { mutableStateOf(false) }
+    var chatMenu by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
     val name = contact?.nickname ?: "Desconhecido"
     // Mensagens da MAIS RECENTE para a mais antiga; com reverseLayout a lista
     // fica colada ao fundo e "subir" percorre o passado.
@@ -520,6 +562,16 @@ fun ChatScreen(
                 actions = {
                     if (contact != null) {
                         IconButton(onClick = { onSafety(contact) }) { Icon(Icons.Filled.Lock, contentDescription = "Verificar segurança") }
+                    }
+                    Box {
+                        IconButton(onClick = { chatMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções") }
+                        DropdownMenu(expanded = chatMenu, onDismissRequest = { chatMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Eliminar conversa ou contacto") },
+                                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                                onClick = { chatMenu = false; showDelete = true },
+                            )
+                        }
                     }
                 },
             )
@@ -597,6 +649,109 @@ fun ChatScreen(
         }
     }
     if (showAdd) AddContactDialog(onDismiss = { showAdd = false }, onAdd = { n, p -> onAdd(n, p); showAdd = false })
+    if (showDelete) {
+        DeleteActions(
+            name = name,
+            hasHistory = ui.chatMessages.isNotEmpty(),
+            onDismiss = { showDelete = false },
+            onDeleteConversation = { onDeleteConversation(contactId); showDelete = false },
+            onDeleteContact = { onDeleteContact(contactId); showDelete = false },
+        )
+    }
+}
+
+// ===================================================================== eliminar
+
+/**
+ * Escolha + confirmacao. Dois passos de proposito: eliminar e permanente
+ * (as paginas apagadas sao sobrescritas na base de dados cifrada).
+ */
+@Composable
+fun DeleteActions(
+    name: String,
+    hasHistory: Boolean,
+    onDismiss: () -> Unit,
+    onDeleteConversation: () -> Unit,
+    onDeleteContact: () -> Unit,
+) {
+    var confirm by remember { mutableStateOf<String?>(null) }   // "conversa" | "contacto"
+    when (confirm) {
+        null -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { confirm = "conversa" }, enabled = hasHistory, modifier = Modifier.fillMaxWidth()) {
+                        Text("Eliminar conversa", modifier = Modifier.fillMaxWidth())
+                    }
+                    TextButton(onClick = { confirm = "contacto" }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Apagar contacto", color = MaterialTheme.colorScheme.error, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        )
+        "conversa" -> AlertDialog(
+            onDismissRequest = onDismiss,
+            icon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+            title = { Text("Eliminar conversa?") },
+            text = {
+                Text(
+                    "Todas as mensagens com $name são apagadas para sempre deste telemóvel, incluindo as que ainda " +
+                        "não foram enviadas. Não é possível recuperá-las.\n\nO contacto mantém-se e podem continuar a falar. " +
+                        "As mensagens no telemóvel da outra pessoa não são apagadas.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = onDeleteConversation) { Text("Eliminar", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        )
+        else -> AlertDialog(
+            onDismissRequest = onDismiss,
+            icon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+            title = { Text("Apagar contacto?") },
+            text = {
+                Text(
+                    "$name é removido da tua lista e são apagadas para sempre deste telemóvel: as mensagens, " +
+                        "as que estavam por enviar e as chaves da conversa cifrada. Não é possível recuperar.\n\n" +
+                        "Se voltarem a falar, começa uma conversa cifrada nova. As mensagens no telemóvel da outra " +
+                        "pessoa não são apagadas.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = onDeleteContact) { Text("Apagar", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        )
+    }
+}
+
+/** Apagar tudo: so com a palavra APAGAR escrita (evita toques acidentais). */
+@Composable
+fun WipeAllDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    var typed by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text("Apagar todos os dados?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "São apagados para sempre deste telemóvel: o teu ID e as tuas chaves, todos os contactos, " +
+                        "todas as conversas e as definições. O teu ID atual deixa de funcionar e terás de criar um novo.",
+                )
+                Text("Para confirmar, escreve APAGAR:", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(typed, { typed = it }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = typed.trim() == "APAGAR") {
+                Text("Apagar tudo", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
 }
 
 @Composable

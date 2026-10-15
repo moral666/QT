@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+: allowBackup="false" ja NAO impede a copia direta entre aparelhos
+  (ao configurar um telemovel novo). A base de dados so abre com a chave do
+  Keystore DESTE aparelho, por isso uma copia seria inutil no aparelho novo e
+  deixaria a app bloqueada ("chave indisponivel"). Nada e copiado, nem para a
+  nuvem nem entre aparelhos.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>
