@@ -23,7 +23,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::client::{bad, hex, unhex, QtClient, QtError};
+use crate::client::{bad, contact_to_identity, hex, unhex, QtClient, QtError};
 use qt_storage as st;
 use qt_storage::messages as hm;
 use sha2::{Digest, Sha256};
@@ -159,6 +159,9 @@ fn encode_receipt(id: &[u8; 16], sent_at: i64, status: i64, ids: &[Vec<u8>]) -> 
 #[derive(Debug, PartialEq)]
 enum Payload {
     Text { id: Vec<u8>, sent_at: i64, text: String },
+    /// Tipo de mensagem de uma versao MAIS RECENTE da app (ficheiros, grupos...).
+    /// Mostra-se um aviso em vez de bytes sem sentido.
+    Unsupported { id: Vec<u8>, sent_at: i64 },
     Receipt { status: i64, ids: Vec<Vec<u8>> },
 }
 
@@ -191,7 +194,7 @@ fn decode(plain: &[u8], legacy_id: &[u8]) -> Payload {
             }
             Payload::Receipt { status, ids: b[3..].chunks(16).map(|c| c.to_vec()).collect() }
         }
-        _ => legacy(),
+        _ => Payload::Unsupported { id, sent_at },
     }
 }
 
@@ -316,6 +319,15 @@ impl QtClient {
                     }
                 }
                 Payload::Receipt { .. } => ReceiveResult::NoChange { contact_id: contact_id.to_string() },
+                Payload::Unsupported { id, sent_at } => {
+                    match hm::insert_message(tx, &id, contact_id, false, hm::KIND_TEXT, UNSUPPORTED_TEXT, sent_at, now, hm::ST_RECEIVED)? {
+                        Some(_) => {
+                            let m = hm::get_message(tx, contact_id, &id)?.ok_or(QtError::Storage)?;
+                            ReceiveResult::NewMessage { message: to_chat(&m) }
+                        }
+                        None => ReceiveResult::NoChange { contact_id: contact_id.to_string() },
+                    }
+                }
             });
             Ok(())
         };
@@ -391,8 +403,12 @@ impl QtClient {
             .collect())
     }
 
-    /// Apaga o historico e a outbox de uma conversa (a sessao mantem-se).
+    /// ELIMINAR CONVERSA: apaga de forma permanente todas as mensagens desta
+    /// conversa (e o que ainda estava por enviar). A sessao cifrada mantem-se,
+    /// por isso a conversa pode continuar. Com `secure_delete` as paginas
+    /// apagadas sao sobrescritas no ficheiro (nao ficam recuperaveis).
     pub fn delete_conversation(&self, contact_id: String) -> Result<(), QtError> {
+        let _ = contact_to_identity(&contact_id)?;
         let c = self.lock()?;
         let tx = c.unchecked_transaction()?;
         hm::delete_conversation(&tx, &contact_id)?;
@@ -400,11 +416,61 @@ impl QtClient {
         tx.commit()?;
         Ok(())
     }
+
+    /// APAGAR CONTACTO: apaga de forma permanente as mensagens, o que estava
+    /// por enviar, a sessao cifrada (chaves do Double Ratchet) e os metadados
+    /// deste contacto. Os registos anti-replay passam a hashes anonimos (sem o
+    /// contacto em claro), para o relay nao conseguir reentregar mensagens
+    /// antigas. Se o contacto voltar a ser adicionado, comeca uma sessao nova.
+    pub fn delete_contact(&self, contact_id: String) -> Result<(), QtError> {
+        let _ = contact_to_identity(&contact_id)?;
+        let c = self.lock()?;
+        let tx = c.unchecked_transaction()?;
+        hm::delete_conversation(&tx, &contact_id)?;
+        st::kv_delete(&tx, &format!("{KV_PENDING_DELIVERED}{contact_id}"))?;
+        st::kv_delete(&tx, &format!("pending:{contact_id}"))?;
+        st::kv_delete(&tx, &format!("{}{contact_id}", crate::client::KV_PEER_EPH))?;
+        st::delete_session(&tx, &contact_id)?;
+        tx.commit()?;
+        Ok(())
+    }
+}
+
+/// Texto mostrado quando chega um tipo de mensagem que esta versao nao conhece.
+pub const UNSUPPORTED_TEXT: &str =
+    "⚠️ Esta mensagem usa uma funcionalidade que esta versão da app ainda não suporta. Atualiza o SealerMessenger para a ver.";
+
+/// A sessao com `contact_id` foi substituida por uma nova (sessoes cruzadas ou
+/// o contacto reiniciou a dele): os envelopes da outbox e as mensagens ainda
+/// sem recibo "entregue" foram cifrados com a sessao antiga, que o contacto ja
+/// nao consegue ler. Volta a cifra-las com a sessao nova (mesmo id, por isso o
+/// destinatario nunca as mostra em duplicado) e volta a pô-las na outbox.
+/// Corre DENTRO da transacao que instala a sessao nova.
+pub(crate) fn requeue_after_session_reset(client: &QtClient, tx: &st::rusqlite::Connection, contact_id: &str) -> Result<(), QtError> {
+    hm::outbox_delete_contact(tx, contact_id)?;
+    for m in hm::outgoing_undelivered(tx, contact_id, 200)? {
+        if m.kind != hm::KIND_TEXT {
+            continue;
+        }
+        let Ok(id) = <[u8; 16]>::try_from(m.msg_id.as_slice()) else { continue };
+        let blob = client.seal_with(tx, contact_id, &encode_text(&id, m.sent_at, &m.body))?;
+        hm::outbox_put(tx, &id, contact_id, hm::OUTBOX_MESSAGE, &blob)?;
+        hm::reset_outgoing_to_pending(tx, contact_id, &id)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tipo_desconhecido_de_versao_nova_vira_aviso_e_nao_lixo() {
+        let id = [7u8; 16];
+        let mut p = encode_text(&id, 123, "x");
+        p[1] = 9; // tipo que esta versao nao conhece (ex.: ficheiro)
+        assert_eq!(decode(&p, &[0; 16]), Payload::Unsupported { id: id.to_vec(), sent_at: 123 });
+    }
 
     #[test]
     fn texto_e_recibo_ida_e_volta() {

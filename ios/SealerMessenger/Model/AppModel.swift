@@ -234,6 +234,60 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // ------------------------------------------------- eliminacao (permanente)
+
+    /// ELIMINAR CONVERSA: apaga para sempre as mensagens desta conversa neste
+    /// aparelho. O contacto e a sessao cifrada mantem-se.
+    func deleteConversation(_ contactId: String) {
+        Task {
+            guard let client = qt else { return }
+            do {
+                try await background { try client.deleteConversation(contactId: contactId) }
+                if ui.openChatId == contactId { ui.chatMessages = []; ui.chatHasMore = false }
+                await refreshViews(client)
+            } catch {
+                showError("Nao foi possivel eliminar a conversa: \(safeMessage(error))")
+            }
+        }
+    }
+
+    /// APAGAR CONTACTO: mensagens, envios pendentes, chaves da sessao e o contacto.
+    func deleteContact(_ contactId: String) {
+        Task {
+            guard let client = qt else { return }
+            let list = ui.contacts.filter { $0.contactId != contactId }
+            do {
+                try await background { try client.deleteContact(contactId: contactId) }
+                try await background { try ContactStore.save(list) }
+                ui.contacts = list
+                if ui.openChatId == contactId { closeChat() }
+                await refreshViews(client)
+            } catch {
+                showError("Nao foi possivel apagar o contacto: \(safeMessage(error))")
+            }
+        }
+    }
+
+    /// APAGAR TODOS OS DADOS deste aparelho: identidade, chaves, contactos, conversas, definicoes.
+    func wipeAllData() {
+        Task {
+            guard let client = qt else { return }
+            poller?.cancel()
+            if let l = link { await l.close() }
+            link = nil
+            do {
+                try await background { try client.deleteIdentity() }
+                try? await background { try ContactStore.wipe() }
+                for k in ["relay_url", "relay_key", "read_receipts"] { prefs.removeObject(forKey: k) }
+                ui = UiState()
+                ui.loading = false
+                ui.hasIdentity = false
+            } catch {
+                showError("Nao foi possivel apagar os dados: \(safeMessage(error))")
+            }
+        }
+    }
+
     func setReadReceipts(_ on: Bool) {
         prefs.set(on, forKey: "read_receipts")
         ui.readReceipts = on

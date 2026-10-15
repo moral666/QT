@@ -32,6 +32,11 @@ enum ContactStore {
         return rows.map { Contact(nickname: $0.n, publicId: $0.p, relayId: $0.r) }
     }
 
+    static func wipe() throws {
+        let url = try file()
+        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+    }
+
     static func save(_ contacts: [Contact]) throws {
         let rows = contacts.map { Row(n: $0.nickname, p: $0.publicId, r: $0.relayId) }
         let plain = try JSONEncoder().encode(rows)

@@ -15,6 +15,7 @@
 pub mod client;
 pub mod connection;
 pub mod protocol;
+pub mod stats;
 pub mod store;
 
 pub use connection::{handle_connection, handle_connection_with, ServerConfig};

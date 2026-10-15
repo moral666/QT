@@ -189,6 +189,78 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ------------------------------------------------- eliminacao (permanente)
+
+    /**
+     * ELIMINAR CONVERSA: apaga para sempre as mensagens desta conversa neste
+     * aparelho (incluindo as que ainda estavam por enviar). O contacto e a
+     * sessao cifrada mantem-se, por isso podem continuar a falar.
+     */
+    fun deleteConversation(contactId: String) = io {
+        val client = qt ?: return@io
+        try {
+            client.deleteConversation(contactId)
+            _ui.update {
+                if (it.openChatId == contactId) it.copy(chatMessages = emptyList(), chatHasMore = false) else it
+            }
+            refreshViews(client)
+        } catch (e: Exception) {
+            error("Nao foi possivel eliminar a conversa: ${e.safeMsg()}")
+        }
+    }
+
+    /**
+     * APAGAR CONTACTO: apaga para sempre as mensagens, o que estava por enviar,
+     * as chaves da sessao cifrada e o proprio contacto. Se voltarem a falar,
+     * comeca uma sessao nova (o outro lado adota-a automaticamente).
+     */
+    fun deleteContact(contactId: String) = io {
+        val client = qt ?: return@io
+        try {
+            // Primeiro o Rust (mensagens + chaves), na mesma transacao; depois a lista.
+            client.deleteContact(contactId)
+            val list = _ui.value.contacts.filter { it.contactId != contactId }
+            contactStore.save(list)
+            _ui.update {
+                it.copy(
+                    contacts = list,
+                    openChatId = if (it.openChatId == contactId) null else it.openChatId,
+                    chatMessages = if (it.openChatId == contactId) emptyList() else it.chatMessages,
+                    chatHasMore = if (it.openChatId == contactId) false else it.chatHasMore,
+                )
+            }
+            refreshViews(client)
+        } catch (e: Exception) {
+            error("Nao foi possivel apagar o contacto: ${e.safeMsg()}")
+        }
+    }
+
+    /**
+     * APAGAR TODOS OS DADOS: identidade, chaves, contactos, conversas e
+     * definicoes deste aparelho. Irreversivel: o teu ID deixa de existir.
+     */
+    fun wipeAllData() = io {
+        val client = qt ?: return@io
+        try {
+            poller?.cancel()
+            link?.close()
+            link = null
+            client.deleteIdentity()          // secure_delete + VACUUM no Rust
+            contactStore.wipe()
+            prefs.edit().clear().apply()
+            _ui.update {
+                UiState(
+                    loading = false,
+                    hasIdentity = false,
+                    relayUrl = BuildConfig.RELAY_URL,
+                    relayKeyHex = BuildConfig.RELAY_PIN,
+                )
+            }
+        } catch (e: Exception) {
+            error("Nao foi possivel apagar os dados: ${e.safeMsg()}")
+        }
+    }
+
     fun setReadReceipts(on: Boolean) {
         prefs.edit().putBoolean("read_receipts", on).apply()
         _ui.update { it.copy(readReceipts = on) }

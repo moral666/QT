@@ -20,7 +20,8 @@ struct AppRoot: View {
                     ui: ui, contactId: chatId,
                     contact: ui.contacts.first { $0.contactId == chatId },
                     onSend: model.send, onBack: model.closeChat, onAdd: model.addContact,
-                    onSafety: model.showSafetyNumber, onLoadOlder: model.loadOlder
+                    onSafety: model.showSafetyNumber, onLoadOlder: model.loadOlder,
+                    onDeleteConversation: model.deleteConversation, onDeleteContact: model.deleteContact
                 )
                 .transition(.move(edge: .trailing))
             } else if showSettings && Config.relayEditable {
@@ -30,7 +31,9 @@ struct AppRoot: View {
                 HomeScreen(
                     ui: ui, onOpen: model.openChat, onAddContact: model.addContact,
                     onMyId: { showMyId = true }, onSettings: { showSettings = true },
-                    onReadReceipts: model.setReadReceipts
+                    onReadReceipts: model.setReadReceipts,
+                    onDeleteConversation: model.deleteConversation, onDeleteContact: model.deleteContact,
+                    onWipeAll: model.wipeAllData
                 )
             }
         }
@@ -210,6 +213,81 @@ struct AddContactSheet: View {
         }
         .padding(24)
         .presentationDetents([.medium, .large])
+        .presentationBackground(c.surface)
+    }
+}
+
+// ===================================================================== eliminar
+
+/// O que esta a ser confirmado (dois passos de proposito: e permanente).
+enum DeleteTarget: Identifiable {
+    case conversation(id: String, name: String)
+    case contact(id: String, name: String)
+    var id: String {
+        switch self {
+        case .conversation(let id, _): return "conv-" + id
+        case .contact(let id, _): return "contact-" + id
+        }
+    }
+}
+
+extension View {
+    /// Mesmo texto e os mesmos dois passos que na app Android.
+    func deleteConfirmation(_ target: Binding<DeleteTarget?>,
+                            onDeleteConversation: @escaping (String) -> Void,
+                            onDeleteContact: @escaping (String) -> Void) -> some View {
+        alert(
+            target.wrappedValue.map { t -> String in
+                if case .conversation = t { return "Eliminar conversa?" } else { return "Apagar contacto?" }
+            } ?? "",
+            isPresented: Binding(get: { target.wrappedValue != nil }, set: { if !$0 { target.wrappedValue = nil } }),
+            presenting: target.wrappedValue,
+            actions: { t in
+                switch t {
+                case .conversation(let id, _):
+                    Button("Eliminar", role: .destructive) { onDeleteConversation(id) }
+                case .contact(let id, _):
+                    Button("Apagar", role: .destructive) { onDeleteContact(id) }
+                }
+                Button("Cancelar", role: .cancel) {}
+            },
+            message: { t in
+                switch t {
+                case .conversation(_, let name):
+                    Text("Todas as mensagens com \(name) são apagadas para sempre deste telemóvel, incluindo as que ainda não foram enviadas. Não é possível recuperá-las.\n\nO contacto mantém-se e podem continuar a falar. As mensagens no telemóvel da outra pessoa não são apagadas.")
+                case .contact(_, let name):
+                    Text("\(name) é removido da tua lista e são apagadas para sempre deste telemóvel: as mensagens, as que estavam por enviar e as chaves da conversa cifrada. Não é possível recuperar.\n\nSe voltarem a falar, começa uma conversa cifrada nova. As mensagens no telemóvel da outra pessoa não são apagadas.")
+                }
+            }
+        )
+    }
+}
+
+/// Apagar tudo: so com a palavra APAGAR escrita (evita toques acidentais).
+struct WipeAllSheet: View {
+    let onConfirm: () -> Void
+    @State private var typed = ""
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.chat) private var c
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { Spacer(); Image(systemName: "trash.fill").font(.title2).foregroundStyle(c.error); Spacer() }
+            Text("Apagar todos os dados?").font(.title2.bold()).frame(maxWidth: .infinity)
+            Text("São apagados para sempre deste telemóvel: o teu ID e as tuas chaves, todos os contactos, todas as conversas e as definições. O teu ID atual deixa de funcionar e terás de criar um novo.")
+                .font(.subheadline)
+            OutlinedField(label: "Para confirmar, escreve APAGAR:", text: $typed)
+            HStack {
+                Spacer()
+                Button("Cancelar") { dismiss() }
+                Button("Apagar tudo", role: .destructive) { dismiss(); onConfirm() }
+                    .disabled(typed.trimmingCharacters(in: .whitespaces) != "APAGAR")
+                    .padding(.leading, 16)
+            }
+            .font(.body.weight(.medium))
+        }
+        .padding(24)
+        .presentationDetents([.medium])
         .presentationBackground(c.surface)
     }
 }
