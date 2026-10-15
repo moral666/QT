@@ -64,6 +64,28 @@ class RelayLink(
         throw IOException("relay indisponivel: ${last?.message}", last)
     }
 
+    /**
+     * Varios pedidos seguidos e so depois as respostas, pela mesma ordem: para os
+     * blocos dos anexos, sem esperar uma volta inteira a rede por cada bloco.
+     * Sem repeticao automatica: se falhar, quem chama retoma (o relay diz onde ficou).
+     */
+    suspend fun requestMany(requests: List<ByteArray>): List<RelayResponse> = lock.withLock {
+        val c = try {
+            conn ?: connect().also { conn = it }
+        } catch (e: Exception) {
+            close(); throw e
+        }
+        try {
+            for (r in requests) send(c.ws, c.noise.encrypt(r))
+            requests.map {
+                val frame = withTimeout(REQUEST_MS) { c.inbox.receive() }
+                relayParseResponse(c.noise.decrypt(frame))
+            }
+        } catch (e: Exception) {
+            close(); throw e
+        }
+    }
+
     fun close() {
         conn?.let {
             runCatching { it.ws.close(1000, null) }

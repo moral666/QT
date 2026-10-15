@@ -127,6 +127,11 @@ dependencies {
     // telemovel, sem servicos da Google nem rede.
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    // Imagens e GIFs no chat: mostrar (Coil, com GIFs animados) e corrigir a rotacao
+    // das fotos em Android 7-8 (ExifInterface). Sem cache em disco: ver SealerImages.
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("io.coil-kt:coil-gif:2.7.0")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 }
 
 // Verificacao da assinatura do APK de release: `./gradlew :app:verifyReleaseSignature`

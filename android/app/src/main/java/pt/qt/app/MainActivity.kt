@@ -6,7 +6,22 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.content.MediaType
+import androidx.compose.foundation.content.ReceiveContentListener
+import androidx.compose.foundation.content.consume
+import androidx.compose.foundation.content.contentReceiver
+import androidx.compose.foundation.content.hasMediaType
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import java.io.File
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -72,8 +87,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -96,7 +109,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
@@ -232,6 +244,7 @@ fun AppRoot(vm: MainViewModel) {
                 onSend = vm::send, onBack = vm::closeChat, onAdd = vm::addContact,
                 onSafety = vm::showSafetyNumber, onLoadOlder = vm::loadOlder,
                 onDeleteConversation = vm::deleteConversation, onDeleteContact = vm::deleteContact,
+                onSendImage = vm::sendImage, loadAttachment = vm::attachmentBytes,
             )
         }
         showLockSettings -> {
@@ -769,16 +782,42 @@ fun AddContactDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
 
 // consumeWindowInsets era experimental em versoes antigas do Compose; o OptIn
 // garante que compila com qualquer versao do BOM.
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
     ui: UiState, contactId: String, contact: Contact?,
     onSend: (Contact, String) -> Unit, onBack: () -> Unit, onAdd: (String, String) -> Unit,
     onSafety: (Contact) -> Unit, onLoadOlder: () -> Unit,
     onDeleteConversation: (String) -> Unit, onDeleteContact: (String) -> Unit,
+    onSendImage: (Contact, Uri, Boolean, File?) -> Unit,
+    loadAttachment: suspend (String, String) -> ByteArray?,
 ) {
     val colors = LocalChatColors.current
-    var text by remember { mutableStateOf("") }
+    val ctx = LocalContext.current
+    // TextFieldState (e nao String): so este campo recebe GIFs e autocolantes do
+    // teclado (Gboard, SwiftKey...). Tambem sobrevive a rodar o ecra.
+    val input = rememberTextFieldState()
+    // Imagem escolhida na galeria, a espera de confirmacao (pre-visualizacao).
+    var picked by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var viewing by remember { mutableStateOf<ChatMessage?>(null) }
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) picked = uri
+    }
+    val keyboardImages = remember(contact) {
+        ReceiveContentListener { content ->
+            if (contact == null || !content.hasMediaType(MediaType.Image)) return@ReceiveContentListener content
+            var taken = false
+            content.consume { item ->
+                val uri = item.uri ?: return@consume false
+                if (!taken) {
+                    taken = true
+                    // Copia ja, enquanto o teclado da permissao de leitura.
+                    ImagePrep.copyToCache(ctx, uri)?.let { f -> onSendImage(contact, Uri.fromFile(f), false, f) }
+                }
+                true
+            }
+        }
+    }
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var chatMenu by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
@@ -848,7 +887,9 @@ fun ChatScreen(
                 // mensagem aparece ACIMA dela.
                 for (i in msgs.indices) {
                     val m = msgs[i]
-                    item(key = m.seq) { MessageBubble(m) }
+                    item(key = m.seq) {
+                        MessageBubble(m, ui.transfers[m.messageId], loadAttachment, onOpen = { viewing = m })
+                    }
                     val older = msgs.getOrNull(i + 1)
                     if (older == null || dayKey(older.localAtMs) != dayKey(m.localAtMs)) {
                         if (older != null || !ui.chatHasMore) {
@@ -881,23 +922,38 @@ fun ChatScreen(
                     Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.Bottom,
                 ) {
-                    TextField(
-                        value = text,
-                        onValueChange = { text = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Mensagem") },
-                        shape = RoundedCornerShape(24.dp),
-                        maxLines = 5,
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surface,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                        ),
+                    IconButton(
+                        onClick = {
+                            // O seletor de fotos e outro ecra: nao conta como sair da app (bloqueio).
+                            AutoLockPause.active = true
+                            pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    ) { Icon(Icons.Filled.Add, contentDescription = "Enviar imagem ou GIF") }
+                    BasicTextField(
+                        state = input,
+                        modifier = Modifier.weight(1f).contentReceiver(keyboardImages),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                        lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 1, maxHeightInLines = 5),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        decorator = { inner ->
+                            Box(
+                                Modifier.clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surface)
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                            ) {
+                                if (input.text.isEmpty()) {
+                                    Text("Mensagem", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                inner()
+                            }
+                        },
                     )
                     Spacer(Modifier.width(6.dp))
                     FloatingActionButton(
-                        onClick = { if (text.isNotBlank()) { onSend(contact, text); text = "" } },
+                        onClick = {
+                            val text = input.text.toString()
+                            if (text.isNotBlank()) { onSend(contact, text); input.clearText() }
+                        },
                         shape = CircleShape,
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -908,6 +964,16 @@ fun ChatScreen(
         }
     }
     if (showAdd) AddContactDialog(onDismiss = { showAdd = false }, onAdd = { n, p -> onAdd(n, p); showAdd = false })
+    picked?.let { uri ->
+        if (contact != null) {
+            SendImageDialog(
+                uri,
+                onSend = { original -> onSendImage(contact, uri, original, null); picked = null },
+                onDismiss = { picked = null },
+            )
+        }
+    }
+    viewing?.let { m -> AttachmentViewer(m, loadAttachment, onDismiss = { viewing = null }) }
     if (showDelete) {
         DeleteActions(
             name = name,
@@ -1045,7 +1111,12 @@ fun DaySeparator(ms: Long) {
 }
 
 @Composable
-fun MessageBubble(m: ChatMessage) {
+fun MessageBubble(
+    m: ChatMessage,
+    progress: Float? = null,
+    loadAttachment: suspend (String, String) -> ByteArray? = { _, _ -> null },
+    onOpen: () -> Unit = {},
+) {
     val c = LocalChatColors.current
     val shape = if (m.outgoing) {
         RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp)
@@ -1053,12 +1124,20 @@ fun MessageBubble(m: ChatMessage) {
         RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (m.outgoing) Arrangement.End else Arrangement.Start) {
+        val att = m.attachment
         Column(
             Modifier.widthIn(max = 300.dp).clip(shape)
                 .background(if (m.outgoing) c.outgoingBubble else c.incomingBubble)
-                .padding(start = 10.dp, end = 8.dp, top = 6.dp, bottom = 4.dp),
+                .padding(
+                    start = if (att != null) 4.dp else 10.dp, end = if (att != null) 4.dp else 8.dp,
+                    top = if (att != null) 4.dp else 6.dp, bottom = 4.dp,
+                ),
         ) {
-            Text(m.text, style = MaterialTheme.typography.bodyLarge, color = c.bubbleText)
+            if (att != null) {
+                AttachmentContent(m, att, progress, loadAttachment, onOpen)
+            } else {
+                Text(m.text, style = MaterialTheme.typography.bodyLarge, color = c.bubbleText)
+            }
             Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
                 Text(timeOf(m.localAtMs), fontSize = 11.sp, color = c.bubbleMeta)
                 if (m.outgoing) {

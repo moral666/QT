@@ -1,11 +1,13 @@
 package pt.qt.app
 
 import android.app.Application
+import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
+import java.io.IOException
 import javax.crypto.Cipher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +23,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import uniffi.qt_ffi.AttachmentRef
+import uniffi.qt_ffi.AttachmentState
 import uniffi.qt_ffi.ChatMessage
 import uniffi.qt_ffi.ConversationSummary
 import uniffi.qt_ffi.QtClient
@@ -65,6 +71,8 @@ data class UiState(
     val unlocking: Boolean = false,
     /** Mensagem no ecra de bloqueio (codigo errado, esperar...). */
     val lockMessage: String? = null,
+    /** Progresso (0 a 1) dos anexos a enviar/descarregar, por message_id. */
+    val transfers: Map<String, Float> = emptyMap(),
 )
 
 const val DEFAULT_LOCK_TIMEOUT_MS = 60_000L
@@ -82,6 +90,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var qt: QtClient? = null
     @Volatile private var link: RelayLink? = null
     @Volatile private var poller: Job? = null
+    /** Segunda ligacao ao relay, so para anexos: um envio grande nao atrasa as mensagens. */
+    @Volatile private var fileLink: RelayLink? = null
+    @Volatile private var transferJob: Job? = null
+    /** "Ha anexos para enviar/descarregar": acorda o ciclo de transferencias. */
+    private val transferKick = Channel<Unit>(Channel.CONFLATED)
     /** Chave da lista de contactos; so existe em memoria com a app desbloqueada. */
     @Volatile private var contactsKey: ByteArray? = null
     /** Chave do armazenamento a espera do BiometricPrompt para ativar a biometria. */
@@ -100,6 +113,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
 
     init {
+        ImagePrep.cleanCache(app)
         io { openStorage() }
     }
 
@@ -173,8 +187,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun closeSession() {
         poller?.cancel()
         poller = null
+        transferJob?.cancel()
+        transferJob = null
         link?.close()
         link = null
+        fileLink?.close()
+        fileLink = null
+        // Imagens decifradas que estavam em memoria para o ecra.
+        SealerImages.clearMemory()
         val c = qt
         qt = null
         c?.close()
@@ -373,6 +393,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         bio.disable()
         storageKeys.deleteKeyFile()
         for (suffix in listOf("", "-wal", "-shm", "-journal")) File(dbFile.path + suffix).delete()
+        // Imagens/GIFs (cifrados com chaves que estavam na base de dados apagada).
+        File(dbFile.path + ".anexos").deleteRecursively()
         contactStore.wipe()
         prefs.edit().clear().apply()
         _ui.update { UiState(loading = true) }
@@ -423,6 +445,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         poller?.cancel()
         link?.close()
         link = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
+        transferJob?.cancel()
+        fileLink?.close()
+        fileLink = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
         status("A ligar ao relay…")
         try {
             // Publicar (ou re-publicar) o bundle publico para que outros nos possam contactar.
@@ -434,6 +459,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         poller = viewModelScope.launch(Dispatchers.IO) {
             while (isActive) { pollOnce(); delay(POLL_MS) }
         }
+        transferJob = viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                val retry = try {
+                    runTransfers()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    true
+                }
+                // Depois de uma falha de rede tenta de novo daqui a 15 s (ou antes, se houver novidades).
+                if (retry) withTimeoutOrNull(RETRY_MS) { transferKick.receive() } else transferKick.receive()
+            }
+        }
+        transferKick.trySend(Unit)
     }
 
     // ------------------------------------------------------------------- contactos
@@ -551,7 +590,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             poller?.cancel()
             link?.close()
             link = null
-            client.deleteIdentity()          // secure_delete + VACUUM no Rust
+            transferJob?.cancel()
+            fileLink?.close()
+            fileLink = null
+            client.deleteIdentity()          // secure_delete + VACUUM no Rust (e os ficheiros dos anexos)
             // Depois apaga os ficheiros e as chaves (incluindo o bloqueio) e abre um armazenamento novo.
             resetStorage()
         } catch (e: Exception) {
@@ -599,6 +641,169 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             error("Nao foi possivel enviar: ${e.safeMsg()}")
         }
+    }
+
+    // ---------------------------------------------------------------- imagens/GIFs
+
+    /**
+     * Envia uma imagem/GIF. `uri` vem da galeria ou e uma copia do que o teclado
+     * mandou (`keyboardCopy`, apagada no fim). O ficheiro e preparado no telemovel,
+     * cifrado pelo Rust e enviado em segundo plano (ver `runTransfers`).
+     */
+    fun sendImage(contact: Contact, uri: Uri, original: Boolean, keyboardCopy: File? = null) = io {
+        val client = qt ?: return@io
+        val prepared = try {
+            ImagePrep.prepare(getApplication<Application>(), uri, original, keepAsIs = keyboardCopy != null)
+        } catch (e: ImageTooBigException) {
+            error("A imagem tem mais de 25 MB.")
+            return@io
+        } catch (e: Exception) {
+            error("Não foi possível ler esta imagem.")
+            return@io
+        } finally {
+            keyboardCopy?.delete()
+        }
+        try {
+            ensureSession(client, contact)
+            client.attachmentCreate(contact.contactId, prepared.file.path, prepared.mime, prepared.width.toUInt(), prepared.height.toUInt())
+            refreshViews(client)
+            transferKick.trySend(Unit)
+        } catch (e: Exception) {
+            error("Não foi possível enviar a imagem: ${e.safeMsg()}")
+        } finally {
+            prepared.file.delete()
+        }
+    }
+
+    /** A imagem decifrada, so em memoria, para mostrar no ecra. */
+    suspend fun attachmentBytes(contactId: String, messageId: String): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            qt?.attachmentRead(contactId, messageId)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun setProgress(messageId: String, p: Float?) = _ui.update {
+        it.copy(transfers = if (p == null) it.transfers - messageId else it.transfers + (messageId to p))
+    }
+
+    /**
+     * Envia e descarrega os anexos pendentes (tambem os que ficaram a meio antes de a
+     * app fechar). Devolve true se algo falhou por rede e deve ser tentado de novo.
+     */
+    private suspend fun runTransfers(): Boolean {
+        val client = qt ?: return false
+        val l = fileLink ?: return false
+        for (r in client.attachmentsPendingUpload()) {
+            val contact = _ui.value.contacts.firstOrNull { it.contactId == r.contactId } ?: continue
+            try {
+                upload(client, l, r, contact)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                setProgress(r.messageId, null)
+                return true
+            }
+        }
+        for (r in client.attachmentsPendingDownload()) {
+            try {
+                download(client, l, r)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                setProgress(r.messageId, null)
+                return true
+            }
+        }
+        return false
+    }
+
+    private suspend fun upload(client: QtClient, l: RelayLink, r: AttachmentRef, contact: Contact) {
+        val cid = r.contactId
+        val mid = r.messageId
+        val total = client.message(cid, mid)?.attachment?.transferSize ?: return
+        var start = 0uL
+        if (client.attachmentBlobId(cid, mid) == null) {
+            when (val resp = l.request(client.blobCreateRequest(cid, mid))) {
+                is RelayResponse.BlobCreated -> client.attachmentSetBlob(cid, mid, resp.blobId, resp.token)
+                is RelayResponse.Error -> {
+                    client.attachmentFailed(cid, mid, false)
+                    refreshViews(client)
+                    error(relayRefusal(resp.reason))
+                    return
+                }
+                else -> throw IOException("resposta inesperada do relay")
+            }
+        } else {
+            when (val resp = l.request(client.blobInfoRequest(cid, mid))) {
+                is RelayResponse.BlobStatus -> start = resp.received - resp.received % CHUNK
+                is RelayResponse.BlobNotFound -> {
+                    // Passaram mais de 24 h sem conseguir acabar o envio.
+                    client.attachmentFailed(cid, mid, false)
+                    refreshViews(client)
+                    return
+                }
+                else -> throw IOException("resposta inesperada do relay")
+            }
+        }
+        var offset = start
+        while (offset < total) {
+            val batch = generateSequence(offset) { it + CHUNK }.takeWhile { it < total }.take(WINDOW).toList()
+            val answers = l.requestMany(batch.map { client.blobPutRequest(cid, mid, it) })
+            if (answers.any { it !is RelayResponse.BlobStatus }) throw IOException("bloco recusado")
+            offset = batch.last() + CHUNK
+            setProgress(mid, (minOf(offset, total).toDouble() / total.toDouble()).toFloat())
+        }
+        ensureSession(client, contact)
+        client.attachmentUploaded(cid, mid)   // a mensagem com a chave entra na outbox
+        setProgress(mid, null)
+        refreshViews(client)
+        flushOutbox()
+    }
+
+    private suspend fun download(client: QtClient, l: RelayLink, r: AttachmentRef) {
+        val cid = r.contactId
+        val mid = r.messageId
+        var have = client.attachmentDownloadedBytes(cid, mid)
+        var total: ULong? = null
+        while (true) {
+            val t = total
+            if (t != null && have >= t) break
+            val offsets = if (t == null) listOf(have) else generateSequence(have) { it + CHUNK }.takeWhile { it < t }.take(WINDOW).toList()
+            for (resp in l.requestMany(offsets.map { client.blobGetRequest(cid, mid, it) })) {
+                when (resp) {
+                    is RelayResponse.BlobData -> {
+                        total = resp.size
+                        have = client.attachmentWriteChunk(cid, mid, resp.offset, resp.data)
+                    }
+                    is RelayResponse.BlobNotFound -> {
+                        client.attachmentFailed(cid, mid, true)   // expirou (24 h)
+                        setProgress(mid, null)
+                        refreshViews(client)
+                        return
+                    }
+                    else -> throw IOException("resposta inesperada do relay")
+                }
+            }
+            val now = total
+            if (now != null && now > 0uL) setProgress(mid, (have.toDouble() / now.toDouble()).toFloat())
+        }
+        val done = client.attachmentDownloadFinished(cid, mid)
+        setProgress(mid, null)
+        refreshViews(client)
+        // Ja esta no telemovel (e verificado): o relay pode apagar a copia dele.
+        if (done.attachment?.state == AttachmentState.READY) {
+            runCatching { l.request(client.blobDeleteRequest(cid, mid)) }
+        }
+    }
+
+    private fun relayRefusal(reason: String): String = when {
+        reason.contains("invalida") || reason.contains("desativados") ->
+            "O servidor ainda não aceita imagens (tem de ser atualizado)."
+        reason.contains("limite") -> "Atingiste o limite diário de imagens. Tenta amanhã."
+        reason.contains("espaco") -> "O servidor está sem espaço para imagens. Tenta mais tarde."
+        else -> "Não foi possível enviar a imagem: $reason"
     }
 
     private suspend fun ensureSession(client: QtClient, c: Contact) {
@@ -668,6 +873,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (ackIds.isNotEmpty()) l.request(client.relayRequestAck(ackIds))   // so DEPOIS de guardar
             }
             if (received) {
+                transferKick.trySend(Unit)   // imagens recebidas: descarregar ja
                 client.prepareDeliveryReceipts()
                 val open = _ui.value.openChatId
                 if (open != null) markRead(client, open) else refreshViews(client)
@@ -711,6 +917,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val MAX_PAGES = 20
         private const val MAX_TEXT_BYTES = 9_000
         private const val PAGE = 50
+        /** Bytes cifrados por bloco de anexo (igual ao Rust e ao relay). */
+        private const val CHUNK = 40_960uL
+        /** Blocos em transito ao mesmo tempo (~320 KB). */
+        private const val WINDOW = 8
+        private const val RETRY_MS = 15_000L
         fun minCodeLen(): Int = uniffi.qt_ffi.appLockMinCodeLen().toInt()
     }
 }
