@@ -59,7 +59,9 @@ final class AppModel: ObservableObject {
             let pin = Config.relayEditable ? (prefs.string(forKey: "relay_key") ?? Config.relayPin) : Config.relayPin
             let (has, publicId, convs) = try await background { () -> (Bool, String, [ConversationSummary]) in
                 let has = try client.hasIdentity()
-                return (has, has ? try client.exportPublicIdentity().publicId : "", try client.conversations())
+                var publicId = ""
+                if has { publicId = try client.exportPublicIdentity().publicId }
+                return (has, publicId, try client.conversations())
             }
             let contacts = (try? await background { ContactStore.load() }) ?? []
             ui.loading = false
@@ -198,9 +200,10 @@ final class AppModel: ObservableObject {
         ui.openChatId = contactId
         ui.chatMessages = []
         ui.chatHasMore = false
+        let limit = UInt32(Self.page)
         Task {
             guard let client = qt else { return }
-            guard let page = try? await background({ try client.messagesPage(contactId: contactId, beforeSeq: nil, limit: UInt32(Self.page)) }) else { return }
+            guard let page = try? await background({ try client.messagesPage(contactId: contactId, beforeSeq: nil, limit: limit) }) else { return }
             guard ui.openChatId == contactId else { return }
             ui.chatMessages = page
             ui.chatHasMore = page.count == Self.page
@@ -221,9 +224,10 @@ final class AppModel: ObservableObject {
         guard !loadingOlder, let client = qt, let cid = ui.openChatId, ui.chatHasMore,
               let oldest = ui.chatMessages.last?.seq else { return }
         loadingOlder = true
+        let limit = UInt32(Self.page)
         Task {
             defer { loadingOlder = false }
-            guard let older = try? await background({ try client.messagesPage(contactId: cid, beforeSeq: oldest, limit: UInt32(Self.page)) }) else { return }
+            guard let older = try? await background({ try client.messagesPage(contactId: cid, beforeSeq: oldest, limit: limit) }) else { return }
             guard ui.openChatId == cid else { return }
             ui.chatMessages += older
             ui.chatHasMore = older.count == Self.page
@@ -339,7 +343,7 @@ final class AppModel: ObservableObject {
                 let r = try await l.request(try await background { try client.relayRequestFetch() })
                 guard case .messages(let msgs) = r, !msgs.isEmpty else { break }
                 // Decifrar + guardar no historico + agendar o recibo, tudo numa transacao (no Rust).
-                let (ackIds, got) = await background { () -> ([UInt64], Bool) in
+                let (ackIds, got) = try await background { () -> ([UInt64], Bool) in
                     var ids: [UInt64] = []
                     var got = false
                     for m in msgs {
