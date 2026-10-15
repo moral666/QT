@@ -13,3 +13,9 @@ Os ícones das apps são gerados a partir do logotipo:
   telemóvel, Android 13+); `drawable-nodpi/sealer_logo.png` dentro da app.
 - iPhone: `ios/SealerMessenger/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png` e
   `Logo.imageset/Logo.png` dentro da app.
+
+## Fonte
+
+O nome na barra de topo usa a **Manrope Bold** (`fontes/Manrope-Bold.ttf`), gratuita e com a
+licença SIL Open Font License 1.1 (`fontes/Manrope-OFL.txt`). A licença vai dentro das apps
+(`android/app/src/main/assets/licencas/` e `ios/SealerMessenger/Resources/`), como a OFL pede.

@@ -19,7 +19,7 @@ struct HomeScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SealerTopBar(title: { Text(Config.appName).font(.title3.weight(.semibold)) }) {
+            SealerTopBar(title: { SealerWordmark() }) {
                 TopBarIcon(systemName: "square.and.arrow.up", label: "O meu ID", action: onMyId)
                 Menu {
                     Button("O meu ID", action: onMyId)
