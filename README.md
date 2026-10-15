@@ -62,7 +62,7 @@ Sim, de ponta a ponta — em versão **alpha**. **Não foi auditado de forma ind
 | `android/` | App Android (Kotlin/Compose) — toda a criptografia continua no Rust | ✅ Release assinada testada entre dois telemóveis reais através do relay na AWS |
 | `deploy/` | Instalação do relay numa EC2: Redis só em localhost com ACL, serviço systemd isolado, TLS automático | ✅ Usado no deploy atual |
 
-## O que falta, sem rodeios
+## ## O que falta, sem rodeios
 
 Para além da lista acima ("O que ainda falta"), a mais longo prazo:
 
