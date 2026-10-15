@@ -12,34 +12,36 @@ import androidx.compose.ui.graphics.Color
 /** Nome da app (titulo, ecra inicial). O nome no telemovel vem do AndroidManifest. */
 const val APP_NAME = "SEALER"
 
-/** Roxo da marca (o mesmo tom que a app ja usava). */
-private val Purple = Color(0xFF6750A4)
-private val PurpleDark = Color(0xFF4F378B)
+/** Roxo "galatico" da marca: mais escuro e mais vivo que o roxo Material original. */
+private val Purple = Color(0xFF5A2FD8)
+private val PurpleDark = Color(0xFF4A24B8)
 
 private val LightScheme = lightColorScheme(
     primary = Purple,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFEADDFF),
-    onPrimaryContainer = Color(0xFF21005D),
-    secondary = Color(0xFF625B71),
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
+    primaryContainer = Color(0xFFE6DCFF),
+    onPrimaryContainer = Color(0xFF1E0B5C),
+    secondary = Color(0xFF5F5873),
+    background = Color(0xFFFCFAFF),
+    surface = Color(0xFFFCFAFF),
 )
 
 private val DarkScheme = darkColorScheme(
-    primary = Color(0xFFD0BCFF),
-    onPrimary = Color(0xFF381E72),
+    primary = Color(0xFFB79CFF),
+    onPrimary = Color(0xFF2A0C7A),
     primaryContainer = PurpleDark,
     onPrimaryContainer = Color(0xFFEADDFF),
-    secondary = Color(0xFFCCC2DC),
-    background = Color(0xFF141218),
-    surface = Color(0xFF141218),
+    secondary = Color(0xFFCBC2E0),
+    background = Color(0xFF120E1F),
+    surface = Color(0xFF120E1F),
 )
 
 /** Cores especificas do mensageiro (barra, fundo do chat, bolhas, visto). */
 @Immutable
 data class ChatColors(
     val topBar: Color,
+    /** Fundo da barra de topo: gradiente "galaxia" (do indigo noturno ao violeta), com estrelas. */
+    val topBarGradient: List<Color>,
     val onTopBar: Color,
     val chatBackground: Color,
     val outgoingBubble: Color,
@@ -56,10 +58,11 @@ private val Avatars = listOf(
 )
 
 private val LightChat = ChatColors(
-    topBar = Purple,
+    topBar = Color(0xFF4321B0),
+    topBarGradient = listOf(Color(0xFF1E1052), Color(0xFF4321B0), Color(0xFF7038F0)),
     onTopBar = Color.White,
-    chatBackground = Color(0xFFF1ECF8),
-    outgoingBubble = Color(0xFFE3D7FF),
+    chatBackground = Color(0xFFEFEAFB),
+    outgoingBubble = Color(0xFFDCCDFF),
     incomingBubble = Color.White,
     bubbleText = Color(0xFF1C1B1F),
     bubbleMeta = Color(0xFF6E6A75),
@@ -68,11 +71,12 @@ private val LightChat = ChatColors(
 )
 
 private val DarkChat = ChatColors(
-    topBar = Color(0xFF2B2534),
-    onTopBar = Color(0xFFEDE6F7),
-    chatBackground = Color(0xFF17141C),
+    topBar = Color(0xFF22105E),
+    topBarGradient = listOf(Color(0xFF0E0828), Color(0xFF22105E), Color(0xFF3A1C96)),
+    onTopBar = Color(0xFFF1EAFF),
+    chatBackground = Color(0xFF0F0B1C),
     outgoingBubble = PurpleDark,
-    incomingBubble = Color(0xFF2B2930),
+    incomingBubble = Color(0xFF231C36),
     bubbleText = Color(0xFFEDE6F7),
     bubbleMeta = Color(0xFFB9B2C4),
     readTick = Color(0xFF53BDEB),

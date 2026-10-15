@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Mesmas cores da app Android (Theme.kt): roxo #6750A4, claro e escuro.
+/// Mesmas cores da app Android (Theme.kt): roxo "galatico" #5A2FD8, claro e escuro.
 extension Color {
     init(hex: UInt32) {
         self.init(.sRGB,
@@ -15,6 +15,8 @@ struct ChatColors {
     let primary: Color
     let onPrimary: Color
     let topBar: Color
+    /// Fundo da barra de topo: gradiente "galaxia" (do indigo noturno ao violeta), com estrelas.
+    let topBarGradient: [Color]
     let onTopBar: Color
     let background: Color
     let surface: Color
@@ -38,24 +40,28 @@ struct ChatColors {
     ]
 
     static let light = ChatColors(
-        primary: Color(hex: 0x6750A4), onPrimary: .white,
-        topBar: Color(hex: 0x6750A4), onTopBar: .white,
-        background: Color(hex: 0xFFFBFE), surface: Color(hex: 0xFFFBFE),
+        primary: Color(hex: 0x5A2FD8), onPrimary: .white,
+        topBar: Color(hex: 0x4321B0),
+        topBarGradient: [Color(hex: 0x1E1052), Color(hex: 0x4321B0), Color(hex: 0x7038F0)],
+        onTopBar: .white,
+        background: Color(hex: 0xFCFAFF), surface: Color(hex: 0xFCFAFF),
         surfaceVariant: Color(hex: 0xE7E0EC), onSurface: Color(hex: 0x1C1B1F), onSurfaceVariant: Color(hex: 0x49454F),
         secondaryContainer: Color(hex: 0xE8DEF8), onSecondaryContainer: Color(hex: 0x1D192B),
         outlineVariant: Color(hex: 0xCAC4D0), error: Color(hex: 0xB3261E),
-        chatBackground: Color(hex: 0xF1ECF8), outgoingBubble: Color(hex: 0xE3D7FF), incomingBubble: .white,
+        chatBackground: Color(hex: 0xEFEAFB), outgoingBubble: Color(hex: 0xDCCDFF), incomingBubble: .white,
         bubbleText: Color(hex: 0x1C1B1F), bubbleMeta: Color(hex: 0x6E6A75), readTick: Color(hex: 0x34B7F1)
     )
 
     static let dark = ChatColors(
-        primary: Color(hex: 0xD0BCFF), onPrimary: Color(hex: 0x381E72),
-        topBar: Color(hex: 0x2B2534), onTopBar: Color(hex: 0xEDE6F7),
-        background: Color(hex: 0x141218), surface: Color(hex: 0x141218),
+        primary: Color(hex: 0xB79CFF), onPrimary: Color(hex: 0x2A0C7A),
+        topBar: Color(hex: 0x22105E),
+        topBarGradient: [Color(hex: 0x0E0828), Color(hex: 0x22105E), Color(hex: 0x3A1C96)],
+        onTopBar: Color(hex: 0xF1EAFF),
+        background: Color(hex: 0x120E1F), surface: Color(hex: 0x120E1F),
         surfaceVariant: Color(hex: 0x49454F), onSurface: Color(hex: 0xE6E1E5), onSurfaceVariant: Color(hex: 0xCAC4D0),
         secondaryContainer: Color(hex: 0x4A4458), onSecondaryContainer: Color(hex: 0xE8DEF8),
         outlineVariant: Color(hex: 0x49454F), error: Color(hex: 0xF2B8B5),
-        chatBackground: Color(hex: 0x17141C), outgoingBubble: Color(hex: 0x4F378B), incomingBubble: Color(hex: 0x2B2930),
+        chatBackground: Color(hex: 0x0F0B1C), outgoingBubble: Color(hex: 0x4A24B8), incomingBubble: Color(hex: 0x231C36),
         bubbleText: Color(hex: 0xEDE6F7), bubbleMeta: Color(hex: 0xB9B2C4), readTick: Color(hex: 0x53BDEB)
     )
 }

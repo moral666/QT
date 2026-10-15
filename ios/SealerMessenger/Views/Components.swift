@@ -105,7 +105,33 @@ struct SealerTopBar<Title: View, Actions: View>: View {
         .frame(height: 56)
         .foregroundStyle(c.onTopBar)
         .tint(c.onTopBar)
-        .background(c.topBar.ignoresSafeArea(edges: .top))
+        .background(GalaxyBackground(colors: c.topBarGradient).ignoresSafeArea(edges: .top))
+    }
+}
+
+/// Fundo "galaxia" da barra de topo: gradiente diagonal com estrelas pequenas,
+/// sempre nas mesmas posicoes (igual a app Android).
+struct GalaxyBackground: View {
+    let colors: [Color]
+    private static let stars: [(x: Double, y: Double, size: Double, alpha: Double)] = {
+        var seed: UInt64 = 7
+        func next() -> Double {   // gerador simples e determinista
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            return Double(seed >> 11) / Double(1 << 53)
+        }
+        return (0..<28).map { _ in (next(), next(), 0.6 + next() * 0.8, 0.25 + next() * 0.45) }
+    }()
+
+    var body: some View {
+        LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            .overlay(
+                Canvas { context, size in
+                    for s in GalaxyBackground.stars {
+                        let rect = CGRect(x: s.x * size.width, y: s.y * size.height, width: s.size, height: s.size)
+                        context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(s.alpha)))
+                    }
+                }
+            )
     }
 }
 
