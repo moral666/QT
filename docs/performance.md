@@ -5,7 +5,7 @@ medido, como repetir a medição e o que ficou de fora.
 
 ---
 
-## 15 de outubro de 2026 — ligação ao Redis partilhada
+## 15 de outubro de 2026: ligação ao Redis partilhada
 
 Até aqui, o relay abria uma ligação TCP nova ao Redis em cada pedido. Passou a
 usar uma só ligação partilhada (`redis::aio::ConnectionManager`), que volta a
@@ -29,7 +29,7 @@ erros e sem reiniciar o relay.
 
 ---
 
-## 15 de outubro de 2026 — 10 000 ligações em simultâneo
+## 15 de outubro de 2026: 10 000 ligações em simultâneo
 
 ### Resultado
 
@@ -38,7 +38,7 @@ erros e sem reiniciar o relay.
 | Ligações abertas ao mesmo tempo | **10 000 de 10 000, 0 falhas** | **10 000 de 10 000, 0 falhas** |
 | Memória do relay (RSS) | **139 MB** no total, **~14 KB por ligação** | 137 MB, ~13 KB por ligação |
 | Memória do Redis | 11 MB | 7 MB |
-| Pedidos respondidos | ~3 300 por segundo, **0 erros** (298 154 no total) | — |
+| Pedidos respondidos | ~3 300 por segundo, **0 erros** (298 154 no total) | - |
 | CPU do relay | 33 % de um núcleo, cerca de **0,10 ms por pedido** | 0 % |
 | CPU do Redis | 21 % de um núcleo, cerca de 0,06 ms por pedido | 0 % |
 

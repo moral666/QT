@@ -1,10 +1,10 @@
 # QT
 
-**Versão alpha — não auditada.** Um mensageiro E2EE com criptografia
-pós-quântica — X3DH, PQXDH, Double Ratchet, Sealed Sender, Noise Protocol,
-tudo implementado em Rust — com app Android e relay na nuvem, já a
+**Versão alpha, não auditada.** Um mensageiro E2EE com criptografia
+pós-quântica (X3DH, PQXDH, Double Ratchet, Sealed Sender, Noise Protocol),
+tudo implementado em Rust, com app Android e relay na nuvem, já a
 funcionar de ponta a ponta. **Ainda não é um produto acabado nem deve ser
-usado para informação sensível** — ver a secção "Sê honesto comigo: isto
+usado para informação sensível.** Ver a secção "Sê honesto comigo: isto
 já funciona?" já a seguir.
 
 [Read this in English →](README.en.md)
@@ -12,17 +12,17 @@ já funciona?" já a seguir.
 ## Contexto
 
 Este projeto nasceu de um interesse genuíno em privacidade e segurança de
-sistemas — em particular, na questão de como construir comunicação em que a
+sistemas, em particular na questão de como construir comunicação em que a
 privacidade é garantida pelo desenho técnico e não só por uma política
 escrita (a "proteção de dados desde a conceção" que o RGPD pede). Em vez de
 ficar só na teoria, o objetivo foi
-implementar e testar cada peça a sério: não pseudocódigo, não diagramas —
+implementar e testar cada peça a sério: não pseudocódigo, não diagramas, mas
 código que compila, corre, e tem testes automáticos a confirmar que faz o
 que diz que faz.
 
 ## Porque é que isto existe (o objetivo, para além do exercício técnico)
 
-Quase todos os mensageiros populares pedem o teu número de telefone para te registares. Mesmo quando o conteúdo das mensagens é privado, esse registo cria um rasto quem fala com quem, quando, com que frequência. Para empresas, isto é também uma questão de conformidade: o RGPD exige proteção de dados desde a conceção e minimização de dados, e cada dado que um serviço guarda é um dado que pode ser exposto numa fuga.
+Quase todos os mensageiros populares pedem o teu número de telefone para te registares. Mesmo quando o conteúdo das mensagens é privado, esse registo cria um rasto: quem fala com quem, quando, com que frequência. Para empresas, isto é também uma questão de conformidade: o RGPD exige proteção de dados desde a conceção e minimização de dados, e cada dado que um serviço guarda é um dado que pode ser exposto numa fuga.
 
 O QT tenta responder a isto com engenharia, não só com uma política de privacidade: identidade baseada numa chave criptográfica (sem telefone, sem email), cifra ponta a ponta que nem o servidor consegue quebrar, e código aberto para que qualquer pessoa possa verificar que não há truques escondidos.
 
@@ -42,7 +42,7 @@ Sim, de ponta a ponta em versão alpha. Não foi auditado de forma independente 
 
 ### O que ainda falta
 
-- ~~Histórico persistente~~ — "feito": histórico guardado no SQLCipher (na mesma transação que o avanço do ratchet), com indicadores *Enviado / Entregue / Visto* através de recibos cifrados e fila de saída persistente.
+- ~~Histórico persistente~~ (feito): histórico guardado no SQLCipher (na mesma transação que o avanço do ratchet), com indicadores *Enviado / Entregue / Visto* através de recibos cifrados e fila de saída persistente.
 - **Notificações push** - a app só recebe mensagens enquanto está aberta.
 - **Infraestrutura de produção** - domínio próprio (o atual é provisório), redundância, backups e alertas do servidor.
 - Bloqueio da app com PIN/biometria, adição de contactos por QR code, interface mais cuidada.
@@ -55,13 +55,13 @@ Sim, de ponta a ponta em versão alpha. Não foi auditado de forma independente 
 
 | Peça | O que faz | Confiança |
 |---|---|---|
-| `core/` | Estabelecimento de sessão (X3DH + variante pós-quântica) e cifra contínua (Double Ratchet) — o mesmo desenho usado pelo Signal | ✅ Testado (14+ testes automáticos, incluindo casos que devem falhar propositadamente) |
+| `core/` | Estabelecimento de sessão (X3DH + variante pós-quântica) e cifra contínua (Double Ratchet), o mesmo desenho usado pelo Signal | ✅ Testado (14+ testes automáticos, incluindo casos que devem falhar propositadamente) |
 | `transport/` | Protecção da ligação em rede (Noise Protocol) sobre WebSocket | ✅ Testado com ligações WebSocket reais, não simuladas |
 | `server/` | O "carteiro": entrega mensagens sem nunca ver o conteúdo nem saber quem as enviou | ✅ Testado, incluindo sobreviver a ser desligado à força (`kill -9`) |
 | `storage/` | Guarda a tua identidade e conversas no disco, cifradas | ✅ Testado, incluindo confirmar que uma password errada não abre nada |
 | `cli/` | O mensageiro no terminal (`messenger`), com o mesmo núcleo das apps, e uma demonstração visível do protocolo (`messenger_demo`) | ✅ Testado de ponta a ponta com um relay real: terminal ↔ terminal e terminal ↔ cliente igual ao das apps |
 | `ffi/` | A ponte que liga tudo isto a Kotlin (Android), Swift (iOS) e Python | ✅ Testado a partir do Python |
-| `android/` | App Android (Kotlin/Compose) — toda a criptografia continua no Rust | ✅ Release assinada testada entre dois telemóveis reais através do relay na AWS |
+| `android/` | App Android (Kotlin/Compose); toda a criptografia continua no Rust | ✅ Release assinada testada entre dois telemóveis reais através do relay na AWS |
 | `ios/` | App iPhone (SwiftUI), igual à Android, com o mesmo núcleo Rust | ✅ Compilada num Mac e a trocar mensagens através do relay na AWS |
 | `deploy/` | Instalação do relay numa EC2: Redis só em localhost com ACL, serviço systemd isolado, TLS automático | ✅ Usado no deploy atual |
 
@@ -100,7 +100,7 @@ cargo run -p qt_cli --bin messenger_demo
 sudo apt install redis-server libsqlcipher-dev
 redis-server --daemonize yes
 ```
-Rust via [rustup](https://rustup.rs) — qualquer versão recente serve, exceto a variante pós-quântica do núcleo, que exige Rust 1.81 ou mais recente.
+Rust via [rustup](https://rustup.rs). Qualquer versão recente serve, exceto a variante pós-quântica do núcleo, que exige Rust 1.81 ou mais recente.
 
 ### Correr os testes
 
@@ -120,7 +120,7 @@ cargo run -p qt_server --example peer -- --relay ws://127.0.0.1:9443 --db bob.db
 # em cada um: /id mostra o Public ID; /add <ID do outro>; depois escreve mensagens
 ```
 
-O cliente `peer` usa exatamente o mesmo protocolo da app Android. O identificador de cada pessoa nasce da sua chave pública — ninguém escolhe um "nome de utilizador", de propósito. `ws://` só é aceite para `localhost` em builds de debug; fora disso o transporte exige `wss://`.
+O cliente `peer` usa exatamente o mesmo protocolo da app Android. O identificador de cada pessoa nasce da sua chave pública: ninguém escolhe um "nome de utilizador", de propósito. `ws://` só é aceite para `localhost` em builds de debug; fora disso o transporte exige `wss://`.
 
 ### O mensageiro no terminal (fala com os telemóveis)
 
@@ -196,8 +196,8 @@ Cada peça tem os seus próprios testes, guardados ao lado do código (`tests/`)
 
 ## Queres perceber os detalhes técnicos?
 
-- [`docs/protocol-spec.md`](docs/protocol-spec.md) explica, secção a secção, exatamente como cada peça funciona por dentro — que algoritmos, que decisões, e o que ainda falta em cada uma.
-- [`docs/threat-model.md`](docs/threat-model.md) explica contra quem e contra o quê isto protege — e, tão importante quanto isso, contra quem e contra o quê **não** protege. Leitura recomendada antes de confiares em qualquer alegação de segurança feita aqui.
+- [`docs/protocol-spec.md`](docs/protocol-spec.md) explica, secção a secção, exatamente como cada peça funciona por dentro: que algoritmos, que decisões e o que ainda falta em cada uma.
+- [`docs/threat-model.md`](docs/threat-model.md) explica contra quem e contra o quê isto protege e, tão importante quanto isso, contra quem e contra o quê **não** protege. Leitura recomendada antes de confiares em qualquer alegação de segurança feita aqui.
 - [`ROADMAP.md`](ROADMAP.md) mostra o que falta, por ordem de prioridade.
 - [`CHANGELOG.md`](CHANGELOG.md) mostra o histórico do que já mudou.
 
@@ -217,4 +217,4 @@ Ver [`LICENSE`](LICENSE) para a licença AGPL e [`LICENSE-COMMERCIAL.md`](LICENS
 ## Queres ajudar ou reportar um problema?
 
 - `CONTRIBUTING.md` explica como propor mudanças, e tem regras extra (razoáveis) para quem mexer em código de criptografia
-- `SECURITY.md` explica como reportar uma vulnerabilidade em privado — por favor não abras uma issue pública para isso
+- `SECURITY.md` explica como reportar uma vulnerabilidade em privado. Por favor não abras uma issue pública para isso

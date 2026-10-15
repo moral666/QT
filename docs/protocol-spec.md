@@ -1,4 +1,4 @@
-# Especificação do Protocolo (v0.1 — congelado para testes)
+# Especificação do Protocolo (v0.1: congelado para testes)
 
 > **v0.2 (fase Android).** As secções 8–11 no fim deste ficheiro descrevem os
 > formatos e fluxos **atuais** usados pela API `QtClient` e pelo relay
@@ -37,23 +37,23 @@ formato que já mudou outra vez.
 
 ## Índice
 
-1. [Handshake inicial](#1-handshake-inicial--implementado-e-testado) — X3DH e PQXDH
-2. [Double Ratchet](#2-double-ratchet--implementado) — cifra contínua, forward secrecy
-3. [Camada de transporte](#3-camada-de-transporte--implementada-e-testada) — Noise sobre WebSocket
-4. [Servidor/relay](#4-servidorrelay--implementado-e-testado) — fila de mensagens, Redis
-5. [Armazenamento local](#5-armazenamento-local-no-cliente--implementado-e-testado) — SQLCipher
-6. [Bindings FFI](#6-bindings-ffi-androidiospython--implementado-e-testado) — Kotlin/Swift/Python
-7. [Sealed sender](#7-sealed-sender--implementado-e-testado) — esconder o remetente do servidor
+1. [Handshake inicial](#1-handshake-inicial-implementado-e-testado): X3DH e PQXDH
+2. [Double Ratchet](#2-double-ratchet-implementado): cifra contínua, forward secrecy
+3. [Camada de transporte](#3-camada-de-transporte-implementada-e-testada): Noise sobre WebSocket
+4. [Servidor/relay](#4-servidorrelay-implementado-e-testado): fila de mensagens, Redis
+5. [Armazenamento local](#5-armazenamento-local-no-cliente-implementado-e-testado): SQLCipher
+6. [Bindings FFI](#6-bindings-ffi-androidiospython-implementado-e-testado): Kotlin/Swift/Python
+7. [Sealed sender](#7-sealed-sender-implementado-e-testado): esconder o remetente do servidor
 
 *(Se preferires uma explicação sem jargão técnico, começa antes por
-[`apresentacao-projeto.md`](../../apresentacao-projeto.md) — este
+[`apresentacao-projeto.md`](../../apresentacao-projeto.md). Este
 documento aqui é a referência técnica detalhada, não a porta de entrada.)*
 
-## 1. Handshake inicial — implementado e testado
+## 1. Handshake inicial: implementado e testado
 
 Duas variantes, ambas em `core/`, ambas com testes de integração a passar:
 
-**X3DH clássico** (`core/src/x3dh.rs`) — 3-4x Diffie-Hellman (X25519) via
+**X3DH clássico** (`core/src/x3dh.rs`): 3-4x Diffie-Hellman (X25519) via
 HKDF-SHA256, com:
 - Assinatura Ed25519 da signed pre-key, verificada pelo iniciador antes de
   confiar nela (protege contra um servidor malicioso substituir a chave).
@@ -62,7 +62,7 @@ HKDF-SHA256, com:
 - Testado em `core/tests/full_flow.rs` (4 testes, incluindo casos que
   devem falhar: assinatura adulterada, mensagem adulterada).
 
-**PQXDH** (`core/src/pqxdh.rs`, atrás da feature `pq`) — a mesma estrutura,
+**PQXDH** (`core/src/pqxdh.rs`, atrás da feature `pq`): a mesma estrutura,
 com um encapsulamento ML-KEM-768 (Kyber, FIPS 203) combinado no HKDF final,
 para resistência a "colher agora, decifrar depois" por um adversário com
 computador quântico futuro. Exige Rust 1.81+ (dependência `hybrid-array`).
@@ -70,9 +70,9 @@ Testado em `core/tests/pqxdh_flow.rs`.
 
 **Pendente**: nenhum dos dois expõe ainda uma API para o servidor consumir
 one-time pre-keys de um pool (isso é lógica de servidor, fora do escopo de
-`core/` — ver secção 4 do roadmap geral do projeto).
+`core/`; ver secção 4 do roadmap geral do projeto).
 
-## 2. Double Ratchet — implementado
+## 2. Double Ratchet: implementado
 
 Implementado em `core/src/ratchet.rs`, seguindo a especificação de Perrin/
 Marlinspike (Signal, 2016): symmetric-key ratchet (uma chave nova por
@@ -86,24 +86,24 @@ Garantias já cobertas por teste (`core/tests/full_flow.rs`):
 - Ciphertext adulterado é rejeitado (autenticação do AEAD)
 
 **Limite de segurança já implementado**: `MAX_SKIP = 1000` em `ratchet.rs`
-— evita que um atacante force acumulação indefinida de chaves puladas em
+evita que um atacante force acumulação indefinida de chaves puladas em
 memória (mitigação de DoS).
 
 **Pendente**: persistência do `RatchetState` em disco (via SQLCipher, ver
-seção 4) — atualmente o estado só existe em memória durante o processo.
+seção 4). Atualmente o estado só existe em memória durante o processo.
 
-## 3. Camada de transporte — implementada e testada
+## 3. Camada de transporte: implementada e testada
 
 Noise Protocol Framework (`Noise_XX_25519_ChaChaPoly_SHA256`) sobre
 WebSocket, implementado em `transport/` (crate `qt_transport`),
 usando `snow` (Noise) + `tokio-tungstenite` (WebSocket) + `tokio` (runtime
-async). Mantém-se agnóstica de conteúdo — só vê bytes já cifrados pelo
+async). Mantém-se agnóstica de conteúdo: só vê bytes já cifrados pelo
 Double Ratchet, nunca decifra a camada de aplicação.
 
 Testado de ponta a ponta em `demo/tests/e2e_over_real_websocket.rs`: um
 servidor WebSocket real sobe em `localhost`, um cliente liga-se, os dois
 fazem o handshake Noise, e uma mensagem já cifrada pelo Double Ratchet
-viaja através da ligação — a decifragem em ambas as camadas (Noise e
+viaja através da ligação, e a decifragem em ambas as camadas (Noise e
 depois Double Ratchet) é verificada no final.
 
 **Pendente antes de produção:**
@@ -120,14 +120,14 @@ depois Double Ratchet) é verificada no final.
   então a base para pinning já existe do lado servidor. `NoiseHandshake::
   remote_static_public_key()` já expõe a chave do par remoto após o
   handshake, mas ainda não há, do lado do CLIENTE, lógica de comparação
-  com um "known_hosts" persistido entre sessões — falta isso para o
+  com um "known_hosts" persistido entre sessões; falta isso para o
   pinning ser efetivo, não só possível.
 - **Servidor/relay real**: o teste atual simula ambos os lados (cliente e
   "servidor") no mesmo processo de teste. Falta um binário de servidor
   real, com fila de mensagens e lógica de entrega assíncrona (ver secção
   seguinte do roadmap geral do projeto).
 
-## 4. Servidor/relay — implementado e testado
+## 4. Servidor/relay: implementado e testado
 
 Implementado em `server/` (crate `qt_server`): fila de
 mensagens + diretório de pre-keys públicas **persistidos em Redis real**
@@ -137,14 +137,14 @@ serem levantadas, renovado a cada nova mensagem.
 
 Protocolo de aplicação (`server/src/protocol.rs`, serializado em JSON por
 simplicidade nesta fase):
-- `RegisterPreKeyBundle` / `FetchPreKeyBundle` — diretório de pre-keys
-- `SendMessage { to, sealed_from, ciphertext }` / `FetchMessages` — fila de
+- `RegisterPreKeyBundle` / `FetchPreKeyBundle`: diretório de pre-keys
+- `SendMessage { to, sealed_from, ciphertext }` / `FetchMessages`: fila de
   entrega assíncrona. O servidor sabe `to` (precisa disso para rotear),
-  mas **já não sabe quem enviou** — `sealed_from` é um envelope selado
+  mas **já não sabe quem enviou**: `sealed_from` é um envelope selado
   (ver secção 7) que só o destinatário consegue abrir.
 
 Testado em `server/tests/relay_flow.rs` contra um Redis real (não mockado),
-incluindo o caso mais importante de um relay: **entrega assíncrona real** —
+incluindo o caso mais importante de um relay: **entrega assíncrona real**.
 Alice liga-se, envia, desliga-se; só depois Bob se liga (ligação TCP
 separada) e recebe da fila, decifrando corretamente com o Double Ratchet
 do lado dele.
@@ -161,11 +161,11 @@ ter registado outra vez, e Bob recebeu-a corretamente.
 - **Federação**: por agora um único servidor. Protocolo servidor-servidor
   para federação real fica para uma fase posterior.
 - **Rate limiting / autenticação de registo**: neste momento qualquer
-  ligação pode registar um bundle para qualquer `user_id` — falta lógica
+  ligação pode registar um bundle para qualquer `user_id`; falta lógica
   de autenticação (ex.: provar posse da identity key correspondente antes
   de aceitar um `RegisterPreKeyBundle`).
 
-**Chave estática Noise do servidor — implementada e testada**: já não é
+**Chave estática Noise do servidor (implementada e testada)**: já não é
 gerada de novo a cada arranque. `server/src/bin/relay_server.rs` carrega-a
 de um ficheiro local (`NOISE_KEY_PATH`, por omissão `relay_noise_key.bin`,
 permissões `0600`), gerando-a apenas no primeiro arranque. Testado matando
@@ -175,12 +175,12 @@ foi exatamente a mesma nos dois arranques. A função de reconstrução
 deriva a chave pública X25519 a partir dos bytes privados guardados.
 
 Nota de segurança documentada no próprio binário: a chave fica em texto
-simples no disco (só protegida por permissões do sistema de ficheiros) —
+simples no disco (só protegida por permissões do sistema de ficheiros),
 aceitável para um servidor com acesso físico controlado, mas não é o
 nível de proteção usado para chaves de utilizador final (essas usam
 SQLCipher, ver secção 5).
 
-## 5. Armazenamento local (no cliente) — implementado e testado
+## 5. Armazenamento local (no cliente): implementado e testado
 
 Implementado em `storage/` (crate `qt_storage`): SQLCipher
 (ligado à biblioteca do sistema `libsqlcipher`, não uma reimplementação
@@ -212,23 +212,23 @@ conseguir completar o handshake de forma completamente assíncrona.
 
 - **Origem da passphrase**: atualmente é um argumento de linha de
   comandos. Numa app real, tem de vir do Android Keystore / iOS Secure
-  Enclave — nunca um literal no código nem passada por argumento (fica no
+  Enclave, nunca um literal no código nem passada por argumento (fica no
   histórico do shell).
 - **One-time pre-key reutilizada**: o CLI atual usa sempre a mesma
   one-time pre-key para todos os handshakes recebidos (simplificação
-  documentada) — em produção cada uma deve ser consumida uma única vez e
+  documentada). Em produção, cada uma deve ser consumida uma única vez e
   substituída por uma nova.
 - **`PRAGMA secure_delete = ON`** já está ativo (relevante para mensagens
   que desaparecem não deixarem resíduos recuperáveis), mas ainda não há
   lógica de TTL/expiração de mensagens implementada.
 
-## 6. Bindings FFI (Android/iOS/Python) — implementado e testado
+## 6. Bindings FFI (Android/iOS/Python): implementado e testado
 
 Implementado em `ffi/` (crate `qt_ffi`), usando
 [uniffi](https://mozilla.github.io/uniffi-rs/) (a mesma ferramenta usada
 pelo Signal e por vários projetos Mozilla). Desenho **maioritariamente
 funcional**: a generalidade das funções expostas recebem e devolvem
-bytes/records simples, sem estado partilhado entre a fronteira FFI — o
+bytes/records simples, sem estado partilhado entre a fronteira FFI: o
 cliente móvel guarda os bytes de estado (identidade, sessão) exatamente
 como o `storage/` já faz no lado desktop, só que no armazenamento seguro
 nativo do SO (Keystore no Android, Secure Enclave no iOS).
@@ -241,11 +241,11 @@ DH/assinatura, `sign_signed_pre_key`, `x3dh_initiate`/`x3dh_respond`,
 **API de transporte** (`NoiseSession`, objeto com estado): ao contrário do
 resto, o handshake Noise é interativo (várias trocas de mensagens), por
 isso é exposto como um objeto com estado (`uniffi::Object`) em vez de
-funções puras — `new_initiator`/`new_responder`, `write_step`/`read_step`
+funções puras: `new_initiator`/`new_responder`, `write_step`/`read_step`
 (o handshake propriamente dito), `is_finished`, e depois de terminado,
 `encrypt`/`decrypt` para as mensagens de aplicação. O envio/receção real
 dos bytes pela rede continua do lado Kotlin/Swift (usando uma biblioteca
-de WebSocket normal, ex.: OkHttp) — o `NoiseSession` só trata da parte
+de WebSocket normal, ex.: OkHttp); o `NoiseSession` só trata da parte
 criptográfica.
 
 Gerados e testados bindings para **Kotlin**, **Swift**, e **Python**
@@ -256,8 +256,8 @@ sealed sender através da fronteira FFI, e mais um teste dedicado ao
 entre duas sessões + troca de mensagens cifradas nos dois sentidos.
 
 **Testado também num Android real** (emulador): uma app mínima em Kotlin,
-consumindo os bindings gerados, correu o fluxo completo — geração de
-identidade, X3DH, Double Ratchet, sealed sender — tudo dentro do
+consumindo os bindings gerados, correu o fluxo completo (geração de
+identidade, X3DH, Double Ratchet, sealed sender), tudo dentro do
 telemóvel, com resultado visível no ecrã.
 
 **Pendente antes de produção:**
@@ -271,13 +271,13 @@ telemóvel, com resultado visível no ecrã.
 - **Empacotamento para iOS**: falta gerar um `XCFramework` a partir da
   biblioteca estática, para consumo direto no Xcode (ainda não testado em
   iOS, só Android).
-- **`storage/` (SQLCipher) não é exposto via FFI** — deliberadamente: uma
+- **`storage/` (SQLCipher) não é exposto via FFI**, de propósito: uma
   app móvel real deve usar o armazenamento seguro nativo do próprio SO
   (Keystore/EncryptedSharedPreferences no Android, Secure Enclave no iOS),
   não SQLCipher cross-compilado, que traria complexidade extra sem
   necessidade.
 
-## 7. Sealed sender — implementado e testado
+## 7. Sealed sender: implementado e testado
 
 Implementado em `core/src/sealed_sender.rs`: cifra anónima (estilo ECIES)
 contra a chave pública de identidade do destinatário. O remetente gera um
@@ -287,7 +287,7 @@ identidade pública com ChaCha20-Poly1305. Só quem tem a chave privada
 correspondente ao destinatário consegue reproduzir o DH e abrir o envelope.
 
 O servidor continua a saber `to` (necessário para rotear a mensagem para a
-fila certa) — isto não é anonimato de rede completo (não esconde IP nem
+fila certa). Isto não é anonimato de rede completo (não esconde IP nem
 timing), apenas remove a identidade do remetente do protocolo de
 aplicação. Anonimato de rede mais forte (ex.: mixnet, Tor) fica fora do
 escopo atual.
@@ -307,13 +307,13 @@ Testado a três níveis:
 
 - **Metadados de timing/tamanho**: sealed sender esconde a identidade do
   remetente, mas não esconde quando uma mensagem foi enviada nem o seu
-  tamanho aproximado — um adversário observando o servidor ainda pode
+  tamanho aproximado: um adversário observando o servidor ainda pode
   correlacionar padrões de tráfego. Padding de tamanho fixo e jitter no
   envio são melhorias futuras (ver conversa de arquitetura original).
-- **Autenticação de registo**: ver nota na secção 4 — falta impedir que
+- **Autenticação de registo**: ver nota na secção 4; falta impedir que
   alguém publique um bundle a fingir ser outra identidade.
 
-## 8. Qual fluxo estabelece a sessão? (X3DH vs PQXDH vs Double Ratchet) — v0.2
+## 8. Qual fluxo estabelece a sessão? X3DH vs PQXDH vs Double Ratchet (v0.2)
 
 Três peças, em camadas:
 
@@ -350,7 +350,7 @@ confidencialidade do segredo inicial; autenticação, cura e transporte são cl�
 
 Binário (1349 bytes), usado entre cliente e relay:
 `[3][IK 32][IK_sign 32][SPK 32][sig 64][pq_prekey_id u32 BE][ML-KEM-768 pub 1184]`.
-`sig = Ed25519(IK_sign, "QT-PQXDH-v2-bundle" ‖ IK ‖ SPK ‖ ML-KEM pub)` — a
+`sig = Ed25519(IK_sign, "QT-PQXDH-v2-bundle" ‖ IK ‖ SPK ‖ ML-KEM pub)`. A
 assinatura cobre a identidade X25519 (`IK`), por isso a chave Ed25519 **atesta**
 a X25519 e nenhuma das duas pode ser trocada isoladamente.
 
@@ -408,14 +408,14 @@ Um pedido ↔ uma resposta, sequenciais.
    `signature = Ed25519(IK_sign, "QT-RELAY-AUTH-v1" ‖ hash_do_handshake_Noise)`.
    O `user_id` passa a ser `hex(signing_public)`. Sem autenticação válida → erro
    e fecho. A assinatura liga-se à sessão (channel binding): não é reutilizável.
-2. `RegisterPreKeyBundle{user_id, bundle_bytes}` — só para o próprio `user_id`; ≤ 24 000 bytes.
-3. `FetchPreKeyBundle{user_id}` — qualquer utilizador autenticado.
-4. `SendMessage{to, sealed_from, ciphertext}` — `to` = 64 hex minúsculos;
+2. `RegisterPreKeyBundle{user_id, bundle_bytes}`: só para o próprio `user_id`; ≤ 24 000 bytes.
+3. `FetchPreKeyBundle{user_id}`: qualquer utilizador autenticado.
+4. `SendMessage{to, sealed_from, ciphertext}`: `to` = 64 hex minúsculos;
    `ciphertext` 1…14 000 bytes; `sealed_from` ≤ 1024 (vazio no modo `QtClient`,
    que envia o blob selado inteiro em `ciphertext`); fila ≤ 1000 mensagens.
-5. `FetchMessages{user_id}` — só a própria fila; **não apaga**; devolve uma
+5. `FetchMessages{user_id}`: só a própria fila; **não apaga**; devolve uma
    página (≈ 40 kB de JSON) de `{id, sealed_from, ciphertext}`.
-6. `AckMessages{user_id, ids}` — só a própria fila; ≤ 200 ids; apaga as confirmadas.
+6. `AckMessages{user_id, ids}`: só a própria fila; ≤ 200 ids; apaga as confirmadas.
 
 Respostas: `Ack`, `PreKeyBundle`, `PreKeyBundleNotFound`, `Messages`, `Error{reason}`
 (`reason` genérico, nunca detalhes internos).
@@ -469,13 +469,13 @@ guardado como aviso ("atualiza a app"), nunca como texto.
 
 ## Documentos relacionados
 
-- [`threat-model.md`](threat-model.md) — modelo de ameaças formal: quem
-  é o adversário, o que está protegido, e o que **não** está — leitura
+- [`threat-model.md`](threat-model.md): modelo de ameaças formal (quem
+  é o adversário, o que está protegido e o que **não** está); leitura
   obrigatória antes de avaliar este projeto tecnicamente
-- [`../ROADMAP.md`](../ROADMAP.md) — o plano, por fases
-- [`../CHANGELOG.md`](../CHANGELOG.md) — histórico do que já mudou
+- [`../ROADMAP.md`](../ROADMAP.md): o plano, por fases
+- [`../CHANGELOG.md`](../CHANGELOG.md): histórico do que já mudou
 
 Ainda por escrever: `architecture-decisions/0001-escolha-x3dh-vs-pqxdh.md`,
 `architecture-decisions/0002-uniffi-ffi.md` (registos formais de decisões
-de arquitetura — por agora, essas decisões estão documentadas de forma
+de arquitetura; por agora, essas decisões estão documentadas de forma
 menos formal ao longo das secções acima).

@@ -1,7 +1,7 @@
 # Referência da API FFI (`QtClient`, UniFFI)
 
 Crate `qt_ffi`, módulo `ffi/src/client.rs`. Tipos: `bytes`, `string`,
-`records`, `enums` e erros — nenhuma estrutura interna do Rust é exposta.
+`records`, `enums` e erros; nenhuma estrutura interna do Rust é exposta.
 Nomes Kotlin em camelCase (`createIdentity`, `startSession`, …).
 Todas as chamadas são síncronas e *thread-safe*.
 

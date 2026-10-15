@@ -4,7 +4,7 @@
 
 Este repositório (`QT`) contém o núcleo criptográfico e, no
 futuro, os clientes (Android/iOS/Desktop), porque todos consomem a mesma
-versão de `core/` via FFI — mantê-los juntos evita divergência entre
+versão de `core/` via FFI; mantê-los juntos evita divergência entre
 plataformas. O servidor/relay vive em repositório separado
 (`QT-server`), já que tem ciclo de deploy e contribuidores
 potencialmente diferentes (quem quer só fazer self-host não precisa clonar
@@ -12,9 +12,9 @@ os clientes mobile).
 
 ## Git flow
 
-- `main` — protegido, apenas releases. Requer aprovação de mantenedor.
-- `develop` — branch de integração. PRs normais entram aqui.
-- `feature/nome-da-feature` — branches de trabalho, a partir de `develop`.
+- `main`: protegido, apenas releases. Requer aprovação de mantenedor.
+- `develop`: branch de integração. PRs normais entram aqui.
+- `feature/nome-da-feature`: branches de trabalho, a partir de `develop`.
 
 Regras de PR:
 - 2 aprovações mínimas para merge em `develop`.

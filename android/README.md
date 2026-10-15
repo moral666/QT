@@ -1,4 +1,4 @@
-# QT — app Android de referência (Kotlin / Jetpack Compose)
+# QT: app Android de referência (Kotlin / Jetpack Compose)
 
 **Versão alpha, NÃO auditada. Não uses para informação sensível.**
 Toda a criptografia está no Rust (`libqt_ffi.so`); o Kotlin só move bytes e desenha ecrãs.
@@ -79,7 +79,7 @@ fora do repositório e faz cópia de segurança (se a perderes, não consegues p
 ```bash
 keytool -genkeypair -v -keystore ~/qt-release.jks -alias qt -keyalg RSA -keysize 4096 -validity 10000
 ```
-Cria `android/keystore.properties` (ignorado pelo git) — ou usa as variáveis `QT_KEYSTORE_FILE`,
+Cria `android/keystore.properties` (ignorado pelo git) ou usa as variáveis `QT_KEYSTORE_FILE`,
 `QT_KEYSTORE_PASSWORD`, `QT_KEY_ALIAS`, `QT_KEY_PASSWORD`:
 ```
 storeFile=/home/tu/qt-release.jks

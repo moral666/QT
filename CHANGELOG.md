@@ -1,7 +1,7 @@
 # Changelog
 
 Formato inspirado em [Keep a Changelog](https://keepachangelog.com/).
-Datas aproximadas — este projeto ainda não segue versionamento semântico
+Datas aproximadas: este projeto ainda não segue versionamento semântico
 formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
@@ -13,7 +13,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   compatíveis; estados de ratchet antigos em disco ainda carregam.
 - Safety numbers (`QtClient::safety_number`, ecrã na app Android).
 - Relay valida que o bundle registado pertence à identidade autenticada
-  (chave Ed25519 + assinatura) — ninguém escreve no bundle de outrem.
+  (chave Ed25519 + assinatura): ninguém escreve no bundle de outrem.
 - Remetente autenticado pela sessão (AD com as duas identidades), não pelo envelope.
 - Ratchet: `PN`, limite global de chaves puladas (2000), `decrypt` transacional
   sobre cópia, rejeição explícita de mensagens repetidas/antigas.
@@ -34,11 +34,11 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   ainda por falta de Rust nightly no ambiente de desenvolvimento)
 
 ### Corrigido
-- `SECURITY.md` já não tem placeholders por preencher — usa o mecanismo
+- `SECURITY.md` já não tem placeholders por preencher: usa o mecanismo
   de report privado do GitHub em vez de um email/PGP que nunca existiu
 - **Crash real corrigido**: `cli/src/bin/messenger.rs` entrava em pânico
   ao processar uma mensagem vazia ou demasiado curta vinda do servidor
-  (indexação direta `bytes[0]` sem verificação de tamanho) — encontrado
+  (indexação direta `bytes[0]` sem verificação de tamanho), encontrado
   através do trabalho de testes de robustez acima. Corrigido para
   devolver um erro controlado, sem derrubar o processo nem impedir o
   processamento das restantes mensagens da fila.
@@ -50,21 +50,21 @@ uma conversa de arquitetura antes de existir código):
 
 - **`core/`**: X3DH clássico, depois assinatura Ed25519 da signed
   pre-key, one-time pre-keys, PQXDH (X25519 + ML-KEM/Kyber), Double
-  Ratchet, e por fim Sealed Sender — cada peça com testes automáticos
+  Ratchet, e por fim Sealed Sender, cada peça com testes automáticos
   dedicados, incluindo casos que devem falhar (assinatura adulterada,
   mensagem adulterada, chave errada)
 - **`transport/`**: Noise Protocol Framework (`Noise_XX_25519_ChaChaPoly_SHA256`)
   sobre WebSocket, testado com uma ligação real em `localhost`
-- **`server/`**: relay com fila de mensagens e diretório de pre-keys —
+- **`server/`**: relay com fila de mensagens e diretório de pre-keys,
   primeiro em memória, depois migrado para Redis real, com TTL
   automático; testado sobrevivendo a `kill -9` do processo
-- **`storage/`**: armazenamento local em SQLCipher — identidade e
-  sessões, testado com passphrase errada a falhar e o ficheiro em disco
+- **`storage/`**: armazenamento local em SQLCipher (identidade e
+  sessões), testado com passphrase errada a falhar e o ficheiro em disco
   confirmado como genuinamente cifrado (sem a assinatura padrão do SQLite)
 - **`cli/`**: primeiro uma demo num único processo, depois um cliente
   persistente a sério (`identity`/`register`/`send`/`receive`), testado
   com processos completamente separados a comunicar entre si
-- **`ffi/`**: bindings uniffi para Kotlin, Swift e Python — testados via
+- **`ffi/`**: bindings uniffi para Kotlin, Swift e Python, testados via
   Python primeiro, depois com um `NoiseSession` com estado para expor
   também a camada de transporte, e finalmente testado num Android real
   (emulador)
@@ -76,7 +76,7 @@ uma conversa de arquitetura antes de existir código):
 - Projeto renomeado de "secure-messenger" para **QT**
 - Licença AGPL-3.0 completa (antes tinha um placeholder por preencher)
 - README reorganizado com moldura honesta de "protótipo técnico", não
-  "produto acabado" — logo na primeira frase
+  "produto acabado", logo na primeira frase
 - Versão em inglês do README (`README.en.md`)
 - `.gitignore` criado (faltava desde o início)
 - CI (GitHub Actions) configurado: testes do workspace inteiro, feature
