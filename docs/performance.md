@@ -5,6 +5,30 @@ medido, como repetir a medição e o que ficou de fora.
 
 ---
 
+## 15 de outubro de 2026 — ligação ao Redis partilhada
+
+Até aqui, o relay abria uma ligação TCP nova ao Redis em cada pedido. Passou a
+usar uma só ligação partilhada (`redis::aio::ConnectionManager`), que volta a
+ligar sozinha se o Redis reiniciar. Mesmo teste da entrada seguinte (10 000
+ligações a pedir mensagens de 3 em 3 s, mesma máquina):
+
+| | Antes | Depois |
+|---|---|---|
+| Ligações abertas / falhas | 10 000 / 0 | 10 000 / 0 |
+| Pedidos respondidos | ~3 300 por segundo | ~3 300 por segundo |
+| Memória do relay | 139 MB | 138 MB |
+| Memória do Redis | 11 MB | 7 MB |
+| CPU do relay | 33 % de um núcleo (~0,10 ms por pedido) | **17 %** (~0,05 ms por pedido) |
+| CPU do Redis | 21 % (~0,06 ms por pedido) | **7 %** (~0,02 ms por pedido) |
+| **CPU total** | **54 %** de um núcleo | **24 %** (−56 %) |
+
+Reinício do Redis com o relay ligado (200 ligações a pedir mensagens de 0,5 em
+0,5 s, Redis desligado durante 5 s): os pedidos ficaram em espera durante a
+falha, houve 1 erro interno e, assim que o Redis voltou, tudo continuou sem
+erros e sem reiniciar o relay.
+
+---
+
 ## 15 de outubro de 2026 — 10 000 ligações em simultâneo
 
 ### Resultado
@@ -63,7 +87,8 @@ cargo run --release -p qt_server --example conntest -- \
 
 ### Configuração necessária para tantas ligações
 
-Por omissão, o relay aceita até 4 096 ligações (`RELAY_MAX_CONNECTIONS`) e o
-systemd limita cada serviço a cerca de 1 024 ficheiros abertos. Para mais
-ligações em simultâneo é preciso subir os dois: `RELAY_MAX_CONNECTIONS` em
-`/etc/qt/relay.env` e `LimitNOFILE` no serviço `qt-relay`.
+Por omissão, o relay aceita até 4 096 ligações (`RELAY_MAX_CONNECTIONS`). O
+serviço `deploy/systemd/qt-relay.service` já sobe o limite de ficheiros abertos
+para 65 536 (`LimitNOFILE`); sem isso, o systemd limitava o relay a cerca de
+1 024 ligações. Para mais de 4 096 ligações em simultâneo, sobe
+`RELAY_MAX_CONNECTIONS` em `/etc/qt/relay.env`.

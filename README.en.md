@@ -79,9 +79,9 @@ The relay is small on purpose: it only passes encrypted messages along, keeps no
 | | Result |
 |---|---|
 | Connections open at the same time | **10,000 of 10,000, 0 failures** |
-| Relay memory | **139 MB in total, about 14 KB per connection** (starts at 4 MB) |
+| Relay memory | **138 MB in total, about 14 KB per connection** (starts at 4 MB) |
 | Requests answered | **~3,300 per second, 0 errors** |
-| CPU per request | about 0.1 ms in the relay and 0.06 ms in Redis |
+| CPU per request | about 0.05 ms in the relay and 0.02 ms in Redis (24 % of one core for all 10,000 connections) |
 | CPU with idle connections | 0 % |
 
 Measured on a local 2 vCPU machine, without Caddy's TLS and without a real network in between, so the full server uses more than this. How it was measured, how to repeat it and what was left out: [`docs/performance.md`](docs/performance.md) (in Portuguese).

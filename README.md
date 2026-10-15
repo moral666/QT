@@ -72,9 +72,9 @@ O relay é pequeno de propósito: só passa mensagens cifradas, não guarda hist
 | | Resultado |
 |---|---|
 | Ligações abertas ao mesmo tempo | **10 000 de 10 000, 0 falhas** |
-| Memória do relay | **139 MB no total, cerca de 14 KB por ligação** (arranca com 4 MB) |
+| Memória do relay | **138 MB no total, cerca de 14 KB por ligação** (arranca com 4 MB) |
 | Pedidos respondidos | **~3 300 por segundo, 0 erros** |
-| CPU por pedido | cerca de 0,1 ms no relay e 0,06 ms no Redis |
+| CPU por pedido | cerca de 0,05 ms no relay e 0,02 ms no Redis (24 % de um núcleo para as 10 000 ligações) |
 | CPU com as ligações paradas | 0 % |
 
 Medido numa máquina local de 2 vCPU, sem o TLS do Caddy e sem rede real pelo meio, por isso o servidor completo gasta mais do que isto. Como foi medido, como repetir e o que ficou de fora: [`docs/performance.md`](docs/performance.md).
