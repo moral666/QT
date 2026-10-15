@@ -10,6 +10,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -81,6 +86,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -274,13 +280,24 @@ fun LoadingScreen() {
     }
 }
 
-/** Logotipo SEALER (bolha de vidro com o S e os tres pontos). */
+/**
+ * Logotipo SEALER (bolha de vidro com o S e os tres pontos), sempre a rodar
+ * devagar: uma volta completa a cada 6 segundos. A rotacao e aplicada so na
+ * camada de desenho (graphicsLayer), sem recompor o ecra a cada frame.
+ */
 @Composable
 fun BrandMark(sizeDp: Int) {
+    val spin = rememberInfiniteTransition(label = "logo")
+    val angle by spin.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = 6_000, easing = LinearEasing)),
+        label = "rotacao do logo",
+    )
     Image(
         painter = painterResource(R.drawable.sealer_logo),
         contentDescription = null,
-        modifier = Modifier.size(sizeDp.dp),
+        modifier = Modifier.size(sizeDp.dp).graphicsLayer { rotationZ = angle },
     )
 }
 
