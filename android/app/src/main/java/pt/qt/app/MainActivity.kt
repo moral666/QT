@@ -21,6 +21,8 @@ import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import java.io.File
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -535,11 +537,14 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
+            // O logotipo a rodar como um piao, em vez do "+". O leitor de ecra continua
+            // a anunciar "Novo contacto".
             FloatingActionButton(
                 onClick = { showAdd = true },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
-            ) { Icon(Icons.Filled.Add, contentDescription = "Novo contacto") }
+                modifier = Modifier.semantics { contentDescription = "Novo contacto" },
+            ) { BrandMark(34) }
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
