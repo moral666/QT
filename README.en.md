@@ -6,8 +6,8 @@ The apps are called **SEALER**; QT is the name of the protocol and of this repos
 
 **Alpha version, not audited.** An E2EE messenger with post-quantum
 cryptography (X3DH, PQXDH, Double Ratchet, Sealed Sender, Noise Protocol),
-all implemented in Rust, with an Android app and a cloud relay, already
-working end to end. **It is not a finished product yet and must not be
+all implemented in Rust, with Android and iPhone apps and a cloud relay,
+already working end to end. **It is not a finished product yet and must not be
 used for sensitive information.** See "Be honest with me: does this
 actually work?" below.
 
@@ -51,35 +51,43 @@ Yes, end to end, as an **alpha** release. **It has not been independently audite
 - **Field test with five devices on three platforms** (2 real Android phones, 1 Android emulator, 1 iPhone and 1 Mac), with simultaneous, continuous sending: no messages lost. Details, problems found and what is still untested in [`docs/field-tests.md`](docs/field-tests.md) (in Portuguese).
 - **Relay with 10,000 simultaneous connections** (each one polling for messages every 3 seconds, like the apps): no failures, about **14 KB of memory per connection**. See "The relay in numbers" below.
 
+### Just added, still to be confirmed in real use
+
+- **Images and GIFs up to 25 MB**, in both apps. Each file is encrypted on the phone with its own key, goes to the relay in chunks and is deleted there once the other phone downloads it, or after 24 hours. Covered by the automated tests (including against the production Redis command list); the exchange between phones through AWS is still being confirmed. Details in [`docs/protocol-spec.md`](docs/protocol-spec.md), section 14 (in Portuguese).
+- **Adding contacts with a QR code**, in both apps (the code is generated and read on the phone, with no network involved).
+- SEALER branding in the apps (logo, name and theme).
+
+The iPhone app with these additions has not been built in Xcode yet (see [`ios/README.md`](ios/README.md), in Portuguese).
+
 ### Still missing
 
 - ~~Persistent history~~ (**done**): history stored in SQLCipher (in the same transaction that advances the ratchet), with *Sent / Delivered / Read* indicators via encrypted receipts and a persistent outbox.
+- ~~Adding contacts via QR code~~ (done in both apps).
 - **Push notifications**: the app only receives messages while it is open.
 - **Production infrastructure**: own domain (the current one is temporary), redundancy, backups and server alerts.
 - ~~App lock~~ (done on Android): an app passcode that encrypts the key to the conversations (Argon2id), plus optional unlock with fingerprint, face or the phone's PIN. Still missing on iPhone.
-- Adding contacts via QR code, a more polished interface.
 - Distribution through the Play Store (some antivirus apps currently warn because the app comes from an unknown source).
 - Load testing on the AWS relay (already measured on a local machine, see [`docs/performance.md`](docs/performance.md), in Portuguese) and an **independent security audit**.
 
-**Next stages:** *alpha* (now: works end to end, tested with a few people) → *beta* (persistent history, notifications, Play Store testing) → *1.0* (after an external audit).
+**Next stages:** *alpha* (now: works end to end, tested with a few people) → *beta* (notifications, app lock on iPhone, Play Store testing) → *1.0* (after an external audit).
 
 ## What's already built
 
 | Piece | What it does | Confidence |
 |---|---|---|
-| `core/` | Session establishment (X3DH + post-quantum variant) and continuous encryption (Double Ratchet), the same design used by Signal | ✅ Tested (14+ automated tests, including cases designed to fail) |
+| `core/` | Session establishment (X3DH + post-quantum variant) and continuous encryption (Double Ratchet), the same design used by Signal | ✅ Tested (over 40 automated tests, including cases designed to fail) |
 | `transport/` | Network connection protection (Noise Protocol) over WebSocket | ✅ Tested with real WebSocket connections, not simulated |
-| `server/` | The "mailman": delivers messages without ever seeing the content or knowing who sent them | ✅ Tested, including surviving being force-killed (`kill -9`) |
+| `server/` | The "mailman": delivers messages without ever seeing the content or knowing who sent them, and keeps encrypted images for 24 hours at most | ✅ Tested, including surviving being force-killed (`kill -9`) and against the production Redis command list |
 | `storage/` | Stores your identity and conversations on disk, encrypted | ✅ Tested, including confirming a wrong password opens nothing |
 | `cli/` | The messenger in the terminal (`messenger`), on the same core as the apps, plus a visible protocol demo (`messenger_demo`) | ✅ Tested end to end against a real relay: terminal ↔ terminal and terminal ↔ a client identical to the apps' |
-| `ffi/` | The bridge connecting all of this to Kotlin (Android), Swift (iOS) and Python | ✅ Tested from Python |
+| `ffi/` | The bridge connecting all of this to Kotlin (Android), Swift (iOS) and Python: history, outbox, images, app lock | ✅ Tested in Rust (including crossed sessions and images) and from Python |
 | `android/` | Android app (Kotlin/Compose); all cryptography stays in Rust | ✅ Signed release tested between two real phones through the relay on AWS |
-| `ios/` | iPhone app (SwiftUI), same as the Android one, on the same Rust core | ✅ Built on a Mac and exchanging messages through the relay on AWS |
+| `ios/` | iPhone app (SwiftUI), same as the Android one, on the same Rust core | ✅ Built on a Mac and exchanging messages through the relay on AWS (the latest additions not built yet) |
 | `deploy/` | Relay install on EC2: Redis on localhost only with ACLs, sandboxed systemd service, automatic TLS | ✅ Used in the current deployment |
 
 ## The relay in numbers
 
-The relay is small on purpose: it only passes encrypted messages along, keeps no history, and the heavy cryptography runs on the phones. Measured with 10,000 connections open at the same time, each one polling for messages every 3 seconds, as the apps do while open:
+The relay is small on purpose: it only passes encrypted messages along, keeps no history (encrypted images stay there for 24 hours at most), and the heavy cryptography runs on the phones. Measured with 10,000 connections open at the same time, each one polling for messages every 3 seconds, as the apps do while open:
 
 | | Result |
 |---|---|
@@ -88,6 +96,8 @@ The relay is small on purpose: it only passes encrypted messages along, keeps no
 | Requests answered | **~3,300 per second, 0 errors** |
 | CPU per request | about 0.05 ms in the relay and 0.02 ms in Redis (24 % of one core for all 10,000 connections) |
 | CPU with idle connections | 0 % |
+
+With messages flowing all the time (50 pairs of connections sending as fast as possible), the relay delivered about **16,900 messages of 200 B per second** and **6,000 of 4 KB**, with 95 % of messages reaching the recipient in under 10 ms (200 B) and 26 ms (4 KB). A 25 MB image was uploaded to the relay in 0.3 s and downloaded in 0.4 s.
 
 Measured on a local 2 vCPU machine, without Caddy's TLS and without a real network in between, so the full server uses more than this. How it was measured, how to repeat it and what was left out: [`docs/performance.md`](docs/performance.md) (in Portuguese).
 
@@ -113,15 +123,16 @@ cargo run -p qt_cli --bin messenger_demo
 sudo apt install redis-server libsqlcipher-dev
 redis-server --daemonize yes
 ```
-Rust via [rustup](https://rustup.rs). Any recent version works, except
-the post-quantum variant of the core, which requires Rust 1.81 or newer.
+Rust 1.81 or newer, via [rustup](https://rustup.rs) (the post-quantum part requires it).
 
 ### Running the tests
 
 ```bash
-cargo test --workspace                          # everything except post-quantum
-cargo test -p qt_core --features pq              # including post-quantum
+cargo test --workspace                          # everything, post-quantum included (needs Redis, above)
+cargo test -p qt_core --features pq              # the cryptographic core only
 ```
+
+The `server/tests/redis_acl.rs` test starts its own Redis with the production command list; without `redis-server` installed it is skipped.
 
 ### Two people talking through the relay (on your PC)
 
@@ -163,6 +174,8 @@ The passphrase is always asked for in the terminal, hidden (or read from one lin
 
 ## Android app
 
+The Rust core is the only cryptographic backend of the Android app (Kotlin/Compose): `QtClient` API via UniFFI, SQLCipher storage with a key from the Android Keystore, PQXDH (X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, authenticated relay with *at-least-once* delivery. **Alpha version, not audited.**
+
 ```bash
 export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/<version>
 ABIS="arm64-v8a armeabi-v7a" ./scripts/build-android.sh   # libqt_ffi.so (16 KB) + Kotlin bindings
@@ -170,7 +183,25 @@ cd android && ./sync-native.sh ..                          # copy into the app
 # then open the android/ folder in Android Studio
 ```
 
-The *release* build requires your own keystore and the production relay (`qtRelayUrl` / `qtRelayPin` in `android/gradle.properties`); in that build the relay is fixed and not shown in the UI. Step by step in [`android/README.md`](android/README.md) (Portuguese).
+The *release* build requires your own keystore and the production relay (`qtRelayUrl` / `qtRelayPin` in `android/gradle.properties`); in that build the relay is fixed and not shown in the UI. Use NDK 27 or newer (with r26d the build of the bundled OpenSSL failed). Step by step in [`android/README.md`](android/README.md) (Portuguese).
+
+* Integration and build guide: [`docs/android-integration.md`](docs/android-integration.md)
+* API reference: [`docs/ffi-api.md`](docs/ffi-api.md)
+* Protocol (§8–14 = current formats): [`docs/protocol-spec.md`](docs/protocol-spec.md)
+* Threats and limitations: [`docs/threat-model.md`](docs/threat-model.md), [`docs/known-limitations.md`](docs/known-limitations.md)
+
+(These documents are in Portuguese.)
+
+## iPhone app
+
+Needs a Mac with Xcode and [XcodeGen](https://github.com/yonaskolb/XcodeGen):
+
+```bash
+./scripts/build-ios.sh          # builds the Rust core for iPhone and the simulator
+cd ios && xcodegen && open SealerMessenger.xcodeproj
+```
+
+Step by step, Apple accounts and the differences from Android in [`ios/README.md`](ios/README.md) (Portuguese).
 
 ## Relay on AWS
 
@@ -181,7 +212,9 @@ curl -fsSLO https://raw.githubusercontent.com/moral666/QT/security-hardening/dep
 sudo bash setup-ec2.sh
 ```
 
-It installs Redis (`127.0.0.1` only, minimal-ACL user), the relay as a sandboxed systemd service and Caddy with automatic TLS, and prints the `wss://` URL and pinning key for the app. Details in [`docs/deploy-wss.md`](docs/deploy-wss.md).
+It installs Redis (`127.0.0.1` only, minimal-ACL user), the relay as a sandboxed systemd service and Caddy with automatic TLS, and prints the `wss://` URL and pinning key for the app. Encrypted images are kept in `/var/lib/qt/anexos` (2 GB in total and 24 hours each at most, by default).
+
+To update a relay that is already installed, run the same script again: it fetches the new code and rebuilds, but keeps the Noise key (the apps' pin does not change) and the Redis password. The build runs on the instance itself and needs room: an 8 GB disk ended up almost full, the current relay uses 20 GB. Details in [`docs/deploy-wss.md`](docs/deploy-wss.md).
 
 ## How the project is organized
 
@@ -194,8 +227,10 @@ cli/         The messenger in the terminal (same core and relay as the apps)
 demo/        Combines core+transport into a single test, to see it all in action
 ffi/         The bridge to Kotlin, Swift and Python
 android/     The Android app (Kotlin/Compose)
+ios/         The iPhone app (SwiftUI)
+branding/    Logo, icons and font of the SEALER brand
 deploy/      Relay server install (AWS, Redis, systemd)
-scripts/     Building the native libraries for Android
+scripts/     Builds for Android and iPhone, and measurements (relay and phone)
 docs/        The full technical specification, and the design history
 ```
 
@@ -205,17 +240,25 @@ Each piece has its own tests, kept next to the code (`tests/`).
 
 - [`docs/protocol-spec.md`](docs/protocol-spec.md) explains, section by section, exactly how each piece works internally: which algorithms, which decisions, and what's still missing in each one.
 - [`docs/threat-model.md`](docs/threat-model.md) explains who and what this protects against and, just as importantly, who and what it does **not** protect against. Recommended reading before trusting any security claim made here.
+- [`docs/known-limitations.md`](docs/known-limitations.md) lists the known limitations, by impact.
+- [`docs/field-tests.md`](docs/field-tests.md) and [`docs/performance.md`](docs/performance.md) record the tests with real devices and the relay measurements.
 - [`ROADMAP.md`](ROADMAP.md) shows what's left, in priority order.
 - [`CHANGELOG.md`](CHANGELOG.md) shows the history of what's already changed.
 
+(The documents in `docs/`, the roadmap and the changelog are in Portuguese.)
+
 ## License
 
-AGPL-3.0-or-later. In plain terms: anyone can use, study and modify this
-code freely, but if someone takes it to offer a service (even just over
-the internet, without "distributing" software in the traditional sense),
-they're required to also share the source of those modifications. This
-closes a door that more permissive licenses leave open: someone taking an
-open project and turning it into a closed service.
+QT is offered under a dual license:
+
+- **Open source:** GNU Affero General Public License, version 3 or later (AGPL-3.0-or-later). In plain terms: anyone can use, study and modify this code freely, but if someone takes it to offer a service (even just over the internet, without "distributing" software in the traditional sense), they're required to also share the source of those modifications.
+- **Commercial:** organisations that need terms other than the AGPL can obtain a commercial license through a written agreement with the author.
+
+The commercial license allows specific terms of use, integration, distribution, deployment, support, maintenance and other commercial rights to be set by contract.
+
+Third-party components and dependencies used by QT remain subject to their own licenses.
+
+See [`LICENSE`](LICENSE) for the AGPL and [`LICENSE-COMMERCIAL.md`](LICENSE-COMMERCIAL.md) for the commercial licensing model.
 
 ## Want to help or report a problem?
 

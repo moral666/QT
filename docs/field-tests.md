@@ -77,3 +77,5 @@ envios simultâneos e em rajada a partir de vários aparelhos ao mesmo tempo.
 - Atualização da app por cima de uma versão antiga, com conversas já existentes.
 - Interoperabilidade com o cliente de terminal `messenger` contra o relay da AWS
   (já testada com um relay local nos testes automáticos).
+- Imagens e GIFs entre telemóveis através do relay da AWS, e o código QR
+  (acrescentados depois deste teste).

@@ -6,7 +6,7 @@
 #
 # Requisitos (no PC de build, Linux/macOS):
 #   * Rust >= 1.81 via rustup           https://rustup.rs
-#   * Android NDK r26+ (ex.: Android Studio > SDK Manager > NDK)
+#   * Android NDK r27+ (ex.: Android Studio > SDK Manager > NDK); ver a nota sobre o r26d abaixo
 #   * perl, make (para compilar SQLCipher + OpenSSL a partir do codigo-fonte)
 #   * cargo install cargo-ndk --locked
 #
@@ -14,9 +14,7 @@
 #   export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/<versao>
 #   ./scripts/build-android.sh [caminho/para/app/src/main]      (omissao: ./android-out)
 #
-# NOTA: este script NAO foi executado no ambiente de desenvolvimento (sem
-# acesso a rustup/NDK). Os testes foram corridos no host com as MESMAS features
-# (`pq` + SQLCipher embebido). Verifica o primeiro build num CI/maquina tua.
+# Usado para as APKs testadas em telemoveis reais (com ABIS="arm64-v8a armeabi-v7a").
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -29,7 +27,7 @@ OUT="${1:-android-out}"
 # compila so os telemoveis reais:  ABIS="arm64-v8a armeabi-v7a" ./scripts/build-android.sh
 ABIS="${ABIS:-arm64-v8a armeabi-v7a x86_64}"
 API_LEVEL="${ANDROID_API_LEVEL:-24}"
-: "${ANDROID_NDK_HOME:?Define ANDROID_NDK_HOME (pasta do NDK, ex.: \$HOME/Android/Sdk/ndk/26.1.10909125)}"
+: "${ANDROID_NDK_HOME:?Define ANDROID_NDK_HOME (pasta do NDK, ex.: \$HOME/Android/Sdk/ndk/<versao>)}"
 command -v cargo-ndk >/dev/null || { echo "Falta cargo-ndk: cargo install cargo-ndk --locked"; exit 1; }
 
 echo ">>> targets Rust para Android"

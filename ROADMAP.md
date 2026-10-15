@@ -5,50 +5,66 @@ falta, e por que ordem faz sentido fazer?** A tabela de estado no
 `README.md` mostra o que já está feito; este ficheiro mostra o que vem a
 seguir.
 
-## Fase atual: fundação técnica (concluída)
+## Feito
 
-Tudo o que está listado como "✅ Testado" na tabela do `README.md`:
-núcleo E2EE (X3DH, PQXDH, Double Ratchet, Sealed Sender), transporte
-(Noise sobre WebSocket), servidor com persistência real (Redis),
-armazenamento local encriptado (SQLCipher), cliente de terminal, e
-bindings FFI para Kotlin/Swift/Python, testados também num Android real.
+- **Fundação técnica:** núcleo E2EE (X3DH, PQXDH, Double Ratchet, Sealed
+  Sender), transporte (Noise sobre WebSocket), relay com persistência real
+  (Redis), armazenamento local cifrado (SQLCipher), cliente de terminal e
+  bindings FFI para Kotlin, Swift e Python.
+- **Apps Android e iPhone (SEALER)** com a conversa completa: lista de
+  conversas, chat, histórico guardado no SQLCipher, estados *enviada /
+  entregue / vista*, apagar conversa e contacto, verificação de segurança
+  (safety numbers), adicionar contactos por código QR, imagens e GIFs até
+  25 MB.
+- **Relay acessível pela internet** (AWS EC2), atrás de TLS (`wss://`), com
+  pinning da chave Noise nas apps e o Redis só em `127.0.0.1` com ACL.
+- **Chave da base de dados vinda do Android Keystore / Secure Enclave**; o
+  `messenger` do terminal pede a passphrase escondida, nunca na linha de
+  comandos.
+- **Chave estática Noise do relay persistida** entre reinícios (pinning real).
+- **Registo de bundles autenticado:** o relay só aceita o bundle da
+  identidade que se autenticou na ligação.
+- **Bloqueio da app no Android** (código próprio e biometria).
+- **Teste de campo** com cinco aparelhos em três plataformas
+  (`docs/field-tests.md`).
 
-## Próxima fase: tornar isto usável de verdade
+## A seguir: tornar isto usável no dia a dia
 
-- [ ] **Ecrã de conversa completo na app Android**: hoje só existe um
-  botão de demonstração; falta a experiência real (lista de contactos,
-  conversa, notificações)
-- [ ] **Servidor acessível pela internet**, não só em rede local: para
-  duas pessoas em redes diferentes conseguirem falar
-- [ ] **TLS (`wss://`)** na camada de transporte, por cima do Noise já
-  existente, como defesa em profundidade adicional
-- [ ] **Passphrase da base de dados vinda do Keystore/Secure Enclave**,
-  em vez de argumento de linha de comandos
+- [ ] **Notificações push** (Android e iPhone; no iPhone exige a conta paga da
+  Apple). Hoje as apps perguntam ao relay de 3 em 3 segundos enquanto estão
+  abertas, e o Android continua a perguntar em segundo plano até fechar a
+  app, o que gasta bateria e dados.
+- [ ] **Bloqueio da app no iPhone**, igual ao do Android.
+- [ ] **Confirmar as imagens e os GIFs entre telemóveis** através do relay da
+  AWS, e compilar no Xcode as novidades da app iPhone.
+- [ ] **Infraestrutura de produção:** domínio próprio, backups e alertas do
+  servidor.
+- [ ] **Distribuição:** Play Store e TestFlight.
+- [ ] **Teste de carga no relay da AWS** (até agora só medido numa máquina
+  local, ver `docs/performance.md`).
 
-## Fase seguinte: robustez e confiança
+## Robustez e confiança
 
-- [x] **Testes de robustez contra bytes malformados**: encontrado e
-  corrigido um crash real (`bytes[0]` sem verificação de tamanho em
-  `cli/src/bin/messenger.rs`); 40.000+ tentativas aleatórias sem pânico
-  contra as funções mais expostas do núcleo (ver `docs/threat-model.md`)
-- [ ] **Fuzzing guiado por cobertura, corrido a sério**: os alvos já
-  existem em `core/fuzz/` e compilam, mas nunca correram durante horas
-  numa máquina com Rust nightly (só testes de bytes aleatórios mais
-  simples correram até agora). Ver `core/fuzz/README.md`
+- [x] **Testes com entradas inválidas e forjadas:** lixo nas entradas de rede
+  e de disco, mensagens e cabeçalhos forjados, limites de tamanho, e testes
+  por propriedades do Double Ratchet (200 sequências aleatórias de entrega em
+  cada corrida). Ver `docs/threat-model.md`, secção 3.
+- [ ] **Fuzzing guiado por cobertura** (`cargo-fuzz`), corrido durante horas:
+  ainda não existe no repositório.
 - [ ] **Auditoria de segurança externa**: nenhuma alegação de segurança
-  deveria ser levada a sério sem isto; é a prioridade mais alta desta
-  fase
-- [ ] **Persistência da chave estática Noise do servidor entre
-  reinícios**, para "pinning" real do lado do cliente
-- [ ] **One-time pre-key consumida uma única vez de verdade**: o
-  cliente de terminal atual reutiliza sempre a mesma, simplificação
-  documentada que precisa de correção antes de produção
-- [ ] **Autenticação no registo de bundles**: impedir que alguém
-  publique um bundle a fingir ser outra identidade (ver
-  `docs/threat-model.md`)
-- [ ] **Padding de tamanho e jitter de timing**: mitigar análise de
-  tráfego por um adversário que observe o servidor (ver limitações no
-  `docs/threat-model.md`)
+  deveria ser levada a sério sem isto; é a prioridade mais alta desta fase.
+- [ ] **Limites no relay por utilizador** (rate limiting, anti-spam, limite
+  de bytes por fila). Hoje há só o limite de 1000 mensagens por fila e a
+  quota diária das imagens.
+- [ ] **One-time prekeys servidas pelo relay**, uma por pedido. Hoje o relay
+  entrega o mesmo bundle a todos, sem one-time prekey (o PQXDH continua
+  válido, mas perde essa proteção extra).
+- [ ] **Validade e rotação** da signed pre-key e da prekey ML-KEM.
+- [ ] **Reinício de sessão completo:** falta o caso em que quem apagou o
+  contacto recebe a primeira mensagem (ver `docs/known-limitations.md`, 10).
+- [ ] **Padding de tamanho das mensagens de texto e jitter de timing**, para
+  dificultar a análise de tráfego por quem observe o relay (as imagens já vão
+  com o tamanho arredondado).
 
 ## Fase de escala (mais distante, mas desenhada desde o início)
 
@@ -57,15 +73,12 @@ bindings FFI para Kotlin/Swift/Python, testados também num Android real.
   inteira
 - [ ] **Suporte a grupos** (conversas com mais de duas pessoas): exige
   uma extensão ao protocolo atual (ex.: Sender Keys ou MLS)
-- [ ] **Apps iOS**: o `ffi/` já gera bindings Swift, mas nunca foram
-  testados num dispositivo Apple real (só Android, por limitação de
-  ambiente de desenvolvimento)
 
 ## Fora do roadmap (por agora, deliberadamente)
 
-Ver `docs/threat-model.md`, secção "Fora de escopo": anonimato de rede
-completo (Tor/mixnet), deteção de abuso, e proteção contra coerção física
-não estão planeados para o curto/médio prazo.
+Anonimato de rede completo (Tor/mixnet), deteção de abuso e proteção
+contra coerção física não estão planeados para o curto/médio prazo. O que
+o QT não protege está em `docs/threat-model.md`, secção 4.
 
 ## Como isto se mantém atualizado
 

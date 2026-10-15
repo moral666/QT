@@ -13,7 +13,7 @@ Em vez disso, usa o mecanismo de report privado do próprio GitHub:
 
 1. Vai ao separador **"Security"** deste repositório → **"Report a
    vulnerability"** (ou diretamente em
-   `https://github.com/<utilizador>/<repo>/security/advisories/new`).
+   `https://github.com/moral666/QT/security/advisories/new`).
    Isto cria uma conversa privada, visível só entre ti e o mantenedor,
    sem exigir troca de chaves PGP nem infraestrutura de email dedicada.
 2. Inclui: descrição do problema, passos para reproduzir, e o impacto
@@ -41,8 +41,12 @@ cumprir.)*
   ou quebre a autenticação do AEAD
 - A implementação do X3DH/PQXDH: bypass de verificação de assinatura,
   downgrade de algoritmos
-- Fugas de metadados não documentadas. Ver `docs/protocol-spec.md` para o
-  que já é um limite conhecido e assumido (não precisas de reportar isso)
+- `ffi/`: a API usada pelas apps (histórico, anexos, bloqueio da app),
+  sobretudo qualquer caminho que faça uma chave atravessar a FFI
+- `server/`: o relay (autenticação, filas, anexos no disco)
+- Fugas de metadados não documentadas. Ver `docs/known-limitations.md` e
+  `docs/protocol-spec.md` para o que já é um limite conhecido e assumido
+  (não precisas de reportar isso)
 
 Fora de âmbito: engenharia social, ataques que já exigem acesso físico
 privilegiado ao dispositivo, phishing.

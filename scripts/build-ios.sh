@@ -14,8 +14,8 @@
 #
 # Uso:  ./scripts/build-ios.sh
 #
-# NOTA: escrito sem acesso a um Mac; segue o procedimento padrao do UniFFI para iOS.
-# Se o primeiro build falhar, o erro do cargo/xcodebuild diz qual o passo.
+# Usado num Mac para a app iPhone do teste de campo (docs/field-tests.md).
+# Se o build falhar, o erro do cargo/xcodebuild diz qual o passo.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

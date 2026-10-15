@@ -1,13 +1,15 @@
 # Especificação do Protocolo (v0.1: congelado para testes)
 
-> **v0.2 (fase Android).** As secções 8–11 no fim deste ficheiro descrevem os
-> formatos e fluxos **atuais** usados pela API `QtClient` e pelo relay
-> autenticado; onde divergem das secções 3, 4 e 6 (escritas para a v0.1),
-> **prevalecem as secções 8–11**. Mudanças de formato desde a v0.1, cada uma
+> **Formatos atuais.** As secções 8–14 no fim deste ficheiro descrevem os
+> formatos e fluxos **atuais** usados pela API `QtClient`, pelas apps e pelo
+> relay autenticado; onde divergem das secções 3, 4 e 6 (escritas para a v0.1),
+> **prevalecem as secções 8–14**. Mudanças de formato desde a v0.1, cada uma
 > motivada por um problema real: (1) o bundle PQXDH passou a ser assinado
-> *incluindo a chave ML-KEM* (bundle v2); (2) o relay exige autenticação e
-> entrega *at-least-once* com `AckMessages`; (3) `DeliveredMessage` ganhou `id`;
-> (4) `RatchetState::decrypt` é transacional (sem mudança de formato).
+> *incluindo a chave ML-KEM* (bundle v2) e depois também a identidade X25519
+> (bundle v3); (2) o relay exige autenticação e entrega *at-least-once* com
+> `AckMessages`; (3) `DeliveredMessage` ganhou `id`; (4) `RatchetState::decrypt`
+> é transacional (sem mudança de formato); (5) envelope v2, com `PN` no
+> cabeçalho do ratchet e a caixa selada ligada ao envelope; (6) anexos (secção 14).
 
 ## Estado deste documento
 
@@ -44,9 +46,12 @@ formato que já mudou outra vez.
 5. [Armazenamento local](#5-armazenamento-local-no-cliente-implementado-e-testado): SQLCipher
 6. [Bindings FFI](#6-bindings-ffi-androidiospython-implementado-e-testado): Kotlin/Swift/Python
 7. [Sealed sender](#7-sealed-sender-implementado-e-testado): esconder o remetente do servidor
+8. a 14. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v3,
+   envelope v2, protocolo do relay, mensagem dentro do ratchet, sessões cruzadas e
+   eliminação, anexos (imagens e GIFs)
 
 *(Se preferires uma explicação sem jargão técnico, começa antes por
-[`apresentacao-projeto.md`](../../apresentacao-projeto.md). Este
+o [`README.md`](../README.md). Este
 documento aqui é a referência técnica detalhada, não a porta de entrada.)*
 
 ## 1. Handshake inicial: implementado e testado
@@ -367,7 +372,7 @@ a X25519 e nenhuma das duas pode ser trocada isoladamente.
 **QT Public ID:** `"qt1:" + hex(IK ‖ IK_sign)` (64 bytes → 128 hex).
 **contactId:** `hex(IK)`. **Caixa no relay (`user_id`):** `hex(IK_sign)`.
 
-## 10. Envelope v1 (o que o relay transporta)
+## 10. Envelope v2 (o que o relay transporta)
 
 ```
 Envelope      = [1: versão=2][1: tipo][se tipo=1: Cabeçalho][Mensagem de ratchet]
