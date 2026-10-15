@@ -5,6 +5,26 @@ medido, como repetir a medição e o que ficou de fora.
 
 ---
 
+## 15 de outubro de 2026: imagens e GIFs
+
+Tempo de cada passo de um anexo, num PC, com o relay na mesma máquina (sem rede
+real: num telemóvel, enviar e descarregar dependem sobretudo da rede; cifrar,
+verificar e ler demoram 3 a 5 vezes mais):
+
+| Tamanho | Cifrar | Enviar ao relay | Descarregar | Verificar | Ler para o ecrã |
+|---|---|---|---|---|---|
+| 300 KB (foto comprimida) | 3 ms | 7 ms | 8 ms | 4 ms | 0,5 ms |
+| 5 MB | 28 ms | 63 ms | 86 ms | 18 ms | 10 ms |
+| 25 MB (máximo) | 114 ms | 0,30 s | 0,43 s | 83 ms | 51 ms |
+
+As apps enviam 8 blocos de 40 KB seguidos antes de esperar pelas respostas.
+Com o algoritmo de Nagle ativo no relay, cada resposta pequena ficava retida à
+espera do ACK do cliente e enviar 25 MB demorava 3,6 s; o relay passou a
+desligá-lo (`TCP_NODELAY`) em todas as ligações. Teste: `server/tests/attachments_e2e.rs`
+(o mesmo caminho, em `--release`, com um ficheiro de 25 MiB).
+
+---
+
 ## 15 de outubro de 2026: a app deixa de abrandar com o histórico
 
 Três consultas à base de dados percorriam o histórico inteiro sempre que eram

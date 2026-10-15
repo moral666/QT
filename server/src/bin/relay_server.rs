@@ -243,9 +243,14 @@ fn configure_blobs(store: &mut Store, noise_key_path: &str) {
     let mut cfg = qt_server::BlobConfig::new(&dir);
     cfg.max_total_bytes = env_u64("RELAY_BLOB_MAX_TOTAL_MB", 2048) * 1_048_576;
     cfg.max_user_bytes_per_day = env_u64("RELAY_BLOB_USER_DAILY_MB", 1024) * 1_048_576;
+    cfg.min_free_bytes = env_u64("RELAY_BLOB_MIN_FREE_MB", 1024) * 1_048_576;
     let (total_mb, user_mb) = (cfg.max_total_bytes / 1_048_576, cfg.max_user_bytes_per_day / 1_048_576);
     match store.enable_blobs(cfg) {
-        Ok(()) => println!("Anexos em {} (24 h; ate {total_mb} MB no total, {user_mb} MB por utilizador por dia)", dir.display()),
+        Ok(()) => println!(
+            "Anexos em {} (24 h; ate {total_mb} MB no total, {user_mb} MB por utilizador por dia, deixando {} MB livres no disco)",
+            dir.display(),
+            env_u64("RELAY_BLOB_MIN_FREE_MB", 1024)
+        ),
         Err(_) => eprintln!("AVISO: nao foi possivel criar {}: anexos desativados", dir.display()),
     }
 }

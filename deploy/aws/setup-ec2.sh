@@ -92,6 +92,10 @@ cat > "$ENV_FILE" <<EOF
 RELAY_BIND_ADDR=127.0.0.1:9443
 REDIS_URL=redis://qt-relay:${REDIS_PASS}@127.0.0.1:6379
 NOISE_KEY_PATH=/var/lib/qt/relay_noise_key.bin
+# Imagens/GIFs (ja cifrados pelas apps) em /var/lib/qt/anexos, apagados ao fim de 24 h.
+RELAY_BLOB_MAX_TOTAL_MB=${RELAY_BLOB_MAX_TOTAL_MB:-2048}
+RELAY_BLOB_USER_DAILY_MB=${RELAY_BLOB_USER_DAILY_MB:-1024}
+RELAY_BLOB_MIN_FREE_MB=${RELAY_BLOB_MIN_FREE_MB:-1024}
 EOF
 umask 022
 chown root:qt "$ENV_FILE"
