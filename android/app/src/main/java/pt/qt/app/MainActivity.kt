@@ -1,11 +1,14 @@
 package pt.qt.app
 
 import android.content.Intent
+import android.graphics.Color as AndroidColor
+import android.os.Build
 import android.os.Bundle
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -14,13 +17,16 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -88,9 +94,15 @@ class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Desenho de ponta a ponta (obrigatorio com o SDK 35+): a app desenha por baixo
+        // das barras do sistema e cada ecra reserva o espaco delas (Scaffold/insets).
+        // Barra de estado com icones claros, porque a barra de topo da app e escura.
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT))
         super.onCreate(savedInstanceState)
-        // Bloqueia capturas de ecra e miniaturas na lista de apps recentes.
-        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        // Capturas de ecra permitidas. A miniatura na lista de apps recentes continua
+        // escondida (Android 13+), para as conversas nao ficarem visiveis a quem
+        // percorre as apps abertas.
+        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         setContent { SealerTheme { Surface(Modifier.fillMaxSize()) { AppRoot(vm) } } }
     }
 }
@@ -160,7 +172,7 @@ fun AppRoot(vm: MainViewModel) {
 
 @Composable
 fun LoadingScreen() {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
             BrandMark(72)
             Text("A abrir o armazenamento seguro…", style = MaterialTheme.typography.bodyMedium)
@@ -187,7 +199,7 @@ fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit) {
     var key by remember { mutableStateOf(ui.relayKeyHex) }
     var advanced by remember { mutableStateOf(false) }
     Column(
-        Modifier.fillMaxSize().padding(32.dp),
+        Modifier.fillMaxSize().safeDrawingPadding().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -513,6 +525,9 @@ fun AddContactDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
 
 // =========================================================================== chat
 
+// consumeWindowInsets era experimental em versoes antigas do Compose; o OptIn
+// garante que compila com qualquer versao do BOM.
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ChatScreen(
     ui: UiState, contactId: String, contact: Contact?,
@@ -577,7 +592,9 @@ fun ChatScreen(
             )
         },
     ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize().background(colors.chatBackground).imePadding()) {
+        // consumeWindowInsets: o Scaffold ja reservou a barra de navegacao; sem isto, com o
+        // teclado aberto, o espaco dela era contado duas vezes (buraco por cima do teclado).
+        Column(Modifier.padding(pad).consumeWindowInsets(pad).fillMaxSize().background(colors.chatBackground).imePadding()) {
             LazyColumn(
                 Modifier.weight(1f).fillMaxWidth(),
                 state = listState,

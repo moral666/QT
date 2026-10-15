@@ -72,7 +72,7 @@ não tiver 64 hex.
 * Ficheiros em `Application Support/QT/` com **Data Protection "Complete"** e **excluídos do backup**.
 * Lista de contactos cifrada pelo Secure Enclave (os metadados "quem fala com quem").
 * Ao sair da app, o conteúdo é tapado (o iOS tira uma fotografia do ecrã para a lista de apps
-  recentes). O iOS **não permite bloquear capturas de ecrã** como o `FLAG_SECURE` do Android.
+  recentes). As capturas de ecrã são permitidas, tal como na app Android.
 * `PrivacyInfo.xcprivacy`: sem rastreio, sem recolha de dados.
 
 ## Limitações desta versão
