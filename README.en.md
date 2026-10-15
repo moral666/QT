@@ -13,9 +13,9 @@ actually work?" below.
 
 This project grew out of a genuine interest in privacy and systems
 security — specifically, the question of how to build communication
-infrastructure that resists backdoors by design, not just by policy
-(motivated, among other things, by laws like the EU's proposed "Chat
-Control"). Rather than stopping at theory, the goal was to actually
+where privacy is guaranteed by technical design and not only by a
+written policy (the "data protection by design" that the GDPR asks for).
+Rather than stopping at theory, the goal was to actually
 implement and test every piece: not pseudocode, not diagrams — code that
 compiles, runs, and has automated tests confirming it does what it claims.
 
@@ -23,10 +23,10 @@ compiles, runs, and has automated tests confirming it does what it claims.
 
 Almost every popular messenger asks for your phone number to sign up.
 Even when message content is private, that registration creates a
-trail — who talks to whom, when, how often. There are also laws being
-discussed in the European Union (the so-called "Chat Control") that could
-force apps to scan message content, even in apps that claim to be
-"encrypted."
+trail — who talks to whom, when, how often. For companies this is also
+a compliance matter: the GDPR requires data protection by design and data
+minimisation, and every piece of data a service keeps is data that can be
+exposed in a breach.
 
 QT tries to answer this with engineering, not just a privacy policy:
 identity based on a cryptographic key (no phone, no email), end-to-end
@@ -73,7 +73,7 @@ Yes, end to end — as an **alpha** release. **It has not been independently aud
 
 Beyond the list above ("Still missing"), longer term:
 
-- Several independent servers collaborating (federation), so no one can take down the whole network by shutting down just one
+- Several independent servers collaborating (federation), so that one server failing does not stop the whole network
 - An iOS app (Swift bindings are generated but have never been used in an app)
 - An independent security audit, done by someone other than me
 

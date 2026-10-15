@@ -12,17 +12,17 @@ já funciona?" já a seguir.
 ## Contexto
 
 Este projeto nasceu de um interesse genuíno em privacidade e segurança de
-sistemas — em particular, na questão de como construir infraestrutura de
-comunicação que seja resistente a backdoors por desenho, não só por
-política (motivada, entre outras coisas, por leis como o "Chat Control"
-discutido na União Europeia). Em vez de ficar só na teoria, o objetivo foi
+sistemas — em particular, na questão de como construir comunicação em que a
+privacidade é garantida pelo desenho técnico e não só por uma política
+escrita (a "proteção de dados desde a conceção" que o RGPD pede). Em vez de
+ficar só na teoria, o objetivo foi
 implementar e testar cada peça a sério: não pseudocódigo, não diagramas —
 código que compila, corre, e tem testes automáticos a confirmar que faz o
 que diz que faz.
 
 ## Porque é que isto existe (o objetivo, para além do exercício técnico)
 
-Quase todos os mensageiros populares pedem o teu número de telefone para te registares. Mesmo quando o conteúdo das mensagens é privado, esse registo cria um rasto — quem fala com quem, quando, com que frequência. Há também leis a serem discutidas na União Europeia (o chamado "Chat Control") que podem obrigar aplicações a vasculhar o conteúdo das mensagens das pessoas, mesmo em apps que se dizem "cifradas".
+Quase todos os mensageiros populares pedem o teu número de telefone para te registares. Mesmo quando o conteúdo das mensagens é privado, esse registo cria um rasto — quem fala com quem, quando, com que frequência. Para empresas, isto é também uma questão de conformidade: o RGPD exige proteção de dados desde a conceção e minimização de dados, e cada dado que um serviço guarda é um dado que pode ser exposto numa fuga.
 
 O QT tenta responder a isto com engenharia, não só com uma política de privacidade: identidade baseada numa chave criptográfica (sem telefone, sem email), cifra ponta-a-ponta que nem o servidor consegue quebrar, e código aberto para que qualquer pessoa possa verificar que não há truques escondidos.
 
@@ -66,7 +66,7 @@ Sim, de ponta a ponta — em versão **alpha**. **Não foi auditado de forma ind
 
 Para além da lista acima ("O que ainda falta"), a mais longo prazo:
 
-- Vários servidores independentes a colaborar entre si (federação), para que ninguém consiga desligar a rede inteira desligando só um
+- Vários servidores independentes a colaborar entre si (federação), para que a falha de um servidor não pare a rede inteira
 - App iOS (os bindings Swift já são gerados, mas nunca foram usados numa app)
 - Uma auditoria de segurança independente, feita por alguém que não sou eu
 

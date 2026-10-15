@@ -53,8 +53,8 @@ bindings FFI para Kotlin/Swift/Python, testados também num Android real.
 ## Fase de escala (mais distante, mas desenhada desde o início)
 
 - [ ] **Federação** — vários servidores independentes, em vez de um
-  único, para que nenhum governo ou operador consiga desligar a rede
-  inteira desligando só um nó
+  único, para que a falha ou a manutenção de um nó não pare a rede
+  inteira
 - [ ] **Suporte a grupos** (conversas com mais de duas pessoas) — exige
   uma extensão ao protocolo atual (ex.: Sender Keys ou MLS)
 - [ ] **Apps iOS** — o `ffi/` já gera bindings Swift, mas nunca foram
