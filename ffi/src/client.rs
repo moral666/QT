@@ -155,6 +155,8 @@ pub struct SealedDecrypted {
 #[derive(uniffi::Object)]
 pub struct QtClient {
     conn: Mutex<st::rusqlite::Connection>,
+    /// Pasta dos anexos (ficheiros cifrados), ao lado da base de dados.
+    pub(crate) files_dir: std::path::PathBuf,
 }
 
 fn parse_public_id(id: &str) -> Result<([u8; 32], [u8; 32]), QtError> {
@@ -204,7 +206,7 @@ impl QtClient {
             st::StorageError::InvalidStorageKey => bad("storage_key"),
             _ => QtError::Storage,
         })?;
-        Ok(Arc::new(QtClient { conn: Mutex::new(conn) }))
+        Ok(Arc::new(QtClient { conn: Mutex::new(conn), files_dir: std::path::PathBuf::from(format!("{path}.anexos")) }))
     }
 
     // ---------------------------------------------------------- identidade
@@ -245,6 +247,9 @@ impl QtClient {
     pub fn delete_identity(&self) -> Result<(), QtError> {
         let c = self.lock()?;
         st::wipe_all(&c)?;
+        // Os anexos estao cifrados com chaves que estavam na base de dados (ja
+        // apagadas); os ficheiros vao tambem.
+        let _ = std::fs::remove_dir_all(&self.files_dir);
         Ok(())
     }
 
@@ -787,6 +792,14 @@ pub enum RelayResponse {
     BundleNotFound,
     Messages { messages: Vec<RelayDelivered> },
     Error { reason: String },
+    /// Espaco reservado para um anexo (guardar com `attachment_set_blob`).
+    BlobCreated { blob_id: String, token: String },
+    /// Quantos bytes de um anexo o relay ja tem.
+    BlobStatus { size: u64, received: u64, complete: bool },
+    /// Um bloco de um anexo (cifrado; guardar com `attachment_write_chunk`).
+    BlobData { offset: u64, size: u64, data: Vec<u8> },
+    /// O relay ja nao tem este anexo (expirou ou foi apagado).
+    BlobNotFound,
 }
 
 #[derive(serde::Deserialize)]
@@ -802,6 +815,10 @@ enum WireServerMsg {
     PreKeyBundleNotFound,
     Messages { messages: Vec<WireDelivered> },
     Error { reason: String },
+    BlobCreated { blob_id: String, token: String },
+    BlobStatus { size: u64, received: u64, complete: bool },
+    BlobData { offset: u64, size: u64, data: String },
+    BlobNotFound,
 }
 
 /// Interpreta uma resposta do relay (ja decifrada pelo Noise).
@@ -822,6 +839,17 @@ pub fn relay_parse_response(bytes: Vec<u8>) -> Result<RelayResponse, QtError> {
                 .collect(),
         },
         WireServerMsg::Error { reason } => RelayResponse::Error { reason },
+        WireServerMsg::BlobCreated { blob_id, token } => RelayResponse::BlobCreated { blob_id, token },
+        WireServerMsg::BlobStatus { size, received, complete } => RelayResponse::BlobStatus { size, received, complete },
+        WireServerMsg::BlobData { offset, size, data } => {
+            use base64::Engine;
+            let data = base64::engine::general_purpose::STANDARD.decode(data).map_err(|_| QtError::InvalidEnvelope)?;
+            if data.len() > crate::attachments::BLOB_CHUNK {
+                return Err(QtError::InvalidEnvelope);
+            }
+            RelayResponse::BlobData { offset, size, data }
+        }
+        WireServerMsg::BlobNotFound => RelayResponse::BlobNotFound,
     })
 }
 

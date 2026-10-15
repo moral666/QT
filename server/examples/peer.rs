@@ -95,6 +95,7 @@ fn desc(r: &Result<RelayResponse, String>) -> String {
         Ok(RelayResponse::BundleNotFound) => "BundleNotFound".into(),
         Ok(RelayResponse::Messages { .. }) => "Messages".into(),
         Ok(RelayResponse::Error { reason }) => format!("Error({reason})"),
+        Ok(_) => "Anexo".into(),
         Err(e) => e.clone(),
     }
 }

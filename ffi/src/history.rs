@@ -4,6 +4,8 @@
 //!   [1 versao=0x01][1 tipo][16 msg_id][8 sent_at ms, BE]
 //!   tipo 1 = texto:  [texto UTF-8]
 //!   tipo 2 = recibo: [1 estado: 2=entregue, 3=vista][2 n BE][n x 16 msg_id]
+//!   tipo 3 = anexo:  imagem/GIF (chave do ficheiro, id no relay, tamanho, tipo);
+//!                    ver `attachments.rs`
 //! Um plaintext que nao siga este formato (clientes antigos) e tratado como
 //! texto simples, com um msg_id derivado do envelope (deduplicacao estavel).
 //!
@@ -23,6 +25,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::attachments::{decode_wire, encode_wire, received_body, AttMeta, AttachmentInfo};
 use crate::client::{bad, contact_to_identity, hex, unhex, QtClient, QtError};
 use qt_storage as st;
 use qt_storage::messages as hm;
@@ -31,6 +34,7 @@ use sha2::{Digest, Sha256};
 const PAYLOAD_V1: u8 = 0x01;
 const T_TEXT: u8 = 1;
 const T_RECEIPT: u8 = 2;
+const T_ATTACHMENT: u8 = 3;
 const HDR: usize = 1 + 1 + 16 + 8;
 /// Texto maximo por mensagem (bytes UTF-8). Cabe no limite do envelope.
 pub const MAX_TEXT_BYTES: usize = 9_000;
@@ -80,6 +84,8 @@ pub struct ChatMessage {
     /// Hora local em que foi criada/recebida (ms).
     pub local_at_ms: i64,
     pub status: MessageStatus,
+    /// Imagem/GIF (o `text` e entao "📷 Foto" ou "GIF", para a lista de conversas).
+    pub attachment: Option<AttachmentInfo>,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -107,7 +113,7 @@ pub enum ReceiveResult {
     NoChange { contact_id: String },
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
@@ -117,16 +123,22 @@ fn new_id() -> Result<[u8; 16], QtError> {
     Ok(id)
 }
 
-fn to_chat(m: &hm::StoredMessage) -> ChatMessage {
+pub(crate) fn to_chat(m: &hm::StoredMessage) -> ChatMessage {
+    let att = if m.kind == hm::KIND_ATTACHMENT { AttMeta::parse(&m.body) } else { None };
     ChatMessage {
         seq: m.seq,
         message_id: hex(&m.msg_id),
         contact_id: m.contact_id.clone(),
         outgoing: m.outgoing,
-        text: m.body.clone(),
+        text: match &att {
+            Some(a) => a.label().to_string(),
+            None if m.kind == hm::KIND_ATTACHMENT => UNSUPPORTED_TEXT.to_string(),
+            None => m.body.clone(),
+        },
         sent_at_ms: m.sent_at,
         local_at_ms: m.local_at,
         status: MessageStatus::from_db(m.status),
+        attachment: att.map(|a| a.info()),
     }
 }
 
@@ -139,6 +151,16 @@ fn encode_text(id: &[u8; 16], sent_at: i64, text: &str) -> Vec<u8> {
     out.extend_from_slice(id);
     out.extend_from_slice(&sent_at.to_be_bytes());
     out.extend_from_slice(text.as_bytes());
+    out
+}
+
+pub(crate) fn encode_attachment(id: &[u8; 16], sent_at: i64, wire: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(HDR + wire.len());
+    out.push(PAYLOAD_V1);
+    out.push(T_ATTACHMENT);
+    out.extend_from_slice(id);
+    out.extend_from_slice(&sent_at.to_be_bytes());
+    out.extend_from_slice(wire);
     out
 }
 
@@ -163,6 +185,7 @@ enum Payload {
     /// Mostra-se um aviso em vez de bytes sem sentido.
     Unsupported { id: Vec<u8>, sent_at: i64 },
     Receipt { status: i64, ids: Vec<Vec<u8>> },
+    Attachment { id: Vec<u8>, sent_at: i64, meta: AttMeta },
 }
 
 /// Descodifica o plaintext. `legacy_id` serve para clientes antigos (texto simples).
@@ -194,6 +217,10 @@ fn decode(plain: &[u8], legacy_id: &[u8]) -> Payload {
             }
             Payload::Receipt { status, ids: b[3..].chunks(16).map(|c| c.to_vec()).collect() }
         }
+        T_ATTACHMENT => match decode_wire(&plain[HDR..]) {
+            Some(meta) => Payload::Attachment { id, sent_at, meta },
+            None => Payload::Unsupported { id, sent_at },
+        },
         _ => Payload::Unsupported { id, sent_at },
     }
 }
@@ -319,6 +346,21 @@ impl QtClient {
                     }
                 }
                 Payload::Receipt { .. } => ReceiveResult::NoChange { contact_id: contact_id.to_string() },
+                Payload::Attachment { id, sent_at, meta } => {
+                    let body = received_body(&meta)?;
+                    match hm::insert_message(tx, &id, contact_id, false, hm::KIND_ATTACHMENT, &body, sent_at, now, hm::ST_RECEIVED)? {
+                        Some(_) => {
+                            let mut p = pending_delivered(tx, contact_id)?;
+                            if p.len() < MAX_RECEIPT_IDS * 16 * 4 {
+                                p.extend_from_slice(&id);
+                                st::kv_set(tx, &format!("{KV_PENDING_DELIVERED}{contact_id}"), &p)?;
+                            }
+                            let m = hm::get_message(tx, contact_id, &id)?.ok_or(QtError::Storage)?;
+                            ReceiveResult::NewMessage { message: to_chat(&m) }
+                        }
+                        None => ReceiveResult::NoChange { contact_id: contact_id.to_string() },
+                    }
+                }
                 Payload::Unsupported { id, sent_at } => {
                     match hm::insert_message(tx, &id, contact_id, false, hm::KIND_TEXT, UNSUPPORTED_TEXT, sent_at, now, hm::ST_RECEIVED)? {
                         Some(_) => {
@@ -411,6 +453,7 @@ impl QtClient {
         let _ = contact_to_identity(&contact_id)?;
         let c = self.lock()?;
         let tx = c.unchecked_transaction()?;
+        self.remove_contact_files(&tx, &contact_id)?;
         hm::delete_conversation(&tx, &contact_id)?;
         st::kv_delete(&tx, &format!("{KV_PENDING_DELIVERED}{contact_id}"))?;
         tx.commit()?;
@@ -426,6 +469,7 @@ impl QtClient {
         let _ = contact_to_identity(&contact_id)?;
         let c = self.lock()?;
         let tx = c.unchecked_transaction()?;
+        self.remove_contact_files(&tx, &contact_id)?;
         hm::delete_conversation(&tx, &contact_id)?;
         st::kv_delete(&tx, &format!("{KV_PENDING_DELIVERED}{contact_id}"))?;
         st::kv_delete(&tx, &format!("pending:{contact_id}"))?;
@@ -449,11 +493,20 @@ pub const UNSUPPORTED_TEXT: &str =
 pub(crate) fn requeue_after_session_reset(client: &QtClient, tx: &st::rusqlite::Connection, contact_id: &str) -> Result<(), QtError> {
     hm::outbox_delete_contact(tx, contact_id)?;
     for m in hm::outgoing_undelivered(tx, contact_id, 200)? {
-        if m.kind != hm::KIND_TEXT {
-            continue;
-        }
         let Ok(id) = <[u8; 16]>::try_from(m.msg_id.as_slice()) else { continue };
-        let blob = client.seal_with(tx, contact_id, &encode_text(&id, m.sent_at, &m.body))?;
+        let plain = match m.kind {
+            hm::KIND_TEXT => encode_text(&id, m.sent_at, &m.body),
+            // Anexos ja enviados ao relay: a mensagem com a chave volta a seguir. Os
+            // que ainda estao a ser enviados saem quando o envio acabar (ja com a sessao nova).
+            hm::KIND_ATTACHMENT => match AttMeta::parse(&m.body) {
+                Some(a) if a.blob.is_some() && a.token.is_none() && a.info().state == crate::attachments::AttachmentState::Ready => {
+                    encode_attachment(&id, m.sent_at, &encode_wire(&a)?)
+                }
+                _ => continue,
+            },
+            _ => continue,
+        };
+        let blob = client.seal_with(tx, contact_id, &plain)?;
         hm::outbox_put(tx, &id, contact_id, hm::OUTBOX_MESSAGE, &blob)?;
         hm::reset_outgoing_to_pending(tx, contact_id, &id)?;
     }

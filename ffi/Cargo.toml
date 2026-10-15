@@ -39,6 +39,7 @@ getrandom = "0.2"
 # Bloqueio da app com codigo proprio (ver src/applock.rs).
 argon2 = "0.5"
 chacha20poly1305 = "0.10"
+base64 = "0.22"
 
 [build-dependencies]
 uniffi = { version = "0.28", features = ["build"] }

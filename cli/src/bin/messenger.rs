@@ -216,6 +216,11 @@ fn describe(r: &RelayResponse) -> String {
         RelayResponse::BundleNotFound => "BundleNotFound".into(),
         RelayResponse::Messages { .. } => "Messages".into(),
         RelayResponse::Error { reason } => reason.clone(),
+        // Anexos: a CLI nao os envia nem recebe.
+        RelayResponse::BlobCreated { .. }
+        | RelayResponse::BlobStatus { .. }
+        | RelayResponse::BlobData { .. }
+        | RelayResponse::BlobNotFound => "Anexo".into(),
     }
 }
 
