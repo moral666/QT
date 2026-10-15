@@ -98,6 +98,12 @@ fn random_file(name: &str, len: usize) -> (String, Vec<u8>) {
 
 const WINDOW: usize = 8;
 
+fn blob_cfg(dir: &std::path::Path) -> qt_server::BlobConfig {
+    let mut c = qt_server::BlobConfig::new(dir);
+    c.min_free_bytes = 0; // o teste nao depende do espaco livre da maquina
+    c
+}
+
 /// Envia o anexo como a app: reserva, retoma pelo que o relay ja tem, blocos em janela.
 /// `stop_after` simula a ligacao a cair depois de N blocos.
 async fn upload(qt: &Arc<QtClient>, l: &mut Link, r: &AttachmentRef, stop_after: Option<usize>) -> bool {
@@ -192,7 +198,7 @@ async fn deliver(alice: &User, bob: &User, la: &mut Link, lb: &mut Link, cid: &s
 #[tokio::test]
 async fn imagem_de_ponta_a_ponta_com_quedas_de_rede() {
     let dir = std::env::temp_dir().join(format!("qt-att-relay-{}", std::process::id()));
-    let relay = TestRelay::start_with_blobs(fast_cfg(), qt_server::BlobConfig::new(&dir)).await;
+    let relay = TestRelay::start_with_blobs(fast_cfg(), blob_cfg(&dir)).await;
     let (alice, bob, mut la, mut lb, cid) = setup(&relay).await;
 
     // ~1,3 MB: varios blocos e um ultimo incompleto.
@@ -255,7 +261,7 @@ async fn imagem_de_ponta_a_ponta_com_quedas_de_rede() {
 #[tokio::test]
 async fn relay_que_troca_bytes_e_ficheiro_expirado() {
     let dir = std::env::temp_dir().join(format!("qt-att-relay2-{}", std::process::id()));
-    let relay = TestRelay::start_with_blobs(fast_cfg(), qt_server::BlobConfig::new(&dir)).await;
+    let relay = TestRelay::start_with_blobs(fast_cfg(), blob_cfg(&dir)).await;
     let (alice, bob, mut la, mut lb, cid) = setup(&relay).await;
 
     // GIF pequeno (1 bloco).

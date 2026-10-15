@@ -74,6 +74,10 @@ pub async fn handle_connection_with(
     server_static_private: Vec<u8>,
     cfg: &ServerConfig,
 ) -> Result<(), ConnectionError> {
+    // Sem o algoritmo de Nagle: as respostas sao pequenas e seguidas (ex.: um
+    // `BlobStatus` por cada bloco de um anexo) e o Nagle segurava cada uma a espera
+    // do ACK do cliente. Com ele, enviar 25 MB demorava ~9x mais (docs/performance.md).
+    let _ = tcp_stream.set_nodelay(true);
     let (mut ws, mut noise) =
         match ws_transport::server_accept_with(tcp_stream, &server_static_private, cfg.handshake_timeout).await {
             Ok(x) => x,

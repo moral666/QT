@@ -1449,6 +1449,7 @@ dependencies = [
  "base64",
  "ed25519-dalek",
  "futures-util",
+ "libc",
  "qt_core",
  "qt_ffi",
  "qt_transport",

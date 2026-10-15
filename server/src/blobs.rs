@@ -45,6 +45,9 @@ pub struct BlobConfig {
     pub max_total_bytes: u64,
     /// Bytes que cada utilizador pode enviar por dia (anti-abuso).
     pub max_user_bytes_per_day: u64,
+    /// Espaco que fica sempre livre no disco (para o sistema, o Redis e os registos):
+    /// abaixo disto, o relay recusa anexos novos mesmo sem chegar a `max_total_bytes`.
+    pub min_free_bytes: u64,
     /// Folga da limpeza: um ficheiro sem registo no Redis so e apagado depois
     /// disto (o registo e criado logo a seguir ao ficheiro), e um ficheiro so e
     /// apagado por idade depois de `ttl + grace`.
@@ -59,6 +62,7 @@ impl BlobConfig {
             max_total_bytes: 2 * 1024 * 1024 * 1024,
             max_user_bytes_per_day: 1024 * 1024 * 1024,
             grace: Duration::from_secs(600),
+            min_free_bytes: 1024 * 1024 * 1024,
         }
     }
 }
@@ -187,6 +191,9 @@ impl Store {
         let blobs = self.blobs()?;
         if size == 0 || size > MAX_BLOB_BYTES {
             return Err(BlobError::BadSize);
+        }
+        if free_bytes(&blobs.cfg.dir).is_some_and(|free| free < size.saturating_add(blobs.cfg.min_free_bytes)) {
+            return Err(BlobError::NoSpace);
         }
         let prev = blobs.used.fetch_add(size, Ordering::SeqCst);
         if prev.saturating_add(size) > blobs.cfg.max_total_bytes {
@@ -380,6 +387,25 @@ impl Store {
     }
 }
 
+/// Espaco livre no disco onde esta `dir` (o que um processo sem privilegios pode usar).
+#[cfg(unix)]
+fn free_bytes(dir: &Path) -> Option<u64> {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
+    // SAFETY: `statvfs` so escreve na estrutura que lhe passamos; o caminho e uma
+    // string C valida que vive ate ao fim da chamada.
+    let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(path.as_ptr(), &mut s) } != 0 {
+        return None;
+    }
+    Some((s.f_bavail as u64).saturating_mul(s.f_frsize as u64))
+}
+
+#[cfg(not(unix))]
+fn free_bytes(_dir: &Path) -> Option<u64> {
+    None
+}
+
 fn remove(path: &Path) -> bool {
     std::fs::remove_file(path).is_ok()
 }
@@ -387,6 +413,13 @@ fn remove(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn espaco_livre_do_disco() {
+        let free = free_bytes(&std::env::temp_dir());
+        assert!(free.is_some_and(|f| f > 0), "{free:?}");
+        assert!(free_bytes(Path::new("/nao/existe/mesmo")).is_none());
+    }
 
     #[test]
     fn ids_e_comparacao() {

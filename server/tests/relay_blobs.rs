@@ -61,6 +61,7 @@ fn cfg(dir: std::path::PathBuf) -> BlobConfig {
     let mut c = BlobConfig::new(dir);
     c.max_total_bytes = 64 * 1024 * 1024;
     c.max_user_bytes_per_day = 40 * 1024 * 1024;
+    c.min_free_bytes = 0;
     c
 }
 
@@ -182,6 +183,18 @@ async fn espaco_total_e_reposto_ao_apagar() {
     req(&mut ws, &mut n, &ClientMessage::BlobDelete { blob_id }).await;
     let r = req(&mut ws, &mut n, &ClientMessage::BlobCreate { size: 20 << 20 }).await;
     assert!(matches!(r, ServerMessage::BlobCreated { .. }), "{r:?}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn disco_quase_cheio_recusa_anexos_novos() {
+    let dir = tmpdir("disco");
+    let mut c = cfg(dir.clone());
+    c.min_free_bytes = u64::MAX / 2; // nenhum disco tem isto livre
+    let relay = TestRelay::start_with_blobs(fast_cfg(), c).await;
+    let (mut ws, mut n) = login(&relay.url, &SigningKeyPair::generate()).await;
+    let r = req(&mut ws, &mut n, &ClientMessage::BlobCreate { size: 1000 }).await;
+    assert!(matches!(&r, ServerMessage::Error { reason } if reason.contains("espaco")), "{r:?}");
     let _ = std::fs::remove_dir_all(dir);
 }
 
