@@ -197,3 +197,36 @@ fn apagar_contacto_valida_o_id() {
     assert!(a.c.delete_contact("nao-e-hex".into()).is_err());
     assert!(a.c.delete_conversation("".into()).is_err());
 }
+
+/// Imagem enviada durante sessoes cruzadas: a mensagem com a chave do anexo tambem
+/// e cifrada de novo com a sessao que fica (nos dois sentidos do desempate).
+#[test]
+fn sessoes_cruzadas_nao_perdem_anexos() {
+    // Fica a sessao de quem tem a chave de identidade menor. Forca os dois casos:
+    // a Alice perde o desempate (tem de cifrar de novo o anexo) e depois ganha.
+    for alice_loses in [true, false] {
+        let (a, b) = loop {
+            let a = peer("att_a", 0x41);
+            let b = peer("att_b", 0x42);
+            if (a.id.identity_public > b.id.identity_public) == alice_loses {
+                break (a, b);
+            }
+        };
+        a.start_with(&b);
+        b.start_with(&a);
+        let src = format!("{}.src", a.path);
+        std::fs::write(&src, vec![7u8; 5000]).unwrap();
+        let m = a.c.attachment_create(b.cid(), src.clone(), "image/png".into(), 50, 40).unwrap();
+        a.c.attachment_set_blob(b.cid(), m.message_id.clone(), "ab".repeat(16), "cd".repeat(16)).unwrap();
+        a.c.attachment_uploaded(b.cid(), m.message_id.clone()).unwrap();
+        b.c.send_text(a.cid(), "olá do Bob".into()).unwrap();
+        settle(&a, &b);
+        let got = b.c.messages_page(a.cid(), None, 50).unwrap();
+        let att = got.iter().find(|x| x.message_id == m.message_id).expect("o anexo chegou");
+        let info = att.attachment.clone().unwrap();
+        assert_eq!((info.width, info.height, info.size), (50, 40, 5000));
+        assert_eq!(b.c.attachments_pending_download().unwrap().len(), 1, "fica a espera de descarregar");
+        assert!(a.texts(&b.cid()).contains(&"olá do Bob".to_string()));
+        let _ = std::fs::remove_file(src);
+    }
+}
