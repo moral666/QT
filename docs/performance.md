@@ -5,6 +5,37 @@ medido, como repetir a medição e o que ficou de fora.
 
 ---
 
+## 15 de outubro de 2026: menos idas ao Redis por mensagem
+
+Três alterações no relay, sem mudar o protocolo nem os dados guardados:
+guardar uma mensagem passa de 4 para 2 idas ao Redis (pipeline); confirmar
+mensagens deixa de ler a fila inteira e apaga-as num só pedido; e cada pedido
+de mensagens lê 16 entradas da fila em vez de 100.
+
+Medido com `scripts/relay-medir.sh` (relaybench: envelopes opacos, 50 pares de
+ligações autenticadas, o mais depressa possível, 20 s), relay e Redis em
+`--release` na mesma máquina que o gerador de carga (2 vCPU, 7,8 GB):
+
+| | Antes | Depois |
+|---|---|---|
+| Mensagens de 200 B por segundo | 14 400 a 14 700 | **16 900** |
+| Mensagens de 4 KB por segundo | 5 000 a 5 070 | **6 040** |
+| Resposta a um envio, 200 B (p50 / p99) | 3,3 / 7,4 ms | **2,8 / 6,0 ms** |
+| Ponta a ponta, 200 B (p95 / p99) | 23 / 26 ms | **9,5 / 18 ms** |
+| Ponta a ponta, 4 KB (p95 / p99) | 31 / 36 ms | **26 / 32 ms** |
+| CPU com fila acumulada (4 000 msg/s): relay / Redis | 55 % / 27 % | **39 % / 15 %** |
+| CPU com mensagens de 12 KB em fila: relay / Redis | 46 % / 18 % | **38 % / 13 %** |
+
+Entre duas medições iguais, os resultados variam cerca de 2 %. O gerador de
+carga usa os mesmos 2 vCPU, por isso os números absolutos subestimam o relay;
+servem para comparar antes e depois. Ligações paradas a pedir mensagens de 3 em
+3 s (5 000 ligações) custam o mesmo de antes: ~14 KB por ligação e cerca de
+0,06 ms de CPU do relay por pedido.
+
+Para repetir: `./scripts/relay-medir.sh 4k -- --pairs 50 --size 4096 --secs 20`.
+
+---
+
 ## 15 de outubro de 2026: imagens e GIFs
 
 Tempo de cada passo de um anexo, num PC, com o relay na mesma máquina (sem rede
