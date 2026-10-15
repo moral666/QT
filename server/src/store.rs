@@ -101,17 +101,29 @@ impl Store {
         let mut conn = self.connection().await?;
         let key = format!("{}:queue:{}", self.key_prefix, to);
 
-        let current_len: usize = conn.llen(&key).await?;
+        // Duas idas ao Redis em vez de quatro: (tamanho da fila + id novo) e depois
+        // (guardar + renovar o TTL), cada par num so pedido (pipeline). Os comandos
+        // sao os mesmos de antes; um id gasto com a fila cheia nao faz falta (os ids
+        // so tem de ser unicos).
+        let (current_len, id): (usize, u64) = redis::pipe()
+            .llen(&key)
+            .incr(format!("{}:seq", self.key_prefix), 1u64)
+            .query_async(&mut conn)
+            .await?;
         if current_len >= MAX_QUEUED_MESSAGES_PER_USER {
             return Err(StoreError::QueueFull);
         }
 
-        let id = self.next_id(&mut conn).await?;
         let entry = encode_entry(id, &sealed_from, &ciphertext);
-        conn.rpush::<_, _, ()>(&key, entry).await?;
         // Renova o TTL a cada nova mensagem - a fila só expira 30 dias
         // depois da ÚLTIMA mensagem recebida, não da primeira.
-        conn.expire::<_, ()>(&key, QUEUE_TTL_SECONDS).await?;
+        redis::pipe()
+            .rpush(&key, entry)
+            .ignore()
+            .expire(&key, QUEUE_TTL_SECONDS)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
 
         Ok(())
     }
@@ -165,11 +177,6 @@ impl Store {
             }
         }
         Ok(removed)
-    }
-
-    async fn next_id(&self, conn: &mut redis::aio::ConnectionManager) -> Result<u64, StoreError> {
-        let key = format!("{}:seq", self.key_prefix);
-        Ok(conn.incr::<_, _, u64>(key, 1u64).await?)
     }
 }
 
