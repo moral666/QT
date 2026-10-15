@@ -70,3 +70,10 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
 33. **Poll de 3 s** em vez de *push*; sem serviço em segundo plano nem notificações.
 34. Sem ABI `x86_64` com o NDK r26d (o OpenSSL embebido não compila o assembly x86 de SM3/SM4);
     testar em telemóvel arm64, ou compilar com um NDK mais recente.
+35. **Bloqueio da app (Android):** o código só tem números (mínimo 6). Fora do telemóvel não serve
+    para nada, porque a chave cifrada também depende do Keystore do aparelho. Mas num telemóvel com
+    root, quem conseguir correr código como a app pode tentar códigos através desse Keystore: cada
+    tentativa custa cerca de 0,5 a 1 s (Argon2id, 64 MiB), por isso um código de 6 dígitos aguenta
+    dias, não anos. Códigos mais longos protegem mais. A espera crescente depois de 5 erros só trava
+    tentativas pela interface. Com o desbloqueio por impressão digital ativo, quem souber o PIN do
+    telemóvel também abre a app (é uma escolha do utilizador). Ainda não existe na app iPhone.

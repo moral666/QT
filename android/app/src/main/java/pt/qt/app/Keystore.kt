@@ -17,6 +17,8 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
+import uniffi.qt_ffi.appLockUnwrap
+import uniffi.qt_ffi.appLockWrap
 
 /** A chave do Keystore deixou de estar utilizavel (invalidada, apagada ou dados corrompidos). */
 class KeystoreUnavailableException(message: String, cause: Throwable? = null) : Exception(message, cause)
@@ -125,6 +127,9 @@ class KeystoreBox(private val alias: String = DEFAULT_ALIAS) {
 /** O segredo do SQLCipher nao pode ser obtido. NUNCA se gera um novo por cima de uma base existente. */
 class StorageKeyUnavailableException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
+/** O bloqueio da app esta ativo: a chave so sai com o codigo (ou com a biometria, ver [BioUnlock]). */
+class AppLockedException : Exception("a app esta bloqueada")
+
 /**
  * Chave do SQLCipher: 32 bytes aleatorios (CSPRNG), gerados UMA vez, guardados CIFRADOS pela
  * [KeystoreBox] num ficheiro privado fora de backups. Nunca existem como string, nem em
@@ -144,12 +149,121 @@ class StorageKeyProvider(
 ) {
     private companion object {
         val MAGIC = byteArrayOf('Q'.code.toByte(), 'T'.code.toByte(), 'K'.code.toByte(), '2'.code.toByte())
+        /** Bloqueio ativo: "QTL1" || Keystore( Rust app_lock_wrap(codigo, chave) ). */
+        val MAGIC_LOCKED = byteArrayOf('Q'.code.toByte(), 'T'.code.toByte(), 'L'.code.toByte(), '1'.code.toByte())
         const val KEY_LEN = 32
         val lock = Any()
     }
 
     private val file = AtomicFile(File(ctx.noBackupFilesDir, "qt_storage_key.bin"))
     private val aad: ByteArray = ("qt/sqlcipher-key/v2/" + (dbFile?.name ?: "default")).toByteArray(Charsets.UTF_8)
+    private val lockedAad: ByteArray = ("qt/sqlcipher-key/locked/v1/" + (dbFile?.name ?: "default")).toByteArray(Charsets.UTF_8)
+
+    private fun startsWith(blob: ByteArray, magic: ByteArray): Boolean =
+        blob.size > magic.size && blob.copyOfRange(0, magic.size).contentEquals(magic)
+
+    private fun readBlob(): ByteArray = try { file.readFully() } catch (e: Exception) {
+        throw StorageKeyUnavailableException("nao foi possivel ler o ficheiro da chave", e)
+    }
+
+    /** `true` se o bloqueio da app (codigo) esta ativo. */
+    fun lockEnabled(): Boolean = synchronized(lock) {
+        file.baseFile.exists() && runCatching { startsWith(file.readFully(), MAGIC_LOCKED) }.getOrDefault(false)
+    }
+
+    /**
+     * Chave com o bloqueio ativo. Codigo errado: `QtException.Crypto` (vem do Rust).
+     * O chamador DEVE fazer `fill(0)` ao resultado.
+     */
+    fun storageKeyWithCode(code: String): ByteArray = synchronized(lock) {
+        val blob = readBlob()
+        if (!startsWith(blob, MAGIC_LOCKED)) throw StorageKeyUnavailableException("o bloqueio nao esta ativo")
+        val inner = try {
+            box.open(blob.copyOfRange(MAGIC_LOCKED.size, blob.size), lockedAad)
+        } catch (e: AEADBadTagException) {
+            throw StorageKeyUnavailableException("ficheiro da chave corrompido ou de outro aparelho", e)
+        } catch (e: KeystoreUnavailableException) {
+            throw StorageKeyUnavailableException("a chave do Keystore ja nao esta disponivel", e)
+        }
+        try {
+            appLockUnwrap(code, inner).also { checkLen(it) }
+        } finally {
+            inner.fill(0)
+        }
+    }
+
+    /** Ativa o bloqueio: a chave passa a precisar do codigo. Confirma antes de dar por feito. */
+    fun enableLock(code: String) {
+        synchronized(lock) {
+            val key = storageKey()
+            try {
+                writeLocked(appLockWrap(code, key))
+                verifyLocked(code, key)
+            } finally {
+                key.fill(0)
+            }
+        }
+    }
+
+    /** Desativa o bloqueio (exige o codigo atual). */
+    fun disableLock(code: String) {
+        synchronized(lock) {
+            val key = storageKeyWithCode(code)
+            try {
+                write(key)
+                verifyUnlocked(key)
+            } finally {
+                key.fill(0)
+            }
+        }
+    }
+
+    /** Muda o codigo (exige o atual). */
+    fun changeCode(oldCode: String, newCode: String) {
+        synchronized(lock) {
+            val key = storageKeyWithCode(oldCode)
+            try {
+                writeLocked(appLockWrap(newCode, key))
+                verifyLocked(newCode, key)
+            } finally {
+                key.fill(0)
+            }
+        }
+    }
+
+    /** Apaga o ficheiro da chave (so ao apagar todos os dados). */
+    fun deleteKeyFile() {
+        synchronized(lock) { file.delete() }
+    }
+
+    private fun verifyUnlocked(key: ByteArray) {
+        val back = storageKey()
+        val same = MessageDigest.isEqual(back, key)
+        back.fill(0)
+        if (!same) throw StorageKeyUnavailableException("verificacao da chave falhou")
+    }
+
+    private fun verifyLocked(code: String, key: ByteArray) {
+        val back = storageKeyWithCode(code)
+        val same = MessageDigest.isEqual(back, key)
+        back.fill(0)
+        if (!same) {
+            write(key)   // volta ao formato sem bloqueio em vez de arriscar perder a chave
+            throw StorageKeyUnavailableException("verificacao do bloqueio falhou")
+        }
+    }
+
+    private fun writeLocked(lockBlob: ByteArray) {
+        val out = file.startWrite()
+        try {
+            out.write(MAGIC_LOCKED)
+            out.write(box.seal(lockBlob, lockedAad))
+            file.finishWrite(out)
+        } catch (e: Exception) {
+            file.failWrite(out)
+            throw e
+        }
+    }
 
     /**
      * Devolve os 32 bytes da chave. O chamador DEVE fazer `fill(0)` ao array logo depois de
@@ -157,9 +271,8 @@ class StorageKeyProvider(
      */
     fun storageKey(): ByteArray = synchronized(lock) {
         if (!file.baseFile.exists()) return createNew()
-        val blob = try { file.readFully() } catch (e: Exception) {
-            throw StorageKeyUnavailableException("nao foi possivel ler o ficheiro da chave", e)
-        }
+        val blob = readBlob()
+        if (startsWith(blob, MAGIC_LOCKED)) throw AppLockedException()
         try {
             if (blob.size > MAGIC.size && blob.copyOfRange(0, MAGIC.size).contentEquals(MAGIC)) {
                 box.open(blob.copyOfRange(MAGIC.size, blob.size), aad).also { checkLen(it) }

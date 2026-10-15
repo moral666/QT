@@ -19,6 +19,8 @@ use x25519_dalek::{PublicKey, StaticSecret};
 uniffi::setup_scaffolding!();
 
 #[cfg(feature = "pq")]
+pub mod applock;
+#[cfg(feature = "pq")]
 pub mod client;
 pub mod history;
 #[cfg(feature = "pq")]

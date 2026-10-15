@@ -52,7 +52,8 @@ Yes, end to end, as an **alpha** release. **It has not been independently audite
 - ~~Persistent history~~ (**done**): history stored in SQLCipher (in the same transaction that advances the ratchet), with *Sent / Delivered / Read* indicators via encrypted receipts and a persistent outbox.
 - **Push notifications**: the app only receives messages while it is open.
 - **Production infrastructure**: own domain (the current one is temporary), redundancy, backups and server alerts.
-- App lock with PIN/biometrics, adding contacts via QR code, a more polished interface.
+- ~~App lock~~ (done on Android): an app passcode that encrypts the key to the conversations (Argon2id), plus optional unlock with fingerprint, face or the phone's PIN. Still missing on iPhone.
+- Adding contacts via QR code, a more polished interface.
 - Distribution through the Play Store (some antivirus apps currently warn because the app comes from an unknown source).
 - Load testing on the AWS relay (already measured on a local machine, see [`docs/performance.md`](docs/performance.md), in Portuguese) and an **independent security audit**.
 

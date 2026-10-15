@@ -1,13 +1,21 @@
 package pt.qt.app
 
 import android.app.Application
+import android.os.Build
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import java.io.File
+import javax.crypto.Cipher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -42,7 +50,24 @@ data class UiState(
     val readReceipts: Boolean = true,
     /** Safety number a mostrar (nome + 60 digitos), ou null. */
     val safetyNumber: String? = null,
+    // ----- bloqueio da app -----
+    /** A app esta bloqueada agora (base de dados fechada, nada sensivel em memoria). */
+    val locked: Boolean = false,
+    /** O bloqueio com codigo esta ativo nas definicoes. */
+    val lockEnabled: Boolean = false,
+    /** Desbloqueio com impressao digital/rosto/PIN do telemovel ativo. */
+    val bioEnabled: Boolean = false,
+    /** O telemovel permite esse desbloqueio (Android 11+ com bloqueio de ecra). */
+    val bioAvailable: Boolean = false,
+    /** Bloquear automaticamente depois de a app estar este tempo em segundo plano. */
+    val lockTimeoutMs: Long = DEFAULT_LOCK_TIMEOUT_MS,
+    /** A verificar o codigo (Argon2 demora ~1 s). */
+    val unlocking: Boolean = false,
+    /** Mensagem no ecra de bloqueio (codigo errado, esperar...). */
+    val lockMessage: String? = null,
 )
+
+const val DEFAULT_LOCK_TIMEOUT_MS = 60_000L
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _ui = MutableStateFlow(UiState())
@@ -51,43 +76,321 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("qt_prefs", 0)   // so URL do relay e chave PUBLICA (nao secretos)
     private val box = KeystoreBox()
     private val contactStore = ContactStore(app, box)
-    private var qt: QtClient? = null
-    private var link: RelayLink? = null
-    private var poller: Job? = null
+    private val dbFile: File = app.noBackupFilesDir.resolve("qt.db")
+    private val storageKeys = StorageKeyProvider(app, box, dbFile)
+    private val bio = BioUnlock(app)
+    @Volatile private var qt: QtClient? = null
+    @Volatile private var link: RelayLink? = null
+    @Volatile private var poller: Job? = null
+    /** Chave da lista de contactos; so existe em memoria com a app desbloqueada. */
+    @Volatile private var contactsKey: ByteArray? = null
+    /** Chave do armazenamento a espera do BiometricPrompt para ativar a biometria. */
+    @Volatile private var pendingBioKey: ByteArray? = null
+    /** Quando a app foi para segundo plano (relogio desde o arranque do telemovel). */
+    @Volatile private var hiddenAt: Long? = null
+    /** Ha um BiometricPrompt aberto: sair/voltar a app nao conta para o bloqueio. */
+    @Volatile var authInProgress = false
+    /** Para que serve o BiometricPrompt aberto (no ViewModel para sobreviver a rodar o ecra). */
+    @Volatile var bioPurpose: BioPurpose? = null
     /** Um so envio da outbox de cada vez (declarado ANTES do init, que ja usa a rede). */
     private val flushLock = Mutex()
+    private val bioChannel = Channel<BioRequest>(Channel.BUFFERED)
+    /** Pedidos de autenticacao do sistema; a Activity mostra o BiometricPrompt. */
+    val bioRequests: Flow<BioRequest> = bioChannel.receiveAsFlow()
 
 
     init {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val dbFile = getApplication<Application>().noBackupFilesDir.resolve("qt.db")
-                val provider = StorageKeyProvider(getApplication(), box, dbFile)
-                val key = provider.storageKey()
-                val client = try { QtClient.open(dbFile.path, key) } finally { key.fill(0) }
-                qt = client
-                // Release: relay fixo da build, ignora preferencias antigas. Debug: editavel.
-                val url = if (BuildConfig.RELAY_EDITABLE) prefs.getString("relay_url", null) ?: BuildConfig.RELAY_URL else BuildConfig.RELAY_URL
-                val pin = if (BuildConfig.RELAY_EDITABLE) prefs.getString("relay_key", null) ?: BuildConfig.RELAY_PIN else BuildConfig.RELAY_PIN
-                val has = client.hasIdentity()
-                _ui.update {
-                    it.copy(
-                        loading = false, hasIdentity = has, relayUrl = url, relayKeyHex = pin,
-                        publicId = if (has) client.exportPublicIdentity().publicId else "",
-                        contacts = contactStore.load(),
-                        conversations = client.conversations(),
-                        readReceipts = prefs.getBoolean("read_receipts", true),
-                    )
-                }
-                if (has) startLink()
-            } catch (e: StorageKeyUnavailableException) {
-                // Nunca se cria uma chave nova por cima: o utilizador decide se apaga os dados locais.
-                _ui.update { it.copy(loading = false, error = "Chave do armazenamento seguro indisponivel: ${e.message}") }
-            } catch (e: Exception) {
-                _ui.update { it.copy(loading = false, error = "Nao foi possivel abrir o armazenamento seguro: ${e.safeMsg()}") }
+        io { openStorage() }
+    }
+
+    /** Abre a base de dados, ou mostra o ecra de bloqueio se o codigo estiver ativo. */
+    private suspend fun openStorage() {
+        try {
+            if (storageKeys.lockEnabled()) {
+                showLocked()
+                return
             }
+            openClient(storageKeys.storageKey())
+        } catch (e: AppLockedException) {
+            showLocked()
+        } catch (e: StorageKeyUnavailableException) {
+            // Nunca se cria uma chave nova por cima: o utilizador decide se apaga os dados locais.
+            _ui.update { it.copy(loading = false, error = "Chave do armazenamento seguro indisponivel: ${e.message}") }
+        } catch (e: Exception) {
+            _ui.update { it.copy(loading = false, error = "Nao foi possivel abrir o armazenamento seguro: ${e.safeMsg()}") }
         }
     }
+
+    /** Abre o QtClient com a chave do armazenamento. Apaga `key` da memoria no fim. */
+    private suspend fun openClient(key: ByteArray) {
+        val client = try {
+            contactsKey?.fill(0)
+            contactsKey = contactsKeyFrom(key)
+            QtClient.open(dbFile.path, key)
+        } finally {
+            key.fill(0)
+        }
+        qt = client
+        val ck = contactsKey!!
+        // Lista de contactos no formato antigo: passa ja a ter a segunda camada.
+        if (contactStore.isLegacy()) {
+            val old = contactStore.load(ck)
+            if (old.isNotEmpty()) runCatching { contactStore.save(old, ck) }
+        }
+        // Release: relay fixo da build, ignora preferencias antigas. Debug: editavel.
+        val url = if (BuildConfig.RELAY_EDITABLE) prefs.getString("relay_url", null) ?: BuildConfig.RELAY_URL else BuildConfig.RELAY_URL
+        val pin = if (BuildConfig.RELAY_EDITABLE) prefs.getString("relay_key", null) ?: BuildConfig.RELAY_PIN else BuildConfig.RELAY_PIN
+        val has = client.hasIdentity()
+        _ui.update {
+            it.copy(
+                loading = false, hasIdentity = has, relayUrl = url, relayKeyHex = pin,
+                publicId = if (has) client.exportPublicIdentity().publicId else "",
+                contacts = contactStore.load(ck),
+                conversations = client.conversations(),
+                readReceipts = prefs.getBoolean("read_receipts", true),
+                locked = false, unlocking = false, lockMessage = null,
+                lockEnabled = storageKeys.lockEnabled(),
+                bioEnabled = bio.isEnabled(), bioAvailable = bio.isAvailable(),
+                lockTimeoutMs = prefs.getLong("lock_timeout_ms", DEFAULT_LOCK_TIMEOUT_MS),
+            )
+        }
+        if (has) startLink()
+    }
+
+    /** Ecra de bloqueio, sem nenhum dado das conversas no estado. */
+    private fun showLocked(message: String? = null) {
+        _ui.update {
+            UiState(
+                loading = false, locked = true, lockEnabled = true,
+                bioEnabled = bio.isEnabled(), bioAvailable = bio.isAvailable(),
+                lockTimeoutMs = prefs.getLong("lock_timeout_ms", DEFAULT_LOCK_TIMEOUT_MS),
+                lockMessage = message,
+            )
+        }
+    }
+
+    /** Fecha a base de dados e a ligacao ao relay; apaga as chaves da memoria. */
+    private fun closeSession() {
+        poller?.cancel()
+        poller = null
+        link?.close()
+        link = null
+        val c = qt
+        qt = null
+        c?.close()
+        contactsKey?.fill(0)
+        contactsKey = null
+    }
+
+    // -------------------------------------------------------------- bloqueio da app
+
+    /** Bloqueia ja (so se o bloqueio estiver ativo). */
+    fun lockNow() {
+        if (!_ui.value.lockEnabled || _ui.value.locked) return
+        closeSession()
+        showLocked()
+    }
+
+    /** A app saiu do ecra (Activity.onStop). */
+    fun onAppHidden() {
+        if (authInProgress) return
+        hiddenAt = SystemClock.elapsedRealtime()
+    }
+
+    /** A app voltou ao ecra (Activity.onStart): bloqueia se passou o tempo escolhido. */
+    fun onAppVisible() {
+        val t = hiddenAt ?: return
+        hiddenAt = null
+        if (authInProgress) return
+        val st = _ui.value
+        if (st.lockEnabled && !st.locked && SystemClock.elapsedRealtime() - t >= st.lockTimeoutMs) lockNow()
+    }
+
+    fun unlockWithCode(code: String) = io {
+        val wait = lockWaitMs()
+        if (wait > 0) {
+            _ui.update { it.copy(lockMessage = waitMessage(wait)) }
+            return@io
+        }
+        _ui.update { it.copy(unlocking = true, lockMessage = null) }
+        try {
+            val key = storageKeys.storageKeyWithCode(code)
+            resetFails()
+            openClient(key)
+        } catch (e: QtException.Crypto) {
+            val wait2 = registerFail()
+            _ui.update { it.copy(unlocking = false, lockMessage = "Código errado." + (if (wait2 > 0) " " + waitMessage(wait2) else "")) }
+        } catch (e: QtException.InvalidInput) {
+            _ui.update { it.copy(unlocking = false, lockMessage = "O código tem pelo menos ${minCodeLen()} dígitos.") }
+        } catch (e: Exception) {
+            _ui.update { it.copy(unlocking = false, lockMessage = "Não foi possível desbloquear: ${e.safeMsg()}") }
+        }
+    }
+
+    /** Pede o BiometricPrompt para desbloquear. */
+    fun requestBioUnlock() = io {
+        if (!bio.isEnabled()) return@io
+        // Verificacao explicita da versao (o lint do Android exige-a junto da chamada).
+        val cipher = if (Build.VERSION.SDK_INT >= 30) bio.cipherForUnlock() else null
+        if (cipher == null) {
+            _ui.update {
+                it.copy(
+                    bioEnabled = false,
+                    lockMessage = "A impressão digital ou o bloqueio do ecrã mudaram. Usa o código e volta a ativar a biometria.",
+                )
+            }
+            return@io
+        }
+        bioChannel.send(BioRequest(BioPurpose.UNLOCK, cipher))
+    }
+
+    /** O BiometricPrompt autorizou a Cipher de desbloqueio. */
+    fun unlockWithBio(cipher: Cipher) = io {
+        _ui.update { it.copy(unlocking = true, lockMessage = null) }
+        try {
+            val key = bio.open(cipher)
+            resetFails()
+            openClient(key)
+        } catch (e: Exception) {
+            _ui.update { it.copy(unlocking = false, lockMessage = "Não foi possível desbloquear assim. Usa o código.") }
+        }
+    }
+
+    /** Erro no BiometricPrompt que o utilizador deve ver (cancelar nao conta). */
+    fun bioMessage(msg: String) {
+        if (_ui.value.locked) _ui.update { it.copy(lockMessage = msg) } else error(msg)
+    }
+
+    fun enableLock(code: String) = io {
+        try {
+            storageKeys.enableLock(code)
+            resetFails()
+            _ui.update { it.copy(lockEnabled = true, bioAvailable = bio.isAvailable()) }
+        } catch (e: QtException.InvalidInput) {
+            error("O código tem de ter pelo menos ${minCodeLen()} dígitos.")
+        } catch (e: Exception) {
+            error("Não foi possível ativar o bloqueio: ${e.safeMsg()}")
+        }
+    }
+
+    fun disableLock(code: String) = io {
+        if (lockWaitMs() > 0) { error(waitMessage(lockWaitMs())); return@io }
+        try {
+            storageKeys.disableLock(code)
+            bio.disable()
+            resetFails()
+            _ui.update { it.copy(lockEnabled = false, bioEnabled = false) }
+        } catch (e: QtException.Crypto) {
+            registerFail()
+            error("Código errado.")
+        } catch (e: Exception) {
+            error("Não foi possível desativar o bloqueio: ${e.safeMsg()}")
+        }
+    }
+
+    fun changeCode(oldCode: String, newCode: String) = io {
+        if (lockWaitMs() > 0) { error(waitMessage(lockWaitMs())); return@io }
+        try {
+            storageKeys.changeCode(oldCode, newCode)
+            resetFails()
+            error("Código alterado.")
+        } catch (e: QtException.Crypto) {
+            registerFail()
+            error("O código atual está errado.")
+        } catch (e: QtException.InvalidInput) {
+            error("O código tem de ter pelo menos ${minCodeLen()} dígitos.")
+        } catch (e: Exception) {
+            error("Não foi possível mudar o código: ${e.safeMsg()}")
+        }
+    }
+
+    /** Ativar a biometria: confirma o codigo e pede o BiometricPrompt. */
+    fun startBioEnable(code: String) = io {
+        if (Build.VERSION.SDK_INT < 30 || !bio.isAvailable()) {
+            error("Este telemóvel não permite desbloquear assim (precisa de Android 11 ou mais recente e de bloqueio de ecrã).")
+            return@io
+        }
+        if (lockWaitMs() > 0) { error(waitMessage(lockWaitMs())); return@io }
+        try {
+            val key = storageKeys.storageKeyWithCode(code)
+            resetFails()
+            pendingBioKey?.fill(0)
+            pendingBioKey = key
+            if (Build.VERSION.SDK_INT >= 30) bioChannel.send(BioRequest(BioPurpose.ENABLE, bio.cipherForEnable()))
+        } catch (e: QtException.Crypto) {
+            registerFail()
+            error("Código errado.")
+        } catch (e: Exception) {
+            cancelBioEnable()
+            error("Não foi possível ativar: ${e.safeMsg()}")
+        }
+    }
+
+    /** O BiometricPrompt autorizou a Cipher para guardar a copia da chave. */
+    fun finishBioEnable(cipher: Cipher) = io {
+        val key = pendingBioKey ?: return@io
+        try {
+            bio.save(cipher, key)
+            _ui.update { it.copy(bioEnabled = true) }
+        } catch (e: Exception) {
+            bio.disable()
+            error("Não foi possível ativar: ${e.safeMsg()}")
+        } finally {
+            key.fill(0)
+            pendingBioKey = null
+        }
+    }
+
+    fun cancelBioEnable() {
+        pendingBioKey?.fill(0)
+        pendingBioKey = null
+        if (!_ui.value.bioEnabled) bio.disable()
+    }
+
+    fun disableBio() {
+        bio.disable()
+        _ui.update { it.copy(bioEnabled = false) }
+    }
+
+    fun setLockTimeout(ms: Long) {
+        prefs.edit().putLong("lock_timeout_ms", ms).apply()
+        _ui.update { it.copy(lockTimeoutMs = ms) }
+    }
+
+    /**
+     * Esqueci-me do codigo: sem ele a base de dados nao abre, por isso so resta
+     * apagar tudo e comecar de novo (os ficheiros estao cifrados e sao apagados).
+     */
+    fun wipeLockedData() = io { resetStorage() }
+
+    /** Apaga a base de dados, as chaves, os contactos e as definicoes; abre um armazenamento novo. */
+    private suspend fun resetStorage() {
+        closeSession()
+        cancelBioEnable()
+        bio.disable()
+        storageKeys.deleteKeyFile()
+        for (suffix in listOf("", "-wal", "-shm", "-journal")) File(dbFile.path + suffix).delete()
+        contactStore.wipe()
+        prefs.edit().clear().apply()
+        _ui.update { UiState(loading = true) }
+        openStorage()
+    }
+
+    // Tentativas erradas: depois de 5, espera 30 s, 1 min, 2 min... ate 15 min.
+    private fun lockWaitMs(): Long = (prefs.getLong("lock_until", 0L) - System.currentTimeMillis()).coerceAtLeast(0L)
+
+    private fun registerFail(): Long {
+        val n = prefs.getInt("lock_fails", 0) + 1
+        val wait = if (n < 5) 0L else (30_000L shl (n - 5).coerceAtMost(5)).coerceAtMost(900_000L)
+        prefs.edit().putInt("lock_fails", n).putLong("lock_until", System.currentTimeMillis() + wait).apply()
+        return wait
+    }
+
+    private fun resetFails() {
+        prefs.edit().remove("lock_fails").remove("lock_until").apply()
+    }
+
+    private fun waitMessage(ms: Long) = "Demasiadas tentativas. Tenta de novo daqui a ${(ms + 999) / 1000} s."
 
     // ---------------------------------------------------------------- configuracao
 
@@ -140,7 +443,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val c = Contact(nickname.trim().ifBlank { "Contacto" }, id, relayId)
             if (c.publicId == _ui.value.publicId) { error("Esse e o teu proprio ID"); return@io }
             val list = (_ui.value.contacts.filter { it.contactId != c.contactId }) + c
-            contactStore.save(list)
+            contactStore.save(list, contactsKey ?: return@io)
             _ui.update { it.copy(contacts = list, error = null) }
             flushOutbox()   // recibos que estavam a espera de saber o endereco deste contacto
         } catch (e: QtException) {
@@ -220,7 +523,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // Primeiro o Rust (mensagens + chaves), na mesma transacao; depois a lista.
             client.deleteContact(contactId)
             val list = _ui.value.contacts.filter { it.contactId != contactId }
-            contactStore.save(list)
+            contactStore.save(list, contactsKey ?: return@io)
             _ui.update {
                 it.copy(
                     contacts = list,
@@ -246,16 +549,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             link?.close()
             link = null
             client.deleteIdentity()          // secure_delete + VACUUM no Rust
-            contactStore.wipe()
-            prefs.edit().clear().apply()
-            _ui.update {
-                UiState(
-                    loading = false,
-                    hasIdentity = false,
-                    relayUrl = BuildConfig.RELAY_URL,
-                    relayKeyHex = BuildConfig.RELAY_PIN,
-                )
-            }
+            // Depois apaga os ficheiros e as chaves (incluindo o bloqueio) e abre um armazenamento novo.
+            resetStorage()
         } catch (e: Exception) {
             error("Nao foi possivel apagar os dados: ${e.safeMsg()}")
         }
@@ -386,15 +681,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissError() = _ui.update { it.copy(error = null) }
     private fun status(s: String) = _ui.update { it.copy(status = s) }
     private fun error(s: String) = _ui.update { it.copy(error = s) }
-    private fun io(block: suspend () -> Unit) { viewModelScope.launch(Dispatchers.IO) { block() } }
+    /**
+     * Trabalho em segundo plano. Qualquer erro e apanhado: ao bloquear, a base de
+     * dados fecha e uma operacao que ja estava a meio pode falhar; isso nao pode
+     * fechar a app.
+     */
+    private fun io(block: suspend () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (qt != null) error("Erro: ${e.safeMsg()}")
+            }
+        }
+    }
 
-    override fun onCleared() { poller?.cancel(); link?.close(); qt?.close() }
+    override fun onCleared() {
+        closeSession()
+        pendingBioKey?.fill(0)
+    }
 
     companion object {
         private const val POLL_MS = 3_000L
         private const val MAX_PAGES = 20
         private const val MAX_TEXT_BYTES = 9_000
         private const val PAGE = 50
+        fun minCodeLen(): Int = uniffi.qt_ffi.appLockMinCodeLen().toInt()
     }
 }
 

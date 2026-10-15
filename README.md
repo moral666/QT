@@ -45,7 +45,8 @@ Sim, de ponta a ponta em versão alpha. Não foi auditado de forma independente 
 - ~~Histórico persistente~~ (feito): histórico guardado no SQLCipher (na mesma transação que o avanço do ratchet), com indicadores *Enviado / Entregue / Visto* através de recibos cifrados e fila de saída persistente.
 - **Notificações push** - a app só recebe mensagens enquanto está aberta.
 - **Infraestrutura de produção** - domínio próprio (o atual é provisório), redundância, backups e alertas do servidor.
-- Bloqueio da app com PIN/biometria, adição de contactos por QR code, interface mais cuidada.
+- ~~Bloqueio da app~~ (feito no Android): código de acesso próprio, que cifra a chave das conversas (Argon2id), e desbloqueio opcional com impressão digital, rosto ou PIN do telemóvel. Falta no iPhone.
+- Adição de contactos por QR code, interface mais cuidada.
 - Distribuição pela Play Store (hoje alguns antivírus avisam por ser uma app de origem desconhecida).
 - Teste de carga no relay da AWS (já medido numa máquina local, ver [`docs/performance.md`](docs/performance.md)) e **auditoria de segurança independente**.
 

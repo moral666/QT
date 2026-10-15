@@ -120,6 +120,9 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
+    // Bloqueio da app: impressao digital/rosto/PIN do telemovel (BiometricPrompt precisa de FragmentActivity).
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
 }
 
 // Verificacao da assinatura do APK de release: `./gradlew :app:verifyReleaseSignature`

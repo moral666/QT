@@ -4,7 +4,6 @@ import android.content.Intent
 import android.graphics.Color as AndroidColor
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -14,6 +13,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -56,6 +59,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -82,16 +86,53 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 import uniffi.qt_ffi.ChatMessage
 import uniffi.qt_ffi.ConversationSummary
 import uniffi.qt_ffi.MessageStatus
 
-class MainActivity : ComponentActivity() {
+// FragmentActivity (e nao ComponentActivity): o BiometricPrompt precisa dela.
+class MainActivity : FragmentActivity() {
     private val vm: MainViewModel by viewModels()
+    private lateinit var bioPrompt: BiometricPrompt
+
+    private val bioCallback = object : BiometricPrompt.AuthenticationCallback() {
+        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+            vm.authInProgress = false
+            val purpose = vm.bioPurpose
+            vm.bioPurpose = null
+            val cipher = result.cryptoObject?.cipher ?: return
+            when (purpose) {
+                BioPurpose.UNLOCK -> vm.unlockWithBio(cipher)
+                BioPurpose.ENABLE -> vm.finishBioEnable(cipher)
+                null -> {}
+            }
+        }
+
+        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+            vm.authInProgress = false
+            val purpose = vm.bioPurpose
+            vm.bioPurpose = null
+            if (purpose == BioPurpose.ENABLE) vm.cancelBioEnable()
+            val cancelled = errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
+                errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON ||
+                errorCode == BiometricPrompt.ERROR_CANCELED
+            if (!cancelled) vm.bioMessage(errString.toString())
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Desenho de ponta a ponta (obrigatorio com o SDK 35+): a app desenha por baixo
@@ -103,7 +144,47 @@ class MainActivity : ComponentActivity() {
         // escondida (Android 13+), para as conversas nao ficarem visiveis a quem
         // percorre as apps abertas.
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
+        bioPrompt = BiometricPrompt(this, ContextCompat.getMainExecutor(this), bioCallback)
         setContent { SealerTheme { Surface(Modifier.fillMaxSize()) { AppRoot(vm) } } }
+        // Pedidos de autenticacao do ViewModel (desbloquear / ativar a biometria).
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                vm.bioRequests.collect { showBioPrompt(it) }
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        vm.onAppVisible()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) vm.onAppHidden()
+    }
+
+    private fun showBioPrompt(req: BioRequest) {
+        if (vm.bioPurpose != null) {   // ja ha um aberto: ignora o pedido repetido
+            if (req.purpose == BioPurpose.ENABLE) vm.cancelBioEnable()
+            return
+        }
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(if (req.purpose == BioPurpose.UNLOCK) "Desbloquear $APP_NAME" else "Ativar desbloqueio rápido")
+            .setSubtitle("Impressão digital, rosto ou PIN do telemóvel")
+            // Com o PIN do telemovel permitido, o Android nao aceita um botao "Cancelar" proprio.
+            .setAllowedAuthenticators(BioUnlock.AUTHENTICATORS)
+            .build()
+        vm.bioPurpose = req.purpose
+        vm.authInProgress = true
+        try {
+            bioPrompt.authenticate(info, BiometricPrompt.CryptoObject(req.cipher))
+        } catch (e: Exception) {
+            vm.authInProgress = false
+            vm.bioPurpose = null
+            if (req.purpose == BioPurpose.ENABLE) vm.cancelBioEnable()
+            vm.bioMessage("Não foi possível pedir a autenticação do telemóvel.")
+        }
     }
 }
 
@@ -114,9 +195,11 @@ fun AppRoot(vm: MainViewModel) {
     val ui by vm.ui.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
     var showMyId by remember { mutableStateOf(false) }
+    var showLockSettings by remember { mutableStateOf(false) }
 
     when {
         ui.loading -> LoadingScreen()
+        ui.locked -> LockScreen(ui, onCode = vm::unlockWithCode, onBio = vm::requestBioUnlock, onWipe = vm::wipeLockedData)
         !ui.hasIdentity -> SetupScreen(ui, onCreate = vm::createIdentity)
         ui.openChatId != null -> {
             val chatId = ui.openChatId!!
@@ -126,6 +209,14 @@ fun AppRoot(vm: MainViewModel) {
                 onSend = vm::send, onBack = vm::closeChat, onAdd = vm::addContact,
                 onSafety = vm::showSafetyNumber, onLoadOlder = vm::loadOlder,
                 onDeleteConversation = vm::deleteConversation, onDeleteContact = vm::deleteContact,
+            )
+        }
+        showLockSettings -> {
+            BackHandler { showLockSettings = false }
+            LockSettingsScreen(
+                ui, onBack = { showLockSettings = false },
+                onEnable = vm::enableLock, onDisable = vm::disableLock, onChange = vm::changeCode,
+                onBioOn = vm::startBioEnable, onBioOff = vm::disableBio, onTimeout = vm::setLockTimeout,
             )
         }
         showSettings && BuildConfig.RELAY_EDITABLE -> {
@@ -138,9 +229,10 @@ fun AppRoot(vm: MainViewModel) {
             onReadReceipts = vm::setReadReceipts,
             onDeleteConversation = vm::deleteConversation, onDeleteContact = vm::deleteContact,
             onWipeAll = vm::wipeAllData,
+            onLockSettings = { showLockSettings = true }, onLockNow = vm::lockNow,
         )
     }
-    if (showMyId) MyIdDialog(ui.publicId, onDismiss = { showMyId = false })
+    if (showMyId && !ui.locked) MyIdDialog(ui.publicId, onDismiss = { showMyId = false })
     ui.safetyNumber?.let { text ->
         AlertDialog(
             onDismissRequest = vm::dismissSafetyNumber,
@@ -286,6 +378,8 @@ fun HomeScreen(
     onDeleteConversation: (String) -> Unit,
     onDeleteContact: (String) -> Unit,
     onWipeAll: () -> Unit,
+    onLockSettings: () -> Unit,
+    onLockNow: () -> Unit,
 ) {
     var showAdd by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
@@ -307,6 +401,10 @@ fun HomeScreen(
                                 onClick = { onReadReceipts(!ui.readReceipts) },
                                 trailingIcon = { Switch(checked = ui.readReceipts, onCheckedChange = { onReadReceipts(it) }) },
                             )
+                            DropdownMenuItem(text = { Text("Bloqueio da app") }, onClick = { menu = false; onLockSettings() })
+                            if (ui.lockEnabled) {
+                                DropdownMenuItem(text = { Text("Bloquear agora") }, onClick = { menu = false; onLockNow() })
+                            }
                             if (BuildConfig.RELAY_EDITABLE) {
                                 DropdownMenuItem(text = { Text("Relay (teste)") }, onClick = { menu = false; onSettings() })
                             }
@@ -865,4 +963,235 @@ fun shortTime(ms: Long): String = when (dayLabel(ms)) {
     "Hoje" -> timeOf(ms)
     "Ontem" -> "Ontem"
     else -> java.text.SimpleDateFormat("dd/MM", java.util.Locale.getDefault()).format(java.util.Date(ms))
+}
+
+// ======================================================================= bloqueio
+
+/** Ecra de bloqueio: codigo de acesso ou impressao digital/rosto/PIN do telemovel. */
+@Composable
+fun LockScreen(ui: UiState, onCode: (String) -> Unit, onBio: () -> Unit, onWipe: () -> Unit) {
+    val minLen = remember { MainViewModel.minCodeLen() }
+    var code by remember { mutableStateOf("") }
+    var forgot by remember { mutableStateOf(false) }
+    var wipe by remember { mutableStateOf(false) }
+    // Ao aparecer, pede logo a impressao digital (se estiver ativa).
+    LaunchedEffect(Unit) { if (ui.bioEnabled) onBio() }
+    // Depois de um codigo errado, o campo fica vazio para escrever de novo.
+    LaunchedEffect(ui.lockMessage) { if (ui.lockMessage != null) code = "" }
+    val canSubmit = !ui.unlocking && code.length >= minLen
+
+    Column(
+        Modifier.fillMaxSize().safeDrawingPadding().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        BrandMark(80)
+        Spacer(Modifier.height(20.dp))
+        Text(
+            "$APP_NAME está bloqueado", style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(24.dp))
+        OutlinedTextField(
+            value = code,
+            onValueChange = { v -> code = v.filter { it.isDigit() }.take(32) },
+            label = { Text("Código de acesso") },
+            singleLine = true,
+            enabled = !ui.unlocking,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { if (canSubmit) onCode(code) }),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        ui.lockMessage?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+        }
+        Spacer(Modifier.height(16.dp))
+        Button(
+            onClick = { onCode(code) }, enabled = canSubmit,
+            modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(26.dp),
+        ) { Text(if (ui.unlocking) "A verificar…" else "Desbloquear", fontSize = 16.sp) }
+        if (ui.bioEnabled) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = onBio, enabled = !ui.unlocking, modifier = Modifier.fillMaxWidth()) {
+                Text("Usar impressão digital ou PIN do telemóvel")
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = { forgot = true }) { Text("Esqueci-me do código") }
+    }
+    if (forgot) {
+        AlertDialog(
+            onDismissRequest = { forgot = false },
+            title = { Text("Esqueceste o código?") },
+            text = {
+                Text(
+                    "Sem o código não é possível abrir as conversas: estão cifradas com ele e ninguém o pode " +
+                        "recuperar. A única saída é apagar todos os dados deste telemóvel e começar de novo, com um ID novo.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { forgot = false; wipe = true }) {
+                    Text("Apagar tudo", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { forgot = false }) { Text("Voltar") } },
+        )
+    }
+    if (wipe) WipeAllDialog(onDismiss = { wipe = false }, onConfirm = { wipe = false; onWipe() })
+}
+
+private enum class LockDialog { ENABLE, DISABLE, CHANGE, BIO_ON }
+
+/** Definicoes do bloqueio: ativar, biometria, tempo, mudar ou desativar o codigo. */
+@Composable
+fun LockSettingsScreen(
+    ui: UiState,
+    onBack: () -> Unit,
+    onEnable: (String) -> Unit,
+    onDisable: (String) -> Unit,
+    onChange: (String, String) -> Unit,
+    onBioOn: (String) -> Unit,
+    onBioOff: () -> Unit,
+    onTimeout: (Long) -> Unit,
+) {
+    var dialog by remember { mutableStateOf<LockDialog?>(null) }
+    Scaffold(topBar = { SealerTopBar(title = { Text("Bloqueio da app") }, onBack = onBack) }) { pad ->
+        Column(
+            Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                "Com o bloqueio ativo, as conversas e os contactos só abrem com o teu código de acesso. " +
+                    "O código protege a chave que cifra os dados neste telemóvel: não é só um ecrã por cima.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (!ui.lockEnabled) {
+                Button(onClick = { dialog = LockDialog.ENABLE }) { Text("Ativar bloqueio") }
+            } else {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Impressão digital, rosto ou PIN do telemóvel", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            if (ui.bioAvailable || ui.bioEnabled) "Para desbloquear sem escrever o código."
+                            else "Indisponível: precisa de Android 11 ou mais recente e de bloqueio de ecrã.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = ui.bioEnabled,
+                        enabled = ui.bioAvailable || ui.bioEnabled,
+                        onCheckedChange = { on -> if (on) dialog = LockDialog.BIO_ON else onBioOff() },
+                    )
+                }
+                HorizontalDivider()
+                Text("Bloquear automaticamente", style = MaterialTheme.typography.titleSmall)
+                Column {
+                    LOCK_TIMEOUTS.forEach { (label, ms) ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onTimeout(ms) },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = ui.lockTimeoutMs == ms, onClick = { onTimeout(ms) })
+                            Text(label)
+                        }
+                    }
+                }
+                HorizontalDivider()
+                OutlinedButton(onClick = { dialog = LockDialog.CHANGE }) { Text("Mudar código") }
+                TextButton(onClick = { dialog = LockDialog.DISABLE }) {
+                    Text("Desativar bloqueio", color = MaterialTheme.colorScheme.error)
+                }
+            }
+            Text(
+                "Se te esqueceres do código e não puderes usar a impressão digital, não há forma de recuperar " +
+                    "as conversas: a única saída é apagar todos os dados.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+    when (dialog) {
+        LockDialog.ENABLE -> CodeDialog(
+            title = "Ativar bloqueio",
+            text = "Escolhe um código só com números e guarda-o bem: sem ele não há forma de abrir as conversas.",
+            askCurrent = false, askNew = true, confirm = "Ativar",
+            onDismiss = { dialog = null },
+            onConfirm = { _, new -> dialog = null; onEnable(new) },
+        )
+        LockDialog.DISABLE -> CodeDialog(
+            title = "Desativar bloqueio", text = null,
+            askCurrent = true, askNew = false, confirm = "Desativar",
+            onDismiss = { dialog = null },
+            onConfirm = { cur, _ -> dialog = null; onDisable(cur) },
+        )
+        LockDialog.CHANGE -> CodeDialog(
+            title = "Mudar código", text = null,
+            askCurrent = true, askNew = true, confirm = "Mudar",
+            onDismiss = { dialog = null },
+            onConfirm = { cur, new -> dialog = null; onChange(cur, new) },
+        )
+        LockDialog.BIO_ON -> CodeDialog(
+            title = "Desbloqueio rápido",
+            text = "Confirma com o teu código. A seguir, o telemóvel pede a impressão digital, o rosto ou o PIN.",
+            askCurrent = true, askNew = false, confirm = "Continuar",
+            onDismiss = { dialog = null },
+            onConfirm = { cur, _ -> dialog = null; onBioOn(cur) },
+        )
+        null -> {}
+    }
+}
+
+/** Pede o codigo atual e/ou um codigo novo (duas vezes). */
+@Composable
+fun CodeDialog(
+    title: String,
+    text: String?,
+    askCurrent: Boolean,
+    askNew: Boolean,
+    confirm: String,
+    onDismiss: () -> Unit,
+    onConfirm: (current: String, new: String) -> Unit,
+) {
+    val minLen = remember { MainViewModel.minCodeLen() }
+    var cur by remember { mutableStateOf("") }
+    var new1 by remember { mutableStateOf("") }
+    var new2 by remember { mutableStateOf("") }
+    val okCur = !askCurrent || cur.length >= minLen
+    val okNew = !askNew || (new1.length >= minLen && new1 == new2)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Lock, contentDescription = null) },
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                text?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                if (askCurrent) CodeField(cur, { cur = it }, "Código atual")
+                if (askNew) {
+                    CodeField(new1, { new1 = it }, "Novo código (mínimo $minLen dígitos)")
+                    CodeField(new2, { new2 = it }, "Repetir o novo código")
+                    if (new2.isNotEmpty() && new1 != new2) {
+                        Text("Os códigos não são iguais.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(cur, new1) }, enabled = okCur && okNew) { Text(confirm) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}
+
+@Composable
+fun CodeField(value: String, onChange: (String) -> Unit, label: String) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { v -> onChange(v.filter { it.isDigit() }.take(32)) },
+        label = { Text(label) },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
