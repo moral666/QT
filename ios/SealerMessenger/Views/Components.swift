@@ -2,20 +2,60 @@ import SwiftUI
 
 /// Logotipo SEALER (bolha de vidro com o S e os tres pontos), de Assets.xcassets/Logo,
 /// sempre a rodar devagar como um piao, a volta do eixo vertical (uma volta a cada 6 s),
-/// como na app Android. Parado se o
-/// utilizador tiver "Reduzir movimento" ativo nas definicoes de acessibilidade.
+/// como na app Android. Tem espessura: varias camadas, umas atras das outras (as das
+/// faces sao o logo, as do meio a silhueta lilas), para de lado nao parecer uma folha
+/// de papel. Parado se o utilizador tiver "Reduzir movimento" ativo.
 struct BrandMark: View {
     let size: CGFloat
-    @State private var spinning = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        Image("Logo")
-            .resizable().scaledToFit()
-            .frame(width: size, height: size)
-            .rotation3DEffect(.degrees(spinning ? 360 : 0), axis: (x: 0, y: 1, z: 0), perspective: 0.3)
-            .animation(reduceMotion ? nil : .linear(duration: 6).repeatForever(autoreverses: false), value: spinning)
-            .onAppear { spinning = !reduceMotion }
-            .accessibilityHidden(true)
+        Group {
+            if reduceMotion {
+                SpinningLogo(size: size, angle: 0)
+            } else {
+                TimelineView(.animation) { context in
+                    let seconds = context.date.timeIntervalSinceReferenceDate
+                    SpinningLogo(size: size, angle: seconds.truncatingRemainder(dividingBy: 6) / 6 * 360)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct SpinningLogo: View {
+    let size: CGFloat
+    let angle: Double
+
+    var body: some View {
+        let radians = angle * .pi / 180
+        let thickness = Double(size) * 0.10
+        let layers = 24
+        let frontVisible = cos(radians) >= 0
+        let shift = thickness * sin(radians)
+        ZStack {
+            ForEach(0..<layers, id: \.self) { k in
+                let i = frontVisible ? k : layers - 1 - k
+                let depth = Double(i) / Double(layers - 1) - 0.5
+                layer(index: i, count: layers, depth: depth)
+                    .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.3)
+                    .offset(x: CGFloat(depth * shift))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func layer(index: Int, count: Int, depth: Double) -> some View {
+        if index == 0 || index == count - 1 {
+            Image("Logo").resizable().scaledToFit()
+        } else {
+            // Lilas claro junto as faces, mais escuro ao centro.
+            let middle = 1 - abs(2 * depth)
+            Image("Logo").renderingMode(.template).resizable().scaledToFit()
+                .foregroundStyle(Color(red: 0.84 - 0.23 * middle, green: 0.81 - 0.25 * middle, blue: 0.94 - 0.15 * middle))
+        }
     }
 }
 
