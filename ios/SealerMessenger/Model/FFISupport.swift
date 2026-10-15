@@ -13,6 +13,9 @@ extension ReceiveResult: @unchecked Sendable {}
 extension MessageStatus: @unchecked Sendable {}
 extension PublicIdentity: @unchecked Sendable {}
 extension PeerBundle: @unchecked Sendable {}
+extension AttachmentInfo: @unchecked Sendable {}
+extension AttachmentRef: @unchecked Sendable {}
+extension AttachmentState: @unchecked Sendable {}
 
 extension ChatMessage: Identifiable {
     public var id: Int64 { seq }
@@ -50,6 +53,10 @@ extension RelayResponse {
         case .bundleNotFound: return "BundleNotFound"
         case .messages: return "Messages"
         case .error(let reason): return reason
+        case .blobCreated: return "BlobCreated"
+        case .blobStatus: return "BlobStatus"
+        case .blobData: return "BlobData"
+        case .blobNotFound: return "BlobNotFound"
         }
     }
 }

@@ -1,4 +1,7 @@
+import PhotosUI
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 // =========================================================================== chat
 
@@ -30,8 +33,15 @@ struct ChatScreen: View {
     let onLoadOlder: () -> Void
     let onDeleteConversation: (String) -> Void
     let onDeleteContact: (String) -> Void
+    let onSendImage: (Contact, Data, Bool, Bool) -> Void
+    let loadAttachment: (ChatMessage) async -> Data?
 
     @State private var deleteTarget: DeleteTarget?
+    @State private var showPicker = false
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var picked: PickedImage?
+    @State private var viewing: ChatMessage?
+    @State private var noImageToPaste = false
     @State private var text = ""
     @State private var showAdd = false
     @FocusState private var inputFocused: Bool
@@ -133,6 +143,26 @@ struct ChatScreen: View {
             }
         )
         .sheet(isPresented: $showAdd) { AddContactSheet(onAdd: onAdd) }
+        .photosPicker(isPresented: $showPicker, selection: $pickerItem, matching: .images)
+        .onChange(of: pickerItem) { _, item in
+            guard let item else { return }
+            pickerItem = nil
+            Task { @MainActor in
+                // Os bytes originais (um GIF continua animado; a foto e reduzida depois).
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    picked = PickedImage(data: data, pasted: false)
+                }
+            }
+        }
+        .sheet(item: $picked) { p in
+            SendImageSheet(picked: p) { original in
+                if let contact { onSendImage(contact, p.data, original, p.pasted) }
+            }
+        }
+        .fullScreenCover(item: $viewing) { m in AttachmentViewer(m: m, load: loadAttachment) }
+        .alert("Não há nenhuma imagem copiada.", isPresented: $noImageToPaste) { Button("OK", role: .cancel) {} } message: {
+            Text("No teclado de GIFs, toca no GIF para o copiar e depois escolhe Colar imagem ou GIF.")
+        }
         .deleteConfirmation($deleteTarget, onDeleteConversation: onDeleteConversation, onDeleteContact: onDeleteContact)
     }
 
@@ -140,7 +170,7 @@ struct ChatScreen: View {
     private func rowView(_ row: ChatRow) -> some View {
         switch row {
         case .message(let m):
-            MessageBubble(m: m)
+            MessageBubble(m: m, progress: ui.transfers[m.messageId], load: loadAttachment, onOpen: { viewing = m })
                 .onAppear {
                     // Perto da mensagem mais antiga carregada: pede mais uma pagina (como no Android).
                     if ui.chatHasMore, m.seq <= loadTriggerSeq { onLoadOlder() }
@@ -156,8 +186,33 @@ struct ChatScreen: View {
         }
     }
 
+    /// GIF/imagem copiada (teclados de GIFs no iPhone copiam para a area de transferencia).
+    private func pasteImage() {
+        let pb = UIPasteboard.general
+        for t in [UTType.gif, .png, .webP, .jpeg, .heic] {
+            if let d = pb.data(forPasteboardType: t.identifier) {
+                picked = PickedImage(data: d, pasted: true)
+                return
+            }
+        }
+        if let img = pb.image, let d = img.pngData() {
+            picked = PickedImage(data: d, pasted: true)
+            return
+        }
+        noImageToPaste = true
+    }
+
     private func inputBar(_ contact: Contact) -> some View {
         HStack(alignment: .bottom, spacing: 6) {
+            Menu {
+                Button("Galeria", systemImage: "photo.on.rectangle") { showPicker = true }
+                Button("Colar imagem ou GIF", systemImage: "doc.on.clipboard") { pasteImage() }
+            } label: {
+                Image(systemName: "plus").font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(c.primary)
+                    .frame(width: 44, height: 52)
+            }
+            .accessibilityLabel("Enviar imagem ou GIF")
             TextField("Mensagem", text: $text, axis: .vertical)
                 .lineLimit(1...5)
                 .focused($inputFocused)
@@ -213,6 +268,9 @@ struct DaySeparator: View {
 
 struct MessageBubble: View {
     let m: ChatMessage
+    var progress: Double? = nil
+    var load: (ChatMessage) async -> Data? = { _ in nil }
+    var onOpen: () -> Void = {}
     @Environment(\.chat) private var c
 
     var body: some View {
@@ -225,9 +283,13 @@ struct MessageBubble: View {
         HStack {
             if m.outgoing { Spacer(minLength: 48) }
             VStack(alignment: .trailing, spacing: 2) {
-                Text(m.text).font(.body).foregroundStyle(c.bubbleText)
-                    .multilineTextAlignment(.leading)
-                    .textSelection(.enabled)
+                if let att = m.attachment {
+                    AttachmentContent(m: m, att: att, progress: progress, load: load, onOpen: onOpen)
+                } else {
+                    Text(m.text).font(.body).foregroundStyle(c.bubbleText)
+                        .multilineTextAlignment(.leading)
+                        .textSelection(.enabled)
+                }
                 HStack(spacing: 4) {
                     Text(timeOf(m.localAtMs)).font(.system(size: 11)).foregroundStyle(c.bubbleMeta)
                     if m.outgoing {
@@ -236,7 +298,8 @@ struct MessageBubble: View {
                     }
                 }
             }
-            .padding(.leading, 10).padding(.trailing, 8).padding(.top, 6).padding(.bottom, 4)
+            .padding(.leading, m.attachment == nil ? 10 : 4).padding(.trailing, m.attachment == nil ? 8 : 4)
+            .padding(.top, m.attachment == nil ? 6 : 4).padding(.bottom, 4)
             .background(shape.fill(m.outgoing ? c.outgoingBubble : c.incomingBubble))
             .frame(maxWidth: 300, alignment: m.outgoing ? .trailing : .leading)
             if !m.outgoing { Spacer(minLength: 48) }

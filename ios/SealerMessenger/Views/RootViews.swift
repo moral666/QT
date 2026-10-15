@@ -21,7 +21,8 @@ struct AppRoot: View {
                     contact: ui.contacts.first { $0.contactId == chatId },
                     onSend: model.send, onBack: model.closeChat, onAdd: model.addContact,
                     onSafety: model.showSafetyNumber, onLoadOlder: model.loadOlder,
-                    onDeleteConversation: model.deleteConversation, onDeleteContact: model.deleteContact
+                    onDeleteConversation: model.deleteConversation, onDeleteContact: model.deleteContact,
+                    onSendImage: model.sendImage, loadAttachment: model.attachmentBytes
                 )
                 .transition(.move(edge: .trailing))
             } else if showSettings && Config.relayEditable {
