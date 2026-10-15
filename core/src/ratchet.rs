@@ -17,6 +17,9 @@ const MAX_SKIP: usize = 1000;
 /// as mais antigas sao descartadas (memoria e disco limitados).
 pub const MAX_SKIPPED_TOTAL: usize = 2000;
 
+/// Chave de uma mensagem saltada: ((chave DH publica do par, n), message key).
+type SkippedKey = (([u8; 32], u32), [u8; 32]);
+
 #[derive(Clone)]
 pub struct RatchetState {
     root_key: [u8; 32],
@@ -27,7 +30,7 @@ pub struct RatchetState {
     send_n: u32,
     recv_n: u32,
     /// Chaves puladas por ordem de insercao (a mais antiga primeiro).
-    skipped_keys: Vec<(([u8; 32], u32), [u8; 32])>,
+    skipped_keys: Vec<SkippedKey>,
     /// PN: tamanho da cadeia de envio ANTERIOR (enviado no cabecalho).
     prev_send_n: u32,
     /// Dados associados da sessao (identidades), no AAD de cada mensagem.
