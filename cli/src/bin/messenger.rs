@@ -1,51 +1,55 @@
-//! CLI persistente de verdade: cada comando e uma execucao SEPARADA do
-//! programa, com o estado (identidade + sessoes) guardado em SQLCipher
-//! entre execucoes - ao contrario de `messenger_demo.rs`, que corre tudo
-//! num unico processo.
+//! `messenger`: o SealerMessenger no terminal.
 //!
-//! Uso tipico (duas "pessoas", cada uma com a sua base de dados). A
-//! passphrase NUNCA vai na linha de comandos: e pedida no terminal,
+//! Usa EXATAMENTE o mesmo nucleo que as apps Android e iPhone (`QtClient`:
+//! PQXDH + Double Ratchet + Sealed Sender, historico em SQLCipher, recibos)
+//! e fala com o mesmo relay, por isso troca mensagens com os telemoveis.
+//! Cada comando e uma execucao separada; o estado fica na base de dados
+//! cifrada entre execucoes.
+//!
+//!   messenger identity --db eu.sqlite                    # cria a identidade (uma vez)
+//!   messenger id       --db eu.sqlite                    # mostra o teu QT Public ID
+//!   messenger add      --db eu.sqlite Ana qt1:...        # guarda um contacto
+//!   messenger send     --db eu.sqlite --to Ana --server wss://... --pin <hex>
+//!   messenger receive  --db eu.sqlite --server wss://... --pin <hex>
+//!   messenger listen   --db eu.sqlite --server wss://... --pin <hex>   # fica a receber
+//!   messenger history  --db eu.sqlite Ana
+//!   messenger contacts --db eu.sqlite
+//!   messenger remove   --db eu.sqlite Ana                # apaga contacto, mensagens e chaves
+//!
+//! O relay tambem pode vir das variaveis QT_RELAY_URL e QT_RELAY_PIN.
+//! A passphrase NUNCA vai na linha de comandos: e pedida no terminal,
 //! mascarada com '*' (ou lida de UMA linha do stdin com --passphrase-stdin).
-//!
-//!   # Bob:
-//!   messenger identity --db bob.sqlite
-//!   messenger register --db bob.sqlite --server wss://relay.exemplo.org
-//!
-//!   # Alice:
-//!   messenger identity --db alice.sqlite
-//!   messenger send --db alice.sqlite --to <ID-DO-BOB-IMPRESSO-POR-'identity'> \
-//!       --server wss://relay.exemplo.org          # a mensagem e pedida no terminal
-//!
-//!   # Bob, mais tarde, processo completamente separado:
-//!   messenger receive --db bob.sqlite --server wss://relay.exemplo.org
-//!
-//!   # Scripts/CI (sem TTY):
-//!   pass show qt/bob | messenger --passphrase-stdin receive --db bob.sqlite --server wss://...
-//!
-//! Transporte: so `wss://`. `ws://127.0.0.1` so funciona em builds de debug.
-//! Ver docs/protocol-spec.md secao 5 sobre a origem da chave em apps reais
-//! (Keystore/Secure Enclave). O identificador de utilizador e derivado
-//! automaticamente da chave publica de identidade (nao e escolhido pelo
-//! utilizador) - consistente com o objetivo de nao ter "usernames".
+//! So `wss://` (TLS); `ws://127.0.0.1` so em builds de debug.
 
 use clap::{Parser, Subcommand};
-use qt_cli::{passphrase, wire_format};
-use qt_core::primitives::{DhKeyPair, SigningKeyPair};
-use qt_core::ratchet::{EncryptedMessage, RatchetState};
-use qt_core::sealed_sender::{seal_sender_identity, unseal_sender_identity};
-use qt_core::x3dh::{sign_pre_key, x3dh_initiate, x3dh_respond};
-use qt_server::protocol::{
-    ClientMessage, ServerMessage,
-};
-use qt_storage::{load_identity, load_session, open_database, save_identity, save_session, StoredIdentity};
+use futures_util::{SinkExt, StreamExt};
+use qt_cli::passphrase::{self, Mode};
+use qt_cli::store::{self, Contact, Keys};
+use qt_ffi::history::{MessageStatus, ReceiveResult};
+use qt_ffi::*;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio_tungstenite::tungstenite::Message;
 
 #[derive(Parser)]
-#[command(name = "messenger", about = "CLI persistente do secure-messenger (demo)")]
+#[command(name = "messenger", about = "SealerMessenger no terminal (mesmo nucleo e relay que as apps)")]
 struct Cli {
     /// Le a passphrase de UMA linha do stdin em vez de a pedir no terminal
     /// (para scripts). Nunca existe uma flag com a passphrase em claro.
     #[arg(long, global = true)]
     passphrase_stdin: bool,
+
+    /// Base de dados cifrada desta identidade.
+    #[arg(long, global = true, default_value = "messenger.sqlite")]
+    db: String,
+
+    /// URL do relay (wss://...). Tambem: variavel QT_RELAY_URL.
+    #[arg(long, global = true, env = "QT_RELAY_URL")]
+    server: Option<String>,
+
+    /// Chave publica Noise do relay (64 hex), para pinning. Tambem: QT_RELAY_PIN.
+    #[arg(long, global = true, env = "QT_RELAY_PIN")]
+    pin: Option<String>,
 
     #[command(subcommand)]
     command: Command,
@@ -53,314 +57,478 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Gera uma identidade nova e guarda-a na base de dados (so correr uma vez por pessoa).
-    Identity {
-        #[arg(long)]
-        db: String,
-    },
-    /// Publica o bundle de pre-keys no servidor, para outros poderem iniciar uma conversa.
-    Register {
-        #[arg(long)]
-        db: String,
-        #[arg(long)]
-        server: String,
-    },
-    /// Envia uma mensagem (estabelece a sessao automaticamente, se ainda nao existir).
+    /// Cria a base de dados e a identidade (so uma vez por pessoa).
+    Identity,
+    /// Mostra o teu QT Public ID (o que partilhas com os contactos).
+    Id,
+    /// Publica as tuas chaves publicas no relay (o receive e o listen tambem o fazem).
+    Register,
+    /// Guarda um contacto: um nome e o QT Public ID dele (qt1:...).
+    Add { name: String, public_id: String },
+    /// Lista os contactos.
+    Contacts,
+    /// Apaga um contacto PARA SEMPRE: mensagens, envios pendentes e chaves da conversa.
+    Remove { name: String },
+    /// Envia uma mensagem. Se --message faltar, o texto e pedido no terminal.
     Send {
         #[arg(long)]
-        db: String,
-        #[arg(long)]
         to: String,
-        /// Texto da mensagem. Se omitido, e pedido no terminal (assim nao fica
-        /// visivel em `ps`/historico do shell).
         #[arg(long)]
         message: Option<String>,
-        #[arg(long)]
-        server: String,
     },
-    /// Busca e decifra as mensagens em fila destinadas a esta identidade.
-    Receive {
-        #[arg(long)]
-        db: String,
-        #[arg(long)]
-        server: String,
+    /// Vai buscar as mensagens novas ao relay e mostra-as.
+    Receive,
+    /// Fica a receber mensagens ate carregares Ctrl+C.
+    Listen {
+        /// Segundos entre verificacoes.
+        #[arg(long, default_value_t = 3)]
+        every: u64,
+    },
+    /// Mostra o historico de uma conversa (guardado na base de dados cifrada).
+    History {
+        name: String,
+        #[arg(long, default_value_t = 30)]
+        limit: u32,
     },
 }
 
-/// Identificador de utilizador derivado da chave publica de identidade
-/// (nao escolhido pela pessoa) - consistente com o objetivo de anonimato.
-fn derive_user_id(identity_public: &x25519_dalek::PublicKey) -> String {
-    identity_public.as_bytes().iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// O inverso de `derive_user_id`: o ID de um contacto E a sua chave publica
-/// de identidade, em hex - por isso conseguimos "endereca-lo" para o
-/// sealed sender sem precisar de o ter contactado antes.
-fn hex_to_pubkey(hex_str: &str) -> x25519_dalek::PublicKey {
-    let bytes: Vec<u8> = (0..hex_str.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex_str[i..i + 2], 16).expect("ID invalido: nao e hex valido"))
-        .collect();
-    let arr: [u8; 32] = bytes.try_into().expect("ID invalido: deveria ter 32 bytes (64 chars hex)");
-    x25519_dalek::PublicKey::from(arr)
-}
-
-async fn enviar_ao_servidor(url: &str, signing: [u8; 32], msg: ClientMessage) -> ServerMessage {
-    match qt_server::client::one_shot(url, signing, msg).await {
-        Ok(r) => r,
-        Err(qt_server::client::RelayError::InsecureUrl) => {
-            fatal("o servidor tem de usar wss:// (TLS); ws:// so e aceite em builds de debug para localhost")
-        }
-        Err(e) => fatal(&format!("falha ao falar com o relay: {e}")),
-    }
-}
-
-/// ID publico da CLI = "<identidade_hex>:<assinatura_hex>". A caixa de
-/// correio no relay e `<assinatura_hex>` (autenticada por assinatura Ed25519);
-/// `<identidade_hex>` serve para o sealed sender e para as sessoes.
-fn cli_public_id(identity: &StoredIdentity) -> String {
-    format!(
-        "{}:{}",
-        derive_user_id(&identity.identity.public),
-        qt_server::protocol::user_id_from_signing_public(&identity.identity_signing.verifying_key.to_bytes())
-    )
-}
-
-fn mailbox_of(identity: &StoredIdentity) -> String {
-    qt_server::protocol::user_id_from_signing_public(&identity.identity_signing.verifying_key.to_bytes())
-}
-
-fn split_public_id(id: &str) -> (String, String) {
-    let (a, b) = id.split_once(':').expect("ID invalido: esperado <identidade_hex>:<assinatura_hex>");
-    (a.to_string(), b.to_string())
-}
-
-/// Serializa um EncryptedMessage do Double Ratchet para o formato de fio.
-fn serialize_ratchet_message(msg: &EncryptedMessage) -> Vec<u8> {
-    let mut out = Vec::new();
-    out.extend_from_slice(msg.dh_public.as_bytes());
-    out.extend_from_slice(&msg.pn.to_be_bytes());
-    out.extend_from_slice(&msg.n.to_be_bytes());
-    out.extend_from_slice(&msg.ciphertext);
-    out
-}
-
-fn deserialize_ratchet_message(bytes: &[u8]) -> EncryptedMessage {
-    let dh_public_bytes: [u8; 32] = bytes[0..32].try_into().unwrap();
-    let pn = u32::from_be_bytes(bytes[32..36].try_into().unwrap());
-    let n = u32::from_be_bytes(bytes[36..40].try_into().unwrap());
-    EncryptedMessage {
-        dh_public: x25519_dalek::PublicKey::from(dh_public_bytes),
-        pn,
-        n,
-        ciphertext: bytes[40..].to_vec(),
-    }
-}
-
-/// Erro fatal: mensagem curta e saida != 0 (sem panic/backtrace que possa
-/// incluir dados sensiveis).
 fn fatal(msg: &str) -> ! {
     eprintln!("erro: {msg}");
-    std::process::exit(1);
+    std::process::exit(1)
 }
+
+fn s<E: std::fmt::Display>(e: E) -> String {
+    e.to_string()
+}
+
+// ============================================================== base de dados
+
+struct Local {
+    qt: Arc<QtClient>,
+    keys: Keys,
+    db: String,
+    contacts: Vec<Contact>,
+}
+
+impl Local {
+    fn open(cli: &Cli) -> Local {
+        let salt = store::load_salt(&cli.db).unwrap_or_else(|e| fatal(&e));
+        let pass = passphrase::obtain(Mode::Unlock, cli.passphrase_stdin).unwrap_or_else(|e| fatal(&e.to_string()));
+        let keys = store::derive_keys(&pass, &salt).unwrap_or_else(|e| fatal(&e));
+        drop(pass);
+        let qt = QtClient::open(cli.db.clone(), keys.db.to_vec())
+            .unwrap_or_else(|_| fatal("passphrase errada ou base de dados danificada"));
+        if !qt.has_identity().unwrap_or(false) {
+            fatal("esta base de dados nao tem identidade: corre `messenger identity`");
+        }
+        let contacts = store::load_contacts(&cli.db, &keys).unwrap_or_else(|e| fatal(&e));
+        Local { qt, keys, db: cli.db.clone(), contacts }
+    }
+
+    fn save_contacts(&self) {
+        store::save_contacts(&self.db, &self.keys, &self.contacts).unwrap_or_else(|e| fatal(&e));
+    }
+
+    fn find(&self, name_or_id: &str) -> Option<&Contact> {
+        self.contacts
+            .iter()
+            .find(|c| c.name.eq_ignore_ascii_case(name_or_id) || c.public_id == name_or_id)
+    }
+
+    fn name_of(&self, contact_id: &str) -> String {
+        match self.contacts.iter().find(|c| c.contact_id() == contact_id) {
+            Some(c) => c.name.clone(),
+            None => format!("desconhecido ({}…)", &contact_id[..contact_id.len().min(8)]),
+        }
+    }
+}
+
+// ===================================================================== relay
+
+type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+/// Ligacao ao relay: WebSocket + Noise (NoiseSession do nucleo), com pinning
+/// e autenticacao, exatamente como o RelayLink das apps.
+struct Relay {
+    ws: Ws,
+    noise: Arc<NoiseSession>,
+}
+
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+
+impl Relay {
+    async fn connect(qt: &Arc<QtClient>, url: &str, pin: &Option<String>) -> Result<Relay, String> {
+        qt_transport::ws_transport::check_url_policy(url)
+            .map_err(|_| "o relay tem de usar wss:// (ws:// so em builds de debug para localhost)".to_string())?;
+        let noise = qt.relay_noise_session().map_err(s)?;
+        let (mut ws, _) = tokio::time::timeout(Duration::from_secs(10), tokio_tungstenite::connect_async(url))
+            .await
+            .map_err(|_| "tempo esgotado a ligar ao relay".to_string())?
+            .map_err(|e| format!("nao foi possivel ligar ao relay: {e}"))?;
+        while !noise.is_finished() {
+            ws.send(Message::Binary(noise.write_step().map_err(s)?)).await.map_err(s)?;
+            if !noise.is_finished() {
+                noise.read_step(next_binary(&mut ws).await?).map_err(s)?;
+            }
+        }
+        if let Some(p) = pin {
+            let got: String = noise.remote_static_public_key().map_err(s)?.iter().map(|b| format!("{b:02x}")).collect();
+            if !got.eq_ignore_ascii_case(p.trim()) {
+                return Err("a chave do relay e diferente da esperada (--pin): possivel intermediario, ligacao recusada".into());
+            }
+        }
+        let mut r = Relay { ws, noise };
+        let auth = qt.relay_auth_message(r.noise.handshake_hash().map_err(s)?).map_err(s)?;
+        match r.request(auth).await? {
+            RelayResponse::Ack => Ok(r),
+            _ => Err("o relay recusou a autenticacao".into()),
+        }
+    }
+
+    async fn request(&mut self, req: Vec<u8>) -> Result<RelayResponse, String> {
+        self.ws.send(Message::Binary(self.noise.encrypt(req).map_err(s)?)).await.map_err(s)?;
+        let frame = next_binary(&mut self.ws).await?;
+        relay_parse_response(self.noise.decrypt(frame).map_err(s)?).map_err(s)
+    }
+
+    async fn close(mut self) {
+        let _ = self.ws.close(None).await;
+    }
+}
+
+async fn next_binary(ws: &mut Ws) -> Result<Vec<u8>, String> {
+    loop {
+        match tokio::time::timeout(REQUEST_TIMEOUT, ws.next()).await {
+            Err(_) => return Err("tempo esgotado a espera do relay".into()),
+            Ok(None) => return Err("o relay fechou a ligacao".into()),
+            Ok(Some(Err(e))) => return Err(s(e)),
+            Ok(Some(Ok(Message::Binary(b)))) => return Ok(b),
+            Ok(Some(Ok(Message::Ping(_) | Message::Pong(_)))) => continue,
+            Ok(Some(Ok(_))) => return Err("resposta inesperada do relay".into()),
+        }
+    }
+}
+
+fn describe(r: &RelayResponse) -> String {
+    match r {
+        RelayResponse::Ack => "Ack".into(),
+        RelayResponse::Bundle { .. } => "Bundle".into(),
+        RelayResponse::BundleNotFound => "BundleNotFound".into(),
+        RelayResponse::Messages { .. } => "Messages".into(),
+        RelayResponse::Error { reason } => reason.clone(),
+    }
+}
+
+async fn connect(local: &Local, cli: &Cli) -> Relay {
+    let url = cli
+        .server
+        .clone()
+        .unwrap_or_else(|| fatal("falta o relay: usa --server wss://... (ou a variavel QT_RELAY_URL)"));
+    if cli.pin.is_none() {
+        eprintln!("aviso: sem --pin, a identidade do relay nao e verificada (recomendado em producao)");
+    }
+    Relay::connect(&local.qt, &url, &cli.pin).await.unwrap_or_else(|e| fatal(&e))
+}
+
+async fn register(local: &Local, relay: &mut Relay) {
+    let req = local
+        .qt
+        .relay_request_register_bundle(local.qt.publishable_bundle().unwrap_or_else(|e| fatal(&s(e))))
+        .unwrap_or_else(|e| fatal(&s(e)));
+    match relay.request(req).await {
+        Ok(RelayResponse::Ack) => {}
+        Ok(other) => fatal(&format!("o relay recusou as chaves publicas: {}", describe(&other))),
+        Err(e) => fatal(&e),
+    }
+}
+
+/// Envia ao relay tudo o que esta na outbox (mensagens e recibos), por ordem.
+/// O que o relay nao confirmar fica guardado e volta a ser tentado depois.
+async fn flush_outbox(local: &Local, relay: &mut Relay) -> (usize, usize) {
+    let Ok(items) = local.qt.outbox() else { return (0, 0) };
+    let (mut ok, mut left) = (0, 0);
+    for it in items {
+        let Some(c) = local.contacts.iter().find(|c| c.contact_id() == it.contact_id) else {
+            left += 1; // contacto desconhecido: fica a espera de ser adicionado
+            continue;
+        };
+        let Ok(relay_id) = relay_id_of_public_id(c.public_id.clone()) else { continue };
+        let Ok(req) = local.qt.relay_request_send(relay_id, it.blob) else { continue };
+        match relay.request(req).await {
+            Ok(RelayResponse::Ack) => {
+                let _ = local.qt.outbox_sent(it.outbox_id);
+                ok += 1;
+            }
+            Ok(_) => left += 1,
+            Err(_) => {
+                left += 1;
+                break; // sem rede: mantem a ordem e tenta mais tarde
+            }
+        }
+    }
+    (ok, left)
+}
+
+/// Busca, decifra e guarda as mensagens novas; so confirma ao relay DEPOIS de
+/// guardar. Devolve quantas mensagens novas foram mostradas.
+async fn receive_once(local: &Local, relay: &mut Relay, quiet_when_empty: bool) -> Result<usize, String> {
+    let mut shown = 0;
+    let mut touched: Vec<String> = Vec::new();
+    for _ in 0..20 {
+        let req = local.qt.relay_request_fetch().map_err(s)?;
+        let msgs = match relay.request(req).await? {
+            RelayResponse::Messages { messages } => messages,
+            other => return Err(format!("resposta inesperada do relay: {}", describe(&other))),
+        };
+        if msgs.is_empty() {
+            break;
+        }
+        let mut ack = Vec::new();
+        for m in msgs {
+            #[allow(unreachable_patterns)] // versoes futuras do nucleo podem acrescentar casos
+            match local.qt.receive_sealed(m.ciphertext) {
+                Ok(ReceiveResult::NewMessage { message }) => {
+                    println!("[{}] {}: {}", hhmm(message.local_at_ms), local.name_of(&message.contact_id), message.text);
+                    if !touched.contains(&message.contact_id) {
+                        touched.push(message.contact_id.clone());
+                    }
+                    shown += 1;
+                    ack.push(m.id);
+                }
+                Ok(ReceiveResult::StatusChanged { contact_id, message_ids, status }) => {
+                    let what = match status {
+                        MessageStatus::Read => "vista(s)",
+                        _ => "entregue(s)",
+                    };
+                    println!("        {} mensagem(ns) para {} {}", message_ids.len(), local.name_of(&contact_id), what);
+                    ack.push(m.id);
+                }
+                Ok(_) => ack.push(m.id),
+                // Problema local: NAO confirmar, o relay volta a entregar mais tarde.
+                Err(QtError::Storage) => {}
+                // Repetida, corrompida ou de uma conversa que ja nao existe: nada a recuperar.
+                Err(_) => {
+                    eprintln!("aviso: uma mensagem nao pode ser lida e foi descartada");
+                    ack.push(m.id);
+                }
+            }
+        }
+        if !ack.is_empty() {
+            let req = local.qt.relay_request_ack(ack).map_err(s)?;
+            relay.request(req).await?;
+        }
+    }
+    // Recibos: "entregue" para tudo o que chegou e "vista" para o que foi mostrado.
+    let _ = local.qt.prepare_delivery_receipts();
+    for cid in &touched {
+        let _ = local.qt.mark_conversation_read(cid.clone(), true);
+    }
+    flush_outbox(local, relay).await;
+    if shown == 0 && !quiet_when_empty {
+        println!("(sem mensagens novas)");
+    }
+    Ok(shown)
+}
+
+fn hhmm(ms: i64) -> String {
+    let secs = ms.div_euclid(1000);
+    let day = secs.rem_euclid(86_400);
+    format!("{:02}:{:02} UTC", day / 3600, (day % 3600) / 60)
+}
+
+fn status_glyph(s: &MessageStatus) -> &'static str {
+    match s {
+        MessageStatus::Pending => "por enviar",
+        MessageStatus::Sent => "enviada",
+        MessageStatus::Delivered => "entregue",
+        MessageStatus::Read => "vista",
+        MessageStatus::Received | MessageStatus::ReadByMe => "",
+    }
+}
+
+// ===================================================================== main
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-
-    // Identity cria a base de dados -> confirmacao + comprimento minimo.
-    let mode = match cli.command {
-        Command::Identity { .. } => passphrase::Mode::Create,
-        _ => passphrase::Mode::Unlock,
-    };
-    let passphrase = passphrase::obtain(mode, cli.passphrase_stdin).unwrap_or_else(|e| fatal(&e.to_string()));
-
-    match cli.command {
-        Command::Identity { db } => {
-            let conn = open_database(&db, passphrase.as_str()).expect("falha ao abrir a base de dados");
-
-            let identity = StoredIdentity {
-                identity: DhKeyPair::generate(),
-                identity_signing: SigningKeyPair::generate(),
-                signed_pre_key: DhKeyPair::generate(),
-                one_time_pre_key: DhKeyPair::generate(),
-            };
-            let user_id = cli_public_id(&identity);
-            save_identity(&conn, &identity).expect("falha ao guardar a identidade");
-
-            println!("Identidade criada e guardada em {db}");
-            println!("O teu ID (partilha isto com quem quiser falar contigo):");
-            println!("  {user_id}");
-        }
-
-        Command::Register { db, server } => {
-            let conn = open_database(&db, passphrase.as_str()).expect("falha ao abrir a base de dados");
-            let identity = load_identity(&conn).expect("identidade nao encontrada - corre 'identity' primeiro");
-            let user_id = mailbox_of(&identity);
-
-            let signature = sign_pre_key(&identity.identity_signing, &identity.signed_pre_key.public);
-            let bundle_bytes = wire_format::serialize_bundle(&qt_core::x3dh::PreKeyBundle {
-                identity_key: identity.identity.public,
-                identity_signing_key: identity.identity_signing.verifying_key,
-                signed_pre_key: identity.signed_pre_key.public,
-                signed_pre_key_signature: signature,
-                one_time_pre_key: Some(identity.one_time_pre_key.public),
-            });
-
-            let resp = enviar_ao_servidor(
-                &server,
-                identity.identity_signing.to_bytes(),
-                ClientMessage::RegisterPreKeyBundle { user_id: user_id.clone(), bundle_bytes },
-            )
-            .await;
-            println!("Registado como {user_id} - servidor respondeu: {resp:?}");
-        }
-
-        Command::Send { db, to, message, server } => {
-            let message = match message {
-                Some(m) => m,
-                None => inquire::Text::new("Mensagem:").prompt().unwrap_or_else(|_| fatal("mensagem nao fornecida")),
-            };
-            let conn = open_database(&db, passphrase.as_str()).expect("falha ao abrir a base de dados");
-            let identity = load_identity(&conn).expect("identidade nao encontrada - corre 'identity' primeiro");
-
-            let (to_identity_hex, to_mailbox) = split_public_id(&to);
-            let existing_session = load_session(&conn, &to_identity_hex).expect("erro ao ler sessao guardada");
-
-            let (ratchet, wire_message) = match existing_session {
-                Some(mut ratchet) => {
-                    // Sessao ja existe - mensagem normal, sem cabecalho X3DH extra.
-                    let encrypted = ratchet.encrypt(message.as_bytes()).expect("falha ao cifrar");
-                    let mut wire = vec![0u8]; // type = 0 (mensagem normal)
-                    wire.extend_from_slice(&serialize_ratchet_message(&encrypted));
-                    (ratchet, wire)
+    match &cli.command {
+        Command::Identity => {
+            let salt = store::create_salt(&cli.db).unwrap_or_else(|e| fatal(&e));
+            let pass = match passphrase::obtain(Mode::Create, cli.passphrase_stdin) {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = std::fs::remove_file(store::salt_path(&cli.db));
+                    fatal(&e.to_string())
                 }
-                None => {
-                    // Primeira mensagem para este contacto - busca o bundle dele
-                    // e faz o handshake X3DH.
-                    let resp = enviar_ao_servidor(
-                        &server,
-                        identity.identity_signing.to_bytes(),
-                        ClientMessage::FetchPreKeyBundle { user_id: to_mailbox.clone() },
-                    )
-                    .await;
-                    let their_bundle_bytes = match resp {
-                        ServerMessage::PreKeyBundle { bundle_bytes } => bundle_bytes,
-                        ServerMessage::PreKeyBundleNotFound => {
-                            panic!("'{to}' ainda nao publicou um bundle - pede-lhe para correr 'register' primeiro")
+            };
+            let keys = store::derive_keys(&pass, &salt).unwrap_or_else(|e| fatal(&e));
+            drop(pass);
+            let qt = QtClient::open(cli.db.clone(), keys.db.to_vec()).unwrap_or_else(|e| fatal(&s(e)));
+            store::restrict_permissions(&cli.db);
+            let me = qt.create_identity().unwrap_or_else(|e| fatal(&s(e)));
+            println!("Identidade criada em {}.\n\nO teu QT Public ID (partilha-o com quem quiseres falar):\n{}", cli.db, me.public_id);
+            println!("\nGuarda bem a passphrase: sem ela, esta base de dados nao abre e nao ha recuperacao.");
+        }
+        Command::Id => {
+            let local = Local::open(&cli);
+            println!("{}", local.qt.export_public_identity().unwrap_or_else(|e| fatal(&s(e))).public_id);
+        }
+        Command::Register => {
+            let local = Local::open(&cli);
+            let mut relay = connect(&local, &cli).await;
+            register(&local, &mut relay).await;
+            relay.close().await;
+            println!("Chaves publicas publicadas no relay.");
+        }
+        Command::Add { name, public_id } => {
+            let mut local = Local::open(&cli);
+            let name = name.trim().to_string();
+            let public_id = public_id.trim().to_string();
+            if !store::valid_name(&name) {
+                fatal("nome invalido (1 a 40 caracteres, sem tabs nem mudancas de linha)");
+            }
+            if relay_id_of_public_id(public_id.clone()).is_err() {
+                fatal("QT Public ID invalido (esperado qt1: seguido de 128 caracteres hex)");
+            }
+            let me = local.qt.export_public_identity().unwrap_or_else(|e| fatal(&s(e)));
+            if me.public_id == public_id {
+                fatal("esse e o teu proprio ID");
+            }
+            if local.contacts.iter().any(|c| c.name.eq_ignore_ascii_case(&name) && c.public_id != public_id) {
+                fatal("ja tens um contacto com esse nome");
+            }
+            local.contacts.retain(|c| c.public_id != public_id);
+            local.contacts.push(Contact { name: name.clone(), public_id });
+            local.save_contacts();
+            println!("Contacto \"{name}\" guardado.");
+        }
+        Command::Contacts => {
+            let local = Local::open(&cli);
+            if local.contacts.is_empty() {
+                println!("(ainda nao tens contactos: usa `messenger add <nome> <qt1:...>`)");
+            }
+            for c in &local.contacts {
+                println!("{:<20} {}…", c.name, &c.public_id[..c.public_id.len().min(16)]);
+            }
+        }
+        Command::Remove { name } => {
+            let mut local = Local::open(&cli);
+            let Some(c) = local.find(name).cloned() else { fatal("nao existe esse contacto") };
+            local.qt.delete_contact(c.contact_id()).unwrap_or_else(|e| fatal(&s(e)));
+            local.contacts.retain(|x| x.public_id != c.public_id);
+            local.save_contacts();
+            println!("Contacto \"{}\" apagado, com as mensagens e as chaves da conversa.", c.name);
+        }
+        Command::Send { to, message } => {
+            let local = Local::open(&cli);
+            let Some(c) = local.find(to).cloned() else {
+                fatal("contacto desconhecido: adiciona-o primeiro com `messenger add <nome> <qt1:...>`")
+            };
+            let text = match message {
+                Some(t) => t.clone(),
+                None if cli.passphrase_stdin => fatal("com --passphrase-stdin usa --message"),
+                None => inquire::Text::new(&format!("Mensagem para {}:", c.name))
+                    .prompt()
+                    .unwrap_or_else(|_| fatal("cancelado")),
+            };
+            if text.trim().is_empty() {
+                fatal("mensagem vazia");
+            }
+            let mut relay = connect(&local, &cli).await;
+            let cid = c.contact_id();
+            if !local.qt.has_session(cid.clone()).unwrap_or(false) {
+                let relay_id = relay_id_of_public_id(c.public_id.clone()).unwrap_or_else(|e| fatal(&s(e)));
+                let req = local.qt.relay_request_fetch_bundle(relay_id).unwrap_or_else(|e| fatal(&s(e)));
+                match relay.request(req).await {
+                    Ok(RelayResponse::Bundle { bytes }) => {
+                        let bundle = peer_bundle_from_relay_bytes(bytes)
+                            .unwrap_or_else(|_| fatal("o relay devolveu chaves invalidas para este contacto"));
+                        local
+                            .qt
+                            .start_session(c.public_id.clone(), bundle)
+                            .unwrap_or_else(|_| fatal("as chaves do relay nao correspondem ao ID deste contacto"));
+                    }
+                    Ok(RelayResponse::BundleNotFound) => {
+                        fatal("o contacto ainda nao publicou as chaves (tem de abrir a app uma vez)")
+                    }
+                    Ok(other) => fatal(&format!("resposta inesperada do relay: {}", describe(&other))),
+                    Err(e) => fatal(&e),
+                }
+            }
+            // Numa so transacao no nucleo: ratchet avanca + historico + outbox.
+            let item = local.qt.send_text(cid.clone(), text.trim().to_string()).unwrap_or_else(|e| fatal(&s(e)));
+            flush_outbox(&local, &mut relay).await;
+            relay.close().await;
+            let st = local
+                .qt
+                .message(cid, item.outbox_id)
+                .ok()
+                .flatten()
+                .map(|m| status_glyph(&m.status))
+                .unwrap_or("por enviar");
+            println!("Mensagem para {}: {st}.", c.name);
+        }
+        Command::Receive => {
+            let local = Local::open(&cli);
+            let mut relay = connect(&local, &cli).await;
+            register(&local, &mut relay).await;
+            if let Err(e) = receive_once(&local, &mut relay, false).await {
+                fatal(&e);
+            }
+            relay.close().await;
+        }
+        Command::Listen { every } => {
+            let local = Local::open(&cli);
+            let url = cli.server.clone().unwrap_or_else(|| fatal("falta o relay: usa --server wss://..."));
+            let mut relay = connect(&local, &cli).await;
+            register(&local, &mut relay).await;
+            println!("A receber mensagens (Ctrl+C para sair)...");
+            let mut link = Some(relay);
+            loop {
+                // Ligacao perdida (rede, relay reiniciado): volta a ligar com uma sessao Noise nova.
+                if link.is_none() {
+                    match Relay::connect(&local.qt, &url, &cli.pin).await {
+                        Ok(r) => {
+                            eprintln!("(ligacao ao relay restabelecida)");
+                            link = Some(r);
                         }
-                        other => panic!("resposta inesperada: {other:?}"),
-                    };
-                    let their_bundle = wire_format::deserialize_bundle(&their_bundle_bytes)
-                        .expect("bundle recebido esta corrompido");
-
-                    let init_result = x3dh_initiate(&identity.identity, &their_bundle)
-                        .expect("assinatura da signed pre-key invalida - handshake abortado");
-
-                    let mut ratchet = RatchetState::init_as_initiator(
-                        init_result.shared_secret,
-                        their_bundle.signed_pre_key,
-                    );
-                    let encrypted = ratchet.encrypt(message.as_bytes()).expect("falha ao cifrar");
-
-                    // type = 1 (mensagem inicial): inclui a nossa identity_key
-                    // publica + a ephemeral key do X3DH, para o destinatario
-                    // conseguir completar o handshake do lado dele.
-                    let mut wire = vec![1u8];
-                    wire.extend_from_slice(identity.identity.public.as_bytes());
-                    wire.extend_from_slice(init_result.ephemeral_public.as_bytes());
-                    wire.extend_from_slice(&serialize_ratchet_message(&encrypted));
-                    (ratchet, wire)
+                        Err(e) if e.contains("intermediario") => fatal(&e),
+                        Err(_) => {}
+                    }
                 }
-            };
-
-            let their_identity_pub = hex_to_pubkey(&to_identity_hex);
-            let sealed_from = seal_sender_identity(&identity.identity.public, &their_identity_pub).expect("falha ao selar o remetente");
-
-            let resp = enviar_ao_servidor(
-                &server,
-                identity.identity_signing.to_bytes(),
-                ClientMessage::SendMessage { to: to_mailbox.clone(), sealed_from, ciphertext: wire_message },
-            )
-            .await;
-            println!("Mensagem enviada para {to} - servidor respondeu: {resp:?}");
-
-            save_session(&conn, &to_identity_hex, &ratchet).expect("falha ao guardar a sessao atualizada");
+                if let Some(r) = link.as_mut() {
+                    if let Err(e) = receive_once(&local, r, true).await {
+                        eprintln!("(sem ligacao ao relay: {e}; a tentar de novo)");
+                        link = None;
+                    }
+                }
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => break,
+                    _ = tokio::time::sleep(Duration::from_secs((*every).max(1))) => {}
+                }
+            }
+            if let Some(r) = link {
+                r.close().await;
+            }
         }
-
-        Command::Receive { db, server } => {
-            let conn = open_database(&db, passphrase.as_str()).expect("falha ao abrir a base de dados");
-            let identity = load_identity(&conn).expect("identidade nao encontrada - corre 'identity' primeiro");
-            let my_user_id = mailbox_of(&identity);
-
-            let resp = enviar_ao_servidor(
-                &server,
-                identity.identity_signing.to_bytes(),
-                ClientMessage::FetchMessages { user_id: my_user_id.clone() },
-            )
-            .await;
-            let messages = match resp {
-                ServerMessage::Messages { messages } => messages,
-                other => panic!("resposta inesperada: {other:?}"),
-            };
-
-            if messages.is_empty() {
-                println!("Sem mensagens novas.");
-                return;
+        Command::History { name, limit } => {
+            let local = Local::open(&cli);
+            let Some(c) = local.find(name).cloned() else { fatal("nao existe esse contacto") };
+            let mut msgs = local
+                .qt
+                .messages_page(c.contact_id(), None, (*limit).clamp(1, 500))
+                .unwrap_or_else(|e| fatal(&s(e)));
+            msgs.reverse();
+            if msgs.is_empty() {
+                println!("(sem mensagens com {})", c.name);
             }
-
-            let mut acked: Vec<u64> = Vec::new();
-            for delivered in messages {
-                acked.push(delivered.id);
-                let bytes = delivered.ciphertext;
-                let msg_type = bytes[0];
-
-                // Abre o envelope selado PRIMEIRO - so agora sabemos quem
-                // enviou (o servidor nunca soube isto).
-                let sender_identity_pub = unseal_sender_identity(&identity.identity, &delivered.sealed_from)
-                    .expect("falha ao abrir o envelope selado - remetente desconhecido ou corrompido");
-                let sender_user_id = derive_user_id(&sender_identity_pub);
-
-                let (mut ratchet, ratchet_msg) = if msg_type == 1 {
-                    // Primeira mensagem deste contacto - completar o X3DH do
-                    // nosso lado (responder).
-                    let sender_identity_bytes: [u8; 32] = bytes[1..33].try_into().unwrap();
-                    let ephemeral_bytes: [u8; 32] = bytes[33..65].try_into().unwrap();
-                    let sender_identity = x25519_dalek::PublicKey::from(sender_identity_bytes);
-                    let ephemeral = x25519_dalek::PublicKey::from(ephemeral_bytes);
-
-                    let shared_secret = x3dh_respond(
-                        &identity.identity,
-                        &identity.signed_pre_key,
-                        Some(&identity.one_time_pre_key),
-                        &sender_identity,
-                        &ephemeral,
-                    );
-                    let signed_pre_key_clone = DhKeyPair {
-                        private: x25519_dalek::StaticSecret::from(identity.signed_pre_key.private.to_bytes()),
-                        public: identity.signed_pre_key.public,
-                    };
-                    let ratchet = RatchetState::init_as_responder(shared_secret, signed_pre_key_clone);
-                    (ratchet, deserialize_ratchet_message(&bytes[65..]))
+            for m in msgs {
+                if m.outgoing {
+                    println!("[{}] eu: {}  ({})", hhmm(m.local_at_ms), m.text, status_glyph(&m.status));
                 } else {
-                    let ratchet = load_session(&conn, &sender_user_id)
-                        .expect("erro ao ler sessao")
-                        .expect("mensagem normal recebida mas nao existe sessao com este contacto");
-                    (ratchet, deserialize_ratchet_message(&bytes[1..]))
-                };
-
-                let plaintext = ratchet.decrypt(&ratchet_msg).expect("falha ao decifrar mensagem");
-                println!("[{sender_user_id}]: {}", String::from_utf8_lossy(&plaintext));
-
-                save_session(&conn, &sender_user_id, &ratchet).expect("falha ao guardar sessao atualizada");
+                    println!("[{}] {}: {}", hhmm(m.local_at_ms), c.name, m.text);
+                }
             }
-            // So agora (tudo processado e persistido) o relay pode apagar as mensagens.
-            let _ = enviar_ao_servidor(
-                &server,
-                identity.identity_signing.to_bytes(),
-                ClientMessage::AckMessages { user_id: my_user_id, ids: acked },
-            )
-            .await;
         }
     }
 }

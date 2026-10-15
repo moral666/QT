@@ -3,7 +3,7 @@ name = "qt_cli"
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
-description = "Demo de terminal: liga core + transport + server numa conversa real, visivel"
+description = "SealerMessenger no terminal (messenger) e demo visivel do protocolo (messenger_demo)"
 publish = false
 
 [lib]
@@ -18,7 +18,14 @@ qt_storage = { path = "../storage" }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 ed25519-dalek = { version = "2" }
 tokio = { version = "1", features = ["full"] }
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 # Prompt interativo da passphrase, mascarado com '*'.
 inquire = "0.7"
 zeroize = "1"
+# `messenger`: o mesmo nucleo que as apps (QtClient) e o mesmo caminho para o relay.
+qt_ffi = { path = "../ffi" }
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
+# Passphrase -> chaves (Argon2id) e sal aleatorio.
+argon2 = "0.5"
+getrandom = "0.2"

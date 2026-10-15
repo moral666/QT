@@ -57,9 +57,10 @@ Sim, de ponta a ponta — em versão **alpha**. **Não foi auditado de forma ind
 | `transport/` | Protecção da ligação em rede (Noise Protocol) sobre WebSocket | ✅ Testado com ligações WebSocket reais, não simuladas |
 | `server/` | O "carteiro": entrega mensagens sem nunca ver o conteúdo nem saber quem as enviou | ✅ Testado, incluindo sobreviver a ser desligado à força (`kill -9`) |
 | `storage/` | Guarda a tua identidade e conversas no disco, cifradas | ✅ Testado, incluindo confirmar que uma password errada não abre nada |
-| `cli/` | Uma versão de terminal, para experimentar sem precisar de telemóvel | ⚠️ `messenger_demo` funciona; o cliente persistente `messenger` precisa de ser atualizado para o protocolo atual do relay |
+| `cli/` | O mensageiro no terminal (`messenger`), com o mesmo núcleo das apps, e uma demonstração visível do protocolo (`messenger_demo`) | ✅ Testado de ponta a ponta com um relay real: terminal ↔ terminal e terminal ↔ cliente igual ao das apps |
 | `ffi/` | A ponte que liga tudo isto a Kotlin (Android), Swift (iOS) e Python | ✅ Testado a partir do Python |
 | `android/` | App Android (Kotlin/Compose) — toda a criptografia continua no Rust | ✅ Release assinada testada entre dois telemóveis reais através do relay na AWS |
+| `ios/` | App iPhone (SwiftUI), igual à Android, com o mesmo núcleo Rust | ✅ Compilada num Mac e a trocar mensagens através do relay na AWS |
 | `deploy/` | Instalação do relay numa EC2: Redis só em localhost com ACL, serviço systemd isolado, TLS automático | ✅ Usado no deploy atual |
 
 ## O que falta, sem rodeios
@@ -67,7 +68,6 @@ Sim, de ponta a ponta — em versão **alpha**. **Não foi auditado de forma ind
 Para além da lista acima ("O que ainda falta"), a mais longo prazo:
 
 - Vários servidores independentes a colaborar entre si (federação), para que a falha de um servidor não pare a rede inteira
-- App iOS (os bindings Swift já são gerados, mas nunca foram usados numa app)
 - Uma auditoria de segurança independente, feita por alguém que não sou eu
 
 ## Experimenta tu mesmo
@@ -105,6 +105,25 @@ cargo run -p qt_server --example peer -- --relay ws://127.0.0.1:9443 --db bob.db
 ```
 
 O cliente `peer` usa exatamente o mesmo protocolo da app Android. O identificador de cada pessoa nasce da sua chave pública — ninguém escolhe um "nome de utilizador", de propósito. `ws://` só é aceite para `localhost` em builds de debug; fora disso o transporte exige `wss://`.
+
+### O mensageiro no terminal (fala com os telemóveis)
+
+O `messenger` usa o mesmo núcleo e o mesmo relay que as apps: o que escreves no PC chega ao telemóvel, e o contrário.
+
+```bash
+cargo build --release -p qt_cli --bin messenger
+export QT_RELAY_URL=wss://<o-teu-relay>  QT_RELAY_PIN=<chave publica Noise do relay>
+M=./target/release/messenger
+
+$M identity --db eu.sqlite                 # uma vez: cria a identidade e mostra o teu QT Public ID
+$M add --db eu.sqlite Ana qt1:...          # guarda um contacto (o ID que a app dele mostra)
+$M send --db eu.sqlite --to Ana            # a mensagem e pedida no terminal
+$M listen --db eu.sqlite                   # fica a receber (Ctrl+C para sair)
+$M history --db eu.sqlite Ana              # historico, guardado cifrado
+$M remove --db eu.sqlite Ana               # apaga o contacto, as mensagens e as chaves da conversa
+```
+
+A passphrase é sempre pedida no terminal, escondida (ou lida de uma linha do stdin com `--passphrase-stdin`, para scripts). Dela saem, por Argon2id, a chave da base de dados e a chave da lista de contactos, que também fica cifrada.
 
 ### Gerar os bindings para Android/iOS/Python
 
@@ -148,7 +167,7 @@ core/        O coração: cifra ponta-a-ponta, sem depender de mais nada
 transport/   Protege a ligação em rede
 server/      Entrega mensagens sem as poder ler
 storage/     Guarda tudo em disco, cifrado
-cli/         Um cliente de terminal, para testar sem telemóvel
+cli/         O mensageiro no terminal (mesmo núcleo e relay que as apps)
 demo/        Junta core+transport num único teste, para ver tudo em ação
 ffi/         A ponte para Kotlin, Swift e Python
 android/     A app Android (Kotlin/Compose)

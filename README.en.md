@@ -64,9 +64,10 @@ Yes, end to end — as an **alpha** release. **It has not been independently aud
 | `transport/` | Network connection protection (Noise Protocol) over WebSocket | ✅ Tested with real WebSocket connections, not simulated |
 | `server/` | The "mailman": delivers messages without ever seeing the content or knowing who sent them | ✅ Tested, including surviving being force-killed (`kill -9`) |
 | `storage/` | Stores your identity and conversations on disk, encrypted | ✅ Tested, including confirming a wrong password opens nothing |
-| `cli/` | A terminal version, to try it out without a phone | ⚠️ `messenger_demo` works; the persistent `messenger` client needs updating to the relay's current protocol |
+| `cli/` | The messenger in the terminal (`messenger`), on the same core as the apps, plus a visible protocol demo (`messenger_demo`) | ✅ Tested end to end against a real relay: terminal ↔ terminal and terminal ↔ a client identical to the apps' |
 | `ffi/` | The bridge connecting all of this to Kotlin (Android), Swift (iOS) and Python | ✅ Tested from Python |
 | `android/` | Android app (Kotlin/Compose) — all cryptography stays in Rust | ✅ Signed release tested between two real phones through the relay on AWS |
+| `ios/` | iPhone app (SwiftUI), same as the Android one, on the same Rust core | ✅ Built on a Mac and exchanging messages through the relay on AWS |
 | `deploy/` | Relay install on EC2: Redis on localhost only with ACLs, sandboxed systemd service, automatic TLS | ✅ Used in the current deployment |
 
 ## What's missing, plainly
@@ -74,7 +75,6 @@ Yes, end to end — as an **alpha** release. **It has not been independently aud
 Beyond the list above ("Still missing"), longer term:
 
 - Several independent servers collaborating (federation), so that one server failing does not stop the whole network
-- An iOS app (Swift bindings are generated but have never been used in an app)
 - An independent security audit, done by someone other than me
 
 ## Try it yourself
@@ -115,6 +115,25 @@ cargo run -p qt_server --example peer -- --relay ws://127.0.0.1:9443 --db bob.db
 
 The `peer` client uses exactly the same protocol as the Android app. Each person's identifier is derived from their public key — nobody chooses a "username," on purpose. `ws://` is only accepted for `localhost` in debug builds; otherwise the transport requires `wss://`.
 
+### The messenger in the terminal (talks to the phones)
+
+`messenger` uses the same core and the same relay as the apps: what you type on the PC reaches the phone, and the other way round.
+
+```bash
+cargo build --release -p qt_cli --bin messenger
+export QT_RELAY_URL=wss://<your-relay>  QT_RELAY_PIN=<the relay's Noise public key>
+M=./target/release/messenger
+
+$M identity --db me.sqlite                 # once: creates the identity and prints your QT Public ID
+$M add --db me.sqlite Ana qt1:...          # saves a contact (the ID their app shows)
+$M send --db me.sqlite --to Ana            # the message is asked for in the terminal
+$M listen --db me.sqlite                   # keeps receiving (Ctrl+C to quit)
+$M history --db me.sqlite Ana              # history, stored encrypted
+$M remove --db me.sqlite Ana               # deletes the contact, its messages and the conversation keys
+```
+
+The passphrase is always asked for in the terminal, hidden (or read from one line of stdin with `--passphrase-stdin`, for scripts). Argon2id turns it into the database key and the key for the contact list, which is encrypted too.
+
 ### Generating Android/iOS/Python bindings
 
 ```bash
@@ -150,7 +169,7 @@ core/        The heart: end-to-end encryption, no external dependencies
 transport/   Protects the network connection
 server/      Delivers messages without being able to read them
 storage/     Stores everything on disk, encrypted
-cli/         A terminal client, for testing without a phone
+cli/         The messenger in the terminal (same core and relay as the apps)
 demo/        Combines core+transport into a single test, to see it all in action
 ffi/         The bridge to Kotlin, Swift and Python
 android/     The Android app (Kotlin/Compose)
