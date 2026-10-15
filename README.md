@@ -38,6 +38,7 @@ Sim, de ponta a ponta — em versão **alpha**. **Não foi auditado de forma ind
 - **Mensagens trocadas entre dois telemóveis reais, através do relay na AWS.**
 - **App iPhone (SwiftUI) com o mesmo núcleo, a trocar mensagens com as apps Android.**
 - **Teste de campo com cinco aparelhos em três plataformas** (2 Android reais, 1 emulador Android, 1 iPhone e 1 Mac), com envios simultâneos e contínuos: nenhuma mensagem perdida. Detalhes, problemas encontrados e o que ficou por testar em [`docs/field-tests.md`](docs/field-tests.md).
+- **Relay com 10 000 ligações em simultâneo** (cada uma a pedir mensagens de 3 em 3 segundos, como as apps): nenhuma falha, cerca de **14 KB de memória por ligação**. Ver a secção "O relay em números" mais abaixo.
 
 ### O que ainda falta
 
@@ -46,7 +47,7 @@ Sim, de ponta a ponta — em versão **alpha**. **Não foi auditado de forma ind
 - **Infraestrutura de produção** — domínio próprio (o atual é provisório), redundância, backups e alertas do servidor.
 - Bloqueio da app com PIN/biometria, adição de contactos por QR code, interface mais cuidada.
 - Distribuição pela Play Store (hoje alguns antivírus avisam por ser uma app de origem desconhecida).
-- Testes de carga e **auditoria de segurança independente**.
+- Teste de carga no relay da AWS (já medido numa máquina local, ver [`docs/performance.md`](docs/performance.md)) e **auditoria de segurança independente**.
 
 **Próximas etapas:** *alpha* (agora: funciona de ponta a ponta, testado com poucas pessoas) → *beta* (histórico persistente, notificações, teste na Play Store) → *1.0* (depois de auditoria externa).
 
@@ -63,6 +64,20 @@ Sim, de ponta a ponta — em versão **alpha**. **Não foi auditado de forma ind
 | `android/` | App Android (Kotlin/Compose) — toda a criptografia continua no Rust | ✅ Release assinada testada entre dois telemóveis reais através do relay na AWS |
 | `ios/` | App iPhone (SwiftUI), igual à Android, com o mesmo núcleo Rust | ✅ Compilada num Mac e a trocar mensagens através do relay na AWS |
 | `deploy/` | Instalação do relay numa EC2: Redis só em localhost com ACL, serviço systemd isolado, TLS automático | ✅ Usado no deploy atual |
+
+## O relay em números
+
+O relay é pequeno de propósito: só passa mensagens cifradas, não guarda histórico e a criptografia pesada corre nos telemóveis. Medição com 10 000 ligações abertas em simultâneo, cada uma a pedir mensagens de 3 em 3 segundos, como as apps fazem enquanto estão abertas:
+
+| | Resultado |
+|---|---|
+| Ligações abertas ao mesmo tempo | **10 000 de 10 000, 0 falhas** |
+| Memória do relay | **139 MB no total, cerca de 14 KB por ligação** (arranca com 4 MB) |
+| Pedidos respondidos | **~3 300 por segundo, 0 erros** |
+| CPU por pedido | cerca de 0,1 ms no relay e 0,06 ms no Redis |
+| CPU com as ligações paradas | 0 % |
+
+Medido numa máquina local de 2 vCPU, sem o TLS do Caddy e sem rede real pelo meio, por isso o servidor completo gasta mais do que isto. Como foi medido, como repetir e o que ficou de fora: [`docs/performance.md`](docs/performance.md).
 
 ## O que falta, sem rodeios
 
