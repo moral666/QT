@@ -65,6 +65,21 @@ lido no telemóvel (bibliotecas ZXing e ZXing Android Embedded, Apache 2.0), sem
 da Google. A permissão da câmara só é pedida quando se carrega em *Ler código QR*. Na app
 iPhone funciona igual (câmara do sistema, sem bibliotecas extra).
 
+## Imagens e GIFs
+
+No chat, o botão **+** abre a galeria; GIFs e autocolantes do teclado (Gboard, SwiftKey...)
+entram diretamente no campo da mensagem. Antes de enviar há uma pré-visualização com a opção
+**Qualidade original** (por omissão a foto é reduzida para 1600 px, ~300 KB). Máximo 25 MB.
+
+A imagem é cifrada no telemóvel (chave nova por ficheiro) e segue para o relay em blocos de
+40 KB, por uma segunda ligação, para não atrasar as mensagens. O relay apaga-a quando o outro
+telemóvel a descarrega, ou ao fim de 24 horas. No telemóvel, os ficheiros ficam cifrados e a
+imagem em claro só existe em memória enquanto está no ecrã. Detalhes em
+`docs/protocol-spec.md`, secção 14; limitações em `docs/known-limitations.md`, 36.
+
+O relay tem de ser atualizado para aceitar imagens; com um relay antigo a app avisa
+"O servidor ainda não aceita imagens".
+
 ## Segurança já tratada na app
 Chave do SQLCipher gerada aleatoriamente e protegida pelo Android Keystore (StrongBox se existir);
 `allowBackup=false`; conversas escondidas na lista de apps recentes (Android 13+; as capturas de ecrã são permitidas); sem logs de conteúdo/chaves; TLS obrigatório na build *release*;
