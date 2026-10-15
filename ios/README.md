@@ -1,4 +1,7 @@
-# SealerMessenger para iPhone (alpha)
+# SEALER para iPhone (alpha)
+
+O projeto Xcode continua a chamar-se `SealerMessenger` por dentro (pastas, alvo e ficheiro
+`.xcodeproj`); o nome que aparece no iPhone é **SEALER**.
 
 A mesma app que a versão Android: o **mesmo núcleo Rust** (PQXDH + ML-KEM-768, Double Ratchet,
 Sealed Sender, Noise com pinning, SQLCipher, histórico, recibos ✓/✓✓) e o **mesmo ecrã**

@@ -11,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
@@ -83,6 +84,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -272,15 +274,14 @@ fun LoadingScreen() {
     }
 }
 
-/** Logotipo simples: cadeado branco num circulo roxo. */
+/** Logotipo SEALER (bolha de vidro com o S e os tres pontos). */
 @Composable
 fun BrandMark(sizeDp: Int) {
-    Box(
-        Modifier.size(sizeDp.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size((sizeDp / 2).dp))
-    }
+    Image(
+        painter = painterResource(R.drawable.sealer_logo),
+        contentDescription = null,
+        modifier = Modifier.size(sizeDp.dp),
+    )
 }
 
 // ========================================================================= entrada

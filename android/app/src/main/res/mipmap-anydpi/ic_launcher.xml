@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Android 7.0 e 7.1 (sem icones adaptativos): circulo branco com o logo. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape android:shape="oval">
-            <solid android:color="#FF6750A4" />
+            <solid android:color="#FFFFFFFF" />
         </shape>
     </item>
     <item android:drawable="@drawable/ic_launcher_foreground" />

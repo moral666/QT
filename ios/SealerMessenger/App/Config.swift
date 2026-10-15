@@ -5,7 +5,7 @@ import Foundation
 ///  * Release: relay FIXO (QT_RELAY_URL / QT_RELAY_PIN em Relay.xcconfig), nao editavel, so wss://.
 ///  * Debug:   relay editavel na app ("Opcoes de teste"); ws:// permitido para testes locais.
 enum Config {
-    static let appName = "SealerMessenger"
+    static let appName = "SEALER"
 
     private static func plist(_ key: String) -> String {
         (Bundle.main.object(forInfoDictionaryKey: key) as? String)?.trimmingCharacters(in: .whitespaces) ?? ""

@@ -1,5 +1,9 @@
 # QT
 
+<p align="center"><img src="branding/sealer-logo-transparente.png" width="140" alt="Logotipo SEALER"></p>
+
+As apps chamam-se **SEALER**; QT é o nome do protocolo e deste repositório.
+
 **Versão alpha, não auditada.** Um mensageiro E2EE com criptografia
 pós-quântica (X3DH, PQXDH, Double Ratchet, Sealed Sender, Noise Protocol),
 tudo implementado em Rust, com app Android e relay na nuvem, já a
