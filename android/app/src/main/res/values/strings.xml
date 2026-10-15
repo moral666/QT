@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">SEALER</string>
+    <!-- Textos do leitor de QR (biblioteca ZXing Android Embedded), em portugues. -->
+    <string name="zxing_app_name">SEALER</string>
+    <string name="zxing_button_ok">OK</string>
+    <string name="zxing_msg_camera_framework_bug">Não foi possível usar a câmara. Para ler o código QR, permite o acesso à câmara nas definições da app, ou escreve o ID à mão.</string>
 </resources>

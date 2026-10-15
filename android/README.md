@@ -57,6 +57,14 @@ cd ~/QT && cargo run -p qt_server --example peer -- --relay ws://127.0.0.1:9443 
 
 Este fluxo (dois processos + relay verdadeiro + pinning) já foi testado de ponta a ponta no PC.
 
+## Adicionar alguém que está ao teu lado (código QR)
+
+Em *O meu ID*, a app mostra o ID também como código QR. No outro telemóvel: *Novo contacto*,
+*Ler código QR* e apontar a câmara. O ID fica preenchido; falta só o nome. O código é gerado e
+lido no telemóvel (bibliotecas ZXing e ZXing Android Embedded, Apache 2.0), sem rede nem serviços
+da Google. A permissão da câmara só é pedida quando se carrega em *Ler código QR*. Na app
+iPhone funciona igual (câmara do sistema, sem bibliotecas extra).
+
 ## Segurança já tratada na app
 Chave do SQLCipher gerada aleatoriamente e protegida pelo Android Keystore (StrongBox se existir);
 `allowBackup=false`; conversas escondidas na lista de apps recentes (Android 13+; as capturas de ecrã são permitidas); sem logs de conteúdo/chaves; TLS obrigatório na build *release*;

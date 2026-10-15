@@ -123,6 +123,10 @@ dependencies {
     // Bloqueio da app: impressao digital/rosto/PIN do telemovel (BiometricPrompt precisa de FragmentActivity).
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.fragment:fragment-ktx:1.8.5")
+    // Codigos QR: gerar (ZXing) e ler com a camara (ZXing Android Embedded). Tudo no
+    // telemovel, sem servicos da Google nem rede.
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 }
 
 // Verificacao da assinatura do APK de release: `./gradlew :app:verifyReleaseSignature`
