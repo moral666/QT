@@ -20,7 +20,6 @@ struct HomeScreen: View {
     var body: some View {
         VStack(spacing: 0) {
             SealerTopBar(title: { SealerWordmark() }) {
-                TopBarIcon(systemName: "square.and.arrow.up", label: "O meu ID", action: onMyId)
                 Menu {
                     Button("O meu ID", action: onMyId)
                     Toggle("Notificações", isOn: Binding(get: { ui.readReceipts }, set: onReadReceipts))
