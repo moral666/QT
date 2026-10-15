@@ -19,7 +19,7 @@ redis = { version = "0.25", features = ["tokio-comp"] }
 
 [dev-dependencies]
 qt_ffi = { path = "../ffi" }
-tokio-tungstenite = "0.21"
+tokio-tungstenite = "0.24"
 futures-util = "0.3"
 tokio = { version = "1", features = ["full", "test-util"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }

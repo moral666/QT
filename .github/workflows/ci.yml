@@ -39,10 +39,12 @@ jobs:
         run: cargo test --features pq --verbose
 
       - name: Gerar e testar bindings FFI (Python)
+        # Os testes Python usam a API antiga (bytes de chaves na FFI), que so
+        # existe com a feature `legacy-api`; as apps nunca a ativam.
         run: |
-          cargo build -p qt_ffi
+          cargo build -p qt_ffi --features legacy-api
           mkdir -p ffi/bindings
-          cargo run -p qt_ffi --bin uniffi-bindgen -- \
+          cargo run -p qt_ffi --features legacy-api --bin uniffi-bindgen -- \
             generate --library target/debug/libqt_ffi.so --language python --out-dir ffi/bindings
           cp target/debug/libqt_ffi.so ffi/bindings/
           python3 ffi/tests/test_ffi_bindings.py

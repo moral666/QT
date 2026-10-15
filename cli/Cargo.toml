@@ -24,7 +24,7 @@ inquire = "0.7"
 zeroize = "1"
 # `messenger`: o mesmo nucleo que as apps (QtClient) e o mesmo caminho para o relay.
 qt_ffi = { path = "../ffi" }
-tokio-tungstenite = "0.21"
+tokio-tungstenite = "0.24"
 futures-util = "0.3"
 # Passphrase -> chaves (Argon2id) e sal aleatorio.
 argon2 = "0.5"
