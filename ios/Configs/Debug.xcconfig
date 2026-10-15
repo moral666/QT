@@ -1,0 +1,13 @@
+#include "Base.xcconfig"
+
+// Debug: relay editavel em "Opcoes de teste" e ws:// permitido (relay local no Mac).
+QT_RELAY_EDITABLE = YES
+QT_ALLOW_CLEARTEXT = YES
+// Valor inicial no simulador: relay a correr no proprio Mac.
+QT_RELAY_URL = ws:/$()/127.0.0.1:9443
+QT_RELAY_PIN =
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG
+SWIFT_OPTIMIZATION_LEVEL = -Onone
+DEBUG_INFORMATION_FORMAT = dwarf
+ONLY_ACTIVE_ARCH = YES
+ENABLE_TESTABILITY = YES

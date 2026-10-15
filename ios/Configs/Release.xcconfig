@@ -1,0 +1,9 @@
+#include "Base.xcconfig"
+
+// Release: relay FIXO (Relay.xcconfig), sem opcoes de teste, so wss://.
+QT_RELAY_EDITABLE = NO
+QT_ALLOW_CLEARTEXT = NO
+SWIFT_OPTIMIZATION_LEVEL = -O
+SWIFT_COMPILATION_MODE = wholemodule
+DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
+VALIDATE_PRODUCT = YES
