@@ -13,16 +13,28 @@ pub struct TestRelay {
     pub prefix: String,
     pub static_private: Vec<u8>,
     pub static_public: Vec<u8>,
+    pub blobs: Option<qt_server::BlobConfig>,
     handle: Option<JoinHandle<()>>,
 }
 
 impl TestRelay {
     pub async fn start(cfg: ServerConfig) -> Self {
+        Self::start_with(cfg, None).await
+    }
+
+    /// Relay com anexos ativos, guardados em `blobs.dir`.
+    pub async fn start_with_blobs(cfg: ServerConfig, blobs: qt_server::BlobConfig) -> Self {
+        Self::start_with(cfg, Some(blobs)).await
+    }
+
+    async fn start_with(cfg: ServerConfig, blobs: Option<qt_server::BlobConfig>) -> Self {
         let keys = qt_transport::generate_static_keypair().unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let prefix = format!("t-{}-{}", std::process::id(), port);
-        Self::spawn(listener, port, prefix, keys.private, keys.public, cfg)
+        let mut r = Self::spawn(listener, port, prefix, keys.private, keys.public, cfg, blobs.clone());
+        r.blobs = blobs;
+        r
     }
 
     /// Reinicia o relay na MESMA porta, com as mesmas chaves e o mesmo Redis.
@@ -37,7 +49,9 @@ impl TestRelay {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
         let l = listener.expect("nao consegui reabrir a porta");
-        let mut new = Self::spawn(l, self.port, self.prefix.clone(), self.static_private.clone(), self.static_public.clone(), cfg);
+        let mut new = Self::spawn(
+            l, self.port, self.prefix.clone(), self.static_private.clone(), self.static_public.clone(), cfg, self.blobs.clone(),
+        );
         self.handle = new.handle.take();
     }
 
@@ -48,8 +62,13 @@ impl TestRelay {
         private: Vec<u8>,
         public: Vec<u8>,
         cfg: ServerConfig,
+        blobs: Option<qt_server::BlobConfig>,
     ) -> Self {
-        let store = Arc::new(Store::with_prefix("redis://127.0.0.1:6379", &prefix).unwrap());
+        let mut store = Store::with_prefix("redis://127.0.0.1:6379", &prefix).unwrap();
+        if let Some(b) = blobs {
+            store.enable_blobs(b).unwrap();
+        }
+        let store = Arc::new(store);
         let key = private.clone();
         let handle = tokio::spawn(async move {
             // JoinSet: ao abortar esta tarefa, todas as ligacoes sao abortadas.
@@ -71,6 +90,7 @@ impl TestRelay {
             prefix,
             static_private: private,
             static_public: public,
+            blobs: None,
             handle: Some(handle),
         }
     }

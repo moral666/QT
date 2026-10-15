@@ -41,7 +41,9 @@ pub struct Store {
     /// Prefixo de namespace para as chaves Redis - permite que múltiplas
     /// instâncias (ex.: testes em paralelo) partilhem o mesmo servidor
     /// Redis sem colidirem entre si.
-    key_prefix: String,
+    pub(crate) key_prefix: String,
+    /// Anexos no disco (ver `blobs.rs`); `None` = desativados.
+    pub(crate) blobs: Option<crate::blobs::Blobs>,
 }
 
 impl Store {
@@ -52,13 +54,23 @@ impl Store {
 
     pub fn with_prefix(redis_url: &str, key_prefix: &str) -> Result<Self, StoreError> {
         let client = redis::Client::open(redis_url)?;
-        Ok(Self { client, shared: tokio::sync::OnceCell::new(), key_prefix: key_prefix.to_string() })
+        Ok(Self { client, shared: tokio::sync::OnceCell::new(), key_prefix: key_prefix.to_string(), blobs: None })
+    }
+
+    /// Ativa os anexos, guardados em `cfg.dir` (criada com permissoes 0700).
+    pub fn enable_blobs(&mut self, cfg: crate::blobs::BlobConfig) -> std::io::Result<()> {
+        self.blobs = Some(crate::blobs::Blobs::new(cfg)?);
+        Ok(())
+    }
+
+    pub fn blobs_enabled(&self) -> bool {
+        self.blobs.is_some()
     }
 
     /// Antes abria uma ligacao TCP nova ao Redis em CADA pedido; com 10 000
     /// ligacoes a pedir mensagens de 3 em 3 s, reutilizar uma so ligacao baixou
     /// o CPU (relay + Redis) em cerca de 58% (ver docs/performance.md).
-    async fn connection(&self) -> Result<redis::aio::ConnectionManager, StoreError> {
+    pub(crate) async fn connection(&self) -> Result<redis::aio::ConnectionManager, StoreError> {
         let manager = self
             .shared
             .get_or_try_init(|| redis::aio::ConnectionManager::new(self.client.clone()))
