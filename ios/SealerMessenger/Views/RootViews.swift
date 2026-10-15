@@ -143,8 +143,19 @@ struct MyIdSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("O teu ID").font(.title2.bold())
-            Text("Quem tiver este ID pode escrever-te. Partilha-o com as pessoas com quem queres falar.")
+            Text("Quem tiver este ID pode escrever-te. Se estiverem juntos, a outra pessoa lê este código com a SEALER (Novo contacto, Ler código QR). À distância, partilha o texto.")
                 .font(.footnote)
+            if !publicId.isEmpty, let qr = QR.image(for: publicId) {
+                Image(uiImage: qr)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 220, height: 220)
+                    .padding(6)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel("Código QR do teu ID")
+            }
             Text(publicId)
                 .font(.system(size: 12, design: .monospaced))
                 .textSelection(.enabled)
@@ -163,7 +174,7 @@ struct MyIdSheet: View {
             .font(.body.weight(.medium))
         }
         .padding(24)
-        .presentationDetents([.medium])
+        .presentationDetents([.large])
         .presentationBackground(c.surface)
     }
 }
@@ -192,6 +203,7 @@ struct AddContactSheet: View {
     let onAdd: (String, String) -> Void
     @State private var nick = ""
     @State private var pid = ""
+    @State private var scanning = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.chat) private var c
 
@@ -200,7 +212,14 @@ struct AddContactSheet: View {
             Text("Novo contacto").font(.title2.bold())
             OutlinedField(label: "Nome", text: $nick)
             OutlinedField(label: "ID (qt1:…)", text: $pid, monospaced: true)
-            Text("Recebe o ID diretamente da pessoa (pessoalmente ou por um canal em que confies).")
+            Button {
+                scanning = true
+            } label: {
+                Label("Ler código QR", systemImage: "qrcode.viewfinder")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            Text("Recebe o ID diretamente da pessoa: lê o código QR dela quando estiverem juntos, ou usa um canal em que confies.")
                 .font(.footnote).foregroundStyle(c.onSurfaceVariant)
             HStack {
                 Spacer()
@@ -214,6 +233,9 @@ struct AddContactSheet: View {
         .padding(24)
         .presentationDetents([.medium, .large])
         .presentationBackground(c.surface)
+        .fullScreenCover(isPresented: $scanning) {
+            QRScannerSheet { pid = $0 }
+        }
     }
 }
 

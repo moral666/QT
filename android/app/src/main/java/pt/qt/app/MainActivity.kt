@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -82,6 +83,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -114,6 +116,9 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.google.zxing.client.android.Intents
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.cos
@@ -479,7 +484,7 @@ fun HomeScreen(
     onLockSettings: () -> Unit,
     onLockNow: () -> Unit,
 ) {
-    var showAdd by remember { mutableStateOf(false) }
+    var showAdd by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     /** Conversa escolhida com toque longo: (contactId, nome). */
     var actionsFor by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -670,9 +675,19 @@ fun MyIdDialog(publicId: String, onDismiss: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "Quem tiver este ID pode escrever-te. Partilha-o com as pessoas com quem queres falar.",
+                    "Quem tiver este ID pode escrever-te. Se estiverem juntos, a outra pessoa lê este código " +
+                        "com a SEALER (Novo contacto, Ler código QR). À distância, partilha o texto.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+                if (publicId.isNotBlank()) {
+                    val qr = remember(publicId) { qrCode(publicId) }
+                    Image(
+                        bitmap = qr,
+                        contentDescription = "Código QR do teu ID",
+                        modifier = Modifier.align(Alignment.CenterHorizontally).size(220.dp)
+                            .clip(RoundedCornerShape(12.dp)).background(Color.White).padding(6.dp),
+                    )
+                }
                 SelectionContainer {
                     Text(
                         publicId, fontFamily = FontFamily.Monospace, fontSize = 12.sp,
@@ -698,8 +713,19 @@ fun MyIdDialog(publicId: String, onDismiss: () -> Unit) {
 
 @Composable
 fun AddContactDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
-    var nick by remember { mutableStateOf("") }
-    var pid by remember { mutableStateOf("") }
+    // rememberSaveable: o leitor de QR e outro ecra; se o telemovel rodar enquanto
+    // esta aberto, a app e recriada e o que ja estava escrito nao se perde.
+    var nick by rememberSaveable { mutableStateOf("") }
+    var pid by rememberSaveable { mutableStateOf("") }
+    var scanError by rememberSaveable { mutableStateOf<String?>(null) }
+    // Leitor de QR (ZXing, no telemovel, sem servicos da Google nem rede).
+    val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val id = idFromQr(result.contents)
+        when {
+            id != null -> { pid = id; scanError = null }
+            result.contents != null -> scanError = "Este código QR não é um ID SEALER."
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { TextButton(onClick = { onAdd(nick, pid) }, enabled = pid.isNotBlank()) { Text("Adicionar") } },
@@ -709,8 +735,28 @@ fun AddContactDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(nick, { nick = it }, label = { Text("Nome") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(pid, { pid = it }, label = { Text("ID (qt1:…)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedButton(
+                    onClick = {
+                        AutoLockPause.active = true
+                        scanner.launch(
+                            ScanOptions()
+                                .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                                .setPrompt("Aponta para o código QR da outra pessoa")
+                                .setBeepEnabled(false)
+                                .setOrientationLocked(false)
+                                .addExtra(
+                                    Intents.Scan.MISSING_CAMERA_PERMISSION_DIALOG_MESSAGE,
+                                    "Sem acesso à câmara. Para ler o código QR, permite-o nas definições da app, " +
+                                        "ou escreve o ID à mão.",
+                                ),
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Ler código QR") }
+                scanError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 Text(
-                    "Recebe o ID diretamente da pessoa (pessoalmente ou por um canal em que confies).",
+                    "Recebe o ID diretamente da pessoa: lê o código QR dela quando estiverem juntos, " +
+                        "ou usa um canal em que confies.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -733,7 +779,7 @@ fun ChatScreen(
 ) {
     val colors = LocalChatColors.current
     var text by remember { mutableStateOf("") }
-    var showAdd by remember { mutableStateOf(false) }
+    var showAdd by rememberSaveable { mutableStateOf(false) }
     var chatMenu by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
     val name = contact?.nickname ?: "Desconhecido"

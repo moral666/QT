@@ -201,9 +201,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun onAppVisible() {
         val t = hiddenAt ?: return
         hiddenAt = null
+        // Voltar do leitor de QR: mais AutoLockPause.GRACE_MS antes de bloquear.
+        val grace = if (AutoLockPause.active) AutoLockPause.GRACE_MS else 0L
+        AutoLockPause.active = false
         if (authInProgress) return
         val st = _ui.value
-        if (st.lockEnabled && !st.locked && SystemClock.elapsedRealtime() - t >= st.lockTimeoutMs) lockNow()
+        if (st.lockEnabled && !st.locked && SystemClock.elapsedRealtime() - t - grace >= st.lockTimeoutMs) lockNow()
     }
 
     fun unlockWithCode(code: String) = io {
