@@ -23,7 +23,7 @@ struct HomeScreen: View {
                 TopBarIcon(systemName: "square.and.arrow.up", label: "O meu ID", action: onMyId)
                 Menu {
                     Button("O meu ID", action: onMyId)
-                    Toggle("Recibos de leitura", isOn: Binding(get: { ui.readReceipts }, set: onReadReceipts))
+                    Toggle("Notificações", isOn: Binding(get: { ui.readReceipts }, set: onReadReceipts))
                     if Config.relayEditable {
                         Button("Relay (teste)", action: onSettings)
                     }
