@@ -495,7 +495,7 @@ fun HomeScreen(
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text("O meu ID") }, onClick = { menu = false; onMyId() })
                             DropdownMenuItem(
-                                text = { Text("Recibos de leitura") },
+                                text = { Text("Notificações") },
                                 onClick = { onReadReceipts(!ui.readReceipts) },
                                 trailingIcon = { Switch(checked = ui.readReceipts, onCheckedChange = { onReadReceipts(it) }) },
                             )
