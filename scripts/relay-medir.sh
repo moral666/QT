@@ -22,7 +22,7 @@ RELAY_BIND_ADDR=127.0.0.1:$PORT REDIS_URL=redis://127.0.0.1:$RPORT NOISE_KEY_PAT
   RELAY_MAX_CONNECTIONS=20000 RELAY_BLOB_DIR=/tmp/qt-medir-anexos \
   ./target/release/relay_server >/dev/null 2>&1 &
 RELAY=$!
-trap 'kill $RELAY 2>/dev/null; kill "$(cat /tmp/qt-medir-redis.pid)" 2>/dev/null; rm -f $KEY' EXIT
+trap 'kill "$RELAY" 2>/dev/null; kill "$(cat /tmp/qt-medir-redis.pid)" 2>/dev/null; rm -f "$KEY"' EXIT
 sleep 0.5
 RPID=$(cat /tmp/qt-medir-redis.pid)
 
@@ -36,12 +36,12 @@ BENCH=$!
 SECS=$(printf '%s\n' "$@" | awk 'p{print; exit} /^--secs$/{p=1}'); SECS=${SECS:-20}
 WIN=$(( SECS > 6 ? SECS - 4 : SECS / 2 )); [ "$WIN" -lt 1 ] && WIN=1
 sleep 4
-r0=$(ticks $RELAY); d0=$(ticks $RPID); t0=$(date +%s.%N)
+r0=$(ticks "$RELAY"); d0=$(ticks "$RPID"); t0=$(date +%s.%N)
 sleep "$WIN"
-r1=$(ticks $RELAY); d1=$(ticks $RPID); t1=$(date +%s.%N)
-RSS_RELAY=$(awk '/VmRSS/ {printf "%.1f", $2/1024}' /proc/$RELAY/status)
+r1=$(ticks "$RELAY"); d1=$(ticks "$RPID"); t1=$(date +%s.%N)
+RSS_RELAY=$(awk '/VmRSS/ {printf "%.1f", $2/1024}' /proc/"$RELAY"/status)
 RSS_REDIS=$(redis-cli -p $RPORT info memory | awk -F: '/^used_memory_rss:/ {printf "%.1f", $2/1048576}')
-wait $BENCH
+wait "$BENCH"
 
 {
   echo "== $NAME ($(date '+%Y-%m-%d %H:%M'), commit $(git rev-parse --short HEAD))"
