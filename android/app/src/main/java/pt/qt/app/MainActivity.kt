@@ -70,7 +70,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -509,7 +508,6 @@ fun HomeScreen(
             SealerTopBar(
                 title = { SealerWordmark() },
                 actions = {
-                    IconButton(onClick = onMyId) { Icon(Icons.Filled.Share, contentDescription = "O meu ID") }
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
