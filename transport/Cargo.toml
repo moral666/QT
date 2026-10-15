@@ -8,7 +8,7 @@ description = "Camada de transporte: Noise Protocol sobre WebSocket"
 [dependencies]
 snow = "0.9"
 tokio = { version = "1", features = ["full"] }
-tokio-tungstenite = "0.21"
+tokio-tungstenite = "0.24"
 futures-util = "0.3"
 thiserror = "1"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
