@@ -45,6 +45,7 @@ Yes, end to end — as an **alpha** release. **It has not been independently aud
 - **Messages exchanged between two real phones through the relay on AWS.**
 - **iPhone app (SwiftUI) on the same core, exchanging messages with the Android apps.**
 - **Field test with five devices on three platforms** (2 real Android phones, 1 Android emulator, 1 iPhone and 1 Mac), with simultaneous, continuous sending: no messages lost. Details, problems found and what is still untested in [`docs/field-tests.md`](docs/field-tests.md) (in Portuguese).
+- **Relay with 10,000 simultaneous connections** (each one polling for messages every 3 seconds, like the apps): no failures, about **14 KB of memory per connection**. See "The relay in numbers" below.
 
 ### Still missing
 
@@ -53,7 +54,7 @@ Yes, end to end — as an **alpha** release. **It has not been independently aud
 - **Production infrastructure** — own domain (the current one is temporary), redundancy, backups and server alerts.
 - App lock with PIN/biometrics, adding contacts via QR code, a more polished interface.
 - Distribution through the Play Store (some antivirus apps currently warn because the app comes from an unknown source).
-- Load testing and an **independent security audit**.
+- Load testing on the AWS relay (already measured on a local machine, see [`docs/performance.md`](docs/performance.md), in Portuguese) and an **independent security audit**.
 
 **Next stages:** *alpha* (now: works end to end, tested with a few people) → *beta* (persistent history, notifications, Play Store testing) → *1.0* (after an external audit).
 
@@ -70,6 +71,20 @@ Yes, end to end — as an **alpha** release. **It has not been independently aud
 | `android/` | Android app (Kotlin/Compose) — all cryptography stays in Rust | ✅ Signed release tested between two real phones through the relay on AWS |
 | `ios/` | iPhone app (SwiftUI), same as the Android one, on the same Rust core | ✅ Built on a Mac and exchanging messages through the relay on AWS |
 | `deploy/` | Relay install on EC2: Redis on localhost only with ACLs, sandboxed systemd service, automatic TLS | ✅ Used in the current deployment |
+
+## The relay in numbers
+
+The relay is small on purpose: it only passes encrypted messages along, keeps no history, and the heavy cryptography runs on the phones. Measured with 10,000 connections open at the same time, each one polling for messages every 3 seconds, as the apps do while open:
+
+| | Result |
+|---|---|
+| Connections open at the same time | **10,000 of 10,000, 0 failures** |
+| Relay memory | **139 MB in total, about 14 KB per connection** (starts at 4 MB) |
+| Requests answered | **~3,300 per second, 0 errors** |
+| CPU per request | about 0.1 ms in the relay and 0.06 ms in Redis |
+| CPU with idle connections | 0 % |
+
+Measured on a local 2 vCPU machine, without Caddy's TLS and without a real network in between, so the full server uses more than this. How it was measured, how to repeat it and what was left out: [`docs/performance.md`](docs/performance.md) (in Portuguese).
 
 ## What's missing, plainly
 

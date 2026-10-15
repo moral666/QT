@@ -69,7 +69,8 @@ envios simultâneos e em rajada a partir de vários aparelhos ao mesmo tempo.
 
 - Notificações (as apps só recebem mensagens enquanto estão abertas).
 - Muitos utilizadores em simultâneo no relay da AWS (teste de carga com
-  `loadtest` contra a instância real).
+  `loadtest` e `conntest` contra a instância real). Numa máquina local, o relay
+  aguentou 10 000 ligações em simultâneo: ver `performance.md`.
 - Mensagens longas perto do limite (cerca de 9 000 caracteres) e a fila do
   relay cheia (1 000 mensagens à espera para a mesma pessoa).
 - Redes instáveis (perda de rede a meio de um envio, modo avião).
