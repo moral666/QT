@@ -34,6 +34,10 @@ pub enum StoreError {
 
 pub struct Store {
     client: redis::Client,
+    /// Uma unica ligacao ao Redis, partilhada por todos os pedidos (os clones
+    /// sao baratos e multiplexam na mesma ligacao). Criada no primeiro pedido;
+    /// se o Redis reiniciar, volta a ligar sozinha.
+    shared: tokio::sync::OnceCell<redis::aio::ConnectionManager>,
     /// Prefixo de namespace para as chaves Redis - permite que múltiplas
     /// instâncias (ex.: testes em paralelo) partilhem o mesmo servidor
     /// Redis sem colidirem entre si.
@@ -48,11 +52,18 @@ impl Store {
 
     pub fn with_prefix(redis_url: &str, key_prefix: &str) -> Result<Self, StoreError> {
         let client = redis::Client::open(redis_url)?;
-        Ok(Self { client, key_prefix: key_prefix.to_string() })
+        Ok(Self { client, shared: tokio::sync::OnceCell::new(), key_prefix: key_prefix.to_string() })
     }
 
-    async fn connection(&self) -> Result<redis::aio::MultiplexedConnection, StoreError> {
-        Ok(self.client.get_multiplexed_async_connection().await?)
+    /// Antes abria uma ligacao TCP nova ao Redis em CADA pedido; com 10 000
+    /// ligacoes a pedir mensagens de 3 em 3 s, reutilizar uma so ligacao baixou
+    /// o CPU (relay + Redis) em cerca de 58% (ver docs/performance.md).
+    async fn connection(&self) -> Result<redis::aio::ConnectionManager, StoreError> {
+        let manager = self
+            .shared
+            .get_or_try_init(|| redis::aio::ConnectionManager::new(self.client.clone()))
+            .await?;
+        Ok(manager.clone())
     }
 
     pub async fn register_bundle(&self, user_id: UserId, bundle_bytes: Vec<u8>) -> Result<(), StoreError> {
@@ -144,7 +155,7 @@ impl Store {
         Ok(removed)
     }
 
-    async fn next_id(&self, conn: &mut redis::aio::MultiplexedConnection) -> Result<u64, StoreError> {
+    async fn next_id(&self, conn: &mut redis::aio::ConnectionManager) -> Result<u64, StoreError> {
         let key = format!("{}:seq", self.key_prefix);
         Ok(conn.incr::<_, _, u64>(key, 1u64).await?)
     }

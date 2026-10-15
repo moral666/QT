@@ -9,7 +9,7 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
     ChaCha20Poly1305, Key, Nonce,
 };
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use hkdf::Hkdf;
 use rand_core::{OsRng, RngCore};
 use sha2::Sha256;
@@ -71,8 +71,11 @@ pub fn verify_signature(
     message: &[u8],
     signature: &Signature,
 ) -> Result<(), CryptoError> {
+    // verify_strict (e nao verify): rejeita chaves publicas fracas (de ordem
+    // pequena) e assinaturas nao canonicas/maleaveis. As chaves e assinaturas
+    // geradas normalmente pelo ed25519-dalek passam sempre.
     verifying_key
-        .verify(message, signature)
+        .verify_strict(message, signature)
         .map_err(|_| CryptoError::SignatureInvalid)
 }
 

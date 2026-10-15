@@ -25,6 +25,15 @@ ExecStart=/usr/local/bin/qt-relay
 Restart=on-failure
 RestartSec=2
 
+# --- Limites ---
+# Uma ligacao = um ficheiro aberto. O limite por omissao do systemd (~1024)
+# travava o relay perto das 1000 ligacoes em simultaneo; o proprio relay limita
+# com RELAY_MAX_CONNECTIONS (4096 por omissao, ver /etc/qt/relay.env).
+LimitNOFILE=65536
+# Sem ficheiros de core dump: um crash nao pode deixar a chave privada Noise
+# do relay (que esta em memoria) escrita no disco.
+LimitCORE=0
+
 # --- Isolamento ---
 NoNewPrivileges=yes
 PrivateTmp=yes
