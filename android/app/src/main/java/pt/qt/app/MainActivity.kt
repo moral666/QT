@@ -86,6 +86,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -423,21 +426,41 @@ fun SealerTopBar(
     actions: @Composable () -> Unit = {},
 ) {
     val c = LocalChatColors.current
-    TopAppBar(
-        title = title,
-        navigationIcon = {
-            if (onBack != null) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar") }
-            }
-        },
-        actions = { actions() },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = c.topBar,
-            titleContentColor = c.onTopBar,
-            navigationIconContentColor = c.onTopBar,
-            actionIconContentColor = c.onTopBar,
-        ),
-    )
+    // Estrelas: posicoes fixas (sempre as mesmas), pequenas e meio transparentes.
+    val stars = remember {
+        val r = java.util.Random(7)
+        List(28) { floatArrayOf(r.nextFloat(), r.nextFloat(), 0.6f + r.nextFloat() * 0.8f, 0.25f + r.nextFloat() * 0.45f) }
+    }
+    Box(
+        Modifier
+            .background(Brush.linearGradient(c.topBarGradient))
+            .drawBehind {
+                for (s in stars) {
+                    drawCircle(
+                        color = Color.White.copy(alpha = s[3]),
+                        radius = s[2].dp.toPx() / 2f,
+                        center = Offset(s[0] * size.width, s[1] * size.height),
+                    )
+                }
+            },
+    ) {
+        TopAppBar(
+            title = title,
+            navigationIcon = {
+                if (onBack != null) {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar") }
+                }
+            },
+            actions = { actions() },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent,
+                scrolledContainerColor = Color.Transparent,
+                titleContentColor = c.onTopBar,
+                navigationIconContentColor = c.onTopBar,
+                actionIconContentColor = c.onTopBar,
+            ),
+        )
+    }
 }
 
 // ===================================================================== conversas
