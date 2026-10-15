@@ -88,8 +88,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -108,6 +111,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import uniffi.qt_ffi.ChatMessage
 import uniffi.qt_ffi.ConversationSummary
 import uniffi.qt_ffi.MessageStatus
@@ -283,8 +289,15 @@ fun LoadingScreen() {
 /**
  * Logotipo SEALER (bolha de vidro com o S e os tres pontos), sempre a rodar
  * devagar como um piao, a volta do eixo vertical: uma volta completa a cada 6
- * segundos. A rotacao e aplicada so na camada de desenho (graphicsLayer), sem
- * recompor o ecra a cada frame.
+ * segundos.
+ *
+ * Para nao parecer uma folha de papel quando fica de lado, o logo tem espessura:
+ * e desenhado em varias camadas, umas atras das outras; as da frente e de tras
+ * sao o logo e as do meio sao a silhueta na cor do rebordo de vidro, mais
+ * escura ao centro para a lateral parecer arredondada. De frente
+ * so se ve a camada da frente; de lado, as camadas formam a parte lateral.
+ * A rotacao e aplicada so na camada de desenho (graphicsLayer): o ecra so e
+ * recomposto quando a face visivel muda (duas vezes por volta).
  */
 @Composable
 fun BrandMark(sizeDp: Int) {
@@ -295,14 +308,36 @@ fun BrandMark(sizeDp: Int) {
         animationSpec = infiniteRepeatable(tween(durationMillis = 6_000, easing = LinearEasing)),
         label = "rotacao do logo",
     )
-    Image(
-        painter = painterResource(R.drawable.sealer_logo),
-        contentDescription = null,
-        modifier = Modifier.size(sizeDp.dp).graphicsLayer {
-            rotationY = angle
-            cameraDistance = 12f * density   // perspetiva suave, sem deformar o logo
-        },
-    )
+    // Que face esta virada para o ecra: decide a ordem de desenho das camadas.
+    val frontVisible by remember { derivedStateOf { cos(Math.toRadians(angle.toDouble())) >= 0.0 } }
+    val painter = painterResource(R.drawable.sealer_logo)
+    val thicknessPx = with(LocalDensity.current) { (sizeDp * 0.10f).dp.toPx() }
+    val layers = thicknessPx.toInt().coerceIn(6, 40)   // ~1 camada por pixel de espessura
+    // Lateral: lilas claro junto as faces, mais escuro ao centro.
+    val rim = remember(layers) {
+        List(layers) { i ->
+            val middle = 1f - abs(2f * (i / (layers - 1f) - 0.5f))
+            ColorFilter.tint(lerp(Color(0xFFD6CEF0), Color(0xFF9C8FC9), middle))
+        }
+    }
+    Box(Modifier.size(sizeDp.dp)) {
+        for (k in 0 until layers) {
+            // Desenha de tras para a frente, em relacao a quem esta a ver.
+            val i = if (frontVisible) k else layers - 1 - k
+            val depth = i / (layers - 1f) - 0.5f
+            val face = i == 0 || i == layers - 1
+            Image(
+                painter = painter,
+                contentDescription = null,
+                colorFilter = if (face) null else rim[i],
+                modifier = Modifier.matchParentSize().graphicsLayer {
+                    rotationY = angle
+                    cameraDistance = 12f * density   // perspetiva suave, sem deformar o logo
+                    translationX = depth * thicknessPx * sin(Math.toRadians(angle.toDouble())).toFloat()
+                },
+            )
+        }
+    }
 }
 
 // ========================================================================= entrada
