@@ -60,7 +60,7 @@ Este fluxo (dois processos + relay verdadeiro + pinning) já foi testado de pont
 ## Segurança já tratada na app
 Chave do SQLCipher gerada aleatoriamente e protegida pelo Android Keystore (StrongBox se existir);
 `allowBackup=false`; conversas escondidas na lista de apps recentes (Android 13+; as capturas de ecrã são permitidas); sem logs de conteúdo/chaves; TLS obrigatório na build *release*;
-pinning opcional da chave do relay; confirmação (`Ack`) só depois de processar; deduplicação feita pelo Rust.
+bloqueio da app opcional (código próprio que cifra a chave do SQLCipher e a lista de contactos, com Argon2id no Rust, mais desbloqueio com impressão digital, rosto ou PIN do telemóvel através de uma chave do Keystore que só funciona depois de autenticar); pinning opcional da chave do relay; confirmação (`Ack`) só depois de processar; deduplicação feita pelo Rust.
 
 ## Limitações (ver `QT/docs/known-limitations.md`, itens 29–34)
 Sessões cruzadas se ambos enviarem a 1.ª mensagem em simultâneo; poll de 3 s;
