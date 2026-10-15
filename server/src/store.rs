@@ -24,6 +24,11 @@ const MAX_QUEUED_MESSAGES_PER_USER: usize = 1000;
 /// docs/protocol-spec.md.
 const QUEUE_TTL_SECONDS: i64 = 60 * 60 * 24 * 30;
 
+/// Entradas lidas do Redis por pedido de mensagens: primeiro estas...
+const PEEK_FIRST: isize = 16;
+/// ...e, se couberem todas na pagina, ate este total (o limite de sempre).
+const PEEK_MAX: isize = 100;
+
 #[derive(Debug, Error)]
 pub enum StoreError {
     #[error("erro de ligação/comando Redis: {0}")]
@@ -138,24 +143,35 @@ impl Store {
     ) -> Result<Vec<QueuedMessage>, StoreError> {
         let mut conn = self.connection().await?;
         let key = format!("{}:queue:{}", self.key_prefix, user_id);
-        let raw_entries: Vec<Vec<u8>> = conn.lrange(&key, 0, 99).await?;
         let mut out = Vec::new();
         let mut budget = 0usize;
-        for raw in raw_entries {
-            match decode_entry(&raw) {
-                Some(m) => {
-                    // JSON serializa cada byte como ate 4 caracteres.
-                    let est = (m.sealed_from.len() + m.ciphertext.len()) * 4 + 64;
-                    if !out.is_empty() && budget + est > max_bytes {
-                        break;
+        // Primeiro so as 16 primeiras entradas: com mensagens grandes, so 1 a 3 cabem
+        // numa pagina e ler 100 do Redis era desperdicio. So se couberem todas e que
+        // le as seguintes (ate 100, como antes).
+        let mut from = 0isize;
+        for to in [PEEK_FIRST - 1, PEEK_MAX - 1] {
+            let raw_entries: Vec<Vec<u8>> = conn.lrange(&key, from, to).await?;
+            let got = raw_entries.len();
+            for raw in raw_entries {
+                match decode_entry(&raw) {
+                    Some(m) => {
+                        // JSON serializa cada byte como ate 4 caracteres.
+                        let est = (m.sealed_from.len() + m.ciphertext.len()) * 4 + 64;
+                        if !out.is_empty() && budget + est > max_bytes {
+                            return Ok(out);
+                        }
+                        budget += est;
+                        out.push(m);
                     }
-                    budget += est;
-                    out.push(m);
-                }
-                None => {
-                    conn.lrem::<_, _, ()>(&key, 1, raw).await?;
+                    None => {
+                        conn.lrem::<_, _, ()>(&key, 1, raw).await?;
+                    }
                 }
             }
+            if got < (to - from + 1) as usize {
+                break; // nao ha mais entradas
+            }
+            from = to + 1;
         }
         Ok(out)
     }
