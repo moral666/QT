@@ -1,10 +1,20 @@
-// Publicação na Cloudflare: Worker "sealer", só com ficheiros estáticos.
+// Publicação na Cloudflare: Worker "sealer".
 // Dentro desta pasta: npm run build && npx wrangler deploy (ver README.md, secção 5).
+// Publicação automática: cada push para o ramo ligado em Settings > Builds.
 {
   "name": "sealer",
   "compatibility_date": "2026-10-16",
+  // Só os pedidos a /api/* correm este código; o resto são ficheiros estáticos de dist/.
+  "main": "./worker/index.js",
   "assets": {
-    "directory": "./dist"
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    // Relay da SEALER na AWS (o mesmo endereço wss:// da app, escrito com https://).
+    // O marcador de estado no canto do site verifica se este endereço responde.
+    "RELAY_URL": "https://13-51-46-213.sslip.io"
   },
   "routes": [
     { "pattern": "sealer.pt", "custom_domain": true },
