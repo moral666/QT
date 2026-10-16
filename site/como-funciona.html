@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Como funciona · SEALER</title>
+    <meta
+      name="description"
+      content="Em 6 passos simples: como uma mensagem viaja trancada na SEALER, do telemóvel de quem escreve até ao de quem recebe."
+    />
+    <meta name="theme-color" content="#05060d" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="referrer" content="no-referrer" />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Como funciona a SEALER" />
+    <meta property="og:description" content="Como uma mensagem viaja trancada, em 6 passos simples." />
+    <meta property="og:image" content="https://sealer.pt/og-image.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Estilo: legal.css (tipos de letra, barra, rodapé) e como-funciona.css (animação).
+         A animação é controlada por src/como-funciona.js. -->
+    <link rel="stylesheet" href="./src/legal.css" />
+    <link rel="stylesheet" href="./src/como-funciona.css" />
+    <script type="module" src="/src/como-funciona.js"></script>
+  </head>
+  <body>
+    <header class="legal-bar">
+      <a class="legal-bar__brand" href="./">
+        <img src="./src/assets/logo/logo-96.webp" width="96" height="96" alt="" />
+        <span>SEALER</span>
+      </a>
+    </header>
+
+    <main class="cf">
+      <h1>Como viaja uma mensagem</h1>
+      <p class="cf__lede">Em 6 passos simples, o que acontece quando carregas em enviar.</p>
+
+      <div class="cf-stage">
+        <svg id="scene" viewBox="0 0 800 450" data-scene="1" role="img" aria-labelledby="cap-title cap-text">
+          <path id="route" class="route" d="M210 245 H 590" />
+
+          <!-- Servidor -->
+          <g id="g-server" class="actor">
+            <rect class="server-box" x="335" y="40" width="130" height="104" rx="14" />
+            <rect class="rack" x="355" y="58" width="90" height="16" rx="4" />
+            <rect class="rack" x="355" y="84" width="90" height="16" rx="4" />
+            <rect class="rack" x="355" y="110" width="90" height="16" rx="4" />
+            <circle class="led" cx="433" cy="66" r="3.5" />
+            <circle class="led" cx="433" cy="92" r="3.5" />
+            <circle class="led" cx="433" cy="118" r="3.5" />
+            <text class="label" x="400" y="170">Servidor SEALER</text>
+          </g>
+          <g id="g-sees" class="fade sees">
+            <text class="tag tag--cold" x="400" y="24">Não consegue ler. Só vê o envelope.</text>
+          </g>
+
+          <!-- Ana -->
+          <g id="g-ana" class="actor">
+            <rect class="phone" x="40" y="70" width="170" height="310" rx="28" />
+            <rect class="notch" x="100" y="82" width="50" height="7" rx="3.5" />
+            <rect class="bubble" x="56" y="110" width="138" height="46" rx="16" />
+            <text id="ana-text" class="bubble-text" x="125" y="134">Olá, Rui!</text>
+            <path id="ana-tick" class="tick" d="M160 172 l6 6 l11 -12" opacity="0" />
+            <text class="who" x="125" y="420">Ana</text>
+          </g>
+
+          <!-- Rui -->
+          <g id="g-rui" class="actor">
+            <rect class="phone" x="590" y="70" width="170" height="310" rx="28" />
+            <rect class="notch" x="650" y="82" width="50" height="7" rx="3.5" />
+            <g class="fade rui-msg">
+              <rect class="bubble-in" x="606" y="110" width="138" height="46" rx="16" />
+              <text class="bubble-text" x="675" y="134">Olá, Rui!</text>
+            </g>
+            <text class="who" x="675" y="420">Rui</text>
+          </g>
+
+          <!-- A chave do Rui, guardada no telemóvel dele -->
+          <g id="key-label" class="key-part">
+            <text class="tag tag--key" x="675" y="358">Chave do Rui</text>
+          </g>
+
+          <!-- Passo 5: cada mensagem com o seu cadeado -->
+          <g id="g-many" class="fade many">
+            <g class="mini" transform="translate(300 300)">
+              <rect class="env-box" x="-36" y="-22" width="72" height="44" rx="8" />
+              <rect class="mini-lock mini-lock--1" x="-9" y="-6" width="18" height="14" rx="3" />
+              <path class="mini-shackle mini-shackle--1" d="M-5 -6 v-5 a5 5 0 0 1 10 0 v5" />
+              <text class="label" x="0" y="48">1.ª chave</text>
+            </g>
+            <g class="mini" transform="translate(400 300)">
+              <rect class="env-box" x="-36" y="-22" width="72" height="44" rx="8" />
+              <rect class="mini-lock mini-lock--2" x="-9" y="-6" width="18" height="14" rx="3" />
+              <path class="mini-shackle mini-shackle--2" d="M-5 -6 v-5 a5 5 0 0 1 10 0 v5" />
+              <text class="label" x="0" y="48">2.ª chave</text>
+            </g>
+            <g class="mini" transform="translate(500 300)">
+              <rect class="env-box" x="-36" y="-22" width="72" height="44" rx="8" />
+              <rect class="mini-lock mini-lock--3" x="-9" y="-6" width="18" height="14" rx="3" />
+              <path class="mini-shackle mini-shackle--3" d="M-5 -6 v-5 a5 5 0 0 1 10 0 v5" />
+              <text class="label" x="0" y="48">3.ª chave</text>
+            </g>
+          </g>
+
+          <!-- Passo 6: escudo -->
+          <g id="g-quantum" class="fade quantum">
+            <path class="shield" d="M400 222 l62 22 v42 c0 40 -28 66 -62 80 c-34 -14 -62 -40 -62 -80 v-42 z" />
+            <path class="shield-check" d="M378 292 l15 15 l30 -32" />
+            <text class="tag tag--cold" x="400" y="404">Protegida contra computadores quânticos</text>
+          </g>
+
+          <!-- Envelope e chave (movidos por JavaScript) -->
+          <g id="env" opacity="0" transform="translate(125 245)">
+            <rect class="env-box" x="-76" y="-30" width="152" height="60" rx="10" />
+            <path class="env-flap" d="M-76 -26 L0 6 L76 -26" />
+            <text id="env-text" class="env-text" x="0" y="12">Olá, Rui!</text>
+            <g id="env-lock" class="lock" transform="translate(0 -44)" opacity="0">
+              <path class="lock-shackle" d="M-8 0 v-7 a8 8 0 0 1 16 0 v7" />
+              <rect class="lock-body" x="-13" y="-1" width="26" height="20" rx="4" />
+            </g>
+            <text id="env-tag" class="tag" x="0" y="56"></text>
+          </g>
+          <g id="rkey" class="key-part" transform="translate(675 318)">
+            <circle class="key-shape" cx="-16" cy="0" r="11" />
+            <path class="key-shape" d="M-5 0 h28 m-7 0 v9 m-8 -9 v7" />
+          </g>
+        </svg>
+        <div class="cf-progress" id="progress"><span></span></div>
+      </div>
+
+      <section class="cf-caption" aria-live="polite">
+        <p class="cf-caption__step" id="cap-step">Passo 1 de 6</p>
+        <h2 id="cap-title">A Ana escreve ao Rui</h2>
+        <p id="cap-text">Escreve «Olá, Rui!» e carrega em enviar.</p>
+      </section>
+
+      <div class="cf-controls">
+        <button class="cf-btn" id="prev" type="button" aria-label="Passo anterior">← Anterior</button>
+        <button class="cf-btn cf-btn--main" id="play" type="button">Pausar</button>
+        <button class="cf-btn" id="next" type="button" aria-label="Passo seguinte">Seguinte →</button>
+        <div class="cf-dots" id="dots" role="group" aria-label="Escolher passo"></div>
+      </div>
+
+      <p class="cf__back"><a href="./">Voltar ao início</a></p>
+    </main>
+
+    <footer class="legal-footer">
+      <p>© 2026 SEALER, um projeto QT. <a href="./politica-de-cookies">Política de cookies</a></p>
+    </footer>
+  </body>
+</html>

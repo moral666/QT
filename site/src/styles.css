@@ -516,6 +516,36 @@ p {
   color: var(--mist);
 }
 
+/* Link para a página "Como funciona", por baixo do estado. */
+.more {
+  margin: var(--space-m) 0 0;
+}
+
+.more__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.15rem;
+  border: 1px solid var(--violet);
+  border-radius: 999px;
+  background: var(--violet);
+  color: #fff;
+  font: 600 var(--step--1) / 1 var(--font-text);
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  pointer-events: auto;
+  transition: background-color 0.2s ease;
+}
+
+.more__link:hover {
+  background: #7d5ae3;
+}
+
+.more__link:focus-visible {
+  outline: 2px solid var(--lilac);
+  outline-offset: 3px;
+}
+
 .hint {
   display: none;
 }

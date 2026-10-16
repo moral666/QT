@@ -1,0 +1,456 @@
+/*
+  SEALER, página "Como funciona": animação em 6 passos (src/como-funciona.js).
+
+  Usa os tipos de letra, a barra e o rodapé de legal.css. A chave e o cadeado partilham
+  uma cor própria (--key) para se perceber que um abre o outro.
+*/
+
+:root {
+  --panel-deep: #0d0f19;
+  --line-strong: #353b52;
+  --violet: #6e48db;
+  --cold: #5d86f0;
+  --cold-light: #b9ccff;
+  --key: #f1c45c;
+  --ok: #34d378;
+  --wide: 56rem;
+}
+
+/* ---------- Página ---------- */
+
+.cf {
+  width: min(100% - 2 * var(--gutter), var(--wide));
+  margin: 0 auto;
+  padding: 1.5rem 0 4rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.cf h1 {
+  margin: 0;
+  font: 300 clamp(1.75rem, 1.3rem + 2vw, 2.5rem) / 1.2 var(--font-display);
+  text-wrap: balance;
+}
+
+.cf__lede {
+  margin: -0.5rem 0 0;
+  color: var(--mist);
+  font-size: 1.125rem;
+}
+
+.legal-bar,
+.legal-footer {
+  width: min(100% - 2 * var(--gutter), var(--wide));
+}
+
+.cf__back {
+  margin: 1.5rem 0 0;
+}
+
+.legal-footer a {
+  color: var(--lilac);
+  text-underline-offset: 0.2em;
+}
+
+/* ---------- Palco ---------- */
+
+.cf-stage {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  background: radial-gradient(60% 70% at 50% 35%, rgba(110, 72, 219, 0.16), transparent 70%), var(--panel-deep);
+  overflow: hidden;
+}
+
+.cf-stage svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Telemóveis: o desenho fica em coluna (src/como-funciona.js troca a disposição). */
+@media (max-width: 560px) {
+  .cf-stage svg {
+    max-height: 78svh;
+  }
+}
+
+.cf-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--line);
+}
+
+.cf-progress span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--lilac);
+}
+
+.cf-progress.run span {
+  animation: cf-fill var(--dur, 5s) linear forwards;
+}
+
+.cf-progress.paused span {
+  animation-play-state: paused;
+}
+
+@keyframes cf-fill {
+  to {
+    width: 100%;
+  }
+}
+
+/* ---------- Desenho ---------- */
+
+.cf-stage text {
+  font-family: var(--font-text);
+}
+
+.actor {
+  transition: opacity 0.5s ease;
+}
+
+.phone {
+  fill: var(--panel);
+  stroke: var(--line-strong);
+  stroke-width: 2;
+}
+
+.notch {
+  fill: var(--line-strong);
+}
+
+.who {
+  fill: var(--ice);
+  font-size: 24px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.bubble {
+  fill: var(--violet);
+}
+
+.bubble-in {
+  fill: #2a2f46;
+}
+
+.bubble-text {
+  fill: #fff;
+  font-size: 21px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.tick {
+  fill: none;
+  stroke: var(--lilac);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.server-box {
+  fill: var(--panel);
+  stroke: var(--line-strong);
+  stroke-width: 2;
+}
+
+.rack {
+  fill: var(--line);
+}
+
+.led {
+  fill: var(--ok);
+}
+
+.label {
+  fill: var(--mist);
+  font-size: 18px;
+  text-anchor: middle;
+}
+
+.route {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 2;
+  stroke-dasharray: 2 9;
+  stroke-linecap: round;
+}
+
+.env-box {
+  fill: #1c1830;
+  stroke: var(--lilac);
+  stroke-width: 2;
+}
+
+.env-flap {
+  fill: none;
+  stroke: var(--lilac);
+  stroke-width: 1.5;
+  opacity: 0.5;
+}
+
+.cf-stage .env-text {
+  fill: var(--lilac);
+  font-family: var(--font-code);
+  font-size: 19px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.tag {
+  fill: var(--ice);
+  font-size: 16px;
+  font-weight: 700;
+  text-anchor: middle;
+  letter-spacing: 0.04em;
+}
+
+.tag--key {
+  fill: var(--key);
+}
+
+.tag--ok {
+  fill: var(--ok);
+}
+
+.tag--cold {
+  fill: var(--cold-light);
+}
+
+.lock-body {
+  fill: var(--key);
+}
+
+.lock-shackle {
+  fill: none;
+  stroke: var(--key);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  transition: transform 0.4s ease;
+  transform-box: fill-box;
+  transform-origin: 100% 100%;
+}
+
+.lock.open .lock-shackle {
+  transform: translate(0, -6px) rotate(-25deg);
+}
+
+.key-shape {
+  fill: none;
+  stroke: var(--key);
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mini-lock--1 { fill: var(--key); }
+.mini-lock--2 { fill: #5ee0c1; }
+.mini-lock--3 { fill: #f08bb4; }
+
+.mini-shackle--1,
+.mini-shackle--2,
+.mini-shackle--3 {
+  fill: none;
+  stroke-width: 3;
+}
+
+.mini-shackle--1 { stroke: var(--key); }
+.mini-shackle--2 { stroke: #5ee0c1; }
+.mini-shackle--3 { stroke: #f08bb4; }
+
+.shield {
+  fill: rgba(93, 134, 240, 0.14);
+  stroke: var(--cold);
+  stroke-width: 3;
+}
+
+.shield-check {
+  fill: none;
+  stroke: var(--cold-light);
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Em coluna o escudo é desenhado mais pequeno; o texto dele compensa. */
+[data-layout="narrow"] .quantum .tag {
+  font-size: 25px;
+}
+
+/* ---------- O que aparece em cada passo (data-scene no <svg>) ---------- */
+
+.fade {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+/* Foco: o que não interessa em cada passo fica esbatido. */
+[data-scene="1"] :is(#g-server, #g-rui),
+[data-scene="2"] :is(#g-server, #g-rui),
+[data-scene="3"] :is(#g-ana, #g-rui),
+[data-scene="4"] :is(#g-ana, #g-server),
+[data-scene="5"] :is(#g-ana, #g-server, #g-rui),
+[data-scene="6"] :is(#g-ana, #g-server, #g-rui) {
+  opacity: 0.3;
+}
+
+[data-scene="3"] .sees,
+[data-scene="5"] .many,
+[data-scene="6"] .quantum,
+.got .rui-msg {
+  opacity: 1;
+}
+
+.key-part {
+  transition: opacity 0.5s ease;
+}
+
+[data-scene="1"] .key-part,
+[data-scene="5"] .key-part,
+[data-scene="6"] .key-part {
+  opacity: 0;
+}
+
+.many .mini {
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+[data-scene="5"] .many .mini {
+  opacity: 1;
+}
+
+[data-scene="5"] .many .mini:nth-of-type(2) {
+  transition-delay: 0.6s;
+}
+
+[data-scene="5"] .many .mini:nth-of-type(3) {
+  transition-delay: 1.2s;
+}
+
+/* ---------- Legenda e controlos ---------- */
+
+.cf-caption {
+  display: grid;
+  gap: 0.3rem;
+  min-height: 7rem;
+}
+
+.cf-caption__step {
+  margin: 0;
+  color: var(--lilac);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.cf-caption h2 {
+  margin: 0;
+  font: 400 clamp(1.25rem, 1.05rem + 1vw, 1.65rem) / 1.3 var(--font-display);
+  text-wrap: balance;
+}
+
+.cf-caption p:last-child {
+  margin: 0;
+  max-width: 40rem;
+  color: var(--mist);
+  font-size: 1.125rem;
+}
+
+.cf-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.cf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.6rem 1.05rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(5, 6, 13, 0.85);
+  color: var(--ice);
+  font: 600 0.9rem/1 var(--font-text);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cf-btn:hover {
+  border-color: var(--lilac);
+}
+
+.cf-btn:focus-visible,
+.cf-dot:focus-visible {
+  outline: 2px solid var(--lilac);
+  outline-offset: 3px;
+}
+
+.cf-btn--main {
+  min-width: 7.5rem;
+  border-color: var(--violet);
+  background: var(--violet);
+  color: #fff;
+}
+
+.cf-btn--main:hover {
+  border-color: #7d5ae3;
+  background: #7d5ae3;
+}
+
+.cf-dots {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.cf-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--line-strong);
+  cursor: pointer;
+}
+
+.cf-dot[aria-current="step"] {
+  background: var(--lilac);
+}
+
+@media (max-width: 560px) {
+  .cf-controls {
+    justify-content: center;
+  }
+
+  .cf-dots {
+    width: 100%;
+    margin-left: 0;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade,
+  .actor,
+  .key-part,
+  .many .mini,
+  .lock-shackle {
+    transition: none;
+  }
+
+  .cf-progress {
+    display: none;
+  }
+}
