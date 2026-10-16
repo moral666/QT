@@ -1,5 +1,5 @@
 /**
- * Marcador de estado do serviço, no canto superior esquerdo.
+ * Marcador de estado do serviço, ao centro da barra de topo.
  *
  * Pergunta ao próprio site (/api/estado, ver worker/index.js) se o relay da SEALER na AWS
  * está a funcionar. Verde: a funcionar. Vermelho: em baixo. Cinzento: ainda a verificar,
