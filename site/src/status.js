@@ -17,20 +17,23 @@ const INTERVAL_MS = 60_000;
 const TESTING = 'A SEALER está em testes fechados: por agora só 5 testadores convidados têm acesso ao serviço.';
 
 const TEXT = {
-  checking: { short: 'A verificar serviços', long: 'A verificar se os serviços da SEALER estão a funcionar' },
-  on: { short: 'Serviços online', long: 'Os serviços da SEALER estão a funcionar' },
-  off: { short: 'Serviços offline', long: 'Os serviços da SEALER estão em baixo de momento' },
-  unknown: { short: 'Estado desconhecido', long: 'Não foi possível saber o estado dos serviços da SEALER' },
+  checking: { short: 'A verificar serviços', mini: 'A verificar', long: 'A verificar se os serviços da SEALER estão a funcionar' },
+  on: { short: 'Serviços online', mini: 'Online', long: 'Os serviços da SEALER estão a funcionar' },
+  off: { short: 'Serviços offline', mini: 'Offline', long: 'Os serviços da SEALER estão em baixo de momento' },
+  unknown: { short: 'Estado desconhecido', mini: 'Sem dados', long: 'Não foi possível saber o estado dos serviços da SEALER' },
 };
 
 export function initStatus(el) {
   if (!el) return;
   const label = el.querySelector('.status-pill__text');
+  // Versão curta, só para telemóveis muito estreitos (ver styles.css).
+  const mini = el.querySelector('.status-pill__mini');
   let timer = 0;
 
   function show(state) {
     el.dataset.state = state;
     label.textContent = TEXT[state].short;
+    if (mini) mini.textContent = TEXT[state].mini;
     const full = `${TEXT[state].long}. ${TESTING}`;
     el.title = full;
     el.setAttribute('aria-label', full);
