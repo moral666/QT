@@ -28,13 +28,29 @@ export function initStatus(el) {
   const label = el.querySelector('.status-pill__text');
   // Versão curta, só para telemóveis muito estreitos (ver styles.css).
   const mini = el.querySelector('.status-pill__mini');
+  const ms = el.querySelector('.status-pill__ms');
+  const fmt = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 0 });
   let timer = 0;
 
-  function show(state) {
+  /** Frase sobre o tempo de entrega, para o title; vazia se não se aplica. */
+  function deliveryText(data) {
+    if (!data || data.estado !== 'on') return '';
+    const when = data.janela_minutos >= 60 || !data.janela_minutos ? 'na última hora' : `nos últimos ${data.janela_minutos} minutos`;
+    if (data.entrega_media_ms == null) return ` Sem mensagens entregues ${when}.`;
+    const n = data.mensagens === 1 ? '1 mensagem' : `${fmt.format(data.mensagens)} mensagens`;
+    return ` Tempo médio de entrega ${when}: ${fmt.format(data.entrega_media_ms)} ms (${n}), desde que o servidor recebe a mensagem até o telemóvel de quem a recebe confirmar que a tem.`;
+  }
+
+  function show(state, data) {
     el.dataset.state = state;
     label.textContent = TEXT[state].short;
     if (mini) mini.textContent = TEXT[state].mini;
-    const full = `${TEXT[state].long}. ${TESTING}`;
+    if (ms) {
+      const value = state === 'on' && data && Number.isFinite(data.entrega_media_ms) ? data.entrega_media_ms : null;
+      ms.hidden = value == null;
+      ms.textContent = value == null ? '' : `${fmt.format(value)} ms`;
+    }
+    const full = `${TEXT[state].long}.${deliveryText(data)} ${TESTING}`;
     el.title = full;
     el.setAttribute('aria-label', full);
   }
@@ -44,7 +60,7 @@ export function initStatus(el) {
       const res = await fetch('/api/estado', { headers: { Accept: 'application/json' } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      show(data.estado === 'on' ? 'on' : data.estado === 'off' ? 'off' : 'unknown');
+      show(data.estado === 'on' ? 'on' : data.estado === 'off' ? 'off' : 'unknown', data);
     } catch {
       show('unknown');
     }

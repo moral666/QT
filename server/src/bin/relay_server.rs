@@ -127,6 +127,14 @@ fn redact_url(url: &str) -> String {
     }
 }
 
+/// Escreve o JSON de estado (tempo medio de entrega); uma falha so fica no registo.
+fn write_status(path: &str, summary: &qt_server::latency::Summary) {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    if qt_server::latency::write_status_file(path, &qt_server::latency::to_json(summary, now)).is_err() {
+        eprintln!("estado: nao foi possivel escrever RELAY_STATUS_FILE");
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let bind_addr = std::env::var("RELAY_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:9443".to_string());
@@ -169,14 +177,27 @@ async fn main() {
         .await
         .unwrap_or_else(|_| fatal("nao foi possivel abrir o socket TCP (porta ocupada/permissoes?)"));
 
-    // Estatisticas anonimas (so contagens), uma linha por minuto.
-    tokio::spawn(async {
+    // Estatisticas anonimas (so contagens), uma linha por minuto. No mesmo ciclo,
+    // a media do tempo de entrega (latency.rs) e, se RELAY_STATUS_FILE estiver
+    // definido, o JSON de estado que o Caddy publica em /estado.json.
+    let status_file = std::env::var("RELAY_STATUS_FILE").ok().filter(|p| !p.is_empty());
+    if let Some(path) = &status_file {
+        write_status(path, &qt_server::latency::Summary { avg_ms: None, messages: 0, minutes: 0 });
+    }
+    tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
         tick.tick().await;
         loop {
             tick.tick().await;
+            let summary = qt_server::latency::roll_minute();
             if let Some(line) = qt_server::stats::take_line(&qt_server::stats::STATS) {
-                println!("{line}");
+                match summary.avg_ms {
+                    Some(ms) => println!("{line} entrega_media_ms={ms} (ultimos {} min, {} mensagens)", summary.minutes, summary.messages),
+                    None => println!("{line}"),
+                }
+            }
+            if let Some(path) = &status_file {
+                write_status(path, &summary);
             }
         }
     });

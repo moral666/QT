@@ -225,8 +225,9 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
                 return err("mensagem com tamanho invalido");
             }
             match store.enqueue_message(to, sealed_from, ciphertext).await {
-                Ok(()) => {
+                Ok(id) => {
                     stats::inc(&STATS.sends);
+                    crate::latency::queued(id);
                     ServerMessage::Ack
                 }
                 Err(StoreError::QueueFull) => {
@@ -261,9 +262,10 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
             if ids.len() > MAX_ACK_IDS {
                 return err("demasiados ids");
             }
-            match store.ack_messages(&user_id, &ids).await {
-                Ok(n) => {
-                    stats::add(&STATS.acked, n as u64);
+            match store.ack_messages_ids(&user_id, &ids).await {
+                Ok(removed) => {
+                    stats::add(&STATS.acked, removed.len() as u64);
+                    crate::latency::acked(&removed);
                     ServerMessage::Ack
                 }
                 Err(e) => internal(e),

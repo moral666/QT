@@ -40,7 +40,9 @@ PrivateTmp=yes
 PrivateDevices=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/var/lib/qt
+# /var/lib/qt-estado: so o estado.json publico (tempo medio de entrega), que o
+# Caddy serve em /estado.json. O "-" deixa o relay arrancar mesmo sem a pasta.
+ReadWritePaths=/var/lib/qt -/var/lib/qt-estado
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
