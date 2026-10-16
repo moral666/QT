@@ -37,12 +37,23 @@ final class AppModel: ObservableObject {
     private var poller: Task<Void, Never>?
     /// Segunda ligacao ao relay, so para anexos: um envio grande nao atrasa as mensagens.
     private var fileLink: RelayLink?
+    /// Terceira ligacao, so para ESPERAR por mensagens (relayRequestWait): o relay responde no
+    /// instante em que chega uma, em vez de a app perguntar de `pollSeconds` em `pollSeconds`.
+    /// Fica ocupada durante a espera, por isso nao partilha a ligacao dos envios.
+    private var waitLink: RelayLink?
     private var transferTask: Task<Void, Never>?
     private var transferKick: AsyncStream<Void>.Continuation?
     /// Um so envio da outbox de cada vez.
     private let flushLock = AsyncLock()
 
+    /// Sem entrega imediata (relay antigo ou sem rede): perguntar de 3 em 3 s.
     private static let pollSeconds: UInt64 = 3
+    /// Espera maxima de cada pedido de espera (o relay limita a 25 s).
+    private static let waitSeconds: UInt32 = 25
+    /// Tempo pela resposta a um pedido de espera: a espera mais margem para a rede.
+    private static let waitTimeoutSeconds: Double = 35
+    /// Resposta de um relay a um pedido que nao conhece (relay sem entrega imediata).
+    private static let relayUnknownRequest = "mensagem invalida"
     private static let maxPages = 20
     private static let maxTextBytes = 9_000
     private static let page = 50
@@ -142,6 +153,8 @@ final class AppModel: ObservableObject {
         link = l
         if let old = fileLink { await old.close() }
         fileLink = RelayLink(qt: client, url: ui.relayUrl, pinnedRelayKeyHex: ui.relayKeyHex.isEmpty ? nil : ui.relayKeyHex)
+        if let old = waitLink { await old.close() }
+        waitLink = RelayLink(qt: client, url: ui.relayUrl, pinnedRelayKeyHex: ui.relayKeyHex.isEmpty ? nil : ui.relayKeyHex)
         status("A ligar ao relay…")
         do {
             // Publicar (ou re-publicar) o bundle publico para que outros nos possam contactar.
@@ -151,18 +164,18 @@ final class AppModel: ObservableObject {
         } catch {
             status("Sem ligacao ao relay: \(safeMessage(error))")
         }
-        poller = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.pollOnce()
-                try? await Task.sleep(nanoseconds: AppModel.pollSeconds * 1_000_000_000)
-            }
-        }
+        poller = Task { [weak self] in await self?.receiveLoop() }
         startTransfers()
     }
 
     /// A app voltou ao primeiro plano: verifica ja se ha mensagens (sem esperar pelo proximo ciclo).
     func becameActive() {
-        Task { await pollOnce() }
+        Task {
+            // Em segundo plano o iOS corta as ligacoes: a espera pendente estaria num socket morto.
+            // Fechar faz essa espera falhar ja e ser repetida numa ligacao nova.
+            if let w = waitLink { await w.close() }
+            await pollOnce()
+        }
         kickTransfers()   // envios/descargas que o iOS interrompeu em segundo plano
     }
 
@@ -292,6 +305,8 @@ final class AppModel: ObservableObject {
             link = nil
             if let f = fileLink { await f.close() }
             fileLink = nil
+            if let w = waitLink { await w.close() }
+            waitLink = nil
             do {
                 try await background { try client.deleteIdentity() }   // tambem os ficheiros dos anexos
                 try? await background { try ContactStore.wipe() }
@@ -582,14 +597,65 @@ final class AppModel: ObservableObject {
 
     // --------------------------------------------------------------------- receber
 
-    private func pollOnce() async {
+    /// Recebe mensagens enquanto a sessao estiver aberta.
+    ///
+    /// Com um relay que suporta entrega imediata, a app fica a espera numa ligacao propria
+    /// (`waitLink`) e o relay responde no instante em que chega uma mensagem (ou ao fim de
+    /// `waitSeconds`, e volta-se a esperar). Um relay antigo responde "mensagem invalida" ao pedido
+    /// de espera: entao volta-se ao metodo antigo, perguntar de `pollSeconds` em `pollSeconds`.
+    private func receiveLoop() async {
+        var waitSupported = true
+        var first: [RelayDelivered]?
+        while !Task.isCancelled {
+            await pollOnce(first: first)
+            first = nil
+            guard waitSupported, let client = qt, let w = waitLink else {
+                try? await Task.sleep(nanoseconds: Self.pollSeconds * 1_000_000_000)
+                continue
+            }
+            do {
+                let secs = Self.waitSeconds   // copia: o bloco abaixo corre fora da thread principal
+                let req = try await background { try client.relayRequestWait(timeoutSecs: secs) }
+                switch try await w.request(req, timeout: Self.waitTimeoutSeconds) {
+                case .messages(let msgs):
+                    first = msgs.isEmpty ? nil : msgs
+                case .error(let reason):
+                    // Relay antigo nao conhece o pedido: volta ao metodo antigo.
+                    // Outro erro (ex.: problema passageiro no relay): espera e tenta de novo.
+                    if reason == Self.relayUnknownRequest {
+                        waitSupported = false
+                    } else {
+                        try? await Task.sleep(nanoseconds: Self.pollSeconds * 1_000_000_000)
+                    }
+                default:
+                    try? await Task.sleep(nanoseconds: Self.pollSeconds * 1_000_000_000)
+                }
+            } catch {
+                // Sem rede ou relay em baixo: tenta de novo (e pergunta entretanto).
+                try? await Task.sleep(nanoseconds: Self.pollSeconds * 1_000_000_000)
+            }
+        }
+    }
+
+    /// Busca, guarda e confirma as mensagens em fila. `first`: mensagens que ja chegaram pela
+    /// ligacao de espera; sao tratadas logo (antes de enviar a outbox), para entregar depressa.
+    private func pollOnce(first: [RelayDelivered]? = nil) async {
         guard let client = qt, let l = link else { return }
         do {
-            await flushOutbox()
+            if first == nil { await flushOutbox() }
             var received = false
+            var pending = first
             for _ in 0..<Self.maxPages {
-                let r = try await l.request(try await background { try client.relayRequestFetch() })
-                guard case .messages(let msgs) = r, !msgs.isEmpty else { break }
+                let msgs: [RelayDelivered]
+                if let p = pending {
+                    msgs = p
+                    pending = nil
+                } else {
+                    let r = try await l.request(try await background { try client.relayRequestFetch() })
+                    guard case .messages(let m) = r else { break }
+                    msgs = m
+                }
+                if msgs.isEmpty { break }
                 // Decifrar + guardar no historico + agendar o recibo, tudo numa transacao (no Rust).
                 let (ackIds, got) = try await background { () -> ([UInt64], Bool) in
                     var ids: [UInt64] = []

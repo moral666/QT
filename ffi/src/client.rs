@@ -499,6 +499,17 @@ impl QtClient {
         json_bytes(serde_json::json!({"FetchMessages": {"user_id": uid}}))
     }
 
+    /// Como `relay_request_fetch`, mas o relay so responde quando houver mensagens
+    /// (ou ao fim de `timeout_secs`, no maximo 25): entrega imediata. Usar numa
+    /// ligacao propria (fica ocupada durante a espera), com tempo de resposta maior
+    /// do que `timeout_secs`. Resposta `Messages` (vazia se o tempo acabou), a tratar
+    /// como a de `relay_request_fetch`. Um relay antigo responde `Error`: voltar a
+    /// `relay_request_fetch` periodico.
+    pub fn relay_request_wait(&self, timeout_secs: u32) -> Result<Vec<u8>, QtError> {
+        let uid = self.relay_user_id()?;
+        json_bytes(serde_json::json!({"WaitMessages": {"user_id": uid, "timeout_secs": timeout_secs}}))
+    }
+
     /// Confirmar so DEPOIS de `decrypt` ter persistido cada mensagem.
     pub fn relay_request_ack(&self, ids: Vec<u64>) -> Result<Vec<u8>, QtError> {
         let uid = self.relay_user_id()?;

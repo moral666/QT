@@ -45,16 +45,21 @@ class RelayLink(
 
     private class Conn(val ws: WebSocket, val noise: NoiseSession, val inbox: Channel<ByteArray>)
 
-    /** Envia um pedido (ja construido com qt.relayRequest*) e devolve a resposta, com reconnect. */
-    suspend fun request(bytes: ByteArray): RelayResponse = lock.withLock { requestLocked(bytes) }
+    /**
+     * Envia um pedido (ja construido com qt.relayRequest*) e devolve a resposta, com reconnect.
+     * `timeoutMs`: tempo maximo pela resposta (maior para `relayRequestWait`, que so responde
+     * quando chega uma mensagem).
+     */
+    suspend fun request(bytes: ByteArray, timeoutMs: Long = REQUEST_MS): RelayResponse =
+        lock.withLock { requestLocked(bytes, timeoutMs) }
 
-    private suspend fun requestLocked(bytes: ByteArray): RelayResponse {
+    private suspend fun requestLocked(bytes: ByteArray, timeoutMs: Long): RelayResponse {
         var last: Exception? = null
         for (attempt in 0..MAX_RETRIES) {
             if (attempt > 0) delay((BACKOFF_MS shl (attempt - 1)).coerceAtMost(8_000L))
             try {
                 val c = conn ?: connect().also { conn = it }
-                return roundtrip(c, bytes)
+                return roundtrip(c, bytes, timeoutMs)
             } catch (e: PermanentRelayException) {
                 close(); throw e
             } catch (e: Exception) {
@@ -134,9 +139,9 @@ class RelayLink(
         }
     }
 
-    private suspend fun roundtrip(c: Conn, bytes: ByteArray): RelayResponse {
+    private suspend fun roundtrip(c: Conn, bytes: ByteArray, timeoutMs: Long = REQUEST_MS): RelayResponse {
         send(c.ws, c.noise.encrypt(bytes))
-        val frame = withTimeout(REQUEST_MS) { c.inbox.receive() }
+        val frame = withTimeout(timeoutMs) { c.inbox.receive() }
         return relayParseResponse(c.noise.decrypt(frame))
     }
 

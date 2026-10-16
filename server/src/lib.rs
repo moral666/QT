@@ -19,6 +19,7 @@ pub mod latency;
 pub mod protocol;
 pub mod stats;
 pub mod store;
+pub mod waiters;
 
 pub use connection::{handle_connection, handle_connection_with, ServerConfig};
 pub use blobs::BlobConfig;

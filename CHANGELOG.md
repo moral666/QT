@@ -6,6 +6,19 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 16 de outubro de 2026: entrega imediata e tempo de entrega
+
+- **Entrega imediata** (`WaitMessages`): as apps deixam de perguntar ao relay de
+  3 em 3 s e ficam à espera numa ligação própria; o relay responde no instante
+  em que a mensagem chega. No relay, o tempo até à entrega passou de ~1 s em
+  média para menos de 1 ms (`docs/performance.md`). Compatível nos dois
+  sentidos: apps antigas continuam a perguntar; com um relay antigo, as apps
+  novas voltam a perguntar de 3 em 3 s.
+- **Tempo médio de entrega** medido pelo relay (só em memória, sem remetente,
+  destinatário nem tamanho), publicado em `/estado.json` e mostrado em sealer.pt.
+- Site sealer.pt: política de cookies, página "Como funciona" com animação e
+  marcador de estado do serviço.
+
 ### Outubro de 2026: apps, relay na AWS, imagens
 
 - **Apps Android e iPhone** (o nome que aparece no telemóvel é SEALER), com o

@@ -149,6 +149,12 @@ impl RelayClient {
     /// Envia um pedido com reconnect automatico + backoff exponencial.
     /// `ServerMessage::Error` e devolvido como `Ok` (o relay respondeu).
     pub async fn request(&mut self, msg: ClientMessage) -> Result<ServerMessage, RelayError> {
+        let timeout = self.cfg.request_timeout;
+        self.request_with_timeout(msg, timeout).await
+    }
+
+    /// Como `request`, com outro tempo maximo de resposta (ex.: `WaitMessages`).
+    pub async fn request_with_timeout(&mut self, msg: ClientMessage, timeout: Duration) -> Result<ServerMessage, RelayError> {
         let mut last = RelayError::Unavailable;
         for attempt in 0..=self.cfg.max_retries {
             if attempt > 0 {
@@ -164,7 +170,6 @@ impl RelayClient {
                     continue;
                 }
             }
-            let timeout = self.cfg.request_timeout;
             let Some(conn) = self.conn.as_mut() else { continue };
             match Self::roundtrip(&mut conn.ws, &mut conn.noise, &msg, timeout).await {
                 Ok(r) => return Ok(r),
@@ -214,6 +219,19 @@ impl RelayClient {
     pub async fn fetch_messages(&mut self) -> Result<Vec<DeliveredMessage>, RelayError> {
         let uid = self.user_id.clone();
         match self.request(ClientMessage::FetchMessages { user_id: uid }).await? {
+            ServerMessage::Messages { messages } => Ok(messages),
+            ServerMessage::Error { reason } => Err(RelayError::Rejected(reason)),
+            _ => Err(RelayError::Protocol),
+        }
+    }
+
+    /// Como `fetch_messages`, mas espera ate `timeout_secs` se a fila estiver vazia:
+    /// devolve logo que chegue uma mensagem (entrega imediata). Usar numa ligacao
+    /// so para isto, porque fica ocupada durante a espera.
+    pub async fn wait_messages(&mut self, timeout_secs: u64) -> Result<Vec<DeliveredMessage>, RelayError> {
+        let uid = self.user_id.clone();
+        let timeout = Duration::from_secs(timeout_secs + 10);
+        match self.request_with_timeout(ClientMessage::WaitMessages { user_id: uid, timeout_secs }, timeout).await? {
             ServerMessage::Messages { messages } => Ok(messages),
             ServerMessage::Error { reason } => Err(RelayError::Rejected(reason)),
             _ => Err(RelayError::Protocol),

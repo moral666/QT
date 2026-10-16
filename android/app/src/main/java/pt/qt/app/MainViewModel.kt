@@ -12,6 +12,7 @@ import javax.crypto.Cipher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -32,6 +33,7 @@ import uniffi.qt_ffi.ConversationSummary
 import uniffi.qt_ffi.QtClient
 import uniffi.qt_ffi.QtException
 import uniffi.qt_ffi.ReceiveResult
+import uniffi.qt_ffi.RelayDelivered
 import uniffi.qt_ffi.RelayResponse
 import uniffi.qt_ffi.peerBundleFromRelayBytes
 import uniffi.qt_ffi.relayIdOfPublicId
@@ -92,6 +94,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var poller: Job? = null
     /** Segunda ligacao ao relay, so para anexos: um envio grande nao atrasa as mensagens. */
     @Volatile private var fileLink: RelayLink? = null
+    /**
+     * Terceira ligacao, so para ESPERAR por mensagens (relayRequestWait): o relay responde no
+     * instante em que chega uma, em vez de a app perguntar de POLL_MS em POLL_MS. Fica ocupada
+     * durante a espera, por isso nao partilha a ligacao dos envios.
+     */
+    @Volatile private var waitLink: RelayLink? = null
     @Volatile private var transferJob: Job? = null
     /** "Ha anexos para enviar/descarregar": acorda o ciclo de transferencias. */
     private val transferKick = Channel<Unit>(Channel.CONFLATED)
@@ -193,6 +201,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         link = null
         fileLink?.close()
         fileLink = null
+        waitLink?.close()
+        waitLink = null
         // Imagens decifradas que estavam em memoria para o ecra.
         SealerImages.clearMemory()
         val c = qt
@@ -448,6 +458,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         transferJob?.cancel()
         fileLink?.close()
         fileLink = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
+        waitLink?.close()
+        waitLink = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
         status("A ligar ao relay…")
         try {
             // Publicar (ou re-publicar) o bundle publico para que outros nos possam contactar.
@@ -456,9 +468,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             status("Sem ligacao ao relay: ${e.safeMsg()}")
         }
-        poller = viewModelScope.launch(Dispatchers.IO) {
-            while (isActive) { pollOnce(); delay(POLL_MS) }
-        }
+        poller = viewModelScope.launch(Dispatchers.IO) { receiveLoop(client) }
         transferJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
                 val retry = try {
@@ -593,6 +603,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             transferJob?.cancel()
             fileLink?.close()
             fileLink = null
+            waitLink?.close()
+            waitLink = null
             client.deleteIdentity()          // secure_delete + VACUUM no Rust (e os ficheiros dos anexos)
             // Depois apaga os ficheiros e as chaves (incluindo o bloqueio) e abre um armazenamento novo.
             resetStorage()
@@ -844,15 +856,52 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // --------------------------------------------------------------------- receber
 
-    private suspend fun pollOnce() {
+    /**
+     * Recebe mensagens enquanto a sessao estiver aberta.
+     *
+     * Com um relay que suporta entrega imediata, a app fica a espera numa ligacao propria
+     * (waitLink) e o relay responde no instante em que chega uma mensagem (ou ao fim de
+     * WAIT_SECONDS, e volta-se a esperar). Um relay antigo responde Error ao pedido de espera:
+     * entao volta-se ao metodo antigo, perguntar de POLL_MS em POLL_MS. Sem rede, tambem.
+     */
+    private suspend fun receiveLoop(client: QtClient) {
+        var waitSupported = true
+        var first: List<RelayDelivered>? = null
+        while (currentCoroutineContext().isActive) {
+            pollOnce(first)
+            first = null
+            val w = waitLink
+            if (!waitSupported || w == null) { delay(POLL_MS); continue }
+            try {
+                when (val r = w.request(client.relayRequestWait(WAIT_SECONDS.toUInt()), WAIT_TIMEOUT_MS)) {
+                    is RelayResponse.Messages -> first = r.messages.ifEmpty { null }
+                    // Relay antigo nao conhece o pedido ("mensagem invalida"): volta ao metodo antigo.
+                    // Outro erro (ex.: problema passageiro no relay): espera e tenta de novo.
+                    is RelayResponse.Error -> if (r.reason == RELAY_UNKNOWN_REQUEST) waitSupported = false else delay(POLL_MS)
+                    else -> delay(POLL_MS)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                delay(POLL_MS)   // sem rede ou relay em baixo: tenta de novo (e pergunta entretanto)
+            }
+        }
+    }
+
+    /**
+     * Busca, guarda e confirma as mensagens em fila. `first`: mensagens que ja chegaram pela
+     * ligacao de espera; sao tratadas logo (antes de enviar a outbox), para entregar depressa.
+     */
+    private suspend fun pollOnce(first: List<RelayDelivered>? = null) {
         val client = qt ?: return
         val l = link ?: return
         try {
-            flushOutbox()
+            if (first == null) flushOutbox()
             var received = false
+            var pending = first
             for (page in 0 until MAX_PAGES) {
-                val r = l.request(client.relayRequestFetch())
-                val msgs = (r as? RelayResponse.Messages)?.messages ?: break
+                val msgs = pending ?: (l.request(client.relayRequestFetch()) as? RelayResponse.Messages)?.messages ?: break
+                pending = null
                 if (msgs.isEmpty()) break
                 val ackIds = mutableListOf<ULong>()
                 for (m in msgs) {
@@ -913,7 +962,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
+        /** Sem entrega imediata (relay antigo ou sem rede): perguntar de 3 em 3 s. */
         private const val POLL_MS = 3_000L
+        /** Espera maxima de cada pedido de espera (o relay limita a 25 s). */
+        private const val WAIT_SECONDS = 25
+        /** Tempo pela resposta a um pedido de espera: a espera mais margem para a rede. */
+        private const val WAIT_TIMEOUT_MS = 35_000L
+        /** Resposta de um relay a um pedido que nao conhece (relay sem entrega imediata). */
+        private const val RELAY_UNKNOWN_REQUEST = "mensagem invalida"
         private const val MAX_PAGES = 20
         private const val MAX_TEXT_BYTES = 9_000
         private const val PAGE = 50

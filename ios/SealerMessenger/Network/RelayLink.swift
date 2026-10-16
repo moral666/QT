@@ -38,7 +38,7 @@ actor RelayLink {
     private static let maxRetries = 3
     private static let backoffMs: UInt64 = 300
     private static let handshakeSeconds: Double = 10
-    private static let requestSeconds: Double = 15
+    static let requestSeconds: Double = 15
 
     init(qt: QtClient, url: String, pinnedRelayKeyHex: String?) {
         self.qt = qt
@@ -54,10 +54,12 @@ actor RelayLink {
     }
 
     /// Envia um pedido (ja construido com qt.relayRequest*) e devolve a resposta, com reconnect.
-    func request(_ bytes: Data) async throws -> RelayResponse {
+    /// `timeout`: tempo maximo pela resposta (maior para `relayRequestWait`, que so responde
+    /// quando chega uma mensagem).
+    func request(_ bytes: Data, timeout: Double = RelayLink.requestSeconds) async throws -> RelayResponse {
         await lock.lock()
         do {
-            let r = try await requestLocked(bytes)
+            let r = try await requestLocked(bytes, timeout: timeout)
             await lock.unlock()
             return r
         } catch {
@@ -97,7 +99,7 @@ actor RelayLink {
         conn = nil
     }
 
-    private func requestLocked(_ bytes: Data) async throws -> RelayResponse {
+    private func requestLocked(_ bytes: Data, timeout: Double) async throws -> RelayResponse {
         var last: Error?
         for attempt in 0...Self.maxRetries {
             if attempt > 0 {
@@ -107,7 +109,7 @@ actor RelayLink {
             do {
                 let c: Conn
                 if let existing = conn { c = existing } else { c = try await connect(); conn = c }
-                return try await roundtrip(c, bytes)
+                return try await roundtrip(c, bytes, timeout: timeout)
             } catch let e as RelayLinkError {
                 close()
                 if case .permanent = e { throw e }
@@ -157,9 +159,9 @@ actor RelayLink {
         }
     }
 
-    private func roundtrip(_ c: Conn, _ bytes: Data) async throws -> RelayResponse {
+    private func roundtrip(_ c: Conn, _ bytes: Data, timeout: Double = RelayLink.requestSeconds) async throws -> RelayResponse {
         try await c.ws.send(.data(try c.noise.encrypt(plaintext: bytes)))
-        let frame = try await Self.withTimeout(Self.requestSeconds, ws: c.ws) { try await Self.receiveData(c.ws) }
+        let frame = try await Self.withTimeout(timeout, ws: c.ws) { try await Self.receiveData(c.ws) }
         return try relayParseResponse(bytes: try c.noise.decrypt(ciphertext: frame))
     }
 

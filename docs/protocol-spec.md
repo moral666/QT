@@ -420,6 +420,13 @@ Um pedido ↔ uma resposta, sequenciais.
    que envia o blob selado inteiro em `ciphertext`); fila ≤ 1000 mensagens.
 5. `FetchMessages{user_id}`: só a própria fila; **não apaga**; devolve uma
    página (≈ 40 kB de JSON) de `{id, sealed_from, ciphertext}`.
+   `WaitMessages{user_id, timeout_secs}`: igual a `FetchMessages`, mas, com a
+   fila vazia, a resposta fica pendente até chegar uma mensagem para este
+   utilizador ou até `timeout_secs` (no máximo 25 s); depois devolve `Messages`
+   (vazia se o tempo acabou). É a **entrega imediata**: as apps usam uma ligação
+   só para isto (fica ocupada durante a espera) e voltam logo a pedir. Um relay
+   anterior a este pedido responde `Error{"mensagem invalida"}`; as apps passam
+   então a `FetchMessages` de 3 em 3 s.
 6. `AckMessages{user_id, ids}`: só a própria fila; ≤ 200 ids; apaga as confirmadas.
 
 7. **Anexos** (ver secção 14), com o ficheiro JÁ cifrado pelo cliente:

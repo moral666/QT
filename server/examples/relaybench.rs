@@ -13,6 +13,8 @@
 //! `--poll-ms P`: intervalo entre pedidos de mensagens quando a fila esta vazia
 //! (a app usa 3000; aqui 20 por omissao para medir o relay, nao o intervalo).
 //! `--warmup W`: segundos iniciais que nao contam para as medicoes.
+//! `--wait-secs S`: o destinatario usa `WaitMessages` (entrega imediata) em vez de
+//! perguntar de `--poll-ms` em `--poll-ms` (0 = desligado, o comportamento antigo).
 //!
 //! Escreve: envios/s, entregas/s, tempo de resposta a um envio (p50/p95/p99),
 //! latencia de ponta a ponta (envio ate o destinatario o ter), erros, mensagens
@@ -106,6 +108,8 @@ async fn main() {
     let warmup: u64 = arg("--warmup", "3").parse().expect("--warmup");
     let rate: f64 = arg("--rate", "0").parse().expect("--rate");
     let poll_ms: u64 = arg("--poll-ms", "20").parse().expect("--poll-ms");
+    // > 0: o destinatario usa WaitMessages (entrega imediata) em vez de perguntar.
+    let wait_secs: u64 = arg("--wait-secs", "0").parse().expect("--wait-secs");
     assert!(size >= 16, "--size >= 16 (os primeiros bytes levam o id e a hora de envio)");
 
     let start = Instant::now();
@@ -179,14 +183,21 @@ async fn main() {
                             return;
                         }
                     }
-                    let r = match req(&mut ws_r, &mut n_r, &ClientMessage::FetchMessages { user_id: me.clone() }).await {
+                    let pedido = if wait_secs > 0 {
+                        ClientMessage::WaitMessages { user_id: me.clone(), timeout_secs: wait_secs.min(2) }
+                    } else {
+                        ClientMessage::FetchMessages { user_id: me.clone() }
+                    };
+                    let r = match req(&mut ws_r, &mut n_r, &pedido).await {
                         Ok(r) => r,
                         Err(_) => return,
                     };
                     c.fetches.fetch_add(1, Relaxed);
                     let ServerMessage::Messages { messages } = r else { continue };
                     if messages.is_empty() {
-                        tokio::time::sleep(Duration::from_millis(poll_ms)).await;
+                        if wait_secs == 0 {
+                            tokio::time::sleep(Duration::from_millis(poll_ms)).await;
+                        }
                         continue;
                     }
                     let now = start.elapsed().as_nanos() as u64;
@@ -212,7 +223,8 @@ async fn main() {
         }
     }
 
-    println!("relay {url} | pares {pairs} | tamanho {size} B | ritmo {} | pedidos a cada {poll_ms} ms quando vazio | {secs} s (+{warmup} s de aquecimento)",
+    let modo = if wait_secs > 0 { "entrega imediata (WaitMessages)".to_string() } else { format!("pedidos a cada {poll_ms} ms quando vazio") };
+    println!("relay {url} | pares {pairs} | tamanho {size} B | ritmo {} | {modo} | {secs} s (+{warmup} s de aquecimento)",
         if rate > 0.0 { format!("{rate} msg/s por remetente") } else { "o mais depressa possivel".into() });
     tokio::time::sleep(Duration::from_secs(warmup)).await;
     counting.store(true, Relaxed);

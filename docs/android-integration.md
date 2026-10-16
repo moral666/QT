@@ -205,9 +205,18 @@ Disconnected ─► Connecting ─► NoiseHandshake ─► Authenticating ─�
    Mensagens permanentemente inválidas (`InvalidEnvelope`/`Crypto`) também
    se confirmam (senão ficam em fila e são re-entregues indefinidamente).
 8. **Encerrar:** enviar Close (`ws.close(1000, null)`) e descartar a sessão.
-   O estado criptográfico persiste no storage, nunca na ligação. Hoje a app
-   continua a perguntar ao relay de 3 em 3 s enquanto o Android não a fecha;
-   notificações push (ou `WorkManager`) estão por fazer.
+   O estado criptográfico persiste no storage, nunca na ligação. Enquanto o
+   Android não a fecha, a app fica à espera de mensagens numa ligação própria
+   (`relayRequestWait`, ver abaixo); notificações push com a app fechada (FCM)
+   estão por fazer.
+
+   **Entrega imediata:** uma terceira ligação (além da principal e da dos
+   anexos) envia `relayRequestWait(25)` com tempo de resposta de 35 s. O relay
+   responde no instante em que chega uma mensagem (ou vazio ao fim de 25 s);
+   as mensagens recebidas tratam-se como as de `relayRequestFetch` (guardar e
+   só depois `relayRequestAck`, pela ligação principal) e volta-se a esperar.
+   Se o relay responder `Error` com `"mensagem invalida"` (relay antigo), a
+   app volta a `relayRequestFetch` de 3 em 3 s. Sem rede, também.
 9. **Rede perdida:** tratar como erro (passo 6). Ao reconectar nada se perde:
    mensagens por enviar ficam na fila de saída do Rust (`outbox()`, blobs já
    cifrados) e as por receber ficam na fila do relay até ao `Ack`.

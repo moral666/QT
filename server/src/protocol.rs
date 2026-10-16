@@ -50,6 +50,16 @@ pub enum ClientMessage {
     /// num frame Noise; repetir (fetch -> processar -> ack) ate vir vazio.
     FetchMessages { user_id: UserId },
 
+    /// Como `FetchMessages`, mas, se a fila estiver vazia, a resposta fica
+    /// pendente ate chegar uma mensagem para este utilizador (ou ate
+    /// `timeout_secs`, no maximo `waiters::MAX_WAIT_SECS`). Resposta:
+    /// `Messages` (vazia se o tempo acabou). Entrega imediata sem o cliente
+    /// ter de perguntar repetidamente; o cliente usa uma ligacao propria para
+    /// isto, porque a ligacao fica ocupada durante a espera. Relays antigos
+    /// respondem `Error` (pedido desconhecido): o cliente volta a `FetchMessages`
+    /// periodico.
+    WaitMessages { user_id: UserId, timeout_secs: u64 },
+
     /// Confirma que o cliente processou (e persistiu) estas mensagens; so
     /// agora o relay as apaga. Duplicados na entrega sao apanhados pelo
     /// cliente (replay protection no Double Ratchet/storage).
