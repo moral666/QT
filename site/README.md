@@ -53,6 +53,7 @@ Parâmetros úteis no endereço (por exemplo `http://localhost:4173/?debug`):
 ```
 index.html                  Página: barra, logótipo, grelha e o conteúdo de todas as janelas
 politica-de-cookies.html    Política de cookies (só texto, sem JavaScript; estilo em src/legal.css)
+como-funciona.html          Animação "Como viaja uma mensagem" em 6 passos (src/como-funciona.js e .css)
 vite.config.js              Compilação, política de segurança de conteúdo (CSP) e dist/_headers
 wrangler.jsonc              Publicação na Cloudflare (Worker sealer, os dois domínios e o endereço do relay)
 worker/index.js             Código do Worker: só /api/estado (estado do relay na AWS); o resto é estático
@@ -65,7 +66,8 @@ src/
   status.js                 Marcador de estado do serviço (centro da barra de topo)
   capabilities.js           Regras para carregar ou não o 3D
   styles.css                Todo o estilo da página
-  legal.css                 Estilo das páginas de texto (política de cookies)
+  legal.css                 Estilo das páginas de texto (política de cookies, como funciona)
+  como-funciona.js, .css    Animação da página "Como funciona" (textos dos passos em SCENES)
   grid/
     config.js               Valores ajustáveis da grelha
     field.js                Grelha infinita: arrasto, encaixe, lente, roda, teclado, toque

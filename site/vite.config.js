@@ -90,6 +90,7 @@ export default defineConfig({
       input: {
         main: resolve(import.meta.dirname, 'index.html'),
         cookies: resolve(import.meta.dirname, 'politica-de-cookies.html'),
+        comoFunciona: resolve(import.meta.dirname, 'como-funciona.html'),
       },
       output: {
         manualChunks(id) {
