@@ -64,6 +64,11 @@ A app iPhone com estas novidades ainda não foi compilada no Xcode (ver [`ios/RE
 
 **Próximas etapas:** *alpha* (agora: funciona de ponta a ponta, testado com poucas pessoas) → *beta* (notificações, bloqueio da app no iPhone, teste na Play Store) → *1.0* (depois de auditoria externa).
 
+## Arquitetura
+
+<!-- Gerado por site/scripts/architecture_diagram.py (ver site/README.md, secção 14). -->
+![Arquitetura da SEALER: as apps de Android e iPhone usam o mesmo núcleo QT em Rust e trocam envelopes cifrados através de um relay na AWS (Caddy, relay em Rust e Redis). O site sealer.pt está à parte, na Cloudflare.](docs/arquitetura.svg)
+
 ## O que já está construído
 
 | Peça | O que faz | Confiança |
@@ -219,6 +224,7 @@ ffi/         A ponte para Kotlin, Swift e Python
 android/     A app Android (Kotlin/Compose)
 ios/         A app iPhone (SwiftUI)
 branding/    Logotipo, ícones e fonte da marca SEALER
+site/        O site sealer.pt (página estática na Cloudflare)
 deploy/      Instalação do relay em servidor (AWS, Redis, systemd)
 scripts/     Compilação para Android e iPhone, e medições (relay e telemóvel)
 docs/        A especificação técnica completa, e o histórico de decisões
