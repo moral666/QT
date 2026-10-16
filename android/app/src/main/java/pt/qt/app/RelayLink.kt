@@ -16,6 +16,7 @@ import uniffi.qt_ffi.NoiseSession
 import uniffi.qt_ffi.QtClient
 import uniffi.qt_ffi.RelayResponse
 import uniffi.qt_ffi.relayParseResponse
+import android.util.Log
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -64,6 +65,7 @@ class RelayLink(
                 close(); throw e
             } catch (e: Exception) {
                 close(); last = e          // timeout, queda de rede, frame invalido...
+                Log.w(TAG, "pedido falhou (tentativa ${attempt + 1}): ${e.javaClass.simpleName}: ${e.message?.take(120)}")
             }
         }
         throw IOException("relay indisponivel: ${last?.message}", last)
@@ -105,14 +107,19 @@ class RelayLink(
         if (!scheme.startsWith("wss://") && !(BuildConfig.ALLOW_CLEARTEXT && scheme.startsWith("ws://"))) {
             throw PermanentRelayException("URL do relay recusado: usa wss:// (ws:// so na build debug)")
         }
+        val started = android.os.SystemClock.elapsedRealtime()
         val noise = qt.relayNoiseSession()
         val inbox = Channel<ByteArray>(Channel.UNLIMITED)
         val listener = object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) { inbox.trySend(bytes.toByteArray()) }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                Log.w(TAG, "ligacao fechada pelo relay ($code)")
                 inbox.close(IOException("ligacao fechada ($code)")); webSocket.close(1000, null)
             }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { inbox.close(t) }
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                Log.w(TAG, "ligacao caiu: ${t.javaClass.simpleName}: ${t.message?.take(120)}")
+                inbox.close(t)
+            }
         }
         val ws = http.newWebSocket(Request.Builder().url(url).build(), listener)
         val c = Conn(ws, noise, inbox)
@@ -132,6 +139,7 @@ class RelayLink(
             // Autenticacao ligada a esta sessao Noise
             val r = roundtrip(c, qt.relayAuthMessage(noise.handshakeHash()))
             if (r !is RelayResponse.Ack) throw PermanentRelayException("autenticacao recusada pelo relay")
+            Log.d(TAG, "ligado e autenticado em ${android.os.SystemClock.elapsedRealtime() - started} ms")
             return c
         } catch (e: Exception) {
             runCatching { ws.cancel() }; inbox.close()
@@ -154,6 +162,8 @@ class RelayLink(
         private const val BACKOFF_MS = 300L
         private const val HANDSHAKE_MS = 10_000L
         private const val REQUEST_MS = 15_000L
+        /** Etiqueta dos registos (adb logcat -s SealerRelay). Nunca regista conteudo nem chaves. */
+        private const val TAG = "SealerRelay"
     }
 }
 

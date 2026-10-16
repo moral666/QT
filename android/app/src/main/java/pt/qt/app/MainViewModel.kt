@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
@@ -45,6 +46,8 @@ data class UiState(
     val relayUrl: String = BuildConfig.RELAY_URL,
     val relayKeyHex: String = BuildConfig.RELAY_PIN,
     val status: String = "",
+    /** Diagnostico da entrega imediata: vazio quando esta ativa; senao, o motivo (versao alpha). */
+    val delivery: String = "",
     val error: String? = null,
     val contacts: List<Contact> = emptyList(),
     /** Conversas com historico (vem do SQLCipher, no Rust), a mais recente primeiro. */
@@ -865,25 +868,47 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * entao volta-se ao metodo antigo, perguntar de POLL_MS em POLL_MS. Sem rede, tambem.
      */
     private suspend fun receiveLoop(client: QtClient) {
-        var waitSupported = true
+        // Se o relay disser que nao conhece o pedido de espera (relay antigo), pergunta-se de
+        // POLL_MS em POLL_MS, mas volta-se a tentar a espera de WAIT_RETRY_MS em WAIT_RETRY_MS:
+        // o relay pode ter sido atualizado entretanto (nunca desistir para sempre).
+        var waitBlockedUntil = 0L
         var first: List<RelayDelivered>? = null
         while (currentCoroutineContext().isActive) {
             pollOnce(first)
             first = null
             val w = waitLink
-            if (!waitSupported || w == null) { delay(POLL_MS); continue }
+            if (w == null || SystemClock.elapsedRealtime() < waitBlockedUntil) { delay(POLL_MS); continue }
             try {
+                val t0 = SystemClock.elapsedRealtime()
                 when (val r = w.request(client.relayRequestWait(WAIT_SECONDS.toUInt()), WAIT_TIMEOUT_MS)) {
-                    is RelayResponse.Messages -> first = r.messages.ifEmpty { null }
-                    // Relay antigo nao conhece o pedido ("mensagem invalida"): volta ao metodo antigo.
-                    // Outro erro (ex.: problema passageiro no relay): espera e tenta de novo.
-                    is RelayResponse.Error -> if (r.reason == RELAY_UNKNOWN_REQUEST) waitSupported = false else delay(POLL_MS)
-                    else -> delay(POLL_MS)
+                    is RelayResponse.Messages -> {
+                        first = r.messages.ifEmpty { null }
+                        delivery("")
+                        if (first != null) Log.d(TAG, "espera: ${r.messages.size} mensagem(ns) ao fim de ${SystemClock.elapsedRealtime() - t0} ms")
+                    }
+                    is RelayResponse.Error -> {
+                        if (r.reason == RELAY_UNKNOWN_REQUEST) {
+                            waitBlockedUntil = SystemClock.elapsedRealtime() + WAIT_RETRY_MS
+                            delivery("Entrega imediata: o relay não a suporta; a verificar de 3 em 3 s")
+                        } else {
+                            delivery("Entrega imediata: erro do relay (${r.reason})")
+                            delay(POLL_MS)
+                        }
+                        Log.w(TAG, "espera recusada pelo relay: ${r.reason}")
+                    }
+                    else -> {
+                        delivery("Entrega imediata: resposta inesperada (${r.describe()})")
+                        Log.w(TAG, "espera: resposta inesperada ${r.describe()}")
+                        delay(POLL_MS)
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                delay(POLL_MS)   // sem rede ou relay em baixo: tenta de novo (e pergunta entretanto)
+                // Sem rede ou relay em baixo: tenta de novo (e pergunta entretanto).
+                delivery("Entrega imediata falhou: ${e.safeMsg()}")
+                Log.w(TAG, "espera falhou: ${e.javaClass.simpleName}: ${e.safeMsg()}")
+                delay(POLL_MS)
             }
         }
     }
@@ -942,6 +967,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissError() = _ui.update { it.copy(error = null) }
     private fun status(s: String) = _ui.update { it.copy(status = s) }
+    private fun delivery(s: String) { if (_ui.value.delivery != s) _ui.update { it.copy(delivery = s) } }
     private fun error(s: String) = _ui.update { it.copy(error = s) }
     /**
      * Trabalho em segundo plano. Qualquer erro e apanhado: ao bloquear, a base de
@@ -972,6 +998,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val WAIT_SECONDS = 25
         /** Tempo pela resposta a um pedido de espera: a espera mais margem para a rede. */
         private const val WAIT_TIMEOUT_MS = 35_000L
+        /** Com um relay sem entrega imediata, voltar a tentar a espera ao fim deste tempo. */
+        private const val WAIT_RETRY_MS = 5 * 60_000L
+        /** Etiqueta dos registos (adb logcat -s SealerRelay). Nunca regista conteudo nem chaves. */
+        private const val TAG = "SealerRelay"
         /** Resposta de um relay a um pedido que nao conhece (relay sem entrega imediata). */
         private const val RELAY_UNKNOWN_REQUEST = "mensagem invalida"
         private const val MAX_PAGES = 20
