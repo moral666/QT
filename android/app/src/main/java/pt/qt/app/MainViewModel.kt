@@ -904,11 +904,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 pending = null
                 if (msgs.isEmpty()) break
                 val ackIds = mutableListOf<ULong>()
+                var gotPage = false
                 for (m in msgs) {
                     try {
                         // Decifrar + guardar no historico + agendar o recibo, tudo numa transacao.
                         when (client.receiveSealed(m.ciphertext)) {
-                            is ReceiveResult.NewMessage, is ReceiveResult.StatusChanged -> received = true
+                            is ReceiveResult.NewMessage, is ReceiveResult.StatusChanged -> { received = true; gotPage = true }
                             is ReceiveResult.NoChange -> {}
                         }
                         ackIds += m.id
@@ -919,6 +920,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         ackIds += m.id
                     }
                 }
+                // Mostra ja: as mensagens estao guardadas no telemovel. A confirmacao ao relay e o
+                // pedido da pagina seguinte (duas idas a rede) vem depois, sem atrasar o ecra.
+                if (gotPage) refreshViews(client)
                 if (ackIds.isNotEmpty()) l.request(client.relayRequestAck(ackIds))   // so DEPOIS de guardar
             }
             if (received) {

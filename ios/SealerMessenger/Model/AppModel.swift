@@ -676,7 +676,12 @@ final class AppModel: ObservableObject {
                     }
                     return (ids, got)
                 }
-                if got { received = true }
+                if got {
+                    received = true
+                    // Mostra ja: as mensagens estao guardadas no telemovel. A confirmacao ao relay e o
+                    // pedido da pagina seguinte (duas idas a rede) vem depois, sem atrasar o ecra.
+                    await refreshViews(client)
+                }
                 if !ackIds.isEmpty {   // so DEPOIS de guardar
                     _ = try await l.request(try await background { try client.relayRequestAck(ids: ackIds) })
                 }
