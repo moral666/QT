@@ -63,7 +63,7 @@ public/
 src/
   main.js                   Arranque: modos da página e, se compensar, o logótipo 3D
   layout.js                 Modos: grelha (início e explorar) e lista
-  status.js                 Marcador de estado do serviço (centro da barra de topo)
+  status.js                 Marcador de estado do serviço (ao lado do nome, na barra de topo)
   capabilities.js           Regras para carregar ou não o 3D
   styles.css                Todo o estilo da página
   legal.css                 Estilo das páginas de texto (política de cookies, como funciona)
@@ -297,7 +297,7 @@ Como medir o que falta: abra a página publicada com `?debug` num telemóvel de 
 
 A grelha não usa bibliotecas. Nenhum serviço externo é usado pela página: sem CDNs, sem tipos de letra de terceiros, sem analítica, sem cookies.
 
-O marcador de estado (centro da barra de topo) pergunta ao próprio site em `/api/estado`. Quem responde é o Worker (`worker/index.js`): tenta abrir uma ligação WebSocket ao relay da AWS (endereço em `RELAY_URL`, no `wrangler.jsonc`), fecha-a logo e guarda o resultado 30 segundos. Verde: o relay aceitou a ligação. Vermelho: não aceitou (servidor desligado, Caddy ou relay parados). Cinzento: o site não respondeu, por isso o estado é desconhecido. O navegador do visitante nunca fala com a AWS. Se o relay mudar de endereço, basta alterar `RELAY_URL`.
+O marcador de estado (ao lado do nome, na barra de topo) pergunta ao próprio site em `/api/estado`. Quem responde é o Worker (`worker/index.js`): tenta abrir uma ligação WebSocket ao relay da AWS (endereço em `RELAY_URL`, no `wrangler.jsonc`), fecha-a logo e guarda o resultado 30 segundos. Verde: o relay aceitou a ligação. Vermelho: não aceitou (servidor desligado, Caddy ou relay parados). Cinzento: o site não respondeu, por isso o estado é desconhecido. O navegador do visitante nunca fala com a AWS. Se o relay mudar de endereço, basta alterar `RELAY_URL`.
 
 ## 13. Decisões técnicas e limitações conhecidas
 
