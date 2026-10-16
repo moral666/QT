@@ -286,8 +286,10 @@ where
 pub enum Incoming {
     /// Um frame de dados (ainda cifrado pelo Noise): o proximo pedido do cliente.
     Data(Vec<u8>),
-    /// Ping ou pong: ja respondido (o pong sai logo).
+    /// Ping: ja respondido (o pong sai logo).
     Control,
+    /// Pong (resposta a um ping nosso), com o conteudo do ping.
+    Pong(Vec<u8>),
     /// Fecho, erro ou frame inesperado: a ligacao acabou.
     Closed,
 }
@@ -302,13 +304,25 @@ where
 {
     match ws_stream.next().await {
         Some(Ok(Message::Binary(b))) => Incoming::Data(b),
-        Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => {
+        Some(Ok(Message::Ping(_))) => {
             // O tungstenite ja pos o pong em fila; o flush envia-o agora.
             let _ = ws_stream.flush().await;
             Incoming::Control
         }
+        Some(Ok(Message::Pong(p))) => Incoming::Pong(p),
         _ => Incoming::Closed,
     }
+}
+
+/// Envia um ping (frame de controlo, fora do canal Noise; o conteudo nao e
+/// secreto: so serve para reconhecer o pong). Os clientes WebSocket respondem
+/// sozinhos com um pong igual.
+pub async fn send_ping<S>(ws_stream: &mut WebSocketStream<S>, payload: Vec<u8>) -> Result<(), TransportError>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    ws_stream.send(Message::Ping(payload)).await.map_err(Box::new)?;
+    Ok(())
 }
 
 /// `receive_encrypted` com timeout.

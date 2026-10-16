@@ -132,8 +132,15 @@ fn unix_now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-fn write_status(path: &str, summary: &qt_server::latency::Summary, last: Option<qt_server::latency::LastReading>) {
-    if qt_server::latency::write_status_file(path, &qt_server::latency::to_json(summary, unix_now(), last)).is_err() {
+fn write_status(
+    path: &str,
+    summary: &qt_server::latency::Summary,
+    last: Option<qt_server::latency::LastReading>,
+    ida: &qt_server::latency::Summary,
+    last_ida: Option<qt_server::latency::LastReading>,
+) {
+    let json = qt_server::latency::to_json(summary, unix_now(), last, ida, last_ida);
+    if qt_server::latency::write_status_file(path, &json).is_err() {
         eprintln!("estado: nao foi possivel escrever RELAY_STATUS_FILE");
     }
 }
@@ -185,33 +192,36 @@ async fn main() {
     // definido, o JSON de estado que o Caddy publica em /estado.json.
     let status_file = std::env::var("RELAY_STATUS_FILE").ok().filter(|p| !p.is_empty());
     // Ultima media conhecida: recuperada do ficheiro de estado, para nao se perder ao reiniciar.
-    let mut last = status_file
-        .as_deref()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|j| qt_server::latency::parse_last(&j));
+    let previous = status_file.as_deref().and_then(|p| std::fs::read_to_string(p).ok());
+    let mut last = previous.as_deref().and_then(qt_server::latency::parse_last);
+    let mut last_ida = previous.as_deref().and_then(qt_server::latency::parse_last_ida);
     if let Some(path) = &status_file {
-        write_status(path, &qt_server::latency::Summary::default(), last);
+        let empty = qt_server::latency::Summary::default();
+        write_status(path, &empty, last, &empty, last_ida);
     }
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
         tick.tick().await;
         loop {
             tick.tick().await;
-            let summary = qt_server::latency::roll_minute();
-            if let Some(line) = qt_server::stats::take_line(&qt_server::stats::STATS) {
-                match (summary.avg_ms, summary.median_ms, summary.p95_ms) {
-                    (Some(avg), Some(med), Some(p95)) => println!(
-                        "{line} entrega_media_ms={avg} entrega_mediana_ms={med} entrega_p95_ms={p95} (ultimos {} min, {} mensagens)",
-                        summary.minutes, summary.messages
-                    ),
-                    _ => println!("{line}"),
+            let (summary, ida) = qt_server::latency::roll_minute();
+            if let Some(mut line) = qt_server::stats::take_line(&qt_server::stats::STATS) {
+                if let (Some(avg), Some(med), Some(p95)) = (ida.avg_ms, ida.median_ms, ida.p95_ms) {
+                    line.push_str(&format!(" ida_media_ms={avg} ida_mediana_ms={med} ida_p95_ms={p95} ({} amostras)", ida.messages));
                 }
+                if let (Some(avg), Some(med), Some(p95)) = (summary.avg_ms, summary.median_ms, summary.p95_ms) {
+                    line.push_str(&format!(" entrega_media_ms={avg} entrega_mediana_ms={med} entrega_p95_ms={p95} ({} mensagens)", summary.messages));
+                }
+                println!("{line} (ultimos {} min)", summary.minutes);
             }
             if let Some(ms) = summary.avg_ms {
                 last = Some(qt_server::latency::LastReading { avg_ms: ms, at_unix: unix_now() });
             }
+            if let Some(ms) = ida.avg_ms {
+                last_ida = Some(qt_server::latency::LastReading { avg_ms: ms, at_unix: unix_now() });
+            }
             if let Some(path) = &status_file {
-                write_status(path, &summary, last);
+                write_status(path, &summary, last, &ida, last_ida);
             }
         }
     });

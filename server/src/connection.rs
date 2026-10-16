@@ -114,18 +114,20 @@ pub async fn handle_connection_with(
     // ---------- Loop principal ----------
     // Pedido que chegou a meio de uma espera (WaitMessages): tratado a seguir.
     let mut pending: Option<Vec<u8>> = None;
+    let mut probe = IdaProbe::default();
     loop {
         let payload = match pending.take() {
             Some(p) => p,
-            None => match ws_transport::receive_encrypted_timeout(&mut ws, &mut noise, cfg.idle_timeout).await {
-                Ok(p) => p,
+            None => match next_request(&mut ws, &mut noise, cfg.idle_timeout, &mut probe).await {
+                Some(p) => p,
                 // Fecho normal, timeout de inatividade ou frame invalido: encerra a sessao.
-                Err(_) => break,
+                None => break,
             },
         };
+        let mut sent_message = false;
         let response = match deserialize_client_message(&payload) {
             Ok(ClientMessage::WaitMessages { user_id: asked, timeout_secs }) => {
-                match wait_messages(&store, &user_id, &asked, timeout_secs, &mut ws, &mut noise).await {
+                match wait_messages(&store, &user_id, &asked, timeout_secs, &mut ws, &mut noise, &mut probe).await {
                     WaitEnd::Reply(r) => r,
                     WaitEnd::ReplyThen(r, next) => {
                         pending = Some(next);
@@ -134,7 +136,10 @@ pub async fn handle_connection_with(
                     WaitEnd::Closed => break,
                 }
             }
-            Ok(m) => handle_client_message(&store, &user_id, m).await,
+            Ok(m) => {
+                sent_message = matches!(m, ClientMessage::SendMessage { .. });
+                handle_client_message(&store, &user_id, m).await
+            }
             Err(_) => {
                 stats::inc(&STATS.invalid_requests);
                 err("mensagem invalida")
@@ -143,9 +148,71 @@ pub async fn handle_connection_with(
         if reply(&mut ws, &mut noise, &response).await.is_err() {
             break;
         }
+        // Acabou de enviar uma mensagem: mede a ida e volta ate este telemovel.
+        if sent_message && matches!(response, ServerMessage::Ack) {
+            if let Some(ping) = probe.start() {
+                if ws_transport::send_ping(&mut ws, ping).await.is_err() {
+                    break;
+                }
+            }
+        }
     }
     ws_transport::close_gracefully(&mut ws).await;
     Ok(())
+}
+
+/// Mede o tempo de ida do telemovel ate ao relay: logo depois de aceitar uma
+/// mensagem (`SendMessage`), o relay manda um ping nesta ligacao e espera pelo
+/// pong. A ida e metade dessa ida e volta (ver `latency::ida_sample`). Um ping de
+/// cada vez por ligacao; o conteudo e so um contador, para reconhecer o pong.
+#[derive(Default)]
+struct IdaProbe {
+    counter: u64,
+    sent: Option<(u64, std::time::Instant)>,
+}
+
+impl IdaProbe {
+    /// Conteudo do ping a enviar, ou `None` se ainda ha um a espera de resposta.
+    fn start(&mut self) -> Option<Vec<u8>> {
+        let now = std::time::Instant::now();
+        if let Some((_, at)) = self.sent {
+            if now.duration_since(at) < crate::latency::MAX_ROUND_TRIP {
+                return None;
+            }
+        }
+        self.counter += 1;
+        self.sent = Some((self.counter, now));
+        Some(format!("qt-ida-{}", self.counter).into_bytes())
+    }
+
+    /// Chegou um pong: se for o do nosso ping, conta a ida e volta.
+    fn pong(&mut self, payload: &[u8]) {
+        if let Some((n, at)) = self.sent {
+            if payload == format!("qt-ida-{n}").as_bytes() {
+                self.sent = None;
+                crate::latency::ida_sample(at.elapsed());
+            }
+        }
+    }
+}
+
+/// Proximo pedido do cliente (ja decifrado). Pelo caminho responde a pings e
+/// regista pongs. `None`: fecho, frame invalido ou `idle` sem pedidos.
+async fn next_request(
+    ws: &mut ws_transport::ServerWsStream,
+    noise: &mut qt_transport::NoiseTransport,
+    idle: Duration,
+    probe: &mut IdaProbe,
+) -> Option<Vec<u8>> {
+    let deadline = tokio::time::Instant::now() + idle;
+    loop {
+        match tokio::time::timeout_at(deadline, ws_transport::next_incoming(ws)).await {
+            Ok(ws_transport::Incoming::Data(frame)) => return noise.decrypt(&frame).ok(),
+            Ok(ws_transport::Incoming::Pong(p)) => probe.pong(&p),
+            Ok(ws_transport::Incoming::Control) => {}
+            Ok(ws_transport::Incoming::Closed) | Err(_) => return None,
+        }
+    }
 }
 
 fn signing_public_of(user_id: &str) -> Option<[u8; 32]> {
@@ -201,6 +268,7 @@ async fn wait_messages(
     timeout_secs: u64,
     ws: &mut ws_transport::ServerWsStream,
     noise: &mut qt_transport::NoiseTransport,
+    probe: &mut IdaProbe,
 ) -> WaitEnd {
     if user_id != me {
         return WaitEnd::Reply(err("so podes ler a tua propria fila"));
@@ -228,6 +296,7 @@ async fn wait_messages(
             _ = &mut deadline => break,
             incoming = ws_transport::next_incoming(ws) => match incoming {
                 ws_transport::Incoming::Control => continue,
+                ws_transport::Incoming::Pong(p) => probe.pong(&p),
                 ws_transport::Incoming::Data(frame) => match noise.decrypt(&frame) {
                     Ok(p) => {
                         next = Some(p);

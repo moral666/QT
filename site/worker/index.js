@@ -12,14 +12,19 @@
  *   O navegador do visitante nunca fala com a AWS: só com o próprio site.
  *
  *   Também lê https://<relay>/estado.json (escrito pelo relay a cada minuto, ver
- *   server/src/latency.rs): o tempo médio de entrega das mensagens na última hora.
+ *   server/src/latency.rs): o tempo médio de envio (do telemóvel de quem envia até ao
+ *   servidor) e o tempo médio de entrega (do servidor até o destinatário confirmar), na
+ *   última hora.
  *
  *   Resposta: {
  *     "estado": "on" | "off", "verificado": "<data ISO>",
- *     "entrega_media_ms": número | null,   (null: sem mensagens, ou relay sem dados recentes)
+ *     "envio_media_ms": número | null,     (telemóvel -> servidor; null: sem mensagens recentes)
+ *     "envios": número,                    (mensagens medidas)
+ *     "ultimo_envio_ms": número | null,    (última média conhecida, mesmo antiga: o site mostra-a sempre)
+ *     "ultimo_envio_medicao": número | null,  (quando foi medida, segundos desde 1970)
+ *     "entrega_media_ms": número | null,   (servidor -> destinatário confirmar)
  *     "mensagens": número, "janela_minutos": número,
- *     "ultima_media_ms": número | null,    (última média conhecida, mesmo antiga: o site mostra-a sempre)
- *     "ultima_medicao": número | null      (quando foi medida, segundos desde 1970)
+ *     "ultima_media_ms": número | null, "ultima_medicao": número | null  (última entrega conhecida)
  *   }
  */
 
@@ -52,6 +57,10 @@ async function estado(request, env, ctx) {
   const body = {
     estado: on ? 'on' : 'off',
     verificado: new Date().toISOString(),
+    envio_media_ms: on && delivery ? delivery.idaAvg : null,
+    envios: on && delivery ? delivery.idaCount : 0,
+    ultimo_envio_ms: delivery ? delivery.lastIda : null,
+    ultimo_envio_medicao: delivery ? delivery.lastIdaAt : null,
     entrega_media_ms: on && delivery ? delivery.avg : null,
     mensagens: on && delivery ? delivery.count : 0,
     janela_minutos: on && delivery ? delivery.minutes : 0,
@@ -81,7 +90,7 @@ async function relayOnline(relayUrl) {
   }
 }
 
-/** Lê o tempo médio de entrega publicado pelo relay (atual e última medição); null se não conseguir. */
+/** Lê os tempos médios publicados pelo relay (envio e entrega, atuais e últimas medições); null se não conseguir. */
 async function relayDelivery(relayUrl) {
   if (!relayUrl) return null;
   try {
@@ -96,7 +105,12 @@ async function relayDelivery(relayUrl) {
     const lastAvg = num(d.ultima_media_ms);
     const lastAt = lastAvg == null ? null : num(d.ultima_medicao);
     const fresh = typeof d.atualizado === 'number' && Date.now() / 1000 - d.atualizado < STATUS_MAX_AGE_S;
+    const lastIda = num(d.ultima_ida_ms);
     return {
+      idaAvg: fresh ? num(d.ida_media_ms) : null,
+      idaCount: fresh ? num(d.ida_amostras) ?? 0 : 0,
+      lastIda,
+      lastIdaAt: lastIda == null ? null : num(d.ultima_ida_medicao),
       avg: fresh ? num(d.entrega_media_ms) : null,
       count: fresh ? num(d.mensagens) ?? 0 : 0,
       minutes: fresh ? num(d.janela_minutos) ?? 0 : 0,

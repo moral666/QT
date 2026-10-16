@@ -1032,7 +1032,7 @@ p {
   animation: status-pulse 1.2s ease-in-out infinite;
 }
 
-/* Tempo médio de entrega: "entrega 1059 ms", a seguir ao estado. */
+/* Tempo médio de envio (telemóvel até ao servidor): "envio 23 ms", a seguir ao estado. */
 .status-pill__ms {
   grid-row: 1;
   grid-column: 3;
@@ -1044,7 +1044,7 @@ p {
 }
 
 .status-pill__ms::before {
-  content: "entrega ";
+  content: "envio ";
   color: var(--mist);
   font-weight: 500;
 }
@@ -1136,7 +1136,7 @@ p {
   }
 }
 
-/* Ecrãs mínimos: o tempo de entrega fica só na frase completa (title). */
+/* Ecrãs mínimos: o tempo de envio fica só na frase completa (title). */
 @media (max-width: 340px) {
   .status-pill__ms {
     display: none;
