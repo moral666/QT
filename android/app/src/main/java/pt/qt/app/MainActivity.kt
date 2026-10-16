@@ -547,6 +547,8 @@ fun HomeScreen(
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             if (ui.status.isNotBlank() && ui.status != "Ligado ao relay") ConnectionBanner(ui.status)
+            // Diagnostico da versao alpha: so aparece quando a entrega imediata nao esta ativa.
+            if (ui.delivery.isNotBlank()) ConnectionBanner(ui.delivery)
             val withHistory = ui.conversations.map { it.contactId }.toSet()
             val idle = ui.contacts.filter { it.contactId !in withHistory }
             if (ui.conversations.isEmpty() && idle.isEmpty()) {
