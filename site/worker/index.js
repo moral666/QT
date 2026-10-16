@@ -17,7 +17,9 @@
  *   Resposta: {
  *     "estado": "on" | "off", "verificado": "<data ISO>",
  *     "entrega_media_ms": número | null,   (null: sem mensagens, ou relay sem dados recentes)
- *     "mensagens": número, "janela_minutos": número
+ *     "mensagens": número, "janela_minutos": número,
+ *     "ultima_media_ms": número | null,    (última média conhecida, mesmo antiga: o site mostra-a sempre)
+ *     "ultima_medicao": número | null      (quando foi medida, segundos desde 1970)
  *   }
  */
 
@@ -53,6 +55,8 @@ async function estado(request, env, ctx) {
     entrega_media_ms: on && delivery ? delivery.avg : null,
     mensagens: on && delivery ? delivery.count : 0,
     janela_minutos: on && delivery ? delivery.minutes : 0,
+    ultima_media_ms: delivery ? delivery.lastAvg : null,
+    ultima_medicao: delivery ? delivery.lastAt : null,
   };
   const response = json(body, 200, `public, max-age=${CACHE_SECONDS}`);
   ctx.waitUntil(cache.put(key, response.clone()));
@@ -77,7 +81,7 @@ async function relayOnline(relayUrl) {
   }
 }
 
-/** Lê o tempo médio de entrega publicado pelo relay; null se não houver dados recentes. */
+/** Lê o tempo médio de entrega publicado pelo relay (atual e última medição); null se não conseguir. */
 async function relayDelivery(relayUrl) {
   if (!relayUrl) return null;
   try {
@@ -87,12 +91,18 @@ async function relayDelivery(relayUrl) {
     });
     if (!res.ok) return null;
     const d = await res.json();
+    const num = (v) => (Number.isFinite(v) && v >= 0 ? Math.round(v) : null);
+    // A última medição vale sempre (é a última conhecida); a média atual só se o ficheiro for recente.
+    const lastAvg = num(d.ultima_media_ms);
+    const lastAt = lastAvg == null ? null : num(d.ultima_medicao);
     const fresh = typeof d.atualizado === 'number' && Date.now() / 1000 - d.atualizado < STATUS_MAX_AGE_S;
-    if (!fresh) return null;
-    const avg = Number.isFinite(d.entrega_media_ms) && d.entrega_media_ms >= 0 ? Math.round(d.entrega_media_ms) : null;
-    const count = Number.isFinite(d.mensagens) && d.mensagens >= 0 ? Math.round(d.mensagens) : 0;
-    const minutes = Number.isFinite(d.janela_minutos) && d.janela_minutos >= 0 ? Math.round(d.janela_minutos) : 0;
-    return { avg, count, minutes };
+    return {
+      avg: fresh ? num(d.entrega_media_ms) : null,
+      count: fresh ? num(d.mensagens) ?? 0 : 0,
+      minutes: fresh ? num(d.janela_minutos) ?? 0 : 0,
+      lastAvg,
+      lastAt,
+    };
   } catch {
     return null;
   }

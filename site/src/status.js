@@ -32,13 +32,38 @@ export function initStatus(el) {
   const fmt = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 0 });
   let timer = 0;
 
+  const HOW = 'desde que o servidor recebe a mensagem até o telemóvel de quem a recebe confirmar que a tem';
+
+  /** Valor a mostrar: a média da última hora ou, sem mensagens recentes, a última medição. */
+  function deliveryValue(data) {
+    if (!data) return null;
+    if (data.estado === 'on' && Number.isFinite(data.entrega_media_ms)) return data.entrega_media_ms;
+    return Number.isFinite(data.ultima_media_ms) ? data.ultima_media_ms : null;
+  }
+
+  /** "há 5 minutos", "há 3 horas", "há 2 dias". */
+  function ago(unixSecs) {
+    const min = Math.max(0, Math.round((Date.now() / 1000 - unixSecs) / 60));
+    if (min < 1) return 'agora mesmo';
+    if (min < 60) return min === 1 ? 'há 1 minuto' : `há ${min} minutos`;
+    const h = Math.round(min / 60);
+    if (h < 48) return h === 1 ? 'há 1 hora' : `há ${h} horas`;
+    return `há ${Math.round(h / 24)} dias`;
+  }
+
   /** Frase sobre o tempo de entrega, para o title; vazia se não se aplica. */
   function deliveryText(data) {
-    if (!data || data.estado !== 'on') return '';
-    const when = data.janela_minutos >= 60 || !data.janela_minutos ? 'na última hora' : `nos últimos ${data.janela_minutos} minutos`;
-    if (data.entrega_media_ms == null) return ` Sem mensagens entregues ${when}.`;
-    const n = data.mensagens === 1 ? '1 mensagem' : `${fmt.format(data.mensagens)} mensagens`;
-    return ` Tempo médio de entrega ${when}: ${fmt.format(data.entrega_media_ms)} ms (${n}), desde que o servidor recebe a mensagem até o telemóvel de quem a recebe confirmar que a tem.`;
+    if (!data) return '';
+    if (data.estado === 'on' && Number.isFinite(data.entrega_media_ms)) {
+      const when = data.janela_minutos >= 60 || !data.janela_minutos ? 'na última hora' : `nos últimos ${data.janela_minutos} minutos`;
+      const n = data.mensagens === 1 ? '1 mensagem' : `${fmt.format(data.mensagens)} mensagens`;
+      return ` Tempo médio de entrega ${when}: ${fmt.format(data.entrega_media_ms)} ms (${n}), ${HOW}.`;
+    }
+    if (Number.isFinite(data.ultima_media_ms)) {
+      const when = Number.isFinite(data.ultima_medicao) ? ` (medido ${ago(data.ultima_medicao)})` : '';
+      return ` Último tempo médio de entrega: ${fmt.format(data.ultima_media_ms)} ms${when}, ${HOW}.`;
+    }
+    return '';
   }
 
   function show(state, data) {
@@ -46,9 +71,12 @@ export function initStatus(el) {
     label.textContent = TEXT[state].short;
     if (mini) mini.textContent = TEXT[state].mini;
     if (ms) {
-      const value = state === 'on' && data && Number.isFinite(data.entrega_media_ms) ? data.entrega_media_ms : null;
-      ms.hidden = value == null;
-      ms.textContent = value == null ? '' : `${fmt.format(value)} ms`;
+      // Fica sempre a última leitura conhecida, mesmo sem mensagens recentes ou com o serviço em baixo.
+      const value = deliveryValue(data);
+      if (value != null) {
+        ms.hidden = false;
+        ms.textContent = `${fmt.format(value)} ms`;
+      }
     }
     const full = `${TEXT[state].long}.${deliveryText(data)} ${TESTING}`;
     el.title = full;
