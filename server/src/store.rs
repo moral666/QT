@@ -102,7 +102,7 @@ impl Store {
         to: UserId,
         sealed_from: Vec<u8>,
         ciphertext: Vec<u8>,
-    ) -> Result<(), StoreError> {
+    ) -> Result<u64, StoreError> {
         let mut conn = self.connection().await?;
         let key = format!("{}:queue:{}", self.key_prefix, to);
 
@@ -130,7 +130,8 @@ impl Store {
             .query_async::<_, ()>(&mut conn)
             .await?;
 
-        Ok(())
+        // O id (interno da fila) serve so para medir o tempo de entrega (latency.rs).
+        Ok(id)
     }
 
     /// Devolve (SEM apagar) as proximas mensagens da fila, ate `max_bytes`
@@ -185,14 +186,21 @@ impl Store {
     /// LREM apaga a entrada exata: duas confirmacoes ao mesmo tempo (ex.: uma
     /// ligacao antiga e a nova) nunca apagam mensagens por confirmar.
     pub async fn ack_messages(&self, user_id: &str, ids: &[u64]) -> Result<usize, StoreError> {
+        Ok(self.ack_messages_ids(user_id, ids).await?.len())
+    }
+
+    /// Como `ack_messages`, mas devolve os ids que sairam mesmo da fila (para a
+    /// medicao do tempo de entrega nao contar ids repetidos ou alheios).
+    pub async fn ack_messages_ids(&self, user_id: &str, ids: &[u64]) -> Result<Vec<u64>, StoreError> {
         if ids.is_empty() {
-            return Ok(0);
+            return Ok(Vec::new());
         }
         let mut conn = self.connection().await?;
         let key = format!("{}:queue:{}", self.key_prefix, user_id);
         let mut wanted: std::collections::HashSet<u64> = ids.iter().copied().collect();
         let mut pipe = redis::pipe();
         let mut pending = 0usize;
+        let mut order: Vec<u64> = Vec::new();
         let first = wanted.len();
         let head: Vec<Vec<u8>> = conn.lrange(&key, 0, first as isize - 1).await?;
         let scanned = head.len();
@@ -201,6 +209,7 @@ impl Store {
                 if wanted.remove(&m.id) {
                     pipe.lrem(&key, 1, raw);
                     pending += 1;
+                    order.push(m.id);
                 }
             }
         }
@@ -215,15 +224,16 @@ impl Store {
                     if wanted.remove(&m.id) {
                         pipe.lrem(&key, 1, raw);
                         pending += 1;
+                        order.push(m.id);
                     }
                 }
             }
         }
         if pending == 0 {
-            return Ok(0);
+            return Ok(Vec::new());
         }
         let removed: Vec<usize> = pipe.query_async(&mut conn).await?;
-        Ok(removed.into_iter().sum())
+        Ok(order.into_iter().zip(removed).filter(|(_, n)| *n > 0).map(|(id, _)| id).collect())
     }
 }
 

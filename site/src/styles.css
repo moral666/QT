@@ -973,7 +973,7 @@ p {
 
 .status-pill {
   display: inline-grid;
-  grid-template-columns: auto auto;
+  grid-template-columns: auto auto auto;
   align-items: center;
   column-gap: 0.5rem;
   row-gap: 0.3rem;
@@ -1009,7 +1009,7 @@ p {
 
 .status-pill__tag {
   grid-row: 2;
-  grid-column: 2;
+  grid-column: 2 / -1;
   color: var(--mist);
   font: 500 0.75rem / 1 var(--font-text);
   letter-spacing: 0.01em;
@@ -1030,6 +1030,27 @@ p {
 
 .status-pill[data-state="checking"] .status-pill__dot {
   animation: status-pulse 1.2s ease-in-out infinite;
+}
+
+/* Tempo médio de entrega: "entrega 1059 ms", a seguir ao estado. */
+.status-pill__ms {
+  grid-row: 1;
+  grid-column: 3;
+  margin-left: 0.15rem;
+  color: var(--ice);
+  font: 600 0.75rem / 1 var(--font-text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.status-pill__ms::before {
+  content: "entrega ";
+  color: var(--mist);
+  font-weight: 500;
+}
+
+.status-pill__ms[hidden] {
+  display: none;
 }
 
 @keyframes status-breathe {
@@ -1080,9 +1101,18 @@ p {
   .status-pill__tag {
     display: none;
   }
+
+  .status-pill__ms {
+    margin-left: -0.15rem;
+    font-size: 0.6875rem;
+  }
+
+  .status-pill__ms::before {
+    content: "· ";
+  }
 }
 
-/* Versão curta ("Online"), só usada em telemóveis muito estreitos. */
+/* Versão curta ("Online"), só usada em telemóveis estreitos (até 400 px). */
 .status-pill__mini {
   display: none;
   grid-row: 1;
@@ -1096,13 +1126,20 @@ p {
   color: #ffb3b3;
 }
 
-@media (max-width: 380px) {
+@media (max-width: 400px) {
   .status-pill__text {
     display: none;
   }
 
   .status-pill__mini {
     display: block;
+  }
+}
+
+/* Ecrãs mínimos: o tempo de entrega fica só na frase completa (title). */
+@media (max-width: 340px) {
+  .status-pill__ms {
+    display: none;
   }
 }
 

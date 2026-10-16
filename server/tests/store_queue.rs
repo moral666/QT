@@ -91,3 +91,14 @@ async fn fila_cheia_recusa_e_ids_sao_unicos() {
     assert_eq!(unique.len(), 1000, "ids repetidos");
     assert!(all.windows(2).all(|w| w[0] < w[1]), "ordem de chegada mantida");
 }
+
+/// A medicao do tempo de entrega (latency.rs) so conta ids que sairam mesmo da
+/// fila: uma confirmacao repetida, ou de um id que nao esta na fila, nao conta.
+#[tokio::test]
+async fn ack_devolve_so_os_ids_que_sairam_da_fila() {
+    let s = store("ids");
+    let u = "c".repeat(64);
+    let id = s.enqueue_message(u.clone(), vec![], vec![1]).await.unwrap();
+    assert_eq!(s.ack_messages_ids(&u, &[id, id + 1_000_000]).await.unwrap(), vec![id]);
+    assert!(s.ack_messages_ids(&u, &[id]).await.unwrap().is_empty());
+}

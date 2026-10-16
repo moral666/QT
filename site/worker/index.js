@@ -11,11 +11,20 @@
  *   esse intervalo e por centro de dados da Cloudflare, por mais visitantes que haja.
  *   O navegador do visitante nunca fala com a AWS: só com o próprio site.
  *
- *   Resposta: { "estado": "on" | "off", "verificado": "<data ISO>" }
+ *   Também lê https://<relay>/estado.json (escrito pelo relay a cada minuto, ver
+ *   server/src/latency.rs): o tempo médio de entrega das mensagens na última hora.
+ *
+ *   Resposta: {
+ *     "estado": "on" | "off", "verificado": "<data ISO>",
+ *     "entrega_media_ms": número | null,   (null: sem mensagens, ou relay sem dados recentes)
+ *     "mensagens": número, "janela_minutos": número
+ *   }
  */
 
 const CACHE_SECONDS = 30;
 const TIMEOUT_MS = 5000;
+/** O estado.json é reescrito a cada minuto; mais velho do que isto, já não vale. */
+const STATUS_MAX_AGE_S = 180;
 
 export default {
   async fetch(request, env, ctx) {
@@ -37,8 +46,15 @@ async function estado(request, env, ctx) {
   const cached = await cache.match(key);
   if (cached) return cached;
 
-  const on = await relayOnline(env.RELAY_URL);
-  const response = json({ estado: on ? 'on' : 'off', verificado: new Date().toISOString() }, 200, `public, max-age=${CACHE_SECONDS}`);
+  const [on, delivery] = await Promise.all([relayOnline(env.RELAY_URL), relayDelivery(env.RELAY_URL)]);
+  const body = {
+    estado: on ? 'on' : 'off',
+    verificado: new Date().toISOString(),
+    entrega_media_ms: on && delivery ? delivery.avg : null,
+    mensagens: on && delivery ? delivery.count : 0,
+    janela_minutos: on && delivery ? delivery.minutes : 0,
+  };
+  const response = json(body, 200, `public, max-age=${CACHE_SECONDS}`);
   ctx.waitUntil(cache.put(key, response.clone()));
   return response;
 }
@@ -58,6 +74,27 @@ async function relayOnline(relayUrl) {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Lê o tempo médio de entrega publicado pelo relay; null se não houver dados recentes. */
+async function relayDelivery(relayUrl) {
+  if (!relayUrl) return null;
+  try {
+    const res = await fetch(new URL('/estado.json', relayUrl), {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const d = await res.json();
+    const fresh = typeof d.atualizado === 'number' && Date.now() / 1000 - d.atualizado < STATUS_MAX_AGE_S;
+    if (!fresh) return null;
+    const avg = Number.isFinite(d.entrega_media_ms) && d.entrega_media_ms >= 0 ? Math.round(d.entrega_media_ms) : null;
+    const count = Number.isFinite(d.mensagens) && d.mensagens >= 0 ? Math.round(d.mensagens) : 0;
+    const minutes = Number.isFinite(d.janela_minutos) && d.janela_minutos >= 0 ? Math.round(d.janela_minutos) : 0;
+    return { avg, count, minutes };
+  } catch {
+    return null;
   }
 }
 

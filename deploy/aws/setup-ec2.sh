@@ -69,6 +69,8 @@ cargo build --release --manifest-path "$SRC/Cargo.toml" -p qt_server --bin relay
 # ---------- 4. Utilizador e binario ----------
 id qt >/dev/null 2>&1 || useradd --system --home /var/lib/qt --shell /usr/sbin/nologin qt
 install -d -o qt -g qt -m 700 /var/lib/qt
+# Estado publico (tempo medio de entrega), lido pelo Caddy: so este ficheiro, nada mais.
+install -d -o qt -g qt -m 755 /var/lib/qt-estado
 install -d -o root -g qt -m 750 /etc/qt
 install -o root -g root -m 755 "$SRC/target/release/relay_server" /usr/local/bin/qt-relay
 
@@ -92,6 +94,8 @@ cat > "$ENV_FILE" <<EOF
 RELAY_BIND_ADDR=127.0.0.1:9443
 REDIS_URL=redis://qt-relay:${REDIS_PASS}@127.0.0.1:6379
 NOISE_KEY_PATH=/var/lib/qt/relay_noise_key.bin
+# Tempo medio de entrega (anonimo), publicado pelo Caddy em /estado.json para o site.
+RELAY_STATUS_FILE=/var/lib/qt-estado/estado.json
 # Imagens/GIFs (ja cifrados pelas apps) em /var/lib/qt/anexos, apagados ao fim de 24 h.
 RELAY_BLOB_MAX_TOTAL_MB=${RELAY_BLOB_MAX_TOTAL_MB:-2048}
 RELAY_BLOB_USER_DAILY_MB=${RELAY_BLOB_USER_DAILY_MB:-1024}
@@ -110,7 +114,15 @@ log "A configurar o Caddy para $DOMAIN"
 cat > /etc/caddy/Caddyfile <<EOF
 # O Caddy obtem o certificado Let's Encrypt sozinho e encaminha os WebSockets.
 $DOMAIN {
-    reverse_proxy 127.0.0.1:9443
+    # Estado publico do relay (tempo medio de entrega), lido pelo site sealer.pt.
+    handle /estado.json {
+        root * /var/lib/qt-estado
+        header Cache-Control "no-store"
+        file_server
+    }
+    handle {
+        reverse_proxy 127.0.0.1:9443
+    }
     log {
         output discard
     }

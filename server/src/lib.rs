@@ -15,6 +15,7 @@
 pub mod blobs;
 pub mod client;
 pub mod connection;
+pub mod latency;
 pub mod protocol;
 pub mod stats;
 pub mod store;
