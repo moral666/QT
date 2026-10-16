@@ -6,6 +6,15 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 17 de outubro de 2026: tempo de envio
+
+- **Tempo médio de envio** (telemóvel de quem envia até ao relay): logo depois de
+  aceitar uma mensagem, o relay manda um ping nessa ligação e mede a ida e volta
+  até ao pong; o envio é metade. Não precisa de apps novas (os clientes WebSocket
+  respondem sozinhos aos pings). Fica em `estado.json` (`ida_media_ms`,
+  `ida_mediana_ms`, `ida_p95_ms`, `ida_amostras`, `ultima_ida_ms`) e é o número
+  que o site sealer.pt mostra ("envio 23 ms"), em vez do tempo de entrega.
+
 ### 16 de outubro de 2026: entrega imediata e tempo de entrega
 
 - **Entrega imediata** (`WaitMessages`): as apps deixam de perguntar ao relay de

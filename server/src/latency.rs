@@ -1,6 +1,9 @@
-//! Tempo de entrega das mensagens, ANONIMO: desde que o relay recebe uma
-//! mensagem (SendMessage) ate o destinatario confirmar que a recebeu
-//! (AckMessages).
+//! Tempos das mensagens, ANONIMOS. Dois numeros:
+//! - envio (ida): do telemovel de quem envia ate ao relay. Logo depois de aceitar
+//!   uma mensagem, o relay manda um ping nessa ligacao e mede a ida e volta ate ao
+//!   pong; a ida e metade (ver `connection.rs`, `IdaProbe`). E o numero do site.
+//! - entrega: desde que o relay recebe uma mensagem (SendMessage) ate o
+//!   destinatario confirmar que a recebeu (AckMessages).
 //!
 //! So em memoria. Para cada mensagem em fila guarda-se o id interno da fila e o
 //! instante em que chegou, e nada mais: nem remetente, nem destinatario, nem
@@ -25,6 +28,8 @@ pub const MAX_WAIT: Duration = Duration::from_secs(60);
 pub const WINDOW_MINUTES: usize = 60;
 /// Limite de mensagens acompanhadas ao mesmo tempo (protege a memoria).
 const MAX_TRACKED: usize = 50_000;
+/// Ida e volta maxima que ainda conta (acima disto, a ligacao estava presa).
+pub const MAX_ROUND_TRIP: Duration = Duration::from_secs(10);
 /// Tempos guardados por minuto para a mediana e o p95 (protege a memoria; a media conta todos).
 const MAX_SAMPLES_PER_MINUTE: usize = 2_000;
 
@@ -51,12 +56,54 @@ struct Minute {
     samples: Vec<u32>,
 }
 
+/// Tempos em ms agrupados por minuto, com os ultimos `WINDOW_MINUTES` minutos.
+#[derive(Default)]
+struct Window {
+    minute: Minute,
+    /// Minutos fechados, do mais antigo ao mais recente.
+    closed: VecDeque<Minute>,
+}
+
+impl Window {
+    fn push(&mut self, ms: u64) {
+        self.minute.sum_ms += ms;
+        self.minute.count += 1;
+        if self.minute.samples.len() < MAX_SAMPLES_PER_MINUTE {
+            self.minute.samples.push(ms.min(u32::MAX as u64) as u32);
+        }
+    }
+
+    fn roll(&mut self) {
+        self.closed.push_back(std::mem::take(&mut self.minute));
+        while self.closed.len() > WINDOW_MINUTES {
+            self.closed.pop_front();
+        }
+    }
+
+    fn summary(&self) -> Summary {
+        let (sum, n) = self.closed.iter().fold((0u64, 0u64), |acc, m| (acc.0 + m.sum_ms, acc.1 + m.count));
+        // Media arredondada ao ms; sem amostras, `None`.
+        let avg_ms = (sum + n / 2).checked_div(n);
+        let mut all: Vec<u32> = self.closed.iter().flat_map(|m| m.samples.iter().copied()).collect();
+        all.sort_unstable();
+        let pct = |p: f64| -> Option<u64> {
+            if all.is_empty() {
+                return None;
+            }
+            let i = ((all.len() - 1) as f64 * p).round() as usize;
+            Some(all[i] as u64)
+        };
+        Summary { avg_ms, median_ms: pct(0.5), p95_ms: pct(0.95), messages: n, minutes: self.closed.len() }
+    }
+}
+
 #[derive(Default)]
 pub struct Tracker {
     pending: HashMap<u64, Instant>,
-    minute: Minute,
-    /// Minutos fechados, do mais antigo ao mais recente.
-    window: VecDeque<Minute>,
+    /// Entrega: do relay ate o destinatario confirmar.
+    delivery: Window,
+    /// Ida: do telemovel de quem envia ate ao relay (metade da ida e volta, ver `ida_sample`).
+    ida: Window,
 }
 
 impl Tracker {
@@ -73,42 +120,37 @@ impl Tracker {
             if let Some(at) = self.pending.remove(id) {
                 let waited = now.saturating_duration_since(at);
                 if waited <= MAX_WAIT {
-                    let ms = waited.as_millis() as u64;
-                    self.minute.sum_ms += ms;
-                    self.minute.count += 1;
-                    if self.minute.samples.len() < MAX_SAMPLES_PER_MINUTE {
-                        self.minute.samples.push(ms as u32);
-                    }
+                    self.delivery.push(waited.as_millis() as u64);
                 }
             }
         }
     }
 
-    /// Fecha o minuto atual, esquece as mensagens a espera ha mais de `MAX_WAIT`
-    /// e devolve o resumo da janela.
-    pub fn roll_minute(&mut self, now: Instant) -> Summary {
-        self.window.push_back(std::mem::take(&mut self.minute));
-        while self.window.len() > WINDOW_MINUTES {
-            self.window.pop_front();
+    /// Uma ida e volta (ping do relay -> pong do telemovel) logo a seguir a uma
+    /// mensagem enviada. Conta metade: o tempo de ida do telemovel ate ao relay.
+    pub fn ida_sample(&mut self, round_trip: Duration) {
+        if round_trip <= MAX_ROUND_TRIP {
+            self.ida.push((round_trip.as_micros() as u64 / 2 + 500) / 1000);
         }
+    }
+
+    /// Fecha o minuto atual, esquece as mensagens a espera ha mais de `MAX_WAIT`
+    /// e devolve o resumo da janela (entrega).
+    pub fn roll_minute(&mut self, now: Instant) -> Summary {
+        self.delivery.roll();
+        self.ida.roll();
         self.pending.retain(|_, at| now.saturating_duration_since(*at) <= MAX_WAIT);
         self.summary()
     }
 
+    /// Resumo da entrega (relay -> destinatario).
     pub fn summary(&self) -> Summary {
-        let (sum, n) = self.window.iter().fold((0u64, 0u64), |acc, m| (acc.0 + m.sum_ms, acc.1 + m.count));
-        // Media arredondada ao ms; sem mensagens, `None`.
-        let avg_ms = (sum + n / 2).checked_div(n);
-        let mut all: Vec<u32> = self.window.iter().flat_map(|m| m.samples.iter().copied()).collect();
-        all.sort_unstable();
-        let pct = |p: f64| -> Option<u64> {
-            if all.is_empty() {
-                return None;
-            }
-            let i = ((all.len() - 1) as f64 * p).round() as usize;
-            Some(all[i] as u64)
-        };
-        Summary { avg_ms, median_ms: pct(0.5), p95_ms: pct(0.95), messages: n, minutes: self.window.len() }
+        self.delivery.summary()
+    }
+
+    /// Resumo da ida (telemovel de quem envia -> relay).
+    pub fn ida_summary(&self) -> Summary {
+        self.ida.summary()
     }
 
     pub fn tracked(&self) -> usize {
@@ -136,9 +178,18 @@ pub fn acked(ids: &[u64]) {
     with(|t| t.acked(ids, Instant::now()));
 }
 
-/// Chamado uma vez por minuto pelo `relay_server`.
-pub fn roll_minute() -> Summary {
-    with(|t| t.roll_minute(Instant::now()))
+/// Chamado pelo relay quando chega o pong de um ping enviado logo a seguir a uma mensagem.
+pub fn ida_sample(round_trip: Duration) {
+    with(|t| t.ida_sample(round_trip));
+}
+
+/// Chamado uma vez por minuto pelo `relay_server`: fecha o minuto e devolve
+/// os resumos da entrega e da ida.
+pub fn roll_minute() -> (Summary, Summary) {
+    with(|t| {
+        let entrega = t.roll_minute(Instant::now());
+        (entrega, t.ida_summary())
+    })
 }
 
 /// Ultima media conhecida (a mais recente janela com mensagens). Fica no ficheiro
@@ -159,11 +210,17 @@ pub fn parse_last(json: &str) -> Option<LastReading> {
     pair("ultima_media_ms", "ultima_medicao").or_else(|| pair("entrega_media_ms", "atualizado"))
 }
 
+/// Como `parse_last`, para a ultima media da ida (telemovel -> relay).
+pub fn parse_last_ida(json: &str) -> Option<LastReading> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    Some(LastReading { avg_ms: v.get("ultima_ida_ms")?.as_u64()?, at_unix: v.get("ultima_ida_medicao")?.as_u64()? })
+}
+
 /// JSON publicado em `RELAY_STATUS_FILE` (sem serde na escrita: so numeros).
-pub fn to_json(s: &Summary, updated_unix: u64, last: Option<LastReading>) -> String {
+pub fn to_json(s: &Summary, updated_unix: u64, last: Option<LastReading>, ida: &Summary, last_ida: Option<LastReading>) -> String {
     let opt = |v: Option<u64>| v.map(|v| v.to_string()).unwrap_or_else(|| "null".to_string());
     format!(
-        "{{\"entrega_media_ms\":{},\"entrega_mediana_ms\":{},\"entrega_p95_ms\":{},\"mensagens\":{},\"janela_minutos\":{},\"espera_maxima_s\":{},\"atualizado\":{updated_unix},\"ultima_media_ms\":{},\"ultima_medicao\":{}}}\n",
+        "{{\"entrega_media_ms\":{},\"entrega_mediana_ms\":{},\"entrega_p95_ms\":{},\"mensagens\":{},\"janela_minutos\":{},\"espera_maxima_s\":{},\"atualizado\":{updated_unix},\"ultima_media_ms\":{},\"ultima_medicao\":{},\"ida_media_ms\":{},\"ida_mediana_ms\":{},\"ida_p95_ms\":{},\"ida_amostras\":{},\"ultima_ida_ms\":{},\"ultima_ida_medicao\":{}}}\n",
         opt(s.avg_ms),
         opt(s.median_ms),
         opt(s.p95_ms),
@@ -172,6 +229,12 @@ pub fn to_json(s: &Summary, updated_unix: u64, last: Option<LastReading>) -> Str
         MAX_WAIT.as_secs(),
         opt(last.map(|l| l.avg_ms)),
         opt(last.map(|l| l.at_unix)),
+        opt(ida.avg_ms),
+        opt(ida.median_ms),
+        opt(ida.p95_ms),
+        ida.messages,
+        opt(last_ida.map(|l| l.avg_ms)),
+        opt(last_ida.map(|l| l.at_unix)),
     )
 }
 
@@ -263,23 +326,42 @@ mod tests {
     }
 
     #[test]
+    fn ida_e_metade_da_ida_e_volta() {
+        let t0 = Instant::now();
+        let mut t = Tracker::default();
+        t.ida_sample(Duration::from_millis(40));
+        t.ida_sample(Duration::from_millis(61));
+        t.ida_sample(MAX_ROUND_TRIP + Duration::from_millis(1)); // ligacao presa: nao conta
+        t.roll_minute(t0);
+        let s = t.ida_summary();
+        assert_eq!(s.messages, 2);
+        assert_eq!(s.avg_ms, Some(26), "20 ms e 31 ms (30,5 arredondado)");
+        assert_eq!(t.summary().messages, 0, "a ida nao se mistura com a entrega");
+    }
+
+    #[test]
     fn json_do_estado() {
         let s = Summary { avg_ms: Some(1520), median_ms: Some(180), p95_ms: Some(9000), messages: 37, minutes: 60 };
         let last = Some(LastReading { avg_ms: 1520, at_unix: 1_792_000_000 });
         assert_eq!(
-            to_json(&s, 1_792_000_000, last),
-            "{\"entrega_media_ms\":1520,\"entrega_mediana_ms\":180,\"entrega_p95_ms\":9000,\"mensagens\":37,\"janela_minutos\":60,\"espera_maxima_s\":60,\"atualizado\":1792000000,\"ultima_media_ms\":1520,\"ultima_medicao\":1792000000}\n"
+            to_json(&s, 1_792_000_000, last, &Summary::default(), None),
+            "{\"entrega_media_ms\":1520,\"entrega_mediana_ms\":180,\"entrega_p95_ms\":9000,\"mensagens\":37,\"janela_minutos\":60,\"espera_maxima_s\":60,\"atualizado\":1792000000,\"ultima_media_ms\":1520,\"ultima_medicao\":1792000000,\"ida_media_ms\":null,\"ida_mediana_ms\":null,\"ida_p95_ms\":null,\"ida_amostras\":0,\"ultima_ida_ms\":null,\"ultima_ida_medicao\":null}\n"
         );
         let vazio = Summary { minutes: 3, ..Summary::default() };
-        let j = to_json(&vazio, 1, None);
-        assert!(j.starts_with("{\"entrega_media_ms\":null,") && j.contains("\"ultima_media_ms\":null,\"ultima_medicao\":null}"), "{j}");
+        let j = to_json(&vazio, 1, None, &vazio, None);
+        assert!(j.starts_with("{\"entrega_media_ms\":null,") && j.contains("\"ultima_media_ms\":null,\"ultima_medicao\":null,"), "{j}");
+        let ida = Summary { avg_ms: Some(23), median_ms: Some(21), p95_ms: Some(60), messages: 12, minutes: 60 };
+        let j = to_json(&vazio, 1, None, &ida, Some(LastReading { avg_ms: 23, at_unix: 5 }));
+        assert!(j.contains("\"ida_media_ms\":23,\"ida_mediana_ms\":21,\"ida_p95_ms\":60,\"ida_amostras\":12,\"ultima_ida_ms\":23,\"ultima_ida_medicao\":5}"), "{j}");
+        assert_eq!(parse_last_ida(&j), Some(LastReading { avg_ms: 23, at_unix: 5 }));
+        assert_eq!(parse_last_ida("{\"entrega_media_ms\":1}"), None);
     }
 
     #[test]
     fn ultima_medicao_sobrevive_a_um_reinicio() {
         // Ficheiro desta versao: a ultima medicao vem dos campos proprios.
         let last = LastReading { avg_ms: 1311, at_unix: 1_792_100_000 };
-        let j = to_json(&Summary { minutes: 60, ..Summary::default() }, 1_792_200_000, Some(last));
+        let j = to_json(&Summary { minutes: 60, ..Summary::default() }, 1_792_200_000, Some(last), &Summary::default(), None);
         assert_eq!(parse_last(&j), Some(last));
         // Ficheiro da versao anterior: usa a media e a hora em que foi escrito.
         let antigo = "{\"entrega_media_ms\":2096,\"mensagens\":9,\"janela_minutos\":12,\"espera_maxima_s\":60,\"atualizado\":1792000000}";
