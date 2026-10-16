@@ -282,6 +282,35 @@ where
     }
 }
 
+/// O que chegou numa ligacao que esta a espera de outra coisa (ver `next_incoming`).
+pub enum Incoming {
+    /// Um frame de dados (ainda cifrado pelo Noise): o proximo pedido do cliente.
+    Data(Vec<u8>),
+    /// Ping ou pong: ja respondido (o pong sai logo).
+    Control,
+    /// Fecho, erro ou frame inesperado: a ligacao acabou.
+    Closed,
+}
+
+/// Le o proximo frame SEM o decifrar e responde logo a pings. Para quem segura
+/// uma resposta durante algum tempo (ex.: `WaitMessages` no relay): sem isto, o
+/// pong so saia na leitura seguinte e um cliente com ping periodico (OkHttp)
+/// dava a ligacao como morta. Pode ser cancelado (ex.: dentro de `select!`).
+pub async fn next_incoming<S>(ws_stream: &mut WebSocketStream<S>) -> Incoming
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    match ws_stream.next().await {
+        Some(Ok(Message::Binary(b))) => Incoming::Data(b),
+        Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => {
+            // O tungstenite ja pos o pong em fila; o flush envia-o agora.
+            let _ = ws_stream.flush().await;
+            Incoming::Control
+        }
+        _ => Incoming::Closed,
+    }
+}
+
 /// `receive_encrypted` com timeout.
 pub async fn receive_encrypted_timeout<S>(
     ws_stream: &mut WebSocketStream<S>,

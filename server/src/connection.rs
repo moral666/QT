@@ -112,13 +112,28 @@ pub async fn handle_connection_with(
     reply(&mut ws, &mut noise, &ServerMessage::Ack).await?;
 
     // ---------- Loop principal ----------
+    // Pedido que chegou a meio de uma espera (WaitMessages): tratado a seguir.
+    let mut pending: Option<Vec<u8>> = None;
     loop {
-        let payload = match ws_transport::receive_encrypted_timeout(&mut ws, &mut noise, cfg.idle_timeout).await {
-            Ok(p) => p,
-            // Fecho normal, timeout de inatividade ou frame invalido: encerra a sessao.
-            Err(_) => break,
+        let payload = match pending.take() {
+            Some(p) => p,
+            None => match ws_transport::receive_encrypted_timeout(&mut ws, &mut noise, cfg.idle_timeout).await {
+                Ok(p) => p,
+                // Fecho normal, timeout de inatividade ou frame invalido: encerra a sessao.
+                Err(_) => break,
+            },
         };
         let response = match deserialize_client_message(&payload) {
+            Ok(ClientMessage::WaitMessages { user_id: asked, timeout_secs }) => {
+                match wait_messages(&store, &user_id, &asked, timeout_secs, &mut ws, &mut noise).await {
+                    WaitEnd::Reply(r) => r,
+                    WaitEnd::ReplyThen(r, next) => {
+                        pending = Some(next);
+                        r
+                    }
+                    WaitEnd::Closed => break,
+                }
+            }
             Ok(m) => handle_client_message(&store, &user_id, m).await,
             Err(_) => {
                 stats::inc(&STATS.invalid_requests);
@@ -164,6 +179,74 @@ async fn reply(
 
 fn err(reason: &str) -> ServerMessage {
     ServerMessage::Error { reason: reason.to_string() }
+}
+
+enum WaitEnd {
+    /// Responder e continuar a ler a ligacao.
+    Reply(ServerMessage),
+    /// Responder e depois tratar este pedido, que chegou a meio da espera (ja decifrado).
+    ReplyThen(ServerMessage, Vec<u8>),
+    /// A ligacao fechou (ou mandou um frame invalido) durante a espera.
+    Closed,
+}
+
+/// `WaitMessages`: devolve a fila; se estiver vazia, espera ate chegar uma mensagem
+/// para este utilizador ou ate `timeout_secs` (no maximo `waiters::MAX_WAIT_SECS`).
+/// Durante a espera continua a ler a ligacao: responde logo a pings (a app Android
+/// fecha a ligacao se o pong demorar) e, se chegar outro pedido, acaba a espera.
+async fn wait_messages(
+    store: &Store,
+    me: &str,
+    user_id: &str,
+    timeout_secs: u64,
+    ws: &mut ws_transport::ServerWsStream,
+    noise: &mut qt_transport::NoiseTransport,
+) -> WaitEnd {
+    if user_id != me {
+        return WaitEnd::Reply(err("so podes ler a tua propria fila"));
+    }
+    stats::inc(&STATS.wait_requests);
+    let wait = Duration::from_secs(timeout_secs.min(crate::waiters::MAX_WAIT_SECS));
+    // Regista a espera ANTES de olhar para a fila: uma mensagem que chegue entre o
+    // "fila vazia" e o inicio da espera acorda-nos na mesma (nao fica 25 s parada).
+    let waiter = crate::waiters::Waiter::register(me);
+    let notified = waiter.notify().notified();
+    tokio::pin!(notified);
+    notified.as_mut().enable();
+    match store.peek_messages(user_id, MAX_PAGE_BYTES).await {
+        Ok(raw) if !raw.is_empty() || wait.is_zero() => return WaitEnd::Reply(messages(raw)),
+        Ok(_) => {}
+        Err(e) => return WaitEnd::Reply(internal(e)),
+    }
+    stats::inc(&STATS.waits);
+    let deadline = tokio::time::sleep(wait);
+    tokio::pin!(deadline);
+    let mut next = None;
+    loop {
+        tokio::select! {
+            _ = &mut notified => break,
+            _ = &mut deadline => break,
+            incoming = ws_transport::next_incoming(ws) => match incoming {
+                ws_transport::Incoming::Control => continue,
+                ws_transport::Incoming::Data(frame) => match noise.decrypt(&frame) {
+                    Ok(p) => {
+                        next = Some(p);
+                        break;
+                    }
+                    Err(_) => return WaitEnd::Closed,
+                },
+                ws_transport::Incoming::Closed => return WaitEnd::Closed,
+            },
+        }
+    }
+    let reply = match store.peek_messages(user_id, MAX_PAGE_BYTES).await {
+        Ok(raw) => messages(raw),
+        Err(e) => internal(e),
+    };
+    match next {
+        Some(p) => WaitEnd::ReplyThen(reply, p),
+        None => WaitEnd::Reply(reply),
+    }
 }
 
 /// Resposta `Messages` (de `FetchMessages` ou `WaitMessages`).
@@ -261,24 +344,11 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
                 Err(e) => internal(e),
             }
         }
-        ClientMessage::WaitMessages { user_id, timeout_secs } => {
+        // Tratado no loop da ligacao (precisa dela para responder a pings durante a espera).
+        ClientMessage::WaitMessages { user_id, .. } => {
             if user_id != me {
                 return err("so podes ler a tua propria fila");
             }
-            let wait = Duration::from_secs(timeout_secs.min(crate::waiters::MAX_WAIT_SECS));
-            // Regista a espera ANTES de olhar para a fila: uma mensagem que chegue entre
-            // o "fila vazia" e o inicio da espera acorda-nos na mesma (nao fica 25 s parada).
-            let waiter = crate::waiters::Waiter::register(me);
-            let notified = waiter.notify().notified();
-            tokio::pin!(notified);
-            notified.as_mut().enable();
-            match store.peek_messages(&user_id, MAX_PAGE_BYTES).await {
-                Ok(raw) if !raw.is_empty() || wait.is_zero() => return messages(raw),
-                Ok(_) => {}
-                Err(e) => return internal(e),
-            }
-            stats::inc(&STATS.waits);
-            let _ = tokio::time::timeout(wait, notified).await;
             match store.peek_messages(&user_id, MAX_PAGE_BYTES).await {
                 Ok(raw) => messages(raw),
                 Err(e) => internal(e),

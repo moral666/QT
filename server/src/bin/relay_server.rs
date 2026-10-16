@@ -190,7 +190,7 @@ async fn main() {
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|j| qt_server::latency::parse_last(&j));
     if let Some(path) = &status_file {
-        write_status(path, &qt_server::latency::Summary { avg_ms: None, messages: 0, minutes: 0 }, last);
+        write_status(path, &qt_server::latency::Summary::default(), last);
     }
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -199,9 +199,12 @@ async fn main() {
             tick.tick().await;
             let summary = qt_server::latency::roll_minute();
             if let Some(line) = qt_server::stats::take_line(&qt_server::stats::STATS) {
-                match summary.avg_ms {
-                    Some(ms) => println!("{line} entrega_media_ms={ms} (ultimos {} min, {} mensagens)", summary.minutes, summary.messages),
-                    None => println!("{line}"),
+                match (summary.avg_ms, summary.median_ms, summary.p95_ms) {
+                    (Some(avg), Some(med), Some(p95)) => println!(
+                        "{line} entrega_media_ms={avg} entrega_mediana_ms={med} entrega_p95_ms={p95} (ultimos {} min, {} mensagens)",
+                        summary.minutes, summary.messages
+                    ),
+                    _ => println!("{line}"),
                 }
             }
             if let Some(ms) = summary.avg_ms {

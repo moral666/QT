@@ -26,6 +26,17 @@ Lisboa à Suécia) e o tempo do telemóvel a decifrar e guardar. Antes, a app
 real mediu ~2 100 ms; o esperado agora é algumas centenas de milissegundos ou
 menos.
 
+Correção do mesmo dia: durante uma espera o relay não lia a ligação, por isso
+o pong a um ping só saía quando a espera acabava (até 25 s depois). A app
+Android (OkHttp, ping de 25 em 25 s) podia dar a ligação como morta e religar.
+Agora o relay continua a ler durante a espera: o pong sai em menos de 1 ms
+(teste `ping_a_meio_de_uma_espera_tem_resposta_logo`).
+
+A linha de estatísticas passa a ter `pedidos_espera` (pedidos `WaitMessages`
+recebidos: apps em modo imediato), a mediana e o p95 do tempo de entrega. A
+média é muito sensível a mensagens para quem não estava a olhar para a app
+(contam até 60 s); a mediana mostra a mensagem típica.
+
 Para repetir (o relay mede `entrega_media_ms` em `RELAY_STATUS_FILE`):
 
 ```bash
