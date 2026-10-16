@@ -128,9 +128,12 @@ fn redact_url(url: &str) -> String {
 }
 
 /// Escreve o JSON de estado (tempo medio de entrega); uma falha so fica no registo.
-fn write_status(path: &str, summary: &qt_server::latency::Summary) {
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    if qt_server::latency::write_status_file(path, &qt_server::latency::to_json(summary, now)).is_err() {
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+fn write_status(path: &str, summary: &qt_server::latency::Summary, last: Option<qt_server::latency::LastReading>) {
+    if qt_server::latency::write_status_file(path, &qt_server::latency::to_json(summary, unix_now(), last)).is_err() {
         eprintln!("estado: nao foi possivel escrever RELAY_STATUS_FILE");
     }
 }
@@ -181,8 +184,13 @@ async fn main() {
     // a media do tempo de entrega (latency.rs) e, se RELAY_STATUS_FILE estiver
     // definido, o JSON de estado que o Caddy publica em /estado.json.
     let status_file = std::env::var("RELAY_STATUS_FILE").ok().filter(|p| !p.is_empty());
+    // Ultima media conhecida: recuperada do ficheiro de estado, para nao se perder ao reiniciar.
+    let mut last = status_file
+        .as_deref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|j| qt_server::latency::parse_last(&j));
     if let Some(path) = &status_file {
-        write_status(path, &qt_server::latency::Summary { avg_ms: None, messages: 0, minutes: 0 });
+        write_status(path, &qt_server::latency::Summary { avg_ms: None, messages: 0, minutes: 0 }, last);
     }
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -196,8 +204,11 @@ async fn main() {
                     None => println!("{line}"),
                 }
             }
+            if let Some(ms) = summary.avg_ms {
+                last = Some(qt_server::latency::LastReading { avg_ms: ms, at_unix: unix_now() });
+            }
             if let Some(path) = &status_file {
-                write_status(path, &summary);
+                write_status(path, &summary, last);
             }
         }
     });

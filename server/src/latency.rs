@@ -10,7 +10,8 @@
 //! Ao reiniciar o relay, perde-se tudo.
 //!
 //! O que sai daqui: a media (em ms) e o numero de mensagens dos ultimos
-//! `WINDOW_MINUTES` minutos. O `relay_server` escreve-o uma vez por minuto em
+//! `WINDOW_MINUTES` minutos, e a ultima media conhecida (`LastReading`), que
+//! fica no ficheiro de estado para o site nunca ficar sem numero. O `relay_server` escreve-o uma vez por minuto em
 //! `RELAY_STATUS_FILE` (um JSON pequeno que o Caddy publica em
 //! `https://<relay>/estado.json` e que o site sealer.pt mostra).
 
@@ -116,14 +117,35 @@ pub fn roll_minute() -> Summary {
     with(|t| t.roll_minute(Instant::now()))
 }
 
-/// JSON publicado em `RELAY_STATUS_FILE` (sem serde: 5 numeros).
-pub fn to_json(s: &Summary, updated_unix: u64) -> String {
-    let avg = s.avg_ms.map(|v| v.to_string()).unwrap_or_else(|| "null".to_string());
+/// Ultima media conhecida (a mais recente janela com mensagens). Fica no ficheiro
+/// de estado e e lida de novo ao arrancar, para o site nunca ficar sem numero
+/// (sem mensagens na ultima hora, ou depois de reiniciar o relay).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LastReading {
+    pub avg_ms: u64,
+    /// Quando foi medida (segundos desde 1970).
+    pub at_unix: u64,
+}
+
+/// Le a ultima medicao de um ficheiro de estado escrito antes (por esta versao,
+/// ou pela anterior, que so tinha `entrega_media_ms` e `atualizado`).
+pub fn parse_last(json: &str) -> Option<LastReading> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let pair = |a: &str, t: &str| Some(LastReading { avg_ms: v.get(a)?.as_u64()?, at_unix: v.get(t)?.as_u64()? });
+    pair("ultima_media_ms", "ultima_medicao").or_else(|| pair("entrega_media_ms", "atualizado"))
+}
+
+/// JSON publicado em `RELAY_STATUS_FILE` (sem serde na escrita: so numeros).
+pub fn to_json(s: &Summary, updated_unix: u64, last: Option<LastReading>) -> String {
+    let opt = |v: Option<u64>| v.map(|v| v.to_string()).unwrap_or_else(|| "null".to_string());
     format!(
-        "{{\"entrega_media_ms\":{avg},\"mensagens\":{},\"janela_minutos\":{},\"espera_maxima_s\":{},\"atualizado\":{updated_unix}}}\n",
+        "{{\"entrega_media_ms\":{},\"mensagens\":{},\"janela_minutos\":{},\"espera_maxima_s\":{},\"atualizado\":{updated_unix},\"ultima_media_ms\":{},\"ultima_medicao\":{}}}\n",
+        opt(s.avg_ms),
         s.messages,
         s.minutes,
-        MAX_WAIT.as_secs()
+        MAX_WAIT.as_secs(),
+        opt(last.map(|l| l.avg_ms)),
+        opt(last.map(|l| l.at_unix)),
     )
 }
 
@@ -201,11 +223,27 @@ mod tests {
     #[test]
     fn json_do_estado() {
         let s = Summary { avg_ms: Some(1520), messages: 37, minutes: 60 };
+        let last = Some(LastReading { avg_ms: 1520, at_unix: 1_792_000_000 });
         assert_eq!(
-            to_json(&s, 1_792_000_000),
-            "{\"entrega_media_ms\":1520,\"mensagens\":37,\"janela_minutos\":60,\"espera_maxima_s\":60,\"atualizado\":1792000000}\n"
+            to_json(&s, 1_792_000_000, last),
+            "{\"entrega_media_ms\":1520,\"mensagens\":37,\"janela_minutos\":60,\"espera_maxima_s\":60,\"atualizado\":1792000000,\"ultima_media_ms\":1520,\"ultima_medicao\":1792000000}\n"
         );
         let vazio = Summary { avg_ms: None, messages: 0, minutes: 3 };
-        assert!(to_json(&vazio, 1).starts_with("{\"entrega_media_ms\":null,"));
+        let j = to_json(&vazio, 1, None);
+        assert!(j.starts_with("{\"entrega_media_ms\":null,") && j.contains("\"ultima_media_ms\":null,\"ultima_medicao\":null}"), "{j}");
+    }
+
+    #[test]
+    fn ultima_medicao_sobrevive_a_um_reinicio() {
+        // Ficheiro desta versao: a ultima medicao vem dos campos proprios.
+        let last = LastReading { avg_ms: 1311, at_unix: 1_792_100_000 };
+        let j = to_json(&Summary { avg_ms: None, messages: 0, minutes: 60 }, 1_792_200_000, Some(last));
+        assert_eq!(parse_last(&j), Some(last));
+        // Ficheiro da versao anterior: usa a media e a hora em que foi escrito.
+        let antigo = "{\"entrega_media_ms\":2096,\"mensagens\":9,\"janela_minutos\":12,\"espera_maxima_s\":60,\"atualizado\":1792000000}";
+        assert_eq!(parse_last(antigo), Some(LastReading { avg_ms: 2096, at_unix: 1_792_000_000 }));
+        // Sem medicao nenhuma, ou ficheiro estragado: nada.
+        assert_eq!(parse_last("{\"entrega_media_ms\":null,\"atualizado\":1}"), None);
+        assert_eq!(parse_last("lixo"), None);
     }
 }
