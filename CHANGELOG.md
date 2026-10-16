@@ -14,6 +14,9 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   média para menos de 1 ms (`docs/performance.md`). Compatível nos dois
   sentidos: apps antigas continuam a perguntar; com um relay antigo, as apps
   novas voltam a perguntar de 3 em 3 s.
+- As apps mostram a mensagem recebida logo que está guardada no telemóvel, antes
+  de a confirmarem ao relay (antes esperavam por mais duas idas à rede, ~110 ms
+  com o relay na Suécia). A confirmação continua a ser feita só depois de guardar.
 - **Tempo médio de entrega** medido pelo relay (só em memória, sem remetente,
   destinatário nem tamanho), publicado em `/estado.json` e mostrado em sealer.pt.
 - Site sealer.pt: política de cookies, página "Como funciona" com animação e
