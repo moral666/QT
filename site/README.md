@@ -54,13 +54,15 @@ Parâmetros úteis no endereço (por exemplo `http://localhost:4173/?debug`):
 index.html                  Página: barra, logótipo, grelha e o conteúdo de todas as janelas
 politica-de-cookies.html    Política de cookies (só texto, sem JavaScript; estilo em src/legal.css)
 vite.config.js              Compilação, política de segurança de conteúdo (CSP) e dist/_headers
-wrangler.jsonc              Publicação na Cloudflare (Worker sealer e os dois domínios)
+wrangler.jsonc              Publicação na Cloudflare (Worker sealer, os dois domínios e o endereço do relay)
+worker/index.js             Código do Worker: só /api/estado (estado do relay na AWS); o resto é estático
 public/
   favicon-32.png, favicon-192.png, apple-touch-icon.png
   og-image.jpg              Pré-visualização para redes sociais (1200 x 630)
 src/
   main.js                   Arranque: modos da página e, se compensar, o logótipo 3D
   layout.js                 Modos: grelha (início e explorar) e lista
+  status.js                 Marcador de estado do serviço (canto superior esquerdo)
   capabilities.js           Regras para carregar ou não o 3D
   styles.css                Todo o estilo da página
   legal.css                 Estilo das páginas de texto (política de cookies)
@@ -164,7 +166,7 @@ A CSP autoriza o único script embutido pela sua impressão digital (SHA-256), c
 
 ```nginx
 # valor copiado de dist/_headers
-add_header Content-Security-Policy "default-src 'none'; script-src 'self' 'sha256-...'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; manifest-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'none'" always;
+add_header Content-Security-Policy "default-src 'none'; script-src 'self' 'sha256-...'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'none'" always;
 add_header Referrer-Policy "no-referrer" always;
 add_header X-Content-Type-Options "nosniff" always;
 location /assets/ { add_header Cache-Control "public, max-age=31536000, immutable"; }
@@ -292,6 +294,8 @@ Como medir o que falta: abra a página publicada com `?debug` num telemóvel de 
 | Logótipo e pictogramas da SEALER | | Propriedade da SEALER | Imagem, objeto 3D e pictogramas desenhados para este site |
 
 A grelha não usa bibliotecas. Nenhum serviço externo é usado pela página: sem CDNs, sem tipos de letra de terceiros, sem analítica, sem cookies.
+
+O marcador de estado (canto superior esquerdo) pergunta ao próprio site em `/api/estado`. Quem responde é o Worker (`worker/index.js`): tenta abrir uma ligação WebSocket ao relay da AWS (endereço em `RELAY_URL`, no `wrangler.jsonc`), fecha-a logo e guarda o resultado 30 segundos. Verde: o relay aceitou a ligação. Vermelho: não aceitou (servidor desligado, Caddy ou relay parados). Cinzento: o site não respondeu, por isso o estado é desconhecido. O navegador do visitante nunca fala com a AWS. Se o relay mudar de endereço, basta alterar `RELAY_URL`.
 
 ## 13. Decisões técnicas e limitações conhecidas
 

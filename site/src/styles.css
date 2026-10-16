@@ -930,6 +930,83 @@ p {
   color: var(--mist);
 }
 
+/* ---------- Estado do serviço (canto superior esquerdo) ---------- */
+
+.bar__start {
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+  min-width: 0;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.5rem 0.85rem 0.5rem 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(5, 6, 13, 0.85);
+  color: var(--ice);
+  font: 600 var(--step--1) / 1 var(--font-text);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.status-pill[hidden] {
+  display: none;
+}
+
+.status-pill__dot {
+  --dot: #6b7186;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--dot);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot) 25%, transparent);
+}
+
+.status-pill[data-state="on"] {
+  border-color: rgba(52, 211, 120, 0.45);
+}
+
+.status-pill[data-state="on"] .status-pill__dot {
+  --dot: #34d378;
+}
+
+.status-pill[data-state="off"] {
+  border-color: rgba(255, 77, 77, 0.55);
+  color: #ffb3b3;
+}
+
+.status-pill[data-state="off"] .status-pill__dot {
+  --dot: #ff4d4d;
+}
+
+.status-pill[data-state="checking"] .status-pill__dot {
+  animation: status-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes status-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Telemóveis estreitos: o marcador e o botão "Ver em lista" têm prioridade sobre o nome. */
+@media (max-width: 400px) {
+  .bar__start .bar__brand span {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-pill[data-state="checking"] .status-pill__dot {
+    animation: none;
+  }
+}
+
 /* ---------- Links (política de cookies) ---------- */
 
 .tile__text a,

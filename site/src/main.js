@@ -11,6 +11,7 @@
 import './styles.css';
 import { decide3D } from './capabilities.js';
 import { initLayout } from './layout.js';
+import { initStatus } from './status.js';
 
 const root = document.documentElement;
 const stage = document.getElementById('stage');
@@ -37,6 +38,10 @@ try {
   root.classList.remove('mode-grid', 'is-exploring');
   root.classList.add('mode-list');
 }
+
+// ----- Estado do serviço (canto superior esquerdo) -----
+
+initStatus(document.getElementById('service-status'));
 
 // ----- Logótipo 3D -----
 
