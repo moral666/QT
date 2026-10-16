@@ -22,6 +22,8 @@ pub struct Stats {
     pub sends: AtomicU64,
     pub queue_full: AtomicU64,
     pub fetches: AtomicU64,
+    /// Pedidos `WaitMessages` recebidos (apps em modo de entrega imediata).
+    pub wait_requests: AtomicU64,
     /// Pedidos `WaitMessages` que ficaram a espera (fila vazia no momento do pedido).
     pub waits: AtomicU64,
     pub delivered: AtomicU64,
@@ -45,6 +47,7 @@ pub static STATS: Stats = Stats {
     sends: AtomicU64::new(0),
     queue_full: AtomicU64::new(0),
     fetches: AtomicU64::new(0),
+    wait_requests: AtomicU64::new(0),
     waits: AtomicU64::new(0),
     delivered: AtomicU64::new(0),
     acked: AtomicU64::new(0),
@@ -78,6 +81,7 @@ pub fn take_line(s: &Stats) -> Option<String> {
         ("envios", t(&s.sends)),
         ("fila_cheia", t(&s.queue_full)),
         ("pedidos_de_mensagens", t(&s.fetches)),
+        ("pedidos_espera", t(&s.wait_requests)),
         ("esperas", t(&s.waits)),
         ("mensagens_entregues", t(&s.delivered)),
         ("confirmadas", t(&s.acked)),

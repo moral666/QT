@@ -25,25 +25,38 @@ pub const MAX_WAIT: Duration = Duration::from_secs(60);
 pub const WINDOW_MINUTES: usize = 60;
 /// Limite de mensagens acompanhadas ao mesmo tempo (protege a memoria).
 const MAX_TRACKED: usize = 50_000;
+/// Tempos guardados por minuto para a mediana e o p95 (protege a memoria; a media conta todos).
+const MAX_SAMPLES_PER_MINUTE: usize = 2_000;
 
 /// Resultado da janela atual.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Summary {
     /// Media em ms; `None` se nao houve mensagens entregues na janela.
     pub avg_ms: Option<u64>,
+    /// Mediana em ms (o tempo da mensagem tipica): uma mensagem para quem nao estava
+    /// a olhar para a app (dezenas de segundos) quase nao a mexe, ao contrario da media.
+    pub median_ms: Option<u64>,
+    /// 95 % das mensagens chegaram em menos do que isto.
+    pub p95_ms: Option<u64>,
     /// Mensagens entregues (confirmadas) que entraram na media.
     pub messages: u64,
     /// Minutos que a janela ja tem (menos de `WINDOW_MINUTES` logo apos arrancar).
     pub minutes: usize,
 }
 
+#[derive(Default, Clone)]
+struct Minute {
+    sum_ms: u64,
+    count: u64,
+    samples: Vec<u32>,
+}
+
 #[derive(Default)]
 pub struct Tracker {
     pending: HashMap<u64, Instant>,
-    minute_sum_ms: u64,
-    minute_count: u64,
-    /// (soma de ms, mensagens) de cada minuto fechado, do mais antigo ao mais recente.
-    window: VecDeque<(u64, u64)>,
+    minute: Minute,
+    /// Minutos fechados, do mais antigo ao mais recente.
+    window: VecDeque<Minute>,
 }
 
 impl Tracker {
@@ -60,8 +73,12 @@ impl Tracker {
             if let Some(at) = self.pending.remove(id) {
                 let waited = now.saturating_duration_since(at);
                 if waited <= MAX_WAIT {
-                    self.minute_sum_ms += waited.as_millis() as u64;
-                    self.minute_count += 1;
+                    let ms = waited.as_millis() as u64;
+                    self.minute.sum_ms += ms;
+                    self.minute.count += 1;
+                    if self.minute.samples.len() < MAX_SAMPLES_PER_MINUTE {
+                        self.minute.samples.push(ms as u32);
+                    }
                 }
             }
         }
@@ -70,9 +87,7 @@ impl Tracker {
     /// Fecha o minuto atual, esquece as mensagens a espera ha mais de `MAX_WAIT`
     /// e devolve o resumo da janela.
     pub fn roll_minute(&mut self, now: Instant) -> Summary {
-        self.window.push_back((self.minute_sum_ms, self.minute_count));
-        self.minute_sum_ms = 0;
-        self.minute_count = 0;
+        self.window.push_back(std::mem::take(&mut self.minute));
         while self.window.len() > WINDOW_MINUTES {
             self.window.pop_front();
         }
@@ -81,10 +96,19 @@ impl Tracker {
     }
 
     pub fn summary(&self) -> Summary {
-        let (sum, n) = self.window.iter().fold((0u64, 0u64), |acc, m| (acc.0 + m.0, acc.1 + m.1));
+        let (sum, n) = self.window.iter().fold((0u64, 0u64), |acc, m| (acc.0 + m.sum_ms, acc.1 + m.count));
         // Media arredondada ao ms; sem mensagens, `None`.
         let avg_ms = (sum + n / 2).checked_div(n);
-        Summary { avg_ms, messages: n, minutes: self.window.len() }
+        let mut all: Vec<u32> = self.window.iter().flat_map(|m| m.samples.iter().copied()).collect();
+        all.sort_unstable();
+        let pct = |p: f64| -> Option<u64> {
+            if all.is_empty() {
+                return None;
+            }
+            let i = ((all.len() - 1) as f64 * p).round() as usize;
+            Some(all[i] as u64)
+        };
+        Summary { avg_ms, median_ms: pct(0.5), p95_ms: pct(0.95), messages: n, minutes: self.window.len() }
     }
 
     pub fn tracked(&self) -> usize {
@@ -139,8 +163,10 @@ pub fn parse_last(json: &str) -> Option<LastReading> {
 pub fn to_json(s: &Summary, updated_unix: u64, last: Option<LastReading>) -> String {
     let opt = |v: Option<u64>| v.map(|v| v.to_string()).unwrap_or_else(|| "null".to_string());
     format!(
-        "{{\"entrega_media_ms\":{},\"mensagens\":{},\"janela_minutos\":{},\"espera_maxima_s\":{},\"atualizado\":{updated_unix},\"ultima_media_ms\":{},\"ultima_medicao\":{}}}\n",
+        "{{\"entrega_media_ms\":{},\"entrega_mediana_ms\":{},\"entrega_p95_ms\":{},\"mensagens\":{},\"janela_minutos\":{},\"espera_maxima_s\":{},\"atualizado\":{updated_unix},\"ultima_media_ms\":{},\"ultima_medicao\":{}}}\n",
         opt(s.avg_ms),
+        opt(s.median_ms),
+        opt(s.p95_ms),
         s.messages,
         s.minutes,
         MAX_WAIT.as_secs(),
@@ -175,7 +201,7 @@ mod tests {
         t.acked(&[1], t0 + Duration::from_millis(100));
         t.acked(&[2], t0 + Duration::from_millis(301));
         let s = t.roll_minute(t0 + Duration::from_secs(1));
-        assert_eq!(s, Summary { avg_ms: Some(201), messages: 2, minutes: 1 });
+        assert_eq!(s, Summary { avg_ms: Some(201), median_ms: Some(301), p95_ms: Some(301), messages: 2, minutes: 1 });
         assert_eq!(t.tracked(), 0);
     }
 
@@ -199,7 +225,7 @@ mod tests {
         t.queued(2, t0);
         t.acked(&[1], t0 + MAX_WAIT + Duration::from_millis(1));
         let s = t.roll_minute(t0 + MAX_WAIT + Duration::from_secs(1));
-        assert_eq!(s, Summary { avg_ms: None, messages: 0, minutes: 1 });
+        assert_eq!(s, Summary { avg_ms: None, median_ms: None, p95_ms: None, messages: 0, minutes: 1 });
         // A mensagem 2 (nunca confirmada) foi esquecida ao fechar o minuto.
         assert_eq!(t.tracked(), 0);
     }
@@ -221,14 +247,30 @@ mod tests {
     }
 
     #[test]
+    fn mediana_nao_e_estragada_por_quem_nao_estava_a_olhar() {
+        // 9 mensagens a 200 ms e 1 que esperou 40 s (telemovel com o ecra desligado).
+        let t0 = Instant::now();
+        let mut t = Tracker::default();
+        for id in 0..10u64 {
+            t.queued(id, t0);
+            let ms = if id == 9 { 40_000 } else { 200 };
+            t.acked(&[id], t0 + Duration::from_millis(ms));
+        }
+        let s = t.roll_minute(t0 + Duration::from_secs(41));
+        assert_eq!(s.avg_ms, Some(4_180), "a media e puxada pela mensagem lenta");
+        assert_eq!(s.median_ms, Some(200), "a mediana mostra a mensagem tipica");
+        assert_eq!(s.p95_ms, Some(40_000));
+    }
+
+    #[test]
     fn json_do_estado() {
-        let s = Summary { avg_ms: Some(1520), messages: 37, minutes: 60 };
+        let s = Summary { avg_ms: Some(1520), median_ms: Some(180), p95_ms: Some(9000), messages: 37, minutes: 60 };
         let last = Some(LastReading { avg_ms: 1520, at_unix: 1_792_000_000 });
         assert_eq!(
             to_json(&s, 1_792_000_000, last),
-            "{\"entrega_media_ms\":1520,\"mensagens\":37,\"janela_minutos\":60,\"espera_maxima_s\":60,\"atualizado\":1792000000,\"ultima_media_ms\":1520,\"ultima_medicao\":1792000000}\n"
+            "{\"entrega_media_ms\":1520,\"entrega_mediana_ms\":180,\"entrega_p95_ms\":9000,\"mensagens\":37,\"janela_minutos\":60,\"espera_maxima_s\":60,\"atualizado\":1792000000,\"ultima_media_ms\":1520,\"ultima_medicao\":1792000000}\n"
         );
-        let vazio = Summary { avg_ms: None, messages: 0, minutes: 3 };
+        let vazio = Summary { minutes: 3, ..Summary::default() };
         let j = to_json(&vazio, 1, None);
         assert!(j.starts_with("{\"entrega_media_ms\":null,") && j.contains("\"ultima_media_ms\":null,\"ultima_medicao\":null}"), "{j}");
     }
@@ -237,7 +279,7 @@ mod tests {
     fn ultima_medicao_sobrevive_a_um_reinicio() {
         // Ficheiro desta versao: a ultima medicao vem dos campos proprios.
         let last = LastReading { avg_ms: 1311, at_unix: 1_792_100_000 };
-        let j = to_json(&Summary { avg_ms: None, messages: 0, minutes: 60 }, 1_792_200_000, Some(last));
+        let j = to_json(&Summary { minutes: 60, ..Summary::default() }, 1_792_200_000, Some(last));
         assert_eq!(parse_last(&j), Some(last));
         // Ficheiro da versao anterior: usa a media e a hora em que foi escrito.
         let antigo = "{\"entrega_media_ms\":2096,\"mensagens\":9,\"janela_minutos\":12,\"espera_maxima_s\":60,\"atualizado\":1792000000}";
