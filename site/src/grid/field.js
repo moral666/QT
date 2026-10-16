@@ -338,6 +338,8 @@ export function createField({ field, layer, reducedMotion, onInteract }) {
 
   function onPointerDown(event) {
     if (drag || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    // Um toque num link segue o link (a captura do ponteiro abaixo impediria o clique).
+    if (event.target.closest?.('a[href]')) return;
     drag = {
       id: event.pointerId,
       startX: event.clientX,

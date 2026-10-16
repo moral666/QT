@@ -930,6 +930,27 @@ p {
   color: var(--mist);
 }
 
+/* ---------- Links (política de cookies) ---------- */
+
+.tile__text a,
+.footer a {
+  color: var(--lilac);
+  text-underline-offset: 0.2em;
+  white-space: nowrap;
+}
+
+.tile__text a:hover,
+.footer a:hover {
+  color: var(--ice);
+}
+
+.tile__text a:focus-visible,
+.footer a:focus-visible {
+  outline: 2px solid var(--lilac);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
 /* ---------- Painel de medição (só com ?debug na URL) ---------- */
 
 .debug-hud {

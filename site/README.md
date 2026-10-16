@@ -52,6 +52,7 @@ Parâmetros úteis no endereço (por exemplo `http://localhost:4173/?debug`):
 
 ```
 index.html                  Página: barra, logótipo, grelha e o conteúdo de todas as janelas
+politica-de-cookies.html    Política de cookies (só texto, sem JavaScript; estilo em src/legal.css)
 vite.config.js              Compilação, política de segurança de conteúdo (CSP) e dist/_headers
 wrangler.jsonc              Publicação na Cloudflare (Worker sealer e os dois domínios)
 public/
@@ -62,6 +63,7 @@ src/
   layout.js                 Modos: grelha (início e explorar) e lista
   capabilities.js           Regras para carregar ou não o 3D
   styles.css                Todo o estilo da página
+  legal.css                 Estilo das páginas de texto (política de cookies)
   grid/
     config.js               Valores ajustáveis da grelha
     field.js                Grelha infinita: arrasto, encaixe, lente, roda, teclado, toque
