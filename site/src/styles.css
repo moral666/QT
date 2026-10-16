@@ -957,26 +957,30 @@ p {
 
 /* ---------- Estado do serviço (ao lado do nome, na barra de topo) ---------- */
 
+/*
+  Bloco de duas linhas, separado da marca por um filete:
+    ● SERVIÇOS ONLINE          Unbounded, maiúsculas espaçadas (como a marca)
+      Testes fechados · 5 pessoas   Manrope pequeno, cinzento
+*/
+
 .bar__start {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-s);
+  gap: 0.35rem;
   min-width: 0;
 }
 
 .status-pill {
-  display: inline-flex;
+  display: inline-grid;
+  grid-template-columns: auto auto;
   align-items: center;
-  gap: 0.5rem;
+  column-gap: 0.5rem;
+  row-gap: 0.3rem;
   margin: 0;
-  padding: 0.5rem 0.85rem 0.5rem 0.7rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: rgba(5, 6, 13, 0.85);
+  padding: 0.15rem 0 0.15rem var(--space-s);
+  border-left: 1px solid var(--line-strong);
   color: var(--ice);
-  font: 600 var(--step--1) / 1 var(--font-text);
-  letter-spacing: 0.01em;
   white-space: nowrap;
 }
 
@@ -986,43 +990,56 @@ p {
 
 .status-pill__dot {
   --dot: #6b7186;
-  width: 0.55rem;
-  height: 0.55rem;
+  grid-row: 1;
+  grid-column: 1;
+  width: 0.45rem;
+  height: 0.45rem;
   border-radius: 50%;
   background: var(--dot);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot) 25%, transparent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--dot) 45%, transparent);
 }
 
-.status-pill[data-state="on"] {
-  border-color: rgba(52, 211, 120, 0.45);
+.status-pill__text {
+  grid-row: 1;
+  grid-column: 2;
+  font: 400 0.6875rem / 1 var(--font-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.status-pill__tag {
+  grid-row: 2;
+  grid-column: 2;
+  color: var(--mist);
+  font: 500 0.75rem / 1 var(--font-text);
+  letter-spacing: 0.01em;
 }
 
 .status-pill[data-state="on"] .status-pill__dot {
   --dot: #34d378;
-}
-
-.status-pill[data-state="off"] {
-  border-color: rgba(255, 77, 77, 0.55);
-  color: #ffb3b3;
+  animation: status-breathe 2.6s ease-out infinite;
 }
 
 .status-pill[data-state="off"] .status-pill__dot {
   --dot: #ff4d4d;
 }
 
+.status-pill[data-state="off"] .status-pill__text {
+  color: #ffb3b3;
+}
+
 .status-pill[data-state="checking"] .status-pill__dot {
   animation: status-pulse 1.2s ease-in-out infinite;
 }
 
-.status-pill__tag {
-  margin-left: 0.15rem;
-  padding: 0.2rem 0.5rem;
-  border-radius: 999px;
-  background: rgba(201, 185, 246, 0.14);
-  color: var(--lilac);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+@keyframes status-breathe {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--dot) 55%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 0.45rem color-mix(in srgb, var(--dot) 0%, transparent);
+  }
 }
 
 @keyframes status-pulse {
@@ -1031,9 +1048,9 @@ p {
   }
 }
 
-/* Ecrãs estreitos: não cabem nome, marcador e botão lado a lado. O estado passa a
-   ser uma segunda linha do nome (por baixo de "SEALER", à direita do logótipo), sem
-   moldura, e a barra mantém a mesma altura. A etiqueta de testes fica só no title. */
+/* Ecrãs estreitos: não cabem nome, estado e botão lado a lado. O estado passa a ser
+   uma segunda linha do nome (por baixo de "SEALER", à direita do logótipo) e a barra
+   mantém a mesma altura. A linha dos testes fica só na frase completa (title). */
 @media (max-width: 760px) {
   .bar__start .bar__brand span {
     transform: translateY(-0.5rem);
@@ -1043,20 +1060,21 @@ p {
     position: absolute;
     left: 2.5rem;
     top: 50%;
-    margin-top: 0.05rem;
-    gap: 0.35rem;
+    margin-top: 0.1rem;
+    column-gap: 0.4rem;
     padding: 0;
     border: 0;
-    border-radius: 0;
-    background: none;
-    font-size: 0.75rem;
     pointer-events: none;
   }
 
+  .status-pill__text {
+    font-size: 0.5625rem;
+    letter-spacing: 0.13em;
+  }
+
   .status-pill__dot {
-    width: 0.45rem;
-    height: 0.45rem;
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--dot) 25%, transparent);
+    width: 0.4rem;
+    height: 0.4rem;
   }
 
   .status-pill__tag {
@@ -1064,8 +1082,33 @@ p {
   }
 }
 
+/* Versão curta ("Online"), só usada em telemóveis muito estreitos. */
+.status-pill__mini {
+  display: none;
+  grid-row: 1;
+  grid-column: 2;
+  font: 400 0.5625rem / 1 var(--font-display);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.status-pill[data-state="off"] .status-pill__mini {
+  color: #ffb3b3;
+}
+
+@media (max-width: 380px) {
+  .status-pill__text {
+    display: none;
+  }
+
+  .status-pill__mini {
+    display: block;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .status-pill[data-state="checking"] .status-pill__dot {
+  .status-pill[data-state="checking"] .status-pill__dot,
+  .status-pill[data-state="on"] .status-pill__dot {
     animation: none;
   }
 }
