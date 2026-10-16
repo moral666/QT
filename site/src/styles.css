@@ -930,16 +930,12 @@ p {
   color: var(--mist);
 }
 
-/* ---------- Estado do serviço (canto superior esquerdo) ---------- */
-
-.bar__start {
-  display: flex;
-  align-items: center;
-  gap: var(--space-s);
-  min-width: 0;
-}
+/* ---------- Estado do serviço (ao centro da barra de topo) ---------- */
 
 .status-pill {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -994,21 +990,11 @@ p {
   }
 }
 
-/* Telemóveis estreitos: o marcador e o botão "Ver em lista" têm prioridade sobre o nome. */
-@media (max-width: 400px) {
-  .bar__start .bar__brand span {
-    display: none;
-  }
-
-  .bar__toggle {
-    white-space: nowrap;
-  }
-}
-
-/* Ecrãs muito estreitos: fica só o marcador e o botão (o botão já leva de volta à grelha). */
-@media (max-width: 374px) {
-  .bar__start .bar__brand {
-    display: none;
+/* Telemóveis: ao centro não há espaço entre a marca e o botão, por isso o marcador
+   fica centrado logo abaixo da barra. */
+@media (max-width: 640px) {
+  .status-pill {
+    top: calc(100% - 0.25rem);
   }
 }
 

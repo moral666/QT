@@ -39,7 +39,7 @@ try {
   root.classList.add('mode-list');
 }
 
-// ----- Estado do serviço (canto superior esquerdo) -----
+// ----- Estado do serviço (centro da barra de topo) -----
 
 initStatus(document.getElementById('service-status'));
 
