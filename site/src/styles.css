@@ -238,13 +238,7 @@ p {
   letter-spacing: 0.3em;
 }
 
-/* No início, a marca está ao centro do ecrã: o botão do canto fica escondido. */
-.js.mode-grid:not(.is-exploring) .bar__brand {
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(-0.4rem);
-  transition-delay: 0s, 0s, 0.5s;
-}
+/* A marca do canto fica sempre visível: o marcador de estado está colado a ela. */
 
 .bar__toggle {
   white-space: nowrap;
@@ -961,12 +955,17 @@ p {
   color: var(--mist);
 }
 
-/* ---------- Estado do serviço (ao centro da barra de topo) ---------- */
+/* ---------- Estado do serviço (ao lado do nome, na barra de topo) ---------- */
+
+.bar__start {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+  min-width: 0;
+}
 
 .status-pill {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -1032,17 +1031,35 @@ p {
   }
 }
 
-/* Telemóveis: ao centro não há espaço entre a marca e o botão, por isso o marcador
-   fica centrado logo abaixo da barra. */
-@media (max-width: 640px) {
-  .status-pill {
-    top: calc(100% - 0.25rem);
+/* Ecrãs estreitos: não cabem nome, marcador e botão lado a lado. O estado passa a
+   ser uma segunda linha do nome (por baixo de "SEALER", à direita do logótipo), sem
+   moldura, e a barra mantém a mesma altura. A etiqueta de testes fica só no title. */
+@media (max-width: 760px) {
+  .bar__start .bar__brand span {
+    transform: translateY(-0.5rem);
   }
-}
 
-/* Ecrãs muito estreitos: o número de testadores fica só na frase completa (title). */
-@media (max-width: 400px) {
-  .status-pill__count {
+  .status-pill {
+    position: absolute;
+    left: 2.5rem;
+    top: 50%;
+    margin-top: 0.05rem;
+    gap: 0.35rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    font-size: 0.75rem;
+    pointer-events: none;
+  }
+
+  .status-pill__dot {
+    width: 0.45rem;
+    height: 0.45rem;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--dot) 25%, transparent);
+  }
+
+  .status-pill__tag {
     display: none;
   }
 }
