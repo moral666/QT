@@ -247,6 +247,7 @@ p {
 }
 
 .bar__toggle {
+  white-space: nowrap;
   padding: 0.65rem 1.15rem;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
@@ -984,6 +985,17 @@ p {
   animation: status-pulse 1.2s ease-in-out infinite;
 }
 
+.status-pill__tag {
+  margin-left: 0.15rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(201, 185, 246, 0.14);
+  color: var(--lilac);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 @keyframes status-pulse {
   50% {
     opacity: 0.35;
@@ -995,6 +1007,13 @@ p {
 @media (max-width: 640px) {
   .status-pill {
     top: calc(100% - 0.25rem);
+  }
+}
+
+/* Ecrãs muito estreitos: o número de testadores fica só na frase completa (title). */
+@media (max-width: 400px) {
+  .status-pill__count {
+    display: none;
   }
 }
 

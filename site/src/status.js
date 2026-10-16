@@ -11,8 +11,13 @@
 
 const INTERVAL_MS = 60_000;
 
+// A app está em testes fechados (alpha): o marcador mostra o estado do serviço usado
+// pelos testadores, não quer dizer que a app já esteja disponível ao público.
+// Número de testadores: alterar aqui e no index.html (status-pill__count).
+const TESTING = 'A SEALER está em testes fechados: por agora só 5 testadores convidados têm acesso ao serviço.';
+
 const TEXT = {
-  checking: { short: 'A verificar serviços', long: 'A verificar se os serviços da SEALER estão a funcionar…' },
+  checking: { short: 'A verificar serviços', long: 'A verificar se os serviços da SEALER estão a funcionar' },
   on: { short: 'Serviços online', long: 'Os serviços da SEALER estão a funcionar' },
   off: { short: 'Serviços offline', long: 'Os serviços da SEALER estão em baixo de momento' },
   unknown: { short: 'Estado desconhecido', long: 'Não foi possível saber o estado dos serviços da SEALER' },
@@ -26,8 +31,9 @@ export function initStatus(el) {
   function show(state) {
     el.dataset.state = state;
     label.textContent = TEXT[state].short;
-    el.title = TEXT[state].long;
-    el.setAttribute('aria-label', TEXT[state].long);
+    const full = `${TEXT[state].long}. ${TESTING}`;
+    el.title = full;
+    el.setAttribute('aria-label', full);
   }
 
   async function check() {
