@@ -1,0 +1,978 @@
+/*
+  SEALER, landing page
+
+  Sistema tipográfico (só estes estilos existem na página):
+    Marca      Unbounded 300, maiúsculas, espaçamento 0.3em   .wordmark, .bar__brand, janela da marca
+    Título     Unbounded 300                                   h2 (lista), .tile__figure (números)
+    Destaque   Manrope 400, 1.3125rem                          .lede
+    Rótulo     Manrope 600                                     .tile__title, .bar__toggle
+    Texto      Manrope 400                                     p, .tile__text
+    Pequeno    Manrope 400, 0.875rem                           .status, .hint, .tile__label, .footer
+    Código     monospace do sistema                            code (só termos técnicos)
+
+  Modos (classes em <html>, ver src/layout.js):
+    sem classe            sem JavaScript: hero e lista em texto corrido
+    .js.mode-grid         grelha de janelas em ecrã inteiro, logótipo ao centro
+    .js.mode-grid.is-exploring   a grelha em primeiro plano, a marca no canto
+    .js.mode-list         lista em texto corrido, com a barra de topo
+
+  Tudo é servido pelo próprio site (CSP: style-src 'self', font-src 'self').
+*/
+
+@font-face {
+  font-family: "Unbounded";
+  src: url("./assets/fonts/unbounded-latin-var.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Manrope";
+  src: url("./assets/fonts/manrope-latin-var.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  /* A página é só escura, de propósito: controlos e barras de scroll acompanham. */
+  color-scheme: dark;
+
+  /* Paleta */
+  --ink: #05060d; /* fundo */
+  --ink-deep: #030409; /* fundo, fim da página */
+  --panel: #141726; /* janelas */
+  --panel-deep: #0d0f19;
+  --line: #232838; /* filetes */
+  --line-strong: #353b52; /* filetes em foco */
+  --mist: #a1a7bb; /* texto secundário */
+  --ice: #eceef6; /* texto principal */
+  --lilac: #c9b9f6; /* aro do logótipo */
+  --violet: #6e48db; /* pontos do logótipo */
+  --cold: #5d86f0; /* azul frio: conteúdo técnico */
+  --cold-light: #b9ccff;
+
+  /* Tipos de letra */
+  --font-display: "Unbounded", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-text: "Manrope", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-code: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Escala tipográfica: base de 17 px, razão de cerca de 1,25 */
+  --step--1: 0.875rem;
+  --step-0: 1.0625rem;
+  --step-1: 1.3125rem;
+  --step-2: clamp(1.625rem, 1.2rem + 1.6vw, 2.25rem);
+  --step-wordmark: clamp(2.25rem, 10.5vw, 6.5rem);
+
+  /* Espaçamentos: uma só escala para toda a página */
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-s: 0.75rem;
+  --space-m: 1.25rem;
+  --space-l: 2rem;
+  --space-xl: 3rem;
+  --space-2xl: clamp(4rem, 8vw, 6rem);
+  --space-3xl: clamp(5rem, 12vw, 9rem);
+
+  /* Layout */
+  --gutter: clamp(1.25rem, 5vw, 2.5rem);
+  --wide: 68rem;
+  --stage: min(72vw, 46svh, 440px);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Na grelha, o logótipo e a marca ficam mais pequenos, para a grelha respirar à volta. */
+.js.mode-grid {
+  --stage: min(58vw, 36svh, 340px);
+  --step-wordmark: clamp(2.25rem, 8.5vw, 5rem);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--ink);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100svh;
+  background:
+    radial-gradient(120% 60% at 50% 0%, rgba(93, 134, 240, 0.07), transparent 62%),
+    linear-gradient(180deg, var(--ink) 0%, var(--ink-deep) 100%);
+  color: var(--ice);
+  font-family: var(--font-text);
+  font-size: var(--step-0);
+  font-weight: 400;
+  line-height: 1.6;
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgba(201, 185, 246, 0.3);
+  color: var(--ice);
+}
+
+:focus-visible {
+  outline: 2px solid var(--lilac);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+/* ---------- Estrutura e modos ---------- */
+
+.app {
+  position: relative;
+}
+
+.js.mode-grid,
+.js.mode-grid body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.js.mode-grid .app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  overflow: clip;
+}
+
+.js.mode-grid .list,
+.js.mode-grid .footer {
+  display: none;
+}
+
+/* ---------- Barra de topo ---------- */
+
+.bar {
+  display: none;
+}
+
+.js .bar {
+  position: fixed;
+  z-index: 30;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-m);
+  padding: max(var(--space-m), env(safe-area-inset-top)) max(var(--gutter), env(safe-area-inset-right))
+    var(--space-m) max(var(--gutter), env(safe-area-inset-left));
+  pointer-events: none;
+}
+
+/* Faixa escura por trás da barra, para a marca e o botão nunca ficarem
+   por cima do texto das janelas ou da lista. */
+.js .bar::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 -1.5rem;
+  background: linear-gradient(180deg, rgba(5, 6, 13, 0.96) 35%, rgba(5, 6, 13, 0));
+  pointer-events: none;
+}
+
+.bar > * {
+  pointer-events: auto;
+}
+
+.bar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-left: -0.4rem;
+  padding: 0.3rem 0.6rem 0.3rem 0.3rem;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ice);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    opacity 0.5s ease,
+    transform 0.6s var(--ease-out),
+    visibility 0s linear 0s;
+}
+
+.bar__brand img {
+  width: 2rem;
+  height: 2rem;
+}
+
+.bar__brand span {
+  margin-right: -0.3em;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 300;
+  letter-spacing: 0.3em;
+}
+
+/* No início, a marca está ao centro do ecrã: o botão do canto fica escondido. */
+.js.mode-grid:not(.is-exploring) .bar__brand {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-0.4rem);
+  transition-delay: 0s, 0s, 0.5s;
+}
+
+.bar__toggle {
+  padding: 0.65rem 1.15rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(5, 6, 13, 0.85);
+  color: var(--ice);
+  font: 600 var(--step--1) / 1 var(--font-text);
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.bar__toggle:hover {
+  border-color: var(--lilac);
+  background-color: rgba(201, 185, 246, 0.08);
+}
+
+/* ---------- Hero ---------- */
+
+/* Sem JavaScript e no modo lista: no topo da página, em texto corrido. */
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: calc(var(--space-2xl) + 2rem) var(--gutter) var(--space-l);
+  text-align: center;
+  /* O halo e o canvas 3D são maiores do que o palco: não podem alargar a página. */
+  overflow: hidden;
+  overflow: clip;
+}
+
+/* Na grelha: por cima das janelas, ao centro do ecrã. Deixa passar o arrasto
+   para a grelha, exceto no próprio logótipo 3D (que roda ao arrastar). */
+.js.mode-grid .hero {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  justify-content: center;
+  padding: var(--space-xl) var(--gutter);
+  pointer-events: none;
+  transition:
+    opacity 0.6s ease,
+    transform 0.8s var(--ease-out),
+    visibility 0s linear 0s;
+}
+
+/* Escurece as janelas atrás do texto, para se ler bem. */
+.js.mode-grid .hero::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: 50%;
+  width: min(1250px, 160vw);
+  height: min(960px, 130svh);
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    closest-side,
+    rgba(5, 6, 13, 0.97) 0%,
+    rgba(5, 6, 13, 0.94) 50%,
+    rgba(5, 6, 13, 0.62) 78%,
+    rgba(5, 6, 13, 0) 100%
+  );
+  pointer-events: none;
+}
+
+.js.mode-grid.is-exploring .hero {
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(0.94);
+  transition-delay: 0s, 0s, 0.8s;
+}
+
+.stage {
+  position: relative;
+  width: var(--stage);
+  aspect-ratio: 1;
+  /* O scroll vertical continua a funcionar; o arrasto horizontal roda o logótipo. */
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.js.mode-grid .stage.has-3d {
+  pointer-events: auto;
+}
+
+/* Halo de luz atrás do logótipo. A textura de ruído (quase invisível)
+   evita as bandas de cor que os gradientes escuros criam em ecrãs de 8 bits. */
+.stage__glow {
+  position: absolute;
+  inset: -42%;
+  background:
+    url("./assets/noise.png"),
+    radial-gradient(
+      closest-side,
+      rgba(124, 92, 235, 0.3) 0%,
+      rgba(124, 92, 235, 0.12) 40%,
+      rgba(93, 134, 240, 0.05) 66%,
+      transparent 100%
+    );
+  -webkit-mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 55%, transparent 100%);
+  pointer-events: none;
+}
+
+/* Poça de luz lilás por baixo do logótipo. Na versão 3D é desenhada pela
+   própria cena, com a mesma posição, tamanho e intensidade. */
+.stage::before {
+  content: "";
+  position: absolute;
+  left: 19%;
+  right: 19%;
+  top: 84.2%;
+  height: 13%;
+  background: radial-gradient(
+    closest-side,
+    rgba(138, 108, 255, 0.32),
+    rgba(138, 108, 255, 0.11) 45%,
+    rgba(138, 108, 255, 0) 100%
+  );
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.stage__logo {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* Canvas 3D: 1,5 vezes o palco, centrado, para a rotação não ser cortada. */
+.stage__canvas {
+  position: absolute;
+  left: -25%;
+  top: -25%;
+  width: 150%;
+  height: 150%;
+  display: block;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.stage.has-3d {
+  cursor: grab;
+}
+
+.stage.has-3d.is-dragging {
+  cursor: grabbing;
+}
+
+/* Troca instantânea: o primeiro fotograma 3D coincide com a imagem. */
+.stage.has-3d .stage__canvas {
+  opacity: 1;
+}
+
+.stage.has-3d .stage__logo,
+.stage.has-3d::before {
+  opacity: 0;
+}
+
+/* Se o aparelho não aguentar o 3D, a página volta à imagem com um
+   cruzamento suave (duração igual a CROSSFADE_MS em logoScene.js). */
+.stage.is-leaving-3d .stage__canvas,
+.stage.is-leaving-3d .stage__logo,
+.stage.is-leaving-3d::before {
+  transition: opacity 0.45s ease;
+}
+
+/* Sem 3D (sem WebGL 2, poupança de dados, hardware fraco ou erro):
+   a imagem flutua com animações CSS, que correm fora do fio principal. */
+.is-static .stage__logo {
+  animation: float 7s ease-in-out infinite;
+}
+
+.is-static .stage::before {
+  animation: pool 7s ease-in-out infinite;
+}
+
+.is-exploring .stage__logo,
+.is-exploring .stage::before {
+  animation-play-state: paused;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -2.2%, 0);
+  }
+}
+
+@keyframes pool {
+  0%,
+  100% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scaleX(0.88);
+    opacity: 0.65;
+  }
+}
+
+/* Se a própria imagem falhar, fica um balão desenhado em CSS. */
+.stage__missing {
+  display: none;
+}
+
+.stage.is-logo-missing .stage__logo {
+  display: none;
+}
+
+.stage.is-logo-missing .stage__missing {
+  position: absolute;
+  inset: 16% 15% 18%;
+  display: grid;
+  place-items: center;
+  border-radius: 24% 24% 24% 8%;
+  border: 2px solid var(--lilac);
+  background: linear-gradient(160deg, rgba(236, 238, 246, 0.16), rgba(201, 185, 246, 0.06));
+  color: var(--lilac);
+  font-family: var(--font-display);
+  font-size: calc(var(--stage) * 0.34);
+  font-weight: 300;
+  line-height: 1;
+}
+
+.wordmark {
+  margin-top: var(--space-l);
+  /* O espaço depois da última letra é compensado para a palavra ficar centrada. */
+  margin-right: -0.3em;
+  font-family: var(--font-display);
+  font-size: var(--step-wordmark);
+  font-weight: 300;
+  letter-spacing: 0.3em;
+  line-height: 1;
+  background: linear-gradient(180deg, var(--ice) 35%, #cbc2ec 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.js.mode-grid .wordmark {
+  margin-top: var(--space-m);
+}
+
+.lede {
+  max-width: 24ch;
+  margin-top: var(--space-m);
+  font-size: var(--step-1);
+  line-height: 1.45;
+  text-wrap: balance;
+}
+
+.status {
+  margin-top: var(--space-s);
+  font-size: var(--step--1);
+  letter-spacing: 0.01em;
+  color: var(--mist);
+}
+
+.hint {
+  display: none;
+}
+
+.js.mode-grid .hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: var(--space-l);
+  padding: 0.55rem 1rem;
+  border: 1px solid rgba(201, 185, 246, 0.22);
+  border-radius: 999px;
+  font-size: var(--step--1);
+  letter-spacing: 0.01em;
+  color: var(--lilac);
+}
+
+.hint__icon {
+  fill: currentColor;
+}
+
+/* ---------- Grelha de janelas ---------- */
+
+.field {
+  display: none;
+}
+
+.js.mode-grid .field {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  overflow: hidden;
+  overflow: clip;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.js.mode-grid .field.is-dragging {
+  cursor: grabbing;
+}
+
+/* Recuo ao pressionar, como no Phantom. */
+.field__zoom {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  transition: transform 0.9s var(--ease-out);
+}
+
+.field.is-pressed .field__zoom {
+  transform: scale(0.93);
+}
+
+.field__layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0.4;
+  transition: opacity 0.8s ease;
+}
+
+/* A grelha entra depois do logótipo, com um desvanecimento. */
+.field.is-ready .field__layer {
+  animation: field-in 1.2s ease backwards;
+}
+
+.is-exploring .field__layer {
+  opacity: 1;
+}
+
+@keyframes field-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Escurece os cantos: completa o efeito de lente. */
+.field__vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    130% 120% at 50% 50%,
+    rgba(5, 6, 13, 0) 40%,
+    rgba(5, 6, 13, 0.55) 70%,
+    rgba(5, 6, 13, 0.97) 100%
+  );
+}
+
+.js.mode-grid .field .tile {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--cell);
+  height: var(--cell);
+  font-size: clamp(13px, calc(var(--cell) * 0.05), 19px);
+  transform-origin: 50% 50%;
+  contain: layout style;
+  backface-visibility: hidden;
+}
+
+/* Camadas próprias só durante o movimento (ver requestTick em src/grid/field.js). */
+.field.is-moving .tile {
+  will-change: transform;
+}
+
+.field.is-compact .tile {
+  gap: 0.45em;
+  padding: 1.2em;
+}
+
+.field.is-compact .tile__icon {
+  width: 2.5em;
+  height: 2.5em;
+  margin-top: 0.4em;
+}
+
+.field.is-compact .dia {
+  width: 88%;
+}
+
+.field .tile:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 0 0 4px var(--lilac);
+}
+
+/* ---------- Janelas (grelha e lista) ---------- */
+
+/* Cada janela tem a forma do balão do logótipo: cantos redondos e o de baixo,
+   à esquerda, mais vivo, onde no logótipo nasce o bico do balão. */
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  padding: 1.5em;
+  border: 1px solid rgba(201, 185, 246, 0.13);
+  border-radius: 1.6em 1.6em 1.6em 0.45em;
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(201, 185, 246, 0.09), transparent 60%),
+    linear-gradient(160deg, var(--panel) 0%, var(--panel-deep) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  color: var(--ice);
+  overflow: hidden;
+  transition: border-color 0.3s ease;
+}
+
+.field .tile:hover {
+  border-color: rgba(201, 185, 246, 0.3);
+}
+
+.tile__label {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  font-size: 0.8em;
+  letter-spacing: 0.02em;
+  color: var(--mist);
+}
+
+/* O ponto do rótulo é um dos três pontos do logótipo; a cor diz o público. */
+.tile__label::before {
+  content: "";
+  flex: none;
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #b8a2ff 0%, var(--violet) 55%, #26136a 100%);
+  box-shadow: 0 0 10px rgba(110, 72, 219, 0.65);
+}
+
+/* Pictogramas desenhados à mão: mesmo traço e tamanho em todas as janelas. */
+.tile__icon {
+  flex: none;
+  width: 3.1em;
+  height: 3.1em;
+  margin-top: 0.9em;
+  fill: none;
+  stroke: var(--lilac);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
+
+.tile__icon-fill {
+  fill: currentColor;
+  color: var(--lilac);
+  stroke: none;
+}
+
+.tile__icon-dash {
+  stroke-dasharray: 3 4;
+}
+
+.tile--tecnico .tile__icon,
+.tile--arquitetura .tile__icon {
+  stroke: var(--cold-light);
+}
+
+.tile__title {
+  margin-top: auto;
+  font-size: 1.3em;
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.tile__title--small {
+  font-size: 1.12em;
+}
+
+.tile__text {
+  font-size: 0.94em;
+  line-height: 1.5;
+  color: var(--mist);
+}
+
+.tile code {
+  font: 0.86em / 1.3 var(--font-code);
+  color: var(--cold-light);
+}
+
+/* Para especialistas: azul frio. */
+.tile--tecnico,
+.tile--arquitetura {
+  border-color: rgba(93, 134, 240, 0.16);
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(93, 134, 240, 0.1), transparent 60%),
+    linear-gradient(160deg, var(--panel) 0%, var(--panel-deep) 100%);
+}
+
+.tile--tecnico .tile__label::before,
+.tile--arquitetura .tile__label::before {
+  background: radial-gradient(circle at 35% 30%, #a9c1ff 0%, var(--cold) 55%, #1b2e6b 100%);
+  box-shadow: 0 0 10px rgba(93, 134, 240, 0.6);
+}
+
+/* Arquitetura: fundo quadriculado discreto, como papel de esquemas. */
+.tile--arquitetura {
+  background:
+    linear-gradient(rgba(93, 134, 240, 0.06) 1px, transparent 1px) 0 0 / 1.4em 1.4em,
+    linear-gradient(90deg, rgba(93, 134, 240, 0.06) 1px, transparent 1px) 0 0 / 1.4em 1.4em,
+    linear-gradient(160deg, var(--panel) 0%, var(--panel-deep) 100%);
+}
+
+.dia {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: auto;
+  overflow: visible;
+}
+
+.dia__box {
+  fill: rgba(201, 185, 246, 0.07);
+  stroke: rgba(201, 185, 246, 0.45);
+  stroke-width: 1;
+}
+
+.dia__box--relay {
+  fill: rgba(93, 134, 240, 0.1);
+  stroke: rgba(93, 134, 240, 0.7);
+}
+
+.dia__text {
+  fill: var(--ice);
+  font-family: var(--font-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dia__line {
+  fill: none;
+  stroke: var(--lilac);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+
+.dia__arrow {
+  fill: var(--lilac);
+}
+
+.tile--diagram .tile__title {
+  margin-top: 0;
+}
+
+/* Testes e números: o número é o protagonista. */
+.tile--figure .tile__label::before {
+  background: radial-gradient(circle at 35% 30%, #ffffff 0%, #c9cde0 55%, #5b6075 100%);
+  box-shadow: 0 0 10px rgba(236, 238, 246, 0.35);
+}
+
+.tile__figure {
+  margin-top: auto;
+  font-family: var(--font-display);
+  font-size: 2.5em;
+  font-weight: 300;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+/* A caminho: contorno tracejado, porque ainda não está feito. */
+.tile--proximo {
+  border: 1px dashed rgba(201, 185, 246, 0.35);
+  background: linear-gradient(160deg, rgba(20, 23, 38, 0.7) 0%, rgba(13, 15, 25, 0.7) 100%);
+}
+
+.tile--proximo .tile__label::before {
+  background: transparent;
+  border: 1.5px dashed var(--lilac);
+  box-shadow: none;
+}
+
+/* Janelas da marca (só na grelha). */
+.tile--marca {
+  align-items: center;
+  justify-content: center;
+}
+
+.tile--logo {
+  background:
+    radial-gradient(closest-side, rgba(124, 92, 235, 0.28), rgba(124, 92, 235, 0) 100%),
+    linear-gradient(160deg, var(--panel) 0%, var(--panel-deep) 100%);
+}
+
+.tile--logo img {
+  width: 68%;
+  height: auto;
+  -webkit-user-drag: none;
+}
+
+.tile--wordmark span {
+  margin-right: -0.3em;
+  font-family: var(--font-display);
+  font-size: 2em;
+  font-weight: 300;
+  letter-spacing: 0.3em;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(201, 185, 246, 0.55);
+}
+
+/* ---------- Lista (modo lista e sem JavaScript) ---------- */
+
+.list {
+  width: min(100% - 2 * var(--gutter), var(--wide));
+  margin-inline: auto;
+}
+
+.group {
+  padding-top: var(--space-2xl);
+}
+
+.group:first-child {
+  padding-top: var(--space-xl);
+}
+
+.group h2 {
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  font-weight: 300;
+  line-height: 1.15;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+
+.group__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-m);
+  margin-top: var(--space-l);
+}
+
+.list .tile {
+  min-height: 15rem;
+  font-size: 1rem;
+}
+
+/* Na lista, o título da secção já diz o público: o rótulo repetido sai, e os
+   títulos de janelas lado a lado alinham logo a seguir ao pictograma. */
+.list .tile__label--group {
+  display: none;
+}
+
+.list .tile__icon,
+.list .dia {
+  margin-top: 0;
+}
+
+.list .tile__title,
+.list .tile__figure {
+  margin-top: var(--space-xs);
+}
+
+.footer {
+  width: min(100% - 2 * var(--gutter), var(--wide));
+  margin: var(--space-3xl) auto 0;
+  padding: var(--space-l) 0 max(var(--space-l), env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-xs) var(--space-l);
+  font-size: var(--step--1);
+  letter-spacing: 0.01em;
+  color: var(--mist);
+}
+
+/* ---------- Painel de medição (só com ?debug na URL) ---------- */
+
+.debug-hud {
+  position: fixed;
+  bottom: 0.75rem;
+  left: 0.75rem;
+  z-index: 40;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: rgba(5, 6, 13, 0.85);
+  color: var(--ice);
+  font: 12px/1.5 var(--font-code);
+  white-space: pre;
+  pointer-events: none;
+}
+
+/* ---------- Ecrãs baixos ---------- */
+
+@media (max-height: 640px) {
+  .js.mode-grid {
+    --stage: min(50vw, 30svh, 260px);
+  }
+
+  .js.mode-grid .hint {
+    margin-top: var(--space-m);
+  }
+}
+
+/* ---------- Movimento reduzido ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .is-static .stage__logo,
+  .is-static .stage::before,
+  .field.is-ready .field__layer {
+    animation: none;
+  }
+
+  .field__zoom,
+  .field__layer,
+  .js.mode-grid .hero,
+  .bar__brand,
+  .tile {
+    transition: none;
+  }
+}
