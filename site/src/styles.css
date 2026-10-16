@@ -999,6 +999,17 @@ p {
   .bar__start .bar__brand span {
     display: none;
   }
+
+  .bar__toggle {
+    white-space: nowrap;
+  }
+}
+
+/* Ecrãs muito estreitos: fica só o marcador e o botão (o botão já leva de volta à grelha). */
+@media (max-width: 374px) {
+  .bar__start .bar__brand {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

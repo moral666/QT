@@ -12,10 +12,10 @@
 const INTERVAL_MS = 60_000;
 
 const TEXT = {
-  checking: { short: 'A verificar', long: 'A verificar o serviço SEALER…' },
-  on: { short: 'Online', long: 'Serviço SEALER a funcionar' },
-  off: { short: 'Offline', long: 'Serviço SEALER em baixo' },
-  unknown: { short: 'Sem dados', long: 'Não foi possível saber o estado do serviço' },
+  checking: { short: 'A verificar serviços', long: 'A verificar se os serviços da SEALER estão a funcionar…' },
+  on: { short: 'Serviços online', long: 'Os serviços da SEALER estão a funcionar' },
+  off: { short: 'Serviços offline', long: 'Os serviços da SEALER estão em baixo de momento' },
+  unknown: { short: 'Estado desconhecido', long: 'Não foi possível saber o estado dos serviços da SEALER' },
 };
 
 export function initStatus(el) {
