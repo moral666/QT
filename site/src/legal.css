@@ -1,0 +1,161 @@
+/*
+  SEALER, páginas de texto (política de cookies e outras do género).
+
+  Usa a mesma paleta e os mesmos tipos de letra de styles.css, mas sem a grelha nem o 3D.
+  Tudo é servido pelo próprio site (CSP: style-src 'self', font-src 'self').
+*/
+
+@font-face {
+  font-family: "Unbounded";
+  src: url("./assets/fonts/unbounded-latin-var.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Manrope";
+  src: url("./assets/fonts/manrope-latin-var.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  color-scheme: dark;
+
+  --ink: #05060d;
+  --line: #232838;
+  --mist: #a1a7bb;
+  --ice: #eceef6;
+  --lilac: #c9b9f6;
+  --panel: #141726;
+
+  --font-display: "Unbounded", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-text: "Manrope", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-code: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --gutter: clamp(1rem, 5vw, 2rem);
+  --measure: 40rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--ice);
+  font: 400 1.0625rem/1.65 var(--font-text);
+}
+
+a {
+  color: var(--lilac);
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  color: var(--ice);
+}
+
+a:focus-visible {
+  outline: 2px solid var(--lilac);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+code {
+  font-family: var(--font-code);
+  font-size: 0.9em;
+  padding: 0.1em 0.35em;
+  border-radius: 0.3em;
+  background: var(--panel);
+}
+
+.legal-bar {
+  width: min(100% - 2 * var(--gutter), var(--measure));
+  margin: 0 auto;
+  padding: 1.5rem 0;
+}
+
+.legal-bar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ice);
+  text-decoration: none;
+  font: 300 0.95rem var(--font-display);
+  letter-spacing: 0.3em;
+}
+
+.legal-bar__brand img {
+  width: 2rem;
+  height: 2rem;
+}
+
+.legal {
+  width: min(100% - 2 * var(--gutter), var(--measure));
+  margin: 0 auto;
+  padding: 2rem 0 4rem;
+}
+
+.legal h1 {
+  margin: 0.5rem 0 1.25rem;
+  font: 300 clamp(1.75rem, 1.3rem + 2vw, 2.5rem) / 1.2 var(--font-display);
+}
+
+.legal h2 {
+  margin: 2.5rem 0 0.75rem;
+  font: 600 1.1875rem/1.4 var(--font-text);
+}
+
+.legal p,
+.legal ul {
+  margin: 0 0 1rem;
+}
+
+.legal ul {
+  padding-left: 1.25rem;
+}
+
+.legal li {
+  margin-bottom: 0.35rem;
+}
+
+.legal__label {
+  color: var(--mist);
+  font-size: 0.875rem;
+}
+
+.legal__lede {
+  font-size: 1.3125rem;
+  line-height: 1.5;
+}
+
+.legal__back {
+  margin-top: 3rem;
+}
+
+.legal-footer {
+  width: min(100% - 2 * var(--gutter), var(--measure));
+  margin: 0 auto;
+  padding: 2rem 0 max(2rem, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  color: var(--mist);
+  font-size: 0.875rem;
+}
+
+.legal-footer p {
+  margin: 0;
+}

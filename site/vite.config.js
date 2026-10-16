@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { defineConfig } from 'vite';
 
 /**
@@ -35,7 +35,9 @@ function policy(scriptHashes, { forHeaders = false } = {}) {
 }
 
 function contentSecurityPolicy() {
-  let headersPolicy = policy([], { forHeaders: true });
+  // Impressões digitais dos scripts embutidos de todas as páginas: o _headers vale para o
+  // site inteiro, por isso tem de autorizar os scripts de cada página.
+  const allHashes = new Set();
   return {
     name: 'sealer-csp',
     apply: 'build',
@@ -45,12 +47,13 @@ function contentSecurityPolicy() {
         const hashes = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
           (match) => `'sha256-${createHash('sha256').update(match[1]).digest('base64')}'`,
         );
-        headersPolicy = policy(hashes, { forHeaders: true });
+        for (const hash of hashes) allHashes.add(hash);
         const meta = `<meta http-equiv="Content-Security-Policy" content="${policy(hashes)}">`;
         return html.replace('<head>', `<head>\n    ${meta}`);
       },
     },
     writeBundle(options) {
+      const headersPolicy = policy([...allHashes].sort(), { forHeaders: true });
       const headers = [
         '# Gerado por vite.config.js em cada compilação. Não editar à mão.',
         '# Cabeçalhos de segurança para a Cloudflare (Workers e Pages) e a Netlify.',
@@ -83,6 +86,11 @@ export default defineConfig({
     // pedido só depois de a página carregar. O aviso de 500 KB não se aplica.
     chunkSizeWarningLimit: 600,
     rollupOptions: {
+      // Páginas do site. Uma página nova tem de ser acrescentada aqui.
+      input: {
+        main: resolve(import.meta.dirname, 'index.html'),
+        cookies: resolve(import.meta.dirname, 'politica-de-cookies.html'),
+      },
       output: {
         manualChunks(id) {
           if (id.includes('node_modules/three')) return 'three';
