@@ -166,6 +166,18 @@ fn err(reason: &str) -> ServerMessage {
     ServerMessage::Error { reason: reason.to_string() }
 }
 
+/// Resposta `Messages` (de `FetchMessages` ou `WaitMessages`).
+fn messages(raw: Vec<crate::store::QueuedMessage>) -> ServerMessage {
+    stats::inc(&STATS.fetches);
+    stats::add(&STATS.delivered, raw.len() as u64);
+    ServerMessage::Messages {
+        messages: raw
+            .into_iter()
+            .map(|m| DeliveredMessage { id: m.id, sealed_from: m.sealed_from, ciphertext: m.ciphertext })
+            .collect(),
+    }
+}
+
 /// Erros internos nunca chegam ao cliente em detalhe.
 fn internal(_e: StoreError) -> ServerMessage {
     stats::inc(&STATS.internal_errors);
@@ -224,10 +236,13 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
             if sealed_from.len() > MAX_SEALED_FROM || ciphertext.is_empty() || ciphertext.len() > MAX_CIPHERTEXT {
                 return err("mensagem com tamanho invalido");
             }
+            let recipient = to.clone();
             match store.enqueue_message(to, sealed_from, ciphertext).await {
                 Ok(id) => {
                     stats::inc(&STATS.sends);
                     crate::latency::queued(id);
+                    // Entrega imediata: acorda o destinatario se estiver a espera (WaitMessages).
+                    crate::waiters::wake(&recipient);
                     ServerMessage::Ack
                 }
                 Err(StoreError::QueueFull) => {
@@ -242,16 +257,30 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
                 return err("so podes ler a tua propria fila");
             }
             match store.peek_messages(&user_id, MAX_PAGE_BYTES).await {
-                Ok(raw) => {
-                    stats::inc(&STATS.fetches);
-                    stats::add(&STATS.delivered, raw.len() as u64);
-                    ServerMessage::Messages {
-                    messages: raw
-                        .into_iter()
-                        .map(|m| DeliveredMessage { id: m.id, sealed_from: m.sealed_from, ciphertext: m.ciphertext })
-                        .collect(),
-                    }
-                }
+                Ok(raw) => messages(raw),
+                Err(e) => internal(e),
+            }
+        }
+        ClientMessage::WaitMessages { user_id, timeout_secs } => {
+            if user_id != me {
+                return err("so podes ler a tua propria fila");
+            }
+            let wait = Duration::from_secs(timeout_secs.min(crate::waiters::MAX_WAIT_SECS));
+            // Regista a espera ANTES de olhar para a fila: uma mensagem que chegue entre
+            // o "fila vazia" e o inicio da espera acorda-nos na mesma (nao fica 25 s parada).
+            let waiter = crate::waiters::Waiter::register(me);
+            let notified = waiter.notify().notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            match store.peek_messages(&user_id, MAX_PAGE_BYTES).await {
+                Ok(raw) if !raw.is_empty() || wait.is_zero() => return messages(raw),
+                Ok(_) => {}
+                Err(e) => return internal(e),
+            }
+            stats::inc(&STATS.waits);
+            let _ = tokio::time::timeout(wait, notified).await;
+            match store.peek_messages(&user_id, MAX_PAGE_BYTES).await {
+                Ok(raw) => messages(raw),
                 Err(e) => internal(e),
             }
         }

@@ -73,9 +73,12 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     que o avanço do ratchet.
 32. ~~**Mensagens por enviar só em memória**~~ (resolvido): a outbox fica no SQLCipher e sobrevive
     ao reinício da app.
-33. **Poll de 3 s** em vez de *push*; sem notificações (o interruptor "Notificações" do menu só
-    decide se a app envia o aviso de "vista"). Enquanto o Android não termina a app, ela continua
-    a perguntar ao relay em segundo plano, o que gasta bateria e dados.
+33. ~~**Poll de 3 s** em vez de *push*~~ (resolvido com a app aberta, 16/10/2026): entrega
+    imediata com `WaitMessages` (o relay responde no instante em que a mensagem chega; ver
+    `docs/protocol-spec.md`). Continua sem notificações com a app fechada (precisa de FCM/APNs;
+    o interruptor "Notificações" do menu só decide se a app envia o aviso de "vista"). Enquanto o
+    Android não termina a app, a ligação de espera fica aberta em segundo plano (um pedido a cada
+    25 s, menos do que os pedidos de 3 em 3 s de antes).
 34. Sem ABI `x86_64` com o NDK r26d (o OpenSSL embebido não compila o assembly x86 de SM3/SM4);
     testar em telemóvel arm64, ou compilar com um NDK mais recente.
 35. **Bloqueio da app (Android):** o código só tem números (mínimo 6). Fora do telemóvel não serve

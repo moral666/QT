@@ -102,7 +102,8 @@ não tiver 64 hex.
   e os GIFs, e o botão com o logotipo. O código Swift foi verificado contra os bindings gerados a
   partir do Rust real (nomes e tipos). Se o build der erros, copia-os e eu corrijo.
 * **Sem bloqueio da app** (código próprio e Face ID), que já existe no Android.
-* Como no Android, as mensagens só chegam com a app aberta (verificação a cada 3 s).
+* Como no Android, as mensagens só chegam com a app aberta (entrega imediata pela ligação de
+  espera; com um relay antigo, verificação a cada 3 s).
   Notificações push no iPhone exigem a conta paga (APNs) e um serviço no relay; está na lista.
 * Exportação: a app usa criptografia. Ao enviar para TestFlight/App Store a Apple pergunta pela
   conformidade de exportação (responde que usa encriptação; ver a documentação da Apple).

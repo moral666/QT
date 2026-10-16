@@ -265,3 +265,46 @@ async fn android_pinning_chave_estatica_do_relay_exposta() {
     // A app pode comparar com a chave de relay que embebeu (pinning).
     assert_eq!(l.noise.remote_static_public_key().unwrap(), relay.static_public);
 }
+
+/// Entrega imediata, pelo caminho exato das apps: o Bob tem uma segunda ligacao so
+/// para esperar (`relay_request_wait`); a mensagem da Alice chega-lhe no momento em
+/// que entra no relay, ja cifrada de ponta a ponta, e e confirmada pela ligacao principal.
+#[tokio::test]
+async fn caminho_android_entrega_imediata_por_ligacao_de_espera() {
+    let relay = TestRelay::start(fast_cfg()).await;
+    let (alice, bob) = (user("alice_wait", KA), user("bob_wait", KB));
+    let mut la = android_connect(&alice.qt, &relay.url).await;
+    let mut lb = android_connect(&bob.qt, &relay.url).await;
+    let mut lb_wait = android_connect(&bob.qt, &relay.url).await;
+
+    assert!(matches!(lb.rpc(bob.qt.relay_request_register_bundle(bob.qt.publishable_bundle().unwrap()).unwrap()).await, RelayResponse::Ack));
+    let bob_relay = bob.id.relay_id.clone();
+    let RelayResponse::Bundle { bytes } = la.rpc(alice.qt.relay_request_fetch_bundle(bob_relay.clone()).unwrap()).await else { panic!("bundle") };
+    let cid = alice.qt.start_session(bob.id.public_id.clone(), peer_bundle_from_relay_bytes(bytes).unwrap()).unwrap();
+
+    // O Bob fica a espera (fila vazia).
+    let wait_req = bob.qt.relay_request_wait(20).unwrap();
+    let espera = tokio::spawn(async move {
+        let t = std::time::Instant::now();
+        let r = lb_wait.rpc(wait_req).await;
+        (r, t.elapsed(), lb_wait)
+    });
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let enviada = std::time::Instant::now();
+    let blob = alice.qt.encrypt_sealed(cid, "chegou já".as_bytes().to_vec()).unwrap();
+    assert!(matches!(la.rpc(alice.qt.relay_request_send(bob_relay, blob).unwrap()).await, RelayResponse::Ack));
+
+    let (r, esperou, mut lb_wait) = espera.await.unwrap();
+    let entrega = enviada.elapsed();
+    let RelayResponse::Messages { messages } = r else { panic!("esperava Messages") };
+    assert_eq!(messages.len(), 1);
+    assert!(esperou >= Duration::from_millis(300), "devia ter esperado: {esperou:?}");
+    assert!(entrega < Duration::from_secs(1), "entrega devia ser imediata: {entrega:?}");
+    assert_eq!(bob.qt.decrypt_sealed(messages[0].ciphertext.clone()).unwrap().plaintext, "chegou já".as_bytes());
+    assert!(matches!(lb.rpc(bob.qt.relay_request_ack(vec![messages[0].id]).unwrap()).await, RelayResponse::Ack));
+
+    // Sem mais nada na fila, a espera seguinte acaba vazia ao fim do tempo pedido.
+    let RelayResponse::Messages { messages } = lb_wait.rpc(bob.qt.relay_request_wait(1).unwrap()).await else { panic!() };
+    assert!(messages.is_empty());
+}

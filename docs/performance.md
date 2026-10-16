@@ -5,6 +5,37 @@ medido, como repetir a medição e o que ficou de fora.
 
 ---
 
+## 16 de outubro de 2026: entrega imediata (`WaitMessages`)
+
+As apps perguntavam ao relay se havia mensagens de 3 em 3 s; uma mensagem
+esperava em média ~1,5 s na fila só por isso. Com `WaitMessages`, o
+destinatário fica à espera numa ligação própria e o relay responde no instante
+em que a mensagem chega.
+
+Medido com `relaybench` (3 pares, 0,5 mensagens/s por remetente, 30 s), relay e
+Redis em `--release` na mesma máquina, sem atraso de rede:
+
+| | Perguntar de 3 em 3 s (antes) | Entrega imediata |
+|---|---|---|
+| Ponta a ponta, p50 / p95 / máx. | 1 011 / 2 035 / 2 042 ms | **0,96 / 1,3 / 3,5 ms** |
+| Tempo médio de entrega medido pelo relay (até ao `Ack`) | 1 016 ms | **0 ms** (arredondado) |
+| Pedidos de mensagens em 30 s | 69 | 58 |
+
+Com telemóveis reais soma-se a rede (uma ida e volta ao relay, ~50 a 60 ms de
+Lisboa à Suécia) e o tempo do telemóvel a decifrar e guardar. Antes, a app
+real mediu ~2 100 ms; o esperado agora é algumas centenas de milissegundos ou
+menos.
+
+Para repetir (o relay mede `entrega_media_ms` em `RELAY_STATUS_FILE`):
+
+```bash
+cargo build --release -p qt_server --bin relay_server --example relaybench
+./target/release/examples/relaybench --relay ws://127.0.0.1:9443 --pairs 3 --rate 0.5 --poll-ms 3000 --secs 30
+./target/release/examples/relaybench --relay ws://127.0.0.1:9443 --pairs 3 --rate 0.5 --wait-secs 20 --secs 30
+```
+
+---
+
 ## 15 de outubro de 2026: menos idas ao Redis por mensagem
 
 Três alterações no relay, sem mudar o protocolo nem os dados guardados:

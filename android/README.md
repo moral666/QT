@@ -115,8 +115,8 @@ Chave do SQLCipher gerada aleatoriamente e protegida pelo Android Keystore (Stro
 bloqueio da app opcional (código próprio que cifra a chave do SQLCipher e a lista de contactos, com Argon2id no Rust, mais desbloqueio com impressão digital, rosto ou PIN do telemóvel através de uma chave do Keystore que só funciona depois de autenticar; ao bloquear, as imagens em memória são esquecidas); pinning da chave do relay (obrigatório na *release*); confirmação (`Ack`) só depois de processar; deduplicação feita pelo Rust.
 
 ## Limitações (ver `docs/known-limitations.md`, itens 30 a 36)
-Poll de 3 s em vez de notificações push, e enquanto o Android não fecha a app ela continua a perguntar
-ao relay em segundo plano (gasta bateria e dados); imagens: o relay vê o tamanho aproximado e quem envia
+Entrega imediata só com a app aberta (sem notificações push com a app fechada); enquanto o Android não
+fecha a app, a ligação de espera fica aberta em segundo plano (um pedido a cada 25 s); imagens: o relay vê o tamanho aproximado e quem envia
 e descarrega cada ficheiro, e um anexo não descarregado em 24 horas perde-se; **sem auditoria**.
 
 ## O que foi verificado
