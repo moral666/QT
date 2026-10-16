@@ -1,0 +1,16 @@
+// Publicação na Cloudflare: Worker "sealer", só com ficheiros estáticos.
+// Dentro desta pasta: npm run build && npx wrangler deploy (ver README.md, secção 5).
+{
+  "name": "sealer",
+  "compatibility_date": "2026-10-16",
+  "assets": {
+    "directory": "./dist"
+  },
+  "routes": [
+    { "pattern": "sealer.pt", "custom_domain": true },
+    { "pattern": "www.sealer.pt", "custom_domain": true }
+  ],
+  // true mantém também o endereço sealer.nunojsilvag.workers.dev.
+  "workers_dev": true,
+  "preview_urls": false
+}
