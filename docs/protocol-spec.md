@@ -46,9 +46,9 @@ formato que já mudou outra vez.
 5. [Armazenamento local](#5-armazenamento-local-no-cliente-implementado-e-testado): SQLCipher
 6. [Bindings FFI](#6-bindings-ffi-androidiospython-implementado-e-testado): Kotlin/Swift/Python
 7. [Sealed sender](#7-sealed-sender-implementado-e-testado): esconder o remetente do servidor
-8. a 15. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v3,
+8. a 16. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v3,
    envelope v2, protocolo do relay, mensagem dentro do ratchet, sessões cruzadas e
-   eliminação, anexos (imagens, GIFs e voz), grupos
+   eliminação, anexos (imagens, GIFs e voz), grupos, presença
 
 *(Se preferires uma explicação sem jargão técnico, começa antes por
 o [`README.md`](../README.md). Este
@@ -467,6 +467,7 @@ tipo 5 = reação: [16 msg_id da mensagem][emoji UTF-8, máx. 32 bytes; vazio = 
 tipo 6 = mensagem de grupo: [16 group_id][payload v1 completo: tipo 1 ou 5]
 tipo 7 = info do grupo:     [16 group_id][JSON: versão, nome, membros e administradores]
 tipo 8 = saída do grupo:    [16 group_id]
+tipo 9 = presença: [1 estado: 1 = online, 0 = offline]  (msg_id sempre o mesmo)
 ```
 
 **Mensagens de voz** são anexos (tipo 3) com o MIME `audio/mp4` (AAC), até 10 s e 1 MiB;
@@ -571,6 +572,24 @@ primeiro membro que fica.
 **Estados:** sem recibos de entregue e vista nos grupos. A mensagem fica "enviada" quando o
 relay confirmou os envelopes de todos os membros. Na base local, a conversa do grupo tem o
 id `g:` + group_id e cada mensagem recebida guarda quem a escreveu. Testes: `ffi/tests/groups.rs`.
+
+## 16. Presença (online / offline)
+
+Só para contactos e cifrada (tipo 9, dentro do Double Ratchet): o relay vê um envelope 1 a 1
+como os outros. Nada é guardado em disco; o estado fica em memória (`ffi/src/presence.rs`).
+
+* A app diz ao núcleo quem são os contactos (`presence_configure`). Só desses se aceita a
+  presença, e só a esses se envia. Com o interruptor desligado, não se envia nem se mostra; ao
+  desligar, quem me via online recebe "offline".
+* App aberta: "online" a todos os contactos com sessão (não repete antes de 1 min). App
+  fechada: "offline" a quem recebeu o meu "online" há menos de 5 min. Com a app aberta, de 4
+  em 4 min, um batimento a quem está online.
+* Um "online" vale 5 min a contar do envio (`sent_at`, limitado à hora local). Um "online"
+  que ficou na fila do relay mais do que isso não conta.
+* Ao receber "online" de um contacto, com a app aberta, respondo com o meu (se não lho mandei
+  há menos de 30 s): quem acabou de abrir a app fica logo a saber quem está online.
+* O `msg_id` é sempre o mesmo: uma versão antiga da app mostra o aviso "atualiza a app" uma só
+  vez por contacto. Testes: `ffi/tests/presence.rs`.
 
 ## Documentos relacionados
 

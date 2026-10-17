@@ -106,5 +106,10 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     depois). Cada mensagem sai uma vez por membro (até 9 envelopes), por isso gasta mais
     dados do que uma conversa a dois. Os membros veem os Public IDs uns dos outros (estão na
     info do grupo, cifrada).
-38. **App iPhone desatualizada:** ainda não tem convites, reações, voz nem grupos (o código Swift
+38. **App iPhone desatualizada:** ainda não tem convites, reações, voz, grupos nem presença (o código Swift
     tem de ser atualizado aos tipos novos do núcleo Rust antes da próxima build iOS).
+39. **Online / offline.** Só com a app aberta (sem notificações, a app fechada não diz nada).
+    Se a app morrer ou o telemóvel ficar sem rede, os contactos continuam a ver "online" até 5
+    min. Bloquear a app (código) não manda "offline": passa a offline ao fim desses 5 min. O
+    relay não sabe o que é, mas vê que, ao abrir a app, sai um envelope para cada contacto
+    (como uma rajada de mensagens pequenas). Mostra-se só "online": não há "visto por último".

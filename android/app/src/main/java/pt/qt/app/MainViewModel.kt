@@ -39,6 +39,7 @@ import uniffi.qt_ffi.ReceiveResult
 import uniffi.qt_ffi.RelayDelivered
 import uniffi.qt_ffi.RelayResponse
 import uniffi.qt_ffi.peerBundleFromRelayBytes
+import uniffi.qt_ffi.presenceHeartbeatMs
 import uniffi.qt_ffi.relayIdOfPublicId
 import uniffi.qt_ffi.relayRecipientDeletedReason
 
@@ -97,6 +98,10 @@ data class UiState(
     val termsAccepted: Boolean = true,
     /** Grupos (ate 10 pessoas). A conversa de cada um tem o id `conversationId` ("g:..."). */
     val groups: List<GroupInfo> = emptyList(),
+    /** Mostrar aos contactos quando estou online (e ver o deles). */
+    val presenceOn: Boolean = true,
+    /** Contactos com a app aberta agora (contactId). So em memoria. */
+    val online: Set<String> = emptySet(),
 )
 
 /** O grupo de uma conversa ("g:..."), se for de um grupo. */
@@ -159,6 +164,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val flushLock = Mutex()
     /** Contactos que ja se avisou nesta sessao que apagaram a conta (tambem ANTES do init). */
     private val deletedNotified = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    /** Batimento da presenca e atualizacao de quem esta online (com a app aberta). */
+    @Volatile private var presenceJob: Job? = null
     private val bioChannel = Channel<BioRequest>(Channel.BUFFERED)
     /** Pedidos de autenticacao do sistema; a Activity mostra o BiometricPrompt. */
     val bioRequests: Flow<BioRequest> = bioChannel.receiveAsFlow()
@@ -167,6 +174,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     init {
         ImagePrep.cleanCache(app)
         io { openStorage() }
+        presenceJob = viewModelScope.launch(Dispatchers.IO) { presenceLoop() }
     }
 
     /** Abre a base de dados, ou mostra o ecra de bloqueio se o codigo estiver ativo. */
@@ -221,8 +229,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 blocked = client.blockedContacts().toSet(),
                 invites = client.pendingIntros().toSet(),
                 termsAccepted = prefs.getInt("terms_version", 0) >= TERMS_VERSION,
+                presenceOn = prefs.getBoolean("presence", true),
+                online = emptySet(),
             )
         }
+        syncPresence(client)
         if (has) startLink()
     }
 
@@ -278,6 +289,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (authInProgress) return
         hiddenAt = SystemClock.elapsedRealtime()
         synchronized(pauseLock) { visible = false }
+        // Presenca: "offline" a quem me via online (o seletor de fotos nao conta como sair).
+        if (!AutoLockPause.active) io { presenceAnnounce(false) }
         pauseJob?.cancel()
         pauseJob = viewModelScope.launch(Dispatchers.IO) {
             delay(BACKGROUND_GRACE_MS)
@@ -310,6 +323,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         resumeLinks()
+        // Ligacoes ainda abertas (voltou antes de 30 s): "online" ja. Senao, startLink trata.
+        io { if (link != null && !_ui.value.locked) presenceAnnounce(true) }
     }
 
     /** Fecha as ligacoes ao relay e para a rececao e as transferencias (app em segundo plano). */
@@ -598,6 +613,71 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 // Sem rede: o receiveLoop mostra o estado da ligacao; volta a publicar no proximo arranque.
             }
         }
+        // Presenca: "online" aos contactos (se a app estiver no ecra).
+        if (visible) presenceAnnounce(true)
+    }
+
+    /** "online" (app no ecra) ou "offline" aos contactos. Sem avisos na app se falhar. */
+    private suspend fun presenceAnnounce(onScreen: Boolean) {
+        val client = qt ?: return
+        try {
+            if (client.presenceAnnounce(onScreen) > 0u) flushOutbox()
+        } catch (e: Exception) {
+            Log.w(TAG, "presenca: ${e.safeMsg()}")
+        }
+    }
+
+    // ------------------------------------------------------------------- presenca
+
+    /** Diz ao Rust quem sao os contactos (so eles veem o meu estado) e se a presenca esta ligada. */
+    private suspend fun syncPresence(client: QtClient) {
+        try {
+            val n = client.presenceConfigure(_ui.value.presenceOn, _ui.value.contacts.map { it.contactId })
+            if (n > 0u) flushOutbox()
+        } catch (e: Exception) {
+            Log.w(TAG, "presenca: ${e.safeMsg()}")
+        }
+    }
+
+    /** Interruptor "Mostrar quando estou online". Desligado: nao mostro o meu nem vejo o dos outros. */
+    fun setPresence(on: Boolean) {
+        prefs.edit().putBoolean("presence", on).apply()
+        _ui.update { it.copy(presenceOn = on, online = if (on) it.online else emptySet()) }
+        io {
+            val client = qt ?: return@io
+            syncPresence(client)
+            if (on && visible) presenceAnnounce(true)
+        }
+    }
+
+    private fun refreshOnline(client: QtClient) {
+        val on = client.presenceOnline().toSet()
+        if (on != _ui.value.online) _ui.update { it.copy(online = on) }
+    }
+
+    /**
+     * Com a app aberta: de minuto a minuto atualiza quem esta online (um "online" expira
+     * sozinho ao fim de 5 min sem batimento) e, de 4 em 4 min, manda o batimento a quem
+     * esta online.
+     */
+    private suspend fun presenceLoop() {
+        var lastBeat = SystemClock.elapsedRealtime()
+        while (currentCoroutineContext().isActive) {
+            delay(PRESENCE_TICK_MS)
+            val client = qt ?: continue
+            if (!visible || link == null || _ui.value.locked) continue
+            try {
+                if (SystemClock.elapsedRealtime() - lastBeat >= presenceHeartbeatMs()) {
+                    lastBeat = SystemClock.elapsedRealtime()
+                    if (client.presenceHeartbeat() > 0u) flushOutbox()
+                }
+                refreshOnline(client)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "presenca: ${e.safeMsg()}")
+            }
+        }
     }
 
     // ------------------------------------------------------------------- contactos
@@ -612,6 +692,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val list = (_ui.value.contacts.filter { it.contactId != c.contactId }) + c
             contactStore.save(list, contactsKey ?: return@io)
             _ui.update { it.copy(contacts = list, error = null) }
+            qt?.let { syncPresence(it) }
             flushOutbox()   // recibos que estavam a espera de saber o endereco deste contacto
         } catch (e: QtException) {
             error("Public ID invalido")
@@ -717,6 +798,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             contactStore.save(list, contactsKey ?: return@io)
             client.dismissIntro(contactId)
             _ui.update { it.copy(contacts = list, invites = it.invites - contactId) }
+            syncPresence(client)
             refreshViews(client)
             flushOutbox()   // recibos que estavam a espera de saber o endereco deste contacto
         } catch (e: Exception) {
@@ -753,6 +835,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     chatHasMore = if (it.openChatId == contactId) false else it.chatHasMore,
                 )
             }
+            syncPresence(client)
             refreshViews(client)
         } catch (e: Exception) {
             error("Nao foi possivel apagar o contacto: ${e.safeMsg()}")
@@ -835,10 +918,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val window = if (cid != null) client.messagesPage(cid, null, maxOf(PAGE, st.chatMessages.size).toUInt()) else null
         val invites = client.pendingIntros().toSet()
         val groups = client.groups()
+        val online = client.presenceOnline().toSet()
         _ui.update {
             it.copy(
                 invites = invites,
                 groups = groups,
+                online = online,
                 conversations = client.conversations(),
                 chatMessages = if (window != null && it.openChatId == cid) window else it.chatMessages,
             )
@@ -1362,6 +1447,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         /** Blocos em transito ao mesmo tempo (~320 KB). */
         private const val WINDOW = 8
         private const val RETRY_MS = 15_000L
+        /** De quanto em quanto tempo se atualiza quem esta online (com a app aberta). */
+        private const val PRESENCE_TICK_MS = 60_000L
         fun minCodeLen(): Int = uniffi.qt_ffi.appLockMinCodeLen().toInt()
     }
 }
