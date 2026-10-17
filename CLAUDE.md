@@ -7,7 +7,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 ## Como falar e trabalhar com o Nuno
 
 - Responder em **português de Portugal**, com **respostas curtas** e diretas.
-- **Nada de travessões (—)** na documentação nem no site: usar dois pontos,
+- **Nada de travessões (o traço comprido)** na documentação nem no site: usar dois pontos,
   vírgulas, parênteses ou frases separadas.
 - **Aprovação obrigatória:** qualquer mudança significativa na arquitetura do
   projeto ou introdução de SDKs proprietários (Firebase/FCM, etc.) tem de ser
