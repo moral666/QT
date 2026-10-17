@@ -309,7 +309,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         // Bloqueada: ao desbloquear, openClient religa.
         if (_ui.value.locked) return
-        io { if (qt?.hasIdentity() == true && link == null) startLink() }
+        io { if (qt?.hasIdentity() == true && link == null) startLink(publishBundle = false) }
     }
 
     fun unlockWithCode(code: String) = io {
@@ -523,7 +523,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         io { if (qt?.hasIdentity() == true) startLink() }
     }
 
-    private suspend fun startLink() {
+    /**
+     * Abre as ligacoes ao relay e comeca a receber. Com [publishBundle], republica tambem as
+     * chaves publicas (renova os 90 dias no relay): ao abrir a app, desbloquear ou criar o ID.
+     * Ao voltar de segundo plano nao e preciso (as chaves ja la estao e nao mudaram).
+     */
+    private suspend fun startLink(publishBundle: Boolean = true) {
         val client = qt ?: return
         poller?.cancel()
         link?.shutdown()
@@ -534,13 +539,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         waitLink?.shutdown()
         waitLink = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
         status("A ligar ao relay…")
-        try {
-            // Publicar (ou re-publicar) o bundle publico para que outros nos possam contactar.
-            val r = link!!.request(client.relayRequestRegisterBundle(client.publishableBundle()))
-            if (r is RelayResponse.Ack) status("Ligado ao relay") else status("Relay recusou o bundle: ${r.describe()}")
-        } catch (e: Exception) {
-            status("Sem ligacao ao relay: ${e.safeMsg()}")
-        }
+        // O bundle vai pela ligacao dos anexos (normalmente parada): assim nao passa a frente
+        // do pedido de mensagens na ligacao principal, e as mensagens aparecem mais cedo.
+        val bundleLink = fileLink!!
         poller = viewModelScope.launch(Dispatchers.IO) { receiveLoop(client) }
         transferJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
@@ -556,6 +557,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         transferKick.trySend(Unit)
+        if (publishBundle) {
+            try {
+                // Publicar (ou re-publicar) o bundle publico para que outros nos possam contactar.
+                val r = bundleLink.request(client.relayRequestRegisterBundle(client.publishableBundle()))
+                if (r !is RelayResponse.Ack) error("O relay recusou as tuas chaves públicas: ${r.describe()}")
+            } catch (e: Exception) {
+                // Sem rede: o receiveLoop mostra o estado da ligacao; volta a publicar no proximo arranque.
+            }
+        }
     }
 
     // ------------------------------------------------------------------- contactos

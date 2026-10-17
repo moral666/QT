@@ -414,8 +414,8 @@ Um pedido ↔ uma resposta, sequenciais.
    O `user_id` passa a ser `hex(signing_public)`. Sem autenticação válida → erro
    e fecho. A assinatura liga-se à sessão (channel binding): não é reutilizável.
 2. `RegisterPreKeyBundle{user_id, bundle_bytes}`: só para o próprio `user_id`; ≤ 24 000 bytes.
-   O bundle expira ao fim de 90 dias; as apps voltam a publicá-lo sempre que se ligam,
-   por isso só expira para quem não abre a app há 90 dias.
+   O bundle expira ao fim de 90 dias; as apps voltam a publicá-lo sempre que abrem
+   (arranque, desbloqueio ou ID novo), por isso só expira para quem não abre a app há 90 dias.
 3. `FetchPreKeyBundle{user_id}`: qualquer utilizador autenticado.
 4. `SendMessage{to, sealed_from, ciphertext}`: `to` = 64 hex minúsculos;
    `ciphertext` 1…14 000 bytes; `sealed_from` ≤ 1024 (vazio no modo `QtClient`,
