@@ -44,6 +44,13 @@ Sim, de ponta a ponta em versão alpha. Não foi auditado de forma independente 
 - Teste de campo com cinco aparelhos em três plataformas (2 Android reais, 1 emulador Android, 1 iPhone e 1 Mac), com envios simultâneos e contínuos: nenhuma mensagem perdida. Detalhes, problemas encontrados e o que ficou por testar em [`docs/field-tests.md`](docs/field-tests.md).
 - Relay com 10 000 ligações em simultâneo (cada uma a pedir mensagens de 3 em 3 segundos, como as apps): nenhuma falha, cerca de 14 KB de memória por ligação. Ver a secção "O relay em números" mais abaixo.
 
+### Novo a 16 e 17 de outubro de 2026
+
+- **Entrega imediata, testada com telemóveis reais:** o tempo típico até a mensagem chegar ao outro telemóvel passou de **cerca de 2 000 ms para 300 a 430 ms**. Ver "Tempos reais, entre telemóveis" mais abaixo.
+- **Apagar a conta também no servidor:** "Destruir perfil e dados" apaga as chaves públicas e as mensagens em espera no relay, e depois tudo do telemóvel.
+- **App Android mais leve na bateria:** 30 segundos depois de sair da app, fecha as ligações ao relay e volta a ligar quando a abres.
+- **Preparação para a Google Play:** política de privacidade e página para apagar a conta no sealer.pt, e respostas para os formulários da Play Console em [`docs/google-play.md`](docs/google-play.md).
+
 ### Acabado de juntar, ainda por confirmar no uso real
 
 - **Imagens e GIFs até 25 MB**, nas duas apps. Cada ficheiro é cifrado no telemóvel com uma chave própria, segue para o relay em blocos e é apagado de lá quando o outro telemóvel o descarrega, ou ao fim de 24 horas. Testado nos testes automáticos (incluindo com a lista de comandos do Redis de produção); a troca entre telemóveis através da AWS ainda está a ser confirmada. Detalhes em [`docs/protocol-spec.md`](docs/protocol-spec.md), secção 14.
@@ -59,7 +66,7 @@ A app iPhone com estas novidades ainda não foi compilada no Xcode (ver [`ios/RE
 - **Notificações push**: a app só recebe mensagens enquanto está aberta.
 - **Infraestrutura de produção**: domínio próprio (o atual é provisório), redundância, backups e alertas do servidor.
 - ~~Bloqueio da app~~ (feito no Android): código de acesso próprio, que cifra a chave das conversas (Argon2id), e desbloqueio opcional com impressão digital, rosto ou PIN do telemóvel. Falta no iPhone.
-- Distribuição pela Play Store (hoje alguns antivírus avisam por ser uma app de origem desconhecida).
+- Distribuição pela Play Store (hoje alguns antivírus avisam por ser uma app de origem desconhecida). Já preparado: eliminação de conta, política de privacidade e respostas dos formulários ([`docs/google-play.md`](docs/google-play.md)).
 - Teste de carga no relay da AWS (já medido numa máquina local, ver [`docs/performance.md`](docs/performance.md)) e **auditoria de segurança independente**.
 
 **Próximas etapas:** *alpha* (agora: funciona de ponta a ponta, testado com poucas pessoas) → *beta* (notificações, bloqueio da app no iPhone, teste na Play Store) → *1.0* (depois de auditoria externa).
@@ -98,6 +105,17 @@ O relay é pequeno de propósito: só passa mensagens cifradas, não guarda hist
 Com mensagens sempre a circular (50 pares de ligações a enviar o mais depressa possível), o relay entregou cerca de **16 900 mensagens de 200 B por segundo** e **6 000 de 4 KB**, com 95 % das mensagens a chegar ao destinatário em menos de 10 ms (200 B) e 26 ms (4 KB). Uma imagem de 25 MB foi enviada ao relay em 0,3 s e descarregada em 0,4 s.
 
 Medido numa máquina local de 2 vCPU, sem o TLS do Caddy e sem rede real pelo meio, por isso o servidor completo gasta mais do que isto. Como foi medido, como repetir e o que ficou de fora: [`docs/performance.md`](docs/performance.md).
+
+## Tempos reais, entre telemóveis
+
+Os números de cima são do relay sozinho. Com telemóveis reais (três Samsung, em Viseu e em Cascais, em Wi-Fi e em dados móveis, com o relay em Estocolmo), medidos pelo próprio relay em outubro de 2026, com centenas de mensagens:
+
+| | Antes (16/10) | Agora (17/10) |
+|---|---|---|
+| Do servidor até o outro telemóvel ter a mensagem (tempo típico, mediana) | **cerca de 2 000 ms** | **300 a 430 ms** |
+| Do telemóvel de quem envia até ao servidor (média) | | **cerca de 50 ms** |
+
+A grande diferença veio da **entrega imediata**: antes, as apps perguntavam ao relay de 3 em 3 segundos se havia mensagens novas; agora ficam à espera numa ligação aberta e o relay entrega cada mensagem no instante em que ela chega. O que sobra é sobretudo o caminho pela rede até à Suécia e de volta, e o telemóvel a decifrar e guardar a mensagem. Com o relay mais perto (por exemplo, em Espanha), estes tempos devem descer mais.
 
 ## O que falta, sem rodeios
 
