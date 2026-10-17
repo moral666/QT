@@ -24,6 +24,22 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   num grupo com três pessoas, quem saiu do grupo não envia).
 - O exemplo `server/examples/peer.rs` voltou a compilar.
 
+### 17 de outubro de 2026: revisão de QA da app Android (0.9.0)
+
+- **Memória:** os anexos decifrados ficam numa cache em memória até 40 MB, partilhada pela
+  conversa e pelo ecrã inteiro (antes eram decifrados de novo a cada scroll). Imagens e GIFs
+  maiores que 8 MB mostram "Toca para ver" em vez de abrirem sozinhos. A cache é posta a
+  zeros ao bloquear a app e ao apagar conversas, contactos ou grupos.
+- **Gravações de voz** que ficaram de uma vez em que a app morreu a meio são apagadas no arranque.
+- **Conversas longas:** cada mudança relê no máximo as 200 mensagens mais recentes (antes,
+  todas as que já estavam abertas); recibos e reações em mensagens mais antigas são relidos
+  uma a uma.
+- **Tapjacking:** os diálogos de apagar, bloquear, destruir o perfil e mudar o código ignoram
+  toques que chegam através de outra janela por cima.
+- **Registos:** a release já não tem `Log.v/d/i` (o R8 apaga-os); ficam os avisos de ligação.
+- **Testes e build automática:** testes unitários Kotlin (`android/app/src/test`) e o workflow
+  `.github/workflows/android.yml` (compila, testes, R8 da release e Android Lint a cada push).
+
 ### 17 de outubro de 2026: grupos, reações, voz, convites e online (app 0.8.0)
 
 - **Online / offline** (`ffi/src/presence.rs`): ponto verde nos contactos com a app aberta,

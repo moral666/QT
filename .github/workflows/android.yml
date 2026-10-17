@@ -1,0 +1,83 @@
+name: Android
+
+# Compila a app Android, corre os testes unitarios Kotlin e o Android Lint a cada
+# push. Apanha erros de compilacao e problemas conhecidos do Android (APIs de
+# versoes novas, permissoes, Play Store) antes da build no Android Studio.
+# Nao assina nem publica nada: as bibliotecas nativas (.so) nao sao precisas para
+# compilar, so os bindings Kotlin gerados do Rust.
+
+on:
+  push:
+    branches: [site-sealer, develop, main]
+    paths:
+      - "android/**"
+      - "ffi/**"
+      - "core/**"
+      - "storage/**"
+      - "transport/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - "ffi/**"
+  workflow_dispatch:
+
+jobs:
+  android:
+    name: Compilar, testar e Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: libsqlcipher-dev (para compilar o qt_ffi no PC)
+        run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev
+
+      - name: Bindings Kotlin (UniFFI, perfil de producao)
+        run: |
+          cargo build -p qt_ffi --features pq
+          cargo run -q -p qt_ffi --features pq --bin uniffi-bindgen -- \
+            generate --library target/debug/libqt_ffi.so --language kotlin --out-dir ffi/bindings/kotlin
+          rm -rf android/app/src/main/java/uniffi
+          cp -r ffi/bindings/kotlin/uniffi android/app/src/main/java/
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-36 build-tools;36.0.0"
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Testes unitarios
+        working-directory: android
+        run: gradle --no-daemon :app:testDebugUnitTest
+
+      - name: Compilar (debug) e R8 da release
+        working-directory: android
+        run: gradle --no-daemon :app:assembleDebug :app:minifyReleaseWithR8
+
+      - name: Android Lint
+        working-directory: android
+        run: gradle --no-daemon :app:lintDebug
+
+      - name: Relatorios (testes e Lint)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorios-android
+          path: |
+            android/app/build/reports/
+            android/app/build/test-results/
+          if-no-files-found: ignore

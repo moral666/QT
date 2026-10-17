@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -213,5 +214,22 @@ fun ChatComposer(
             onSend = { onSendFile(uri); pickedFile = null },
             onDismiss = { pickedFile = null },
         )
+    }
+}
+
+/**
+ * Contra "tapjacking": enquanto este dialogo estiver aberto, os toques que lhe chegam
+ * atraves de outra janela por cima (uma app maliciosa com uma sobreposicao transparente)
+ * sao ignorados. Usado nos dialogos que apagam, bloqueiam ou mudam o codigo. So afeta a
+ * janela do dialogo, nao o resto da app (filtros de luz azul continuam a funcionar la).
+ */
+@Composable
+fun ObscuredTouchGuard() {
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val root = view.rootView
+        val before = root.filterTouchesWhenObscured
+        root.filterTouchesWhenObscured = true
+        onDispose { root.filterTouchesWhenObscured = before }
     }
 }

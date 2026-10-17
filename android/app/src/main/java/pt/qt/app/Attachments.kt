@@ -120,9 +120,15 @@ object ImagePrep {
         null
     }
 
-    /** Ficheiros temporarios de envios anteriores (ex.: a app fechou a meio). */
+    /**
+     * Ficheiros temporarios em claro que ficaram de uma vez anterior (a app fechou ou foi
+     * morta a meio): imagens e ficheiros a preparar para envio e gravacoes de voz.
+     * Chamado no arranque, antes de haver qualquer gravacao ou envio a decorrer.
+     */
     fun cleanCache(ctx: Context) {
-        File(ctx.cacheDir, "envio").listFiles()?.forEach { it.delete() }
+        for (dir in listOf("envio", "voz")) {
+            File(ctx.cacheDir, dir).listFiles()?.forEach { it.delete() }
+        }
     }
 
     private fun copyLimited(ctx: Context, uri: Uri, out: File) {
@@ -239,6 +245,49 @@ object SealerImages {
     }
 }
 
+/**
+ * Anexos decifrados em memoria (imagens, GIFs e voz), partilhados pela bolha e pelo ecra
+ * inteiro, para nao decifrar o mesmo ficheiro de cada vez que aparece no ecra. Limite total
+ * de [MAX_BYTES]: quando passa, saem os usados ha mais tempo. Os ficheiros (PDF...) nunca
+ * entram aqui. [clear] poe tudo a zeros (ao bloquear a app ou fechar a sessao).
+ */
+object AttachmentCache {
+    const val MAX_BYTES = 40L * 1024 * 1024
+    private val map = LinkedHashMap<String, ByteArray>(16, 0.75f, true)   // por ordem de uso
+    private var total = 0L
+
+    private fun key(conv: String, id: String) = "$conv/$id"
+
+    @Synchronized
+    fun get(conv: String, id: String): ByteArray? = map[key(conv, id)]
+
+    @Synchronized
+    fun put(conv: String, id: String, bytes: ByteArray) {
+        if (bytes.size > MAX_BYTES) return
+        val k = key(conv, id)
+        map.remove(k)?.let { total -= it.size }
+        map[k] = bytes
+        total += bytes.size
+        val it = map.entries.iterator()
+        while (total > MAX_BYTES && it.hasNext()) {
+            val e = it.next()
+            if (e.key == k) continue
+            total -= e.value.size
+            it.remove()
+        }
+    }
+
+    @Synchronized
+    fun clear() {
+        for (b in map.values) b.fill(0)
+        map.clear()
+        total = 0
+    }
+}
+
+/** Imagens e GIFs maiores que isto nao abrem sozinhos na conversa: so ao tocar (ecra inteiro). */
+const val AUTO_LOAD_MAX_BYTES = 8L * 1024 * 1024
+
 /** A imagem decifrada (so em memoria) para `m`, ou null enquanto carrega/se falhar. */
 @Composable
 fun rememberAttachmentBytes(m: ChatMessage, ready: Boolean, load: suspend (String, String) -> ByteArray?): ByteArray? {
@@ -284,18 +333,26 @@ fun AttachmentContent(
         return
     }
     val ready = m.outgoing || att.state == AttachmentState.READY
-    val bytes = rememberAttachmentBytes(m, ready, load)
+    // Grande demais para abrir sozinha (memoria): mostra o tamanho e abre ao tocar.
+    val big = att.size.toLong() > AUTO_LOAD_MAX_BYTES
+    val bytes = rememberAttachmentBytes(m, ready && !big, load)
     // Proporcao da imagem, limitada para nao haver bolhas gigantes nem tiras finas.
     val ratio = if (att.width > 0u && att.height > 0u) (att.width.toFloat() / att.height.toFloat()).coerceIn(0.5f, 2f) else 1f
     val w = 240.dp
     Box(
         Modifier.width(w).height(w / ratio).clip(RoundedCornerShape(12.dp))
             .background(Color.Black.copy(alpha = 0.08f))
-            .combinedClickable(onClick = { if (bytes != null) onOpen() }, onLongClick = onLongPress),
+            .combinedClickable(onClick = { if (bytes != null || (big && ready)) onOpen() }, onLongClick = onLongPress),
         contentAlignment = Alignment.Center,
     ) {
         if (bytes != null) {
             AttachmentImage(bytes, m.messageId, Modifier.fillMaxSize(), ContentScale.Crop)
+        } else if (big && ready) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(if (att.mime == "image/gif") "GIF" else "Foto", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                Text(formatSize(att.size.toLong()), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Toca para ver", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+            }
         }
         val busy = att.state == AttachmentState.UPLOADING || att.state == AttachmentState.DOWNLOADING
         if (busy) {
