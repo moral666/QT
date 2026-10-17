@@ -11,7 +11,7 @@
 
 const INTERVAL_MS = 60_000;
 
-// A app está em testes fechados (alpha): o marcador mostra o estado do serviço usado
+// A app está em testes fechados (versão 0.7): o marcador mostra o estado do serviço usado
 // pelos testadores, não quer dizer que a app já esteja disponível ao público.
 // Número de testadores: alterar aqui e no index.html (status-pill__count).
 const TESTING = 'A SEALER está em testes fechados: por agora só 5 testadores convidados têm acesso ao serviço.';

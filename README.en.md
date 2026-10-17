@@ -51,6 +51,13 @@ Yes, end to end, as an **alpha** release. **It has not been independently audite
 - **Field test with five devices on three platforms** (2 real Android phones, 1 Android emulator, 1 iPhone and 1 Mac), with simultaneous, continuous sending: no messages lost. Details, problems found and what is still untested in [`docs/field-tests.md`](docs/field-tests.md) (in Portuguese).
 - **Relay with 10,000 simultaneous connections** (each one polling for messages every 3 seconds, like the apps): no failures, about **14 KB of memory per connection**. See "The relay in numbers" below.
 
+### New on 16 and 17 October 2026
+
+- **Instant delivery, tested with real phones:** the typical time for a message to reach the other phone went from **about 2,000 ms to 300 to 430 ms**. See "Real-world times, between phones" below.
+- **Deleting the account also on the server:** "Destroy profile and data" deletes the public keys and waiting messages on the relay, then everything on the phone.
+- **Lighter on the battery (Android):** 30 seconds after leaving the app, it closes its connections to the relay and reconnects when you open it again.
+- **Getting ready for Google Play:** privacy policy and account deletion page on sealer.pt, and answers for the Play Console forms in [`docs/google-play.md`](docs/google-play.md) (in Portuguese).
+
 ### Just added, still to be confirmed in real use
 
 - **Images and GIFs up to 25 MB**, in both apps. Each file is encrypted on the phone with its own key, goes to the relay in chunks and is deleted there once the other phone downloads it, or after 24 hours. Covered by the automated tests (including against the production Redis command list); the exchange between phones through AWS is still being confirmed. Details in [`docs/protocol-spec.md`](docs/protocol-spec.md), section 14 (in Portuguese).
@@ -66,7 +73,7 @@ The iPhone app with these additions has not been built in Xcode yet (see [`ios/R
 - **Push notifications**: the app only receives messages while it is open.
 - **Production infrastructure**: own domain (the current one is temporary), redundancy, backups and server alerts.
 - ~~App lock~~ (done on Android): an app passcode that encrypts the key to the conversations (Argon2id), plus optional unlock with fingerprint, face or the phone's PIN. Still missing on iPhone.
-- Distribution through the Play Store (some antivirus apps currently warn because the app comes from an unknown source).
+- Distribution through the Play Store (some antivirus apps currently warn because the app comes from an unknown source). Already prepared: account deletion, privacy policy and form answers ([`docs/google-play.md`](docs/google-play.md), in Portuguese).
 - Load testing on the AWS relay (already measured on a local machine, see [`docs/performance.md`](docs/performance.md), in Portuguese) and an **independent security audit**.
 
 **Next stages:** *alpha* (now: works end to end, tested with a few people) → *beta* (notifications, app lock on iPhone, Play Store testing) → *1.0* (after an external audit).
@@ -105,6 +112,17 @@ The relay is small on purpose: it only passes encrypted messages along, keeps no
 With messages flowing all the time (50 pairs of connections sending as fast as possible), the relay delivered about **16,900 messages of 200 B per second** and **6,000 of 4 KB**, with 95 % of messages reaching the recipient in under 10 ms (200 B) and 26 ms (4 KB). A 25 MB image was uploaded to the relay in 0.3 s and downloaded in 0.4 s.
 
 Measured on a local 2 vCPU machine, without Caddy's TLS and without a real network in between, so the full server uses more than this. How it was measured, how to repeat it and what was left out: [`docs/performance.md`](docs/performance.md) (in Portuguese).
+
+## Real-world times, between phones
+
+The numbers above are for the relay on its own. With real phones (three Samsungs, in Viseu and Cascais, on Wi-Fi and mobile data, with the relay in Stockholm), measured by the relay itself in October 2026 over hundreds of messages:
+
+| | Before (16 Oct) | Now (17 Oct) |
+|---|---|---|
+| From the server until the other phone has the message (typical time, median) | **about 2,000 ms** | **300 to 430 ms** |
+| From the sender's phone to the server (average) | | **about 50 ms** |
+
+The big difference came from **instant delivery**: before, the apps asked the relay every 3 seconds whether there were new messages; now they wait on an open connection and the relay delivers each message the moment it arrives. What is left is mostly the network round trip to Sweden and back, plus the phone decrypting and storing the message. With the relay closer (for example, in Spain), these times should drop further.
 
 ## What's missing, plainly
 
