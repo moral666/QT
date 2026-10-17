@@ -77,7 +77,17 @@ pub enum ClientMessage {
     BlobGet { blob_id: String, offset: u64 },
     /// Apaga o ficheiro (o destinatario ja o descarregou). Resposta: `Ack`.
     BlobDelete { blob_id: String },
+
+    /// Apaga a conta do proprio utilizador no relay: bundle de pre-keys, fila de
+    /// mensagens e contagem diaria de anexos. Durante `store::DELETED_TTL_SECONDS`,
+    /// quem tentar enviar-lhe uma mensagem recebe `Error` com
+    /// `RECIPIENT_DELETED`. Resposta: `Ack`. Relays antigos respondem `Error`
+    /// (pedido desconhecido).
+    DeleteAccount { user_id: UserId },
 }
+
+/// Motivo do `Error` a um `SendMessage` para quem apagou a conta.
+pub const RECIPIENT_DELETED: &str = "o destinatario apagou a conta";
 
 /// Contexto de dominio da assinatura de autenticacao.
 pub const AUTH_CONTEXT: &[u8] = b"QT-RELAY-AUTH-v1";

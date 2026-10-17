@@ -24,6 +24,16 @@ const MAX_QUEUED_MESSAGES_PER_USER: usize = 1000;
 /// docs/protocol-spec.md.
 const QUEUE_TTL_SECONDS: i64 = 60 * 60 * 24 * 30;
 
+/// TTL do bundle de pre-keys: as apps voltam a publica-lo sempre que se ligam ao
+/// relay, por isso so expira para quem nao abre a app ha 90 dias (ou a
+/// desinstalou sem apagar a conta). Antes nao expirava nunca.
+pub const BUNDLE_TTL_SECONDS: u64 = 60 * 60 * 24 * 90;
+
+/// Quanto tempo o relay se lembra de que uma conta foi apagada (para recusar
+/// mensagens para ela, em vez de as guardar 30 dias sem ninguem as ir buscar).
+/// So guarda o `user_id` (a chave publica), nada mais.
+pub const DELETED_TTL_SECONDS: u64 = 60 * 60 * 24 * 30;
+
 /// Entradas lidas do Redis por pedido de mensagens: primeiro estas...
 const PEEK_FIRST: isize = 16;
 /// ...e, se couberem todas na pagina, ate este total (o limite de sempre).
@@ -35,6 +45,8 @@ pub enum StoreError {
     Redis(#[from] redis::RedisError),
     #[error("fila do destinatário cheia")]
     QueueFull,
+    #[error("o destinatário apagou a conta")]
+    RecipientDeleted,
 }
 
 pub struct Store {
@@ -83,10 +95,55 @@ impl Store {
         Ok(manager.clone())
     }
 
+    fn deleted_key(&self, user_id: &str) -> String {
+        format!("{}:deleted:{}", self.key_prefix, user_id)
+    }
+
+    /// Guarda (ou renova) o bundle, com `BUNDLE_TTL_SECONDS`. Publicar um bundle
+    /// tambem desfaz uma eliminacao anterior (a identidade esta viva).
     pub async fn register_bundle(&self, user_id: UserId, bundle_bytes: Vec<u8>) -> Result<(), StoreError> {
         let mut conn = self.connection().await?;
         let key = format!("{}:bundle:{}", self.key_prefix, user_id);
-        conn.set::<_, _, ()>(key, bundle_bytes).await?;
+        // So comandos permitidos pelo ACL do relay (deploy/redis/qt-redis.conf):
+        // SET + EXPIRE em vez de SETEX.
+        redis::pipe()
+            .set(&key, bundle_bytes)
+            .ignore()
+            .expire(&key, BUNDLE_TTL_SECONDS as i64)
+            .ignore()
+            .del(self.deleted_key(&user_id))
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        Ok(())
+    }
+
+    /// Apaga tudo o que o relay guarda deste utilizador: bundle, fila de mensagens
+    /// e contagem de anexos (de hoje e de ontem; os anexos em si nao estao ligados
+    /// a quem os enviou e apagam-se sozinhos em 24 horas). Fica so a marca de conta
+    /// apagada, durante `DELETED_TTL_SECONDS`.
+    pub async fn delete_account(&self, user_id: &str) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        let day = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() / 86_400)
+            .unwrap_or(0);
+        redis::pipe()
+            .del(format!("{p}:bundle:{user_id}"))
+            .ignore()
+            .del(format!("{p}:queue:{user_id}"))
+            .ignore()
+            .del(format!("{p}:blobquota:{user_id}:{day}"))
+            .ignore()
+            .del(format!("{p}:blobquota:{user_id}:{}", day.saturating_sub(1)))
+            .ignore()
+            .set(self.deleted_key(user_id), 1u8)
+            .ignore()
+            .expire(self.deleted_key(user_id), DELETED_TTL_SECONDS as i64)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
         Ok(())
     }
 
@@ -110,11 +167,16 @@ impl Store {
         // (guardar + renovar o TTL), cada par num so pedido (pipeline). Os comandos
         // sao os mesmos de antes; um id gasto com a fila cheia nao faz falta (os ids
         // so tem de ser unicos).
-        let (current_len, id): (usize, u64) = redis::pipe()
+        // GET em vez de EXISTS: so comandos permitidos pelo ACL do relay.
+        let (current_len, id, deleted): (usize, u64, Option<Vec<u8>>) = redis::pipe()
             .llen(&key)
             .incr(format!("{}:seq", self.key_prefix), 1u64)
+            .get(self.deleted_key(&to))
             .query_async(&mut conn)
             .await?;
+        if deleted.is_some() {
+            return Err(StoreError::RecipientDeleted);
+        }
         if current_len >= MAX_QUEUED_MESSAGES_PER_USER {
             return Err(StoreError::QueueFull);
         }

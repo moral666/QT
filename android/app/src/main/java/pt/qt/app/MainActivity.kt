@@ -265,11 +265,19 @@ fun AppRoot(vm: MainViewModel) {
             onMyId = { showMyId = true }, onSettings = { showSettings = true },
             onReadReceipts = vm::setReadReceipts,
             onDeleteConversation = vm::deleteConversation, onDeleteContact = vm::deleteContact,
-            onWipeAll = vm::wipeAllData,
+            onWipeAll = { vm.wipeAllData() },
             onLockSettings = { showLockSettings = true }, onLockNow = vm::lockNow,
         )
     }
     if (showMyId && !ui.locked) MyIdDialog(ui.publicId, onDismiss = { showMyId = false })
+    ui.wipeServerFailed?.let { reason ->
+        WipeServerFailedDialog(
+            reason,
+            onRetry = { vm.wipeAllData() },
+            onLocalOnly = { vm.wipeAllData(localOnly = true) },
+            onDismiss = vm::dismissWipeServerFailed,
+        )
+    }
     ui.safetyNumber?.let { text ->
         AlertDialog(
             onDismissRequest = vm::dismissSafetyNumber,
@@ -526,7 +534,7 @@ fun HomeScreen(
                             }
                             HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text("Apagar todos os dados", color = MaterialTheme.colorScheme.error) },
+                                text = { Text("Destruir perfil e dados", color = MaterialTheme.colorScheme.error) },
                                 onClick = { menu = false; showWipe = true },
                             )
                         }
@@ -1059,17 +1067,26 @@ fun DeleteActions(
 
 /** Apagar tudo: so com a palavra APAGAR escrita (evita toques acidentais). */
 @Composable
-fun WipeAllDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+fun WipeAllDialog(onDismiss: () -> Unit, onConfirm: () -> Unit, serverToo: Boolean = true) {
     var typed by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-        title = { Text("Apagar todos os dados?") },
+        title = { Text("Destruir perfil e dados?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "São apagados para sempre deste telemóvel: o teu ID e as tuas chaves, todos os contactos, " +
-                        "todas as conversas e as definições. O teu ID atual deixa de funcionar e terás de criar um novo.",
+                    if (serverToo) {
+                        "São apagados para sempre: do servidor, as tuas chaves públicas e as mensagens à tua espera; " +
+                            "deste telemóvel, o teu ID e as tuas chaves, todos os contactos, todas as conversas e as definições. " +
+                            "O teu ID atual deixa de funcionar e terás de criar um novo."
+                    } else {
+                        // Com a app bloqueada nao ha acesso a identidade, por isso nao se consegue falar com o servidor.
+                        "São apagados para sempre deste telemóvel: o teu ID e as tuas chaves, todos os contactos, " +
+                            "todas as conversas e as definições. O teu ID atual deixa de funcionar e terás de criar um novo. " +
+                            "O que está no servidor apaga-se sozinho: as mensagens em espera ao fim de 30 dias e as tuas " +
+                            "chaves públicas ao fim de 90 dias."
+                    },
                 )
                 Text("Para confirmar, escreve APAGAR:", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(typed, { typed = it }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -1081,6 +1098,34 @@ fun WipeAllDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}
+
+/** Nao foi possivel apagar a conta no servidor: nada foi apagado ainda. */
+@Composable
+fun WipeServerFailedDialog(reason: String, onRetry: () -> Unit, onLocalOnly: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text("Não foi possível apagar no servidor") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Motivo: $reason. Ainda não foi apagado nada.")
+                Text(
+                    "Podes tentar de novo quando tiveres rede, ou apagar já só deste telemóvel. Nesse caso, o que está " +
+                        "no servidor apaga-se sozinho: as mensagens em espera ao fim de 30 dias e as tuas chaves públicas " +
+                        "ao fim de 90 dias.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onRetry) { Text("Tentar de novo") } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onDismiss) { Text("Cancelar") }
+                TextButton(onClick = onLocalOnly) { Text("Apagar só aqui", color = MaterialTheme.colorScheme.error) }
+            }
+        },
     )
 }
 
@@ -1267,7 +1312,7 @@ fun LockScreen(ui: UiState, onCode: (String) -> Unit, onBio: () -> Unit, onWipe:
             dismissButton = { TextButton(onClick = { forgot = false }) { Text("Voltar") } },
         )
     }
-    if (wipe) WipeAllDialog(onDismiss = { wipe = false }, onConfirm = { wipe = false; onWipe() })
+    if (wipe) WipeAllDialog(onDismiss = { wipe = false }, onConfirm = { wipe = false; onWipe() }, serverToo = false)
 }
 
 private enum class LockDialog { ENABLE, DISABLE, CHANGE, BIO_ON }

@@ -305,3 +305,28 @@ async fn relay_que_troca_bytes_e_ficheiro_expirado() {
     let _ = std::fs::remove_file(src);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Apagar a conta pela app: o pedido do FFI apaga a conta no relay, e quem tentar
+/// enviar depois recebe o motivo que o FFI conhece (`relay_recipient_deleted_reason`).
+#[tokio::test]
+async fn apagar_a_conta_pela_app() {
+    let relay = TestRelay::start(fast_cfg()).await;
+    let (alice, bob, mut la, mut lb, cid) = setup(&relay).await;
+
+    assert!(matches!(lb.rpc(bob.qt.relay_request_delete_account().unwrap()).await, RelayResponse::Ack));
+    bob.qt.delete_identity().unwrap();
+
+    let RelayResponse::BundleNotFound = la.rpc(alice.qt.relay_request_fetch_bundle(bob.id.relay_id.clone()).unwrap()).await else {
+        panic!("o bundle do Bob devia ter sido apagado")
+    };
+    let item = alice.qt.send_text(cid, "ainda ai estas?".into()).unwrap();
+    match la.rpc(alice.qt.relay_request_send(bob.id.relay_id.clone(), item.blob).unwrap()).await {
+        RelayResponse::Error { reason } => {
+            assert_eq!(reason, relay_recipient_deleted_reason());
+            assert_eq!(reason, qt_server::protocol::RECIPIENT_DELETED, "o FFI e o relay tem de usar o mesmo texto");
+        }
+        other => panic!("{}", describe(&other)),
+    }
+    let _ = std::fs::remove_file(&bob.path);
+    let _ = std::fs::remove_file(&alice.path);
+}

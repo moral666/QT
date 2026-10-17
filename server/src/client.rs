@@ -238,6 +238,12 @@ impl RelayClient {
         }
     }
 
+    /// Apaga a conta deste utilizador no relay (bundle, fila e contagem de anexos).
+    pub async fn delete_account(&mut self) -> Result<(), RelayError> {
+        let uid = self.user_id.clone();
+        Self::expect_ack(self.request(ClientMessage::DeleteAccount { user_id: uid }).await?)
+    }
+
     pub async fn ack(&mut self, ids: Vec<u64>) -> Result<(), RelayError> {
         let uid = self.user_id.clone();
         Self::expect_ack(self.request(ClientMessage::AckMessages { user_id: uid, ids }).await?)
