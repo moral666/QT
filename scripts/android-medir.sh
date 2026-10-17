@@ -10,8 +10,8 @@
 # que podes partilhar. Nao recolhe mensagens, contactos nem chaves.
 set -uo pipefail
 
-PKG="${PKG:-pt.qt.app}"
-ACT="${ACT:-pt.qt.app/.MainActivity}"
+PKG="${PKG:-sealer.app}"
+ACT="${ACT:-sealer.app/pt.qt.app.MainActivity}"
 ADB="${ADB:-$(command -v adb || echo "$HOME/Android/Sdk/platform-tools/adb")}"
 [ -x "$ADB" ] || { echo "Nao encontro o adb. Define ADB=/caminho/para/adb"; exit 1; }
 "$ADB" get-state >/dev/null 2>&1 || { echo "Nenhum telemovel ligado (adb devices)."; exit 1; }

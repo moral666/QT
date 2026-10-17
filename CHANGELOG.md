@@ -24,6 +24,12 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   num grupo com três pessoas, quem saiu do grupo não envia).
 - O exemplo `server/examples/peer.rs` voltou a compilar.
 
+### 17 de outubro de 2026: identificador da app `sealer.app`
+
+- O identificador da app (Play Store) passa de `pt.qt.app` para `sealer.app`. Para o Android é
+  uma app nova: a instalação antiga fica ao lado, com as suas conversas e o seu ID; a nova
+  começa do zero (ID novo, trocar os QR outra vez). O código Kotlin continua em `pt.qt.app`.
+
 ### 17 de outubro de 2026: revisão de QA da app Android (0.9.0)
 
 - **Memória:** os anexos decifrados ficam numa cache em memória até 40 MB, partilhada pela

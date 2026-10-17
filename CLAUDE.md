@@ -33,8 +33,11 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
 - Versões da app: série 0.x (agora **0.9.0**, `versionCode` 7), em
   `android/app/build.gradle.kts`.
-- Conta de programador da Google Play (25 USD): só depois de testar a app.
-- Notificações (FCM) ficam para uma fase seguinte e precisam de aprovação.
+- Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
+  empresa: decide ele mais tarde.
+- **Identificador da app: `sealer.app`** (desde a 0.9.0; antes `pt.qt.app`). Nunca mudar depois de
+  publicar. O `namespace` e o pacote Kotlin continuam `pt.qt.app`.
+- **Notificações: FCM** (escolhido a 17/10/2026), com mensagem vazia ("acorda"), como o Signal.
 
 ## O projeto
 
@@ -138,4 +141,4 @@ o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo
   B) código curto no servidor que expira (precisa de mudar o relay),
   C) ID com metade do tamanho (mudança grande, os IDs atuais deixam de servir).
   Sugestão dada: deixar como está.
-- Depois: notificações (FCM, com aprovação), atualizar a app iPhone, AAB e ficha da Play Store.
+- Depois: notificações FCM (desenho a aprovar), atualizar a app iPhone, AAB e ficha da Play Store.
