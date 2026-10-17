@@ -51,3 +51,6 @@ xcuserdata/
 DerivedData/
 *.ipa
 medicoes/
+
+# Firebase (notificacoes): descarregado da consola; fica so no PC do Nuno
+/android/app/google-services.json

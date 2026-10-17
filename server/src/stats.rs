@@ -34,6 +34,11 @@ pub struct Stats {
     pub blob_downloads: AtomicU64,
     /// Contas apagadas pelo proprio utilizador (`DeleteAccount`).
     pub accounts_deleted: AtomicU64,
+    /// Tokens de notificacoes registados (`RegisterPushToken`).
+    pub push_registered: AtomicU64,
+    /// Campainhas enviadas a Google (FCM) e as que falharam.
+    pub pushes: AtomicU64,
+    pub push_failed: AtomicU64,
 }
 
 pub static STATS: Stats = Stats {
@@ -58,6 +63,9 @@ pub static STATS: Stats = Stats {
     blob_uploads: AtomicU64::new(0),
     blob_downloads: AtomicU64::new(0),
     accounts_deleted: AtomicU64::new(0),
+    push_registered: AtomicU64::new(0),
+    pushes: AtomicU64::new(0),
+    push_failed: AtomicU64::new(0),
 };
 
 pub fn inc(c: &AtomicU64) {
@@ -93,6 +101,9 @@ pub fn take_line(s: &Stats) -> Option<String> {
         ("anexos_enviados", t(&s.blob_uploads)),
         ("anexos_descarregados", t(&s.blob_downloads)),
         ("contas_apagadas", t(&s.accounts_deleted)),
+        ("tokens_notificacao", t(&s.push_registered)),
+        ("notificacoes", t(&s.pushes)),
+        ("notificacoes_falhadas", t(&s.push_failed)),
     ];
     let active = s.active.load(Relaxed);
     if active == 0 && v.iter().all(|(_, n)| *n == 0) {

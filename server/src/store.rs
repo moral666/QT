@@ -29,6 +29,9 @@ const QUEUE_TTL_SECONDS: i64 = 60 * 60 * 24 * 30;
 /// desinstalou sem apagar a conta). Antes nao expirava nunca.
 pub const BUNDLE_TTL_SECONDS: u64 = 60 * 60 * 24 * 90;
 
+/// TTL do token de notificacoes (FCM): como o bundle, renovado sempre que a app abre.
+pub const PUSH_TTL_SECONDS: u64 = BUNDLE_TTL_SECONDS;
+
 /// Quanto tempo o relay se lembra de que uma conta foi apagada (para recusar
 /// mensagens para ela, em vez de as guardar 30 dias sem ninguem as ir buscar).
 /// So guarda o `user_id` (a chave publica), nada mais.
@@ -134,6 +137,8 @@ impl Store {
             .ignore()
             .del(format!("{p}:queue:{user_id}"))
             .ignore()
+            .del(format!("{p}:push:{user_id}"))
+            .ignore()
             .del(format!("{p}:blobquota:{user_id}:{day}"))
             .ignore()
             .del(format!("{p}:blobquota:{user_id}:{}", day.saturating_sub(1)))
@@ -145,6 +150,30 @@ impl Store {
             .query_async::<_, ()>(&mut conn)
             .await?;
         Ok(())
+    }
+
+    /// Guarda (`Some`) ou apaga (`None`) o token de notificacoes do utilizador.
+    pub async fn set_push_token(&self, user_id: &str, token: Option<&str>) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let key = format!("{}:push:{}", self.key_prefix, user_id);
+        match token {
+            Some(t) => {
+                redis::pipe()
+                    .set(&key, t)
+                    .ignore()
+                    .expire(&key, PUSH_TTL_SECONDS as i64)
+                    .ignore()
+                    .query_async::<_, ()>(&mut conn)
+                    .await?
+            }
+            None => conn.del::<_, ()>(&key).await?,
+        }
+        Ok(())
+    }
+
+    pub async fn get_push_token(&self, user_id: &str) -> Result<Option<String>, StoreError> {
+        let mut conn = self.connection().await?;
+        Ok(conn.get(format!("{}:push:{}", self.key_prefix, user_id)).await?)
     }
 
     pub async fn get_bundle(&self, user_id: &str) -> Result<Option<Vec<u8>>, StoreError> {

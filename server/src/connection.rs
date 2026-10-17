@@ -395,6 +395,8 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
                     crate::latency::queued(id);
                     // Entrega imediata: acorda o destinatario se estiver a espera (WaitMessages).
                     crate::waiters::wake(&recipient);
+                    // App fechada (ninguem a espera): campainha pela Google (FCM), vazia.
+                    crate::push::after_enqueue(store, &recipient).await;
                     ServerMessage::Ack
                 }
                 Err(StoreError::QueueFull) => {
@@ -412,6 +414,21 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
             match store.delete_account(&user_id).await {
                 Ok(()) => {
                     stats::inc(&STATS.accounts_deleted);
+                    ServerMessage::Ack
+                }
+                Err(e) => internal(e),
+            }
+        }
+        ClientMessage::RegisterPushToken { user_id, token } => {
+            if user_id != me {
+                return err("so podes registar o teu proprio token");
+            }
+            if !token.is_empty() && !crate::protocol::is_valid_push_token(&token) {
+                return err("token invalido");
+            }
+            match store.set_push_token(&user_id, (!token.is_empty()).then_some(token.as_str())).await {
+                Ok(()) => {
+                    stats::inc(&STATS.push_registered);
                     ServerMessage::Ack
                 }
                 Err(e) => internal(e),

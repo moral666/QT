@@ -102,6 +102,27 @@ RELAY_BLOB_USER_DAILY_MB=${RELAY_BLOB_USER_DAILY_MB:-1024}
 RELAY_BLOB_MIN_FREE_MB=${RELAY_BLOB_MIN_FREE_MB:-1024}
 EOF
 umask 022
+# Notificacoes com a app fechada (FCM): so se existir /etc/qt/fcm.json (a chave da conta
+# de servico do Firebase, posta a mao; nunca no git). O relay passa entao a poder abrir
+# ligacoes HTTPS para fora (Google), que o servico normalmente proibe (IPAddressDeny).
+DROPIN=/etc/systemd/system/qt-relay.service.d
+if [ -f /etc/qt/fcm.json ]; then
+  chown root:qt /etc/qt/fcm.json
+  chmod 640 /etc/qt/fcm.json
+  echo "QT_FCM_CREDENTIALS=/etc/qt/fcm.json" >> "$ENV_FILE"
+  mkdir -p "$DROPIN"
+  cat > "$DROPIN/fcm.conf" <<'EOF2'
+# Notificacoes (FCM): o relay precisa de falar com fcm.googleapis.com e
+# oauth2.googleapis.com (IPs da Google, que mudam). Sem isto so falava com localhost.
+[Service]
+IPAddressDeny=
+IPAddressAllow=
+EOF2
+  log "Notificacoes (FCM): ativas"
+else
+  rm -f "$DROPIN/fcm.conf"
+  log "Notificacoes (FCM): desligadas (falta /etc/qt/fcm.json)"
+fi
 chown root:qt "$ENV_FILE"
 chmod 640 "$ENV_FILE"
 cp "$SRC/deploy/systemd/qt-relay.service" /etc/systemd/system/qt-relay.service

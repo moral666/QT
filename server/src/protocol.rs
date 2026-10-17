@@ -84,6 +84,22 @@ pub enum ClientMessage {
     /// `RECIPIENT_DELETED`. Resposta: `Ack`. Relays antigos respondem `Error`
     /// (pedido desconhecido).
     DeleteAccount { user_id: UserId },
+
+    /// Notificacoes com a app fechada: o "endereco de campainha" (token do Firebase
+    /// Cloud Messaging) do proprio utilizador. Quando lhe chega uma mensagem e nao ha
+    /// nenhuma ligacao dele a espera (`WaitMessages`), o relay pede a Google para
+    /// acordar o telemovel, com uma mensagem VAZIA (sem remetente nem conteudo).
+    /// `token` vazio = deixar de receber. Guardado com `store::PUSH_TTL_SECONDS` e
+    /// apagado com a conta. Resposta: `Ack`. Relays antigos respondem `Error`.
+    RegisterPushToken { user_id: UserId, token: String },
+}
+
+/// Tamanho maximo de um token FCM (na pratica ~160 a 200 caracteres).
+pub const MAX_PUSH_TOKEN: usize = 4096;
+
+/// Token FCM aceite: so letras, digitos e `-_:.` (o formato que a Google usa).
+pub fn is_valid_push_token(t: &str) -> bool {
+    !t.is_empty() && t.len() <= MAX_PUSH_TOKEN && t.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_:.".contains(&b))
 }
 
 /// Motivo do `Error` a um `SendMessage` para quem apagou a conta.

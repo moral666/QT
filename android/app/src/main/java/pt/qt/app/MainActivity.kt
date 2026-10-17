@@ -244,6 +244,21 @@ fun AppRoot(vm: MainViewModel) {
     var showGroupInfo by remember { mutableStateOf(false) }
     LaunchedEffect(ui.openChatId) { showGroupInfo = false }
     val openGroup = ui.openChatId?.let { ui.groupOf(it) }
+    // Notificacoes (Android 13+): pede a permissao uma vez, quando a app ja esta pronta a usar.
+    val ctx = LocalContext.current
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted && ui.pushOn) {
+            android.widget.Toast.makeText(ctx, "Sem permissão, a app não consegue avisar de mensagens novas. Podes ativá-la nas definições do Android.", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    LaunchedEffect(ui.hasIdentity, ui.locked, ui.termsAccepted, ui.loading) {
+        val ready = !ui.loading && ui.hasIdentity && !ui.locked && ui.termsAccepted
+        if (ready && Push.available && ui.pushOn && !ui.pushAsked && Build.VERSION.SDK_INT >= 33 && !Push.permissionGranted(ctx)) {
+            vm.markPushAsked()
+            AutoLockPause.active = true   // o pedido de permissao nao conta como sair da app
+            askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     when {
         ui.loading -> LoadingScreen()
@@ -314,6 +329,13 @@ fun AppRoot(vm: MainViewModel) {
             onLockSettings = { showLockSettings = true }, onLockNow = vm::lockNow,
             onCreateGroup = vm::createGroup, onDeleteGroup = vm::deleteGroup,
             onPresence = vm::setPresence,
+            onPush = { on ->
+                vm.setPush(on)
+                if (on && !Push.permissionGranted(ctx) && Build.VERSION.SDK_INT >= 33) {
+                    AutoLockPause.active = true
+                    askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            },
         )
     }
     if (showMyId && !ui.locked) MyIdDialog(ui.publicId, onDismiss = { showMyId = false })
@@ -556,6 +578,7 @@ fun HomeScreen(
     onCreateGroup: (String, List<Contact>) -> Unit = { _, _ -> },
     onDeleteGroup: (String) -> Unit = {},
     onPresence: (Boolean) -> Unit = {},
+    onPush: (Boolean) -> Unit = {},
 ) {
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
@@ -576,8 +599,15 @@ fun HomeScreen(
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text("O meu ID") }, onClick = { menu = false; onMyId() })
                             DropdownMenuItem(text = { Text("Novo grupo") }, onClick = { menu = false; showNewGroup = true })
+                            if (Push.available) {
+                                DropdownMenuItem(
+                                    text = { Text("Notificações") },
+                                    onClick = { onPush(!ui.pushOn) },
+                                    trailingIcon = { Switch(checked = ui.pushOn, onCheckedChange = { onPush(it) }) },
+                                )
+                            }
                             DropdownMenuItem(
-                                text = { Text("Notificações") },
+                                text = { Text("Confirmações de leitura") },
                                 onClick = { onReadReceipts(!ui.readReceipts) },
                                 trailingIcon = { Switch(checked = ui.readReceipts, onCheckedChange = { onReadReceipts(it) }) },
                             )
