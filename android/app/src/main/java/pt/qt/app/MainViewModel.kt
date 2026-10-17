@@ -846,6 +846,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Reagir com um emoji a uma mensagem (vazio = retirar a minha reacao). */
+    fun react(contactId: String, messageId: String, emoji: String) = io {
+        val client = qt ?: return@io
+        try {
+            client.react(contactId, messageId, emoji)
+            refreshViews(client)
+            flushOutbox()
+        } catch (e: Exception) {
+            error("Nao foi possivel reagir: ${e.safeMsg()}")
+        }
+    }
+
     // ---------------------------------------------------------------- imagens/GIFs
 
     /**
@@ -1129,7 +1141,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     try {
                         // Decifrar + guardar no historico + agendar o recibo, tudo numa transacao.
                         when (client.receiveSealed(m.ciphertext)) {
-                            is ReceiveResult.NewMessage, is ReceiveResult.StatusChanged -> { received = true; gotPage = true }
+                            is ReceiveResult.NewMessage, is ReceiveResult.StatusChanged, is ReceiveResult.Updated -> { received = true; gotPage = true }
                             is ReceiveResult.NoChange -> {}
                         }
                         ackIds += m.id

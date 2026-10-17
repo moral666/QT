@@ -8,6 +8,7 @@
 //!                    ver `attachments.rs`
 //!   tipo 4 = convite: [Public ID de quem envia, "qt1:..."]. Vai antes da 1.a
 //!                    mensagem de quem inicia a conversa; nao aparece no historico.
+//!   tipo 5 = reacao: [16 msg_id da mensagem][emoji UTF-8; vazio = retirar]
 //! Um plaintext que nao siga este formato (clientes antigos) e tratado como
 //! texto simples, com um msg_id derivado do envelope (deduplicacao estavel).
 //!
@@ -38,6 +39,9 @@ const T_TEXT: u8 = 1;
 const T_RECEIPT: u8 = 2;
 const T_ATTACHMENT: u8 = 3;
 const T_INTRO: u8 = 4;
+const T_REACTION: u8 = 5;
+/// Emoji maximo por reacao (bytes UTF-8): chega para um emoji composto (familia, bandeira).
+const MAX_EMOJI_BYTES: usize = 32;
 const HDR: usize = 1 + 1 + 16 + 8;
 /// Texto maximo por mensagem (bytes UTF-8). Cabe no limite do envelope.
 pub const MAX_TEXT_BYTES: usize = 9_000;
@@ -93,6 +97,17 @@ pub struct ChatMessage {
     pub status: MessageStatus,
     /// Imagem/GIF (o `text` e entao "📷 Foto" ou "GIF", para a lista de conversas).
     pub attachment: Option<AttachmentInfo>,
+    /// Reacoes com emoji (vazio na lista de conversas e nas mensagens acabadas de chegar).
+    pub reactions: Vec<Reaction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct Reaction {
+    pub emoji: String,
+    /// A reacao e minha.
+    pub mine: bool,
+    /// Quem reagiu (contact_id); vazio se `mine`.
+    pub from_contact: String,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -118,6 +133,8 @@ pub enum ReceiveResult {
     StatusChanged { contact_id: String, message_ids: Vec<String>, status: MessageStatus },
     /// Conteudo ja conhecido (reentrega) ou recibo sem efeito: nada a mostrar.
     NoChange { contact_id: String },
+    /// Algo mudou nesta conversa sem mensagem nova (ex.: uma reacao): atualizar o ecra.
+    Updated { contact_id: String },
 }
 
 pub(crate) fn now_ms() -> i64 {
@@ -146,7 +163,25 @@ pub(crate) fn to_chat(m: &hm::StoredMessage) -> ChatMessage {
         local_at_ms: m.local_at,
         status: MessageStatus::from_db(m.status),
         attachment: att.map(|a| a.info()),
+        reactions: Vec::new(),
     }
+}
+
+/// Junta as reacoes guardadas a estas mensagens da conversa `conv_id`.
+pub(crate) fn with_reactions(c: &st::rusqlite::Connection, conv_id: &str, mut msgs: Vec<ChatMessage>) -> Result<Vec<ChatMessage>, QtError> {
+    let all = hm::reactions(c, conv_id)?;
+    if all.is_empty() {
+        return Ok(msgs);
+    }
+    for m in msgs.iter_mut() {
+        let id = unhex(&m.message_id).unwrap_or_default();
+        m.reactions = all
+            .iter()
+            .filter(|(mid, _, _)| *mid == id)
+            .map(|(_, who, emoji)| Reaction { emoji: emoji.clone(), mine: who.is_empty(), from_contact: who.clone() })
+            .collect();
+    }
+    Ok(msgs)
 }
 
 // ------------------------------------------------------------ codificacao
@@ -221,6 +256,8 @@ enum Payload {
     Attachment { id: Vec<u8>, sent_at: i64, meta: AttMeta },
     /// Convite: o Public ID de quem envia.
     Intro { public_id: String },
+    /// Reacao (emoji vazio = retirar) a uma mensagem desta conversa.
+    Reaction { target: Vec<u8>, emoji: String },
     /// Mensagem de controlo invalida: ignora-se, sem aviso.
     Ignored,
 }
@@ -258,6 +295,16 @@ fn decode(plain: &[u8], legacy_id: &[u8]) -> Payload {
             Some(meta) => Payload::Attachment { id, sent_at, meta },
             None => Payload::Unsupported { id, sent_at },
         },
+        T_REACTION => {
+            let b = &plain[HDR..];
+            if b.len() < 16 || b.len() > 16 + MAX_EMOJI_BYTES {
+                return Payload::Ignored;
+            }
+            match std::str::from_utf8(&b[16..]) {
+                Ok(e) if !e.contains(['\n', '\r']) => Payload::Reaction { target: b[..16].to_vec(), emoji: e.to_string() },
+                _ => Payload::Ignored,
+            }
+        }
         T_INTRO => match std::str::from_utf8(&plain[HDR..]) {
             Ok(p) if p.len() <= 200 => Payload::Intro { public_id: p.to_string() },
             _ => Payload::Ignored,
@@ -406,6 +453,27 @@ impl QtClient {
         Ok(OutboxItem { outbox_id: hex(&id), contact_id, blob })
     }
 
+    /// REAGIR a uma mensagem desta conversa (minha ou do contacto) com um emoji;
+    /// `emoji` vazio retira a minha reacao. Guarda e poe o aviso cifrado na outbox.
+    pub fn react(&self, contact_id: String, message_id: String, emoji: String) -> Result<(), QtError> {
+        let id = parse_msg_id(&message_id)?;
+        if emoji.len() > MAX_EMOJI_BYTES || emoji.contains(['\n', '\r']) {
+            return Err(bad("emoji"));
+        }
+        let c = self.lock()?;
+        if hm::get_message(&c, &contact_id, &id)?.is_none() {
+            return Err(bad("message_id"));
+        }
+        let tx = c.unchecked_transaction()?;
+        hm::set_reaction(&tx, &contact_id, &id, "", &emoji)?;
+        let mut body = id.clone();
+        body.extend_from_slice(emoji.as_bytes());
+        let blob = self.seal_with(&tx, &contact_id, &encode_control(T_REACTION, &body)?)?;
+        hm::outbox_put(&tx, &new_id()?, &contact_id, hm::OUTBOX_RECEIPT, &blob)?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Tudo o que ainda nao foi confirmado pelo relay (reenviar apos falhas
     /// de rede ou reinicio da app), pela ordem em que foi criado.
     pub fn outbox(&self) -> Result<Vec<OutboxItem>, QtError> {
@@ -500,6 +568,15 @@ impl QtClient {
                     }
                     ReceiveResult::NoChange { contact_id: contact_id.to_string() }
                 }
+                Payload::Reaction { target, emoji } => {
+                    // So a mensagens desta conversa (minhas ou dele).
+                    if hm::get_message(tx, contact_id, &target)?.is_some() {
+                        hm::set_reaction(tx, contact_id, &target, contact_id, &emoji)?;
+                        ReceiveResult::Updated { contact_id: contact_id.to_string() }
+                    } else {
+                        ReceiveResult::NoChange { contact_id: contact_id.to_string() }
+                    }
+                }
                 Payload::Ignored => ReceiveResult::NoChange { contact_id: contact_id.to_string() },
                 Payload::Unsupported { id, sent_at } => {
                     match hm::insert_message(tx, &id, contact_id, false, hm::KIND_TEXT, UNSUPPORTED_TEXT, sent_at, now, hm::ST_RECEIVED)? {
@@ -560,20 +637,23 @@ impl QtClient {
     /// `before_seq = None`; seguintes: o menor `seq` ja carregado.
     pub fn messages_page(&self, contact_id: String, before_seq: Option<i64>, limit: u32) -> Result<Vec<ChatMessage>, QtError> {
         let c = self.lock()?;
-        Ok(hm::messages_page(&c, &contact_id, before_seq, limit)?.iter().map(to_chat).collect())
+        let msgs = hm::messages_page(&c, &contact_id, before_seq, limit)?.iter().map(to_chat).collect();
+        with_reactions(&c, &contact_id, msgs)
     }
 
     /// Mensagens mais recentes que `after_seq` (da mais antiga para a mais recente).
     pub fn messages_after(&self, contact_id: String, after_seq: i64) -> Result<Vec<ChatMessage>, QtError> {
         let c = self.lock()?;
-        Ok(hm::messages_after(&c, &contact_id, after_seq)?.iter().map(to_chat).collect())
+        let msgs = hm::messages_after(&c, &contact_id, after_seq)?.iter().map(to_chat).collect();
+        with_reactions(&c, &contact_id, msgs)
     }
 
     /// Estado atual de uma mensagem (para atualizar os visto/entregue no ecra).
     pub fn message(&self, contact_id: String, message_id: String) -> Result<Option<ChatMessage>, QtError> {
         let id = parse_msg_id(&message_id)?;
         let c = self.lock()?;
-        Ok(hm::get_message(&c, &contact_id, &id)?.as_ref().map(to_chat))
+        let m: Vec<ChatMessage> = hm::get_message(&c, &contact_id, &id)?.as_ref().map(to_chat).into_iter().collect();
+        Ok(with_reactions(&c, &contact_id, m)?.pop())
     }
 
     /// Lista de conversas (ultima mensagem + por ler), a mais recente primeiro.

@@ -53,6 +53,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -253,6 +254,7 @@ fun AppRoot(vm: MainViewModel) {
                 onSendImage = vm::sendImage, loadAttachment = vm::attachmentBytes,
                 blocked = chatId in ui.blocked, onBlock = vm::blockContact, onUnblock = vm::unblockContact,
                 invite = chatId in ui.invites, onAcceptInvite = vm::acceptInvite, onDeclineInvite = vm::declineInvite,
+                onReact = vm::react,
             )
         }
         showLockSettings -> {
@@ -836,6 +838,7 @@ fun ChatScreen(
     invite: Boolean = false,
     onAcceptInvite: (String, String) -> Unit = { _, _ -> },
     onDeclineInvite: (String) -> Unit = {},
+    onReact: (String, String, String) -> Unit = { _, _, _ -> },
 ) {
     val colors = LocalChatColors.current
     val ctx = LocalContext.current
@@ -867,6 +870,7 @@ fun ChatScreen(
     var chatMenu by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
     var confirmBlock by remember { mutableStateOf(false) }
+    var reactingTo by remember { mutableStateOf<ChatMessage?>(null) }
     val name = contact?.nickname ?: "Desconhecido"
     // Mensagens da MAIS RECENTE para a mais antiga; com reverseLayout a lista
     // fica colada ao fundo e "subir" percorre o passado.
@@ -947,7 +951,10 @@ fun ChatScreen(
                 for (i in msgs.indices) {
                     val m = msgs[i]
                     item(key = m.seq) {
-                        MessageBubble(m, ui.transfers[m.messageId], loadAttachment, onOpen = { viewing = m })
+                        MessageBubble(
+                            m, ui.transfers[m.messageId], loadAttachment, onOpen = { viewing = m },
+                            onLongPress = { if (!blocked) reactingTo = m },
+                        )
                     }
                     val older = msgs.getOrNull(i + 1)
                     if (older == null || dayKey(older.localAtMs) != dayKey(m.localAtMs)) {
@@ -1055,6 +1062,13 @@ fun ChatScreen(
             onDismiss = { showDelete = false },
             onDeleteConversation = { onDeleteConversation(contactId); showDelete = false },
             onDeleteContact = { onDeleteContact(contactId); showDelete = false },
+        )
+    }
+    reactingTo?.let { m ->
+        ReactionPicker(
+            current = m.reactions.firstOrNull { it.mine }?.emoji,
+            onPick = { e -> onReact(contactId, m.messageId, e); reactingTo = null },
+            onDismiss = { reactingTo = null },
         )
     }
     if (confirmBlock) {
@@ -1341,11 +1355,13 @@ fun DaySeparator(ms: Long) {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 fun MessageBubble(
     m: ChatMessage,
     progress: Float? = null,
     loadAttachment: suspend (String, String) -> ByteArray? = { _, _ -> null },
     onOpen: () -> Unit = {},
+    onLongPress: () -> Unit = {},
 ) {
     val c = LocalChatColors.current
     val shape = if (m.outgoing) {
@@ -1353,10 +1369,11 @@ fun MessageBubble(
     } else {
         RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (m.outgoing) Arrangement.End else Arrangement.Start) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (m.outgoing) Alignment.End else Alignment.Start) {
         val att = m.attachment
         Column(
             Modifier.widthIn(max = 300.dp).clip(shape)
+                .combinedClickable(onClick = {}, onLongClick = onLongPress)
                 .background(if (m.outgoing) c.outgoingBubble else c.incomingBubble)
                 .padding(
                     start = if (att != null) 4.dp else 10.dp, end = if (att != null) 4.dp else 8.dp,
@@ -1364,7 +1381,7 @@ fun MessageBubble(
                 ),
         ) {
             if (att != null) {
-                AttachmentContent(m, att, progress, loadAttachment, onOpen)
+                AttachmentContent(m, att, progress, loadAttachment, onOpen, onLongPress)
             } else {
                 Text(m.text, style = MaterialTheme.typography.bodyLarge, color = c.bubbleText)
             }
@@ -1379,7 +1396,46 @@ fun MessageBubble(
                 }
             }
         }
+        // Reacoes por baixo da bolha (tocar abre o seletor, como o toque longo).
+        if (m.reactions.isNotEmpty()) {
+            Row(
+                Modifier.padding(horizontal = 6.dp).offset(y = (-4).dp).clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surface).clickable(onClick = onLongPress)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                for (r in m.reactions) Text(r.emoji, fontSize = 15.sp)
+            }
+        }
     }
+}
+
+/** Emojis do seletor de reacoes. */
+private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "🙏")
+
+/** Escolher a reacao a uma mensagem (ou retirar a minha). */
+@Composable
+fun ReactionPicker(current: String?, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Reagir") },
+        text = {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                for (e in QUICK_REACTIONS) {
+                    Box(
+                        Modifier.size(44.dp).clip(CircleShape)
+                            .background(if (e == current) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                            .clickable { onPick(e) },
+                        contentAlignment = Alignment.Center,
+                    ) { Text(e, fontSize = 24.sp) }
+                }
+            }
+        },
+        confirmButton = {
+            if (current != null) TextButton(onClick = { onPick("") }) { Text("Retirar a minha") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
 }
 
 // ===================================================================== utilitarios

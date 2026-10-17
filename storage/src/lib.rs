@@ -510,7 +510,7 @@ pub fn wipe_all(conn: &Connection) -> Result<(), StorageError> {
         "DELETE FROM identity; DELETE FROM sessions; DELETE FROM one_time_prekeys;
          DELETE FROM pq_prekeys; DELETE FROM noise_static; DELETE FROM session_meta;
          DELETE FROM seen_envelopes; DELETE FROM seen_tombstones; DELETE FROM kv;
-         DELETE FROM messages; DELETE FROM outbox; VACUUM;",
+         DELETE FROM messages; DELETE FROM outbox; DELETE FROM reactions; VACUUM;",
     )?;
     Ok(())
 }

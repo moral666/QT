@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -263,6 +264,7 @@ fun AttachmentImage(bytes: ByteArray, key: String, modifier: Modifier, contentSc
 }
 
 /** Conteudo de uma bolha com imagem/GIF: a imagem, ou o estado da descarga. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun AttachmentContent(
     m: ChatMessage,
@@ -270,6 +272,7 @@ fun AttachmentContent(
     progress: Float?,
     load: suspend (String, String) -> ByteArray?,
     onOpen: () -> Unit,
+    onLongPress: () -> Unit = {},
 ) {
     val ready = m.outgoing || att.state == AttachmentState.READY
     val bytes = rememberAttachmentBytes(m, ready, load)
@@ -279,7 +282,7 @@ fun AttachmentContent(
     Box(
         Modifier.width(w).height(w / ratio).clip(RoundedCornerShape(12.dp))
             .background(Color.Black.copy(alpha = 0.08f))
-            .clickable(enabled = bytes != null, onClick = onOpen),
+            .combinedClickable(onClick = { if (bytes != null) onOpen() }, onLongClick = onLongPress),
         contentAlignment = Alignment.Center,
     ) {
         if (bytes != null) {
