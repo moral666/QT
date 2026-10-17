@@ -131,6 +131,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile var bioPurpose: BioPurpose? = null
     /** Um so envio da outbox de cada vez (declarado ANTES do init, que ja usa a rede). */
     private val flushLock = Mutex()
+    /** Contactos que ja se avisou nesta sessao que apagaram a conta (tambem ANTES do init). */
+    private val deletedNotified = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private val bioChannel = Channel<BioRequest>(Channel.BUFFERED)
     /** Pedidos de autenticacao do sistema; a Activity mostra o BiometricPrompt. */
     val bioRequests: Flow<BioRequest> = bioChannel.receiveAsFlow()
@@ -948,9 +950,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * de criacao. So sai da outbox o que o relay confirmar; o resto fica guardado
      * (cifrado) e volta a ser tentado no proximo ciclo - mesmo depois de reiniciar a app.
      */
-    /** Contactos que ja se avisou nesta sessao que apagaram a conta. */
-    private val deletedNotified = mutableSetOf<String>()
-
     private suspend fun flushOutbox() = flushLock.withLock {
         val client = qt ?: return@withLock
         val l = link ?: return@withLock
