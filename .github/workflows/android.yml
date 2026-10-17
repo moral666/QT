@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -62,15 +62,15 @@ jobs:
 
       - name: Testes unitarios
         working-directory: android
-        run: gradle --no-daemon :app:testDebugUnitTest
+        run: ../.github/gradle-anotado.sh :app:testDebugUnitTest
 
       - name: Compilar (debug) e R8 da release
         working-directory: android
-        run: gradle --no-daemon :app:assembleDebug :app:minifyReleaseWithR8
+        run: ../.github/gradle-anotado.sh :app:assembleDebug :app:minifyReleaseWithR8
 
       - name: Android Lint
         working-directory: android
-        run: gradle --no-daemon :app:lintDebug
+        run: ../.github/gradle-anotado.sh :app:lintDebug
 
       - name: Relatorios (testes e Lint)
         if: always()
