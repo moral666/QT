@@ -159,7 +159,7 @@ pub struct QtClient {
     pub(crate) files_dir: std::path::PathBuf,
 }
 
-fn parse_public_id(id: &str) -> Result<([u8; 32], [u8; 32]), QtError> {
+pub(crate) fn parse_public_id(id: &str) -> Result<([u8; 32], [u8; 32]), QtError> {
     let rest = id.strip_prefix("qt1:").ok_or_else(|| bad("public_id"))?;
     let bytes = unhex(rest).ok_or_else(|| bad("public_id"))?;
     if bytes.len() != 64 {
@@ -356,6 +356,9 @@ impl QtClient {
             },
         )?;
         st::kv_set(&tx, &format!("pending:{contact_id}"), &header)?;
+        // Quem inicia a conversa manda o seu Public ID (cifrado) antes da 1.a mensagem:
+        // assim quem recebe pode aceitar o convite sem ter de escrever o ID.
+        st::kv_set(&tx, &format!("{}{contact_id}", crate::history::KV_SEND_INTRO), &[1])?;
         tx.commit()?;
         Ok(contact_id)
     }
@@ -790,7 +793,7 @@ fn envelope_binding(env: &[u8]) -> Vec<u8> {
     h.finalize().to_vec()
 }
 
-fn public_identity(i: &st::StoredIdentity) -> PublicIdentity {
+pub(crate) fn public_identity(i: &st::StoredIdentity) -> PublicIdentity {
     let idp = i.identity.public.as_bytes().to_vec();
     let sgp = i.identity_signing.verifying_key.to_bytes().to_vec();
     let mut all = idp.clone();

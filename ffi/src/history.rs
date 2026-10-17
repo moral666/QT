@@ -6,6 +6,8 @@
 //!   tipo 2 = recibo: [1 estado: 2=entregue, 3=vista][2 n BE][n x 16 msg_id]
 //!   tipo 3 = anexo:  imagem/GIF (chave do ficheiro, id no relay, tamanho, tipo);
 //!                    ver `attachments.rs`
+//!   tipo 4 = convite: [Public ID de quem envia, "qt1:..."]. Vai antes da 1.a
+//!                    mensagem de quem inicia a conversa; nao aparece no historico.
 //! Um plaintext que nao siga este formato (clientes antigos) e tratado como
 //! texto simples, com um msg_id derivado do envelope (deduplicacao estavel).
 //!
@@ -35,12 +37,17 @@ const PAYLOAD_V1: u8 = 0x01;
 const T_TEXT: u8 = 1;
 const T_RECEIPT: u8 = 2;
 const T_ATTACHMENT: u8 = 3;
+const T_INTRO: u8 = 4;
 const HDR: usize = 1 + 1 + 16 + 8;
 /// Texto maximo por mensagem (bytes UTF-8). Cabe no limite do envelope.
 pub const MAX_TEXT_BYTES: usize = 9_000;
 /// Ids por recibo (16 bytes cada; 400 x 16 = 6400 bytes).
 const MAX_RECEIPT_IDS: usize = 400;
 const KV_PENDING_DELIVERED: &str = "rcpt_delivered:";
+/// Por enviar: o convite (o meu Public ID) a este contacto, antes da proxima mensagem.
+pub(crate) const KV_SEND_INTRO: &str = "send_intro:";
+/// Recebido: o Public ID de quem me escreveu sem estar nos meus contactos (convite).
+const KV_INTRO: &str = "intro:";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum MessageStatus {
@@ -164,6 +171,32 @@ pub(crate) fn encode_attachment(id: &[u8; 16], sent_at: i64, wire: &[u8]) -> Vec
     out
 }
 
+/// Mensagem de controlo (convite, reacao...): cabecalho v1 + corpo.
+fn encode_control(kind: u8, body: &[u8]) -> Result<Vec<u8>, QtError> {
+    let id = new_id()?;
+    let mut out = Vec::with_capacity(HDR + body.len());
+    out.push(PAYLOAD_V1);
+    out.push(kind);
+    out.extend_from_slice(&id);
+    out.extend_from_slice(&now_ms().to_be_bytes());
+    out.extend_from_slice(body);
+    Ok(out)
+}
+
+/// Se ainda nao foi, poe na outbox o convite (o meu Public ID) para `contact_id`,
+/// ANTES da mensagem que se vai cifrar a seguir. Chamar dentro da transacao do envio.
+pub(crate) fn queue_intro_if_needed(client: &QtClient, c: &st::rusqlite::Connection, contact_id: &str) -> Result<(), QtError> {
+    let key = format!("{KV_SEND_INTRO}{contact_id}");
+    if st::kv_get(c, &key)?.is_none() {
+        return Ok(());
+    }
+    let me = crate::client::public_identity(&st::load_identity(c)?).public_id;
+    let blob = client.seal_with(c, contact_id, &encode_control(T_INTRO, me.as_bytes())?)?;
+    hm::outbox_put(c, &new_id()?, contact_id, hm::OUTBOX_RECEIPT, &blob)?;
+    st::kv_delete(c, &key)?;
+    Ok(())
+}
+
 fn encode_receipt(id: &[u8; 16], sent_at: i64, status: i64, ids: &[Vec<u8>]) -> Vec<u8> {
     let mut out = Vec::with_capacity(HDR + 3 + ids.len() * 16);
     out.push(PAYLOAD_V1);
@@ -186,6 +219,10 @@ enum Payload {
     Unsupported { id: Vec<u8>, sent_at: i64 },
     Receipt { status: i64, ids: Vec<Vec<u8>> },
     Attachment { id: Vec<u8>, sent_at: i64, meta: AttMeta },
+    /// Convite: o Public ID de quem envia.
+    Intro { public_id: String },
+    /// Mensagem de controlo invalida: ignora-se, sem aviso.
+    Ignored,
 }
 
 /// Descodifica o plaintext. `legacy_id` serve para clientes antigos (texto simples).
@@ -220,6 +257,10 @@ fn decode(plain: &[u8], legacy_id: &[u8]) -> Payload {
         T_ATTACHMENT => match decode_wire(&plain[HDR..]) {
             Some(meta) => Payload::Attachment { id, sent_at, meta },
             None => Payload::Unsupported { id, sent_at },
+        },
+        T_INTRO => match std::str::from_utf8(&plain[HDR..]) {
+            Ok(p) if p.len() <= 200 => Payload::Intro { public_id: p.to_string() },
+            _ => Payload::Ignored,
         },
         _ => Payload::Unsupported { id, sent_at },
     }
@@ -310,6 +351,29 @@ impl QtClient {
         is_blocked_in(&c, &contact_id)
     }
 
+    /// CONVITE: o Public ID de quem me escreveu (ainda nao esta nos contactos), se
+    /// mandou um. Com ele, a app adiciona o contacto sem pedir o ID ("Aceitar").
+    pub fn pending_intro(&self, contact_id: String) -> Result<Option<String>, QtError> {
+        let c = self.lock()?;
+        Ok(st::kv_get(&c, &format!("{KV_INTRO}{contact_id}"))?.and_then(|v| String::from_utf8(v).ok()))
+    }
+
+    /// Contactos com convite recebido (contact_id).
+    pub fn pending_intros(&self) -> Result<Vec<String>, QtError> {
+        let c = self.lock()?;
+        let mut stmt = c.prepare("SELECT k FROM kv WHERE k LIKE ?1 ORDER BY k")?;
+        let rows = stmt.query_map([format!("{KV_INTRO}%")], |r| r.get::<_, String>(0))?;
+        let keys = rows.collect::<Result<Vec<_>, _>>()?;
+        Ok(keys.into_iter().map(|k| k[KV_INTRO.len()..].to_string()).collect())
+    }
+
+    /// O convite foi tratado (aceite: o contacto ja esta na lista da app).
+    pub fn dismiss_intro(&self, contact_id: String) -> Result<(), QtError> {
+        let c = self.lock()?;
+        st::kv_delete(&c, &format!("{KV_INTRO}{contact_id}"))?;
+        Ok(())
+    }
+
     /// Todos os contactos bloqueados (contact_id).
     pub fn blocked_contacts(&self) -> Result<Vec<String>, QtError> {
         let c = self.lock()?;
@@ -334,6 +398,7 @@ impl QtClient {
         let now = now_ms();
         let c = self.lock()?;
         let tx = c.unchecked_transaction()?;
+        queue_intro_if_needed(self, &tx, &contact_id)?;
         let blob = self.seal_with(&tx, &contact_id, &encode_text(&id, now, &text))?;
         hm::insert_message(&tx, &id, &contact_id, true, hm::KIND_TEXT, &text, now, now, hm::ST_PENDING)?;
         hm::outbox_put(&tx, &id, &contact_id, hm::OUTBOX_MESSAGE, &blob)?;
@@ -424,6 +489,18 @@ impl QtClient {
                         None => ReceiveResult::NoChange { contact_id: contact_id.to_string() },
                     }
                 }
+                Payload::Intro { public_id } => {
+                    // So vale se o ID for mesmo de quem enviou (a identidade X25519 tem de ser
+                    // a desta sessao). A parte de assinatura so serve para lhe responder.
+                    match crate::client::parse_public_id(&public_id) {
+                        Ok((id_pub, _)) if hex(&id_pub) == contact_id => {
+                            st::kv_set(tx, &format!("{KV_INTRO}{contact_id}"), public_id.as_bytes())?;
+                        }
+                        _ => {}
+                    }
+                    ReceiveResult::NoChange { contact_id: contact_id.to_string() }
+                }
+                Payload::Ignored => ReceiveResult::NoChange { contact_id: contact_id.to_string() },
                 Payload::Unsupported { id, sent_at } => {
                     match hm::insert_message(tx, &id, contact_id, false, hm::KIND_TEXT, UNSUPPORTED_TEXT, sent_at, now, hm::ST_RECEIVED)? {
                         Some(_) => {
@@ -537,6 +614,8 @@ impl QtClient {
         st::kv_delete(&tx, &format!("{KV_PENDING_DELIVERED}{contact_id}"))?;
         st::kv_delete(&tx, &format!("pending:{contact_id}"))?;
         st::kv_delete(&tx, &format!("{}{contact_id}", crate::client::KV_PEER_EPH))?;
+        st::kv_delete(&tx, &format!("{KV_INTRO}{contact_id}"))?;
+        st::kv_delete(&tx, &format!("{KV_SEND_INTRO}{contact_id}"))?;
         st::delete_session(&tx, &contact_id)?;
         tx.commit()?;
         Ok(())

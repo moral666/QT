@@ -252,6 +252,7 @@ fun AppRoot(vm: MainViewModel) {
                 onDeleteConversation = vm::deleteConversation, onDeleteContact = vm::deleteContact,
                 onSendImage = vm::sendImage, loadAttachment = vm::attachmentBytes,
                 blocked = chatId in ui.blocked, onBlock = vm::blockContact, onUnblock = vm::unblockContact,
+                invite = chatId in ui.invites, onAcceptInvite = vm::acceptInvite, onDeclineInvite = vm::declineInvite,
             )
         }
         showLockSettings -> {
@@ -590,6 +591,7 @@ fun HomeScreen(
                         ConversationRow(
                             name ?: "Desconhecido", conv.contactId, conv,
                             blocked = conv.contactId in ui.blocked,
+                            invite = name == null && conv.contactId in ui.invites,
                             onClick = { onOpen(conv.contactId) },
                             onLongClick = { actionsFor = conv.contactId to (name ?: "Desconhecido") },
                         )
@@ -663,6 +665,7 @@ fun Avatar(name: String, seed: String, sizeDp: Int = 48) {
 fun ConversationRow(
     name: String, contactId: String, conv: ConversationSummary?,
     blocked: Boolean = false,
+    invite: Boolean = false,
     onClick: () -> Unit, onLongClick: () -> Unit = {},
 ) {
     val last = conv?.lastMessage
@@ -688,6 +691,7 @@ fun ConversationRow(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val preview = when {
                         blocked -> "Bloqueado"
+                        invite -> "Quer falar contigo · toca para aceitar"
                         last == null -> "Toca para começar a conversar"
                         last.outgoing -> statusGlyph(last.status) + "  " + last.text
                         else -> last.text
@@ -829,6 +833,9 @@ fun ChatScreen(
     blocked: Boolean = false,
     onBlock: (String) -> Unit = {},
     onUnblock: (String) -> Unit = {},
+    invite: Boolean = false,
+    onAcceptInvite: (String, String) -> Unit = { _, _ -> },
+    onDeclineInvite: (String) -> Unit = {},
 ) {
     val colors = LocalChatColors.current
     val ctx = LocalContext.current
@@ -969,6 +976,12 @@ fun ChatScreen(
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(onClick = { onUnblock(contactId) }) { Text("Desbloquear") }
                 }
+            } else if (contact == null && invite) {
+                InviteCard(
+                    onAccept = { nick -> onAcceptInvite(contactId, nick) },
+                    onDecline = { onDeclineInvite(contactId) },
+                    onBlock = { confirmBlock = true },
+                )
             } else if (contact == null) {
                 Column(
                     Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(16.dp),
@@ -1166,6 +1179,38 @@ fun WipeAllDialog(onDismiss: () -> Unit, onConfirm: () -> Unit, serverToo: Boole
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
+}
+
+// ===================================================================== convite
+
+/**
+ * Alguem que nao esta nos contactos escreveu-me e mandou o seu ID (convite): aceitar
+ * (sem escrever o ID), recusar (apaga a conversa) ou bloquear.
+ */
+@Composable
+fun InviteCard(onAccept: (String) -> Unit, onDecline: () -> Unit, onBlock: () -> Unit) {
+    var nick by rememberSaveable { mutableStateOf("") }
+    Column(
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Esta pessoa quer falar contigo.", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Ainda não está nos teus contactos. Só aceites se a conheceres.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            nick, { nick = it.take(40) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            label = { Text("Nome (opcional)") },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = { onAccept(nick) }) { Text("Aceitar") }
+            OutlinedButton(onClick = onDecline) { Text("Recusar") }
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onBlock) { Text("Bloquear", color = MaterialTheme.colorScheme.error) }
+        }
+    }
 }
 
 // ===================================================================== termos
