@@ -1,6 +1,6 @@
 # Google Play: o que preencher na Play Console
 
-Respostas para a app SEALER **sem notificações FCM** (versão atual, 0.7.0). Se um dia a
+Respostas para a app SEALER **sem notificações FCM** (versão atual, 0.8.0). Se um dia a
 app passar a usar FCM, ver a secção no fim: algumas respostas mudam.
 
 Endereços que a Play pede:
