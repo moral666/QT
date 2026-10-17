@@ -6,7 +6,7 @@
 //! envelopes 1 a 1 como os outros. Com 10 pessoas, sao no maximo 9 envios.
 //!
 //! FORMATO (dentro do Double Ratchet, cabecalho v1 de `history.rs`):
-//!   tipo 6 = mensagem de grupo: [16 group_id][mensagem v1 completa: texto ou reacao]
+//!   tipo 6 = mensagem de grupo: [16 group_id][mensagem v1 completa: texto, anexo ou reacao]
 //!   tipo 7 = info do grupo:     [16 group_id][JSON: versao, nome, membros]
 //!   tipo 8 = saida do grupo:    [16 group_id]
 //!
@@ -31,9 +31,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::{bad, hex, parse_public_id, public_identity, unhex, QtClient, QtError};
 use crate::history::{
-    encode_control, encode_text, is_blocked_in, new_id, now_ms, to_chat, with_reactions,
-    ChatMessage, ReceiveResult, HDR, PAYLOAD_V1, T_GROUP_INFO, T_GROUP_LEAVE, T_GROUP_MSG, T_REACTION, T_TEXT,
-    UNSUPPORTED_TEXT,
+    encode_attachment, encode_control, encode_text, is_blocked_in, new_id, now_ms, to_chat, with_reactions,
+    ChatMessage, ReceiveResult, HDR, PAYLOAD_V1, T_ATTACHMENT, T_GROUP_INFO, T_GROUP_LEAVE, T_GROUP_MSG, T_REACTION,
+    T_TEXT, UNSUPPORTED_TEXT,
 };
 use qt_storage as st;
 use qt_storage::messages as hm;
@@ -156,6 +156,22 @@ fn conv_of(gid: &str) -> String {
 
 fn gid_from_conv(conv: &str) -> Option<&str> {
     conv.strip_prefix(GROUP_CONV_PREFIX)
+}
+
+/// E a conversa de um grupo ("g:...")?
+pub(crate) fn is_group_conv(conv: &str) -> bool {
+    conv.starts_with(GROUP_CONV_PREFIX)
+}
+
+/// Pode-se escrever nesta conversa? Um contacto valido, ou um grupo de que ainda faco parte.
+pub(crate) fn check_conversation(c: &st::rusqlite::Connection, conv: &str) -> Result<(), QtError> {
+    match gid_from_conv(conv) {
+        Some(gid) => match load(c, gid)? {
+            Some((_, true)) => Ok(()),
+            _ => Err(bad("group_inactive")),
+        },
+        None => crate::client::contact_to_identity(conv).map(|_| ()),
+    }
 }
 
 fn gid_hex(b: &[u8]) -> Option<String> {
@@ -352,7 +368,7 @@ fn no_change(contact_id: &str) -> ReceiveResult {
     ReceiveResult::NoChange { contact_id: contact_id.to_string() }
 }
 
-/// Guarda no historico do grupo a mensagem (texto) ou a reacao de `from`.
+/// Guarda no historico do grupo a mensagem (texto ou anexo) ou a reacao de `from`.
 fn apply_member_msg(c: &st::rusqlite::Connection, gid: &str, from: &str, inner: &[u8]) -> Result<ReceiveResult, QtError> {
     let conv = conv_of(gid);
     if inner.len() < HDR || inner[0] != PAYLOAD_V1 {
@@ -380,7 +396,14 @@ fn apply_member_msg(c: &st::rusqlite::Connection, gid: &str, from: &str, inner: 
             hm::set_reaction(c, &conv, &b[..16], from, emoji)?;
             return Ok(ReceiveResult::Updated { contact_id: conv });
         }
-        // Imagens, voz e outros tipos ainda nao vao para grupos nesta versao.
+        // Imagens, voz e ficheiros: so a chave e o id no relay; a app descarrega depois.
+        T_ATTACHMENT => match crate::attachments::decode_wire(&inner[HDR..]) {
+            Some(meta) => {
+                let body = crate::attachments::received_body(&meta)?;
+                hm::insert_message_from(c, id, &conv, false, hm::KIND_ATTACHMENT, &body, sent_at, now, hm::ST_RECEIVED, from)?
+            }
+            None => hm::insert_message_from(c, id, &conv, false, hm::KIND_TEXT, UNSUPPORTED_TEXT, sent_at, now, hm::ST_RECEIVED, from)?,
+        },
         _ => hm::insert_message_from(c, id, &conv, false, hm::KIND_TEXT, UNSUPPORTED_TEXT, sent_at, now, hm::ST_RECEIVED, from)?,
     };
     Ok(match stored {
@@ -576,6 +599,7 @@ impl QtClient {
         self.group_leave(group_id.clone())?;
         let c = self.lock()?;
         let tx = c.unchecked_transaction()?;
+        self.remove_contact_files(&tx, &conv_of(&group_id))?;
         hm::delete_conversation(&tx, &conv_of(&group_id))?;
         hm::group_delete(&tx, &group_id)?;
         tx.commit()?;
@@ -620,6 +644,32 @@ impl QtClient {
         let m = hm::get_message(&tx, &conv, &id)?.ok_or(QtError::Storage)?;
         tx.commit()?;
         Ok(to_chat(&m))
+    }
+
+    /// ANEXO NO GRUPO: o relay ja tem o ficheiro cifrado (enviado uma vez, criado com
+    /// `attachment_create` / `attachment_create_file` na conversa "g:" + group_id). A
+    /// mensagem com a chave vai a cada membro. Devolve os Public IDs sem sessao (ficam
+    /// de fora, como no texto).
+    pub fn group_attachment_uploaded(&self, group_id: String, message_id: String) -> Result<Vec<String>, QtError> {
+        let gid = parse_gid(&group_id)?;
+        let id: [u8; 16] = match unhex(&message_id) {
+            Some(b) if b.len() == 16 => b.try_into().map_err(|_| bad("message_id"))?,
+            _ => return Err(bad("message_id")),
+        };
+        let conv = conv_of(&group_id);
+        let c = self.lock()?;
+        let (g, active) = load(&c, &group_id)?.ok_or_else(|| bad("group_id"))?;
+        if !active {
+            return Err(bad("group_inactive"));
+        }
+        let tx = c.unchecked_transaction()?;
+        let (sent_at, wire) = self.finish_upload(&tx, &conv, &id)?;
+        let mut body = gid;
+        body.extend_from_slice(&encode_attachment(&id, sent_at, &wire));
+        let recipients: Vec<String> = g.members.iter().map(|m| m.pid.clone()).collect();
+        let missing = fanout(self, &tx, &recipients, T_GROUP_MSG, &body, Some(&id))?;
+        tx.commit()?;
+        Ok(missing)
     }
 
     /// REAGIR a uma mensagem do grupo (emoji vazio retira a minha reacao).

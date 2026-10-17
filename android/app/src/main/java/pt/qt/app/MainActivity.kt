@@ -268,6 +268,9 @@ fun AppRoot(vm: MainViewModel) {
                 onReact = { mid, emoji -> vm.reactGroup(openGroup.groupId, mid, emoji) },
                 onBack = vm::closeChat, onLoadOlder = vm::loadOlder,
                 onInfo = { showGroupInfo = true }, loadAttachment = vm::attachmentBytes,
+                onSendImage = { uri, original, copy -> vm.sendImageTo(openGroup.conversationId, uri, original, copy) },
+                onSendFile = { uri -> vm.sendFileTo(openGroup.conversationId, uri) },
+                onSendVoice = { file, ms -> vm.sendVoiceTo(openGroup.conversationId, file, ms) },
             )
         }
         ui.openChatId?.startsWith("g:") == true -> {
@@ -286,7 +289,7 @@ fun AppRoot(vm: MainViewModel) {
                 onSendImage = vm::sendImage, loadAttachment = vm::attachmentBytes,
                 blocked = chatId in ui.blocked, onBlock = vm::blockContact, onUnblock = vm::unblockContact,
                 invite = chatId in ui.invites, onAcceptInvite = vm::acceptInvite, onDeclineInvite = vm::declineInvite,
-                onReact = vm::react, onSendVoice = vm::sendVoice,
+                onReact = vm::react, onSendVoice = vm::sendVoice, onSendFile = vm::sendFile,
             )
         }
         showLockSettings -> {
@@ -955,49 +958,10 @@ fun ChatScreen(
     onDeclineInvite: (String) -> Unit = {},
     onReact: (String, String, String) -> Unit = { _, _, _ -> },
     onSendVoice: (Contact, File, Long) -> Unit = { _, _, _ -> },
+    onSendFile: (Contact, Uri) -> Unit = { _, _ -> },
 ) {
     val colors = LocalChatColors.current
-    val ctx = LocalContext.current
-    // TextFieldState (e nao String): so este campo recebe GIFs e autocolantes do
-    // teclado (Gboard, SwiftKey...). Tambem sobrevive a rodar o ecra.
-    val input = rememberTextFieldState()
-    // Imagem escolhida na galeria, a espera de confirmacao (pre-visualizacao).
-    var picked by rememberSaveable { mutableStateOf<Uri?>(null) }
     var viewing by remember { mutableStateOf<ChatMessage?>(null) }
-    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) picked = uri
-    }
-    // Mensagens de voz: gravador (para e apaga a gravacao se o ecra sair) e permissao do microfone.
-    val recorder = remember { VoiceRecorder(ctx) }
-    var recording by remember { mutableStateOf(false) }
-    DisposableEffect(Unit) { onDispose { recorder.cancel() } }
-    fun startRecording() {
-        recording = try {
-            recorder.start(); true
-        } catch (e: Exception) {
-            android.widget.Toast.makeText(ctx, "Não foi possível usar o microfone.", android.widget.Toast.LENGTH_SHORT).show()
-            false
-        }
-    }
-    val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) startRecording()
-        else android.widget.Toast.makeText(ctx, "Sem acesso ao microfone, não é possível gravar.", android.widget.Toast.LENGTH_SHORT).show()
-    }
-    val keyboardImages = remember(contact) {
-        ReceiveContentListener { content ->
-            if (contact == null || !content.hasMediaType(MediaType.Image)) return@ReceiveContentListener content
-            var taken = false
-            content.consume { item ->
-                val uri = item.uri ?: return@consume false
-                if (!taken) {
-                    taken = true
-                    // Copia ja, enquanto o teclado da permissao de leitura.
-                    ImagePrep.copyToCache(ctx, uri)?.let { f -> onSendImage(contact, Uri.fromFile(f), false, f) }
-                }
-                true
-            }
-        }
-    }
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var chatMenu by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
@@ -1134,85 +1098,18 @@ fun ChatScreen(
                     Spacer(Modifier.height(8.dp))
                     Button(onClick = { showAdd = true }) { Text("Adicionar para responder") }
                 }
-            } else if (recording) {
-                VoiceRecordBar(
-                    recorder,
-                    onCancel = { recorder.cancel(); recording = false },
-                    onSend = {
-                        val rec = recorder.stop()
-                        recording = false
-                        if (rec != null) onSendVoice(contact, rec.first, rec.second)
-                    },
-                )
             } else {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    IconButton(
-                        onClick = {
-                            // O seletor de fotos e outro ecra: nao conta como sair da app (bloqueio).
-                            AutoLockPause.active = true
-                            pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        },
-                        modifier = Modifier.padding(bottom = 4.dp),
-                    ) { Icon(Icons.Filled.Add, contentDescription = "Enviar imagem ou GIF") }
-                    BasicTextField(
-                        state = input,
-                        modifier = Modifier.weight(1f).contentReceiver(keyboardImages),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                        lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 1, maxHeightInLines = 5),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        decorator = { inner ->
-                            Box(
-                                Modifier.clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surface)
-                                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                            ) {
-                                if (input.text.isEmpty()) {
-                                    Text("Mensagem", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                inner()
-                            }
-                        },
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    // Sem texto escrito, o botao grava uma mensagem de voz (ate 10 s).
-                    val empty = input.text.isBlank()
-                    FloatingActionButton(
-                        onClick = {
-                            val text = input.text.toString()
-                            if (text.isNotBlank()) {
-                                onSend(contact, text); input.clearText()
-                            } else if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                                startRecording()
-                            } else {
-                                AutoLockPause.active = true   // o pedido de permissao nao conta como sair da app
-                                askMic.launch(Manifest.permission.RECORD_AUDIO)
-                            }
-                        },
-                        shape = CircleShape,
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(52.dp),
-                    ) {
-                        if (empty) Text("🎤", fontSize = 22.sp)
-                        else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Enviar")
-                    }
-                }
+                ChatComposer(
+                    onSendText = { text -> onSend(contact, text) },
+                    onSendImage = { uri, original, copy -> onSendImage(contact, uri, original, copy) },
+                    onSendFile = { uri -> onSendFile(contact, uri) },
+                    onSendVoice = { file, ms -> onSendVoice(contact, file, ms) },
+                )
             }
         }
     }
     if (showAdd) AddContactDialog(onDismiss = { showAdd = false }, onAdd = { n, p -> onAdd(n, p); showAdd = false })
-    picked?.let { uri ->
-        if (contact != null) {
-            SendImageDialog(
-                uri,
-                onSend = { original -> onSendImage(contact, uri, original, null); picked = null },
-                onDismiss = { picked = null },
-            )
-        }
-    }
-    viewing?.let { m -> AttachmentViewer(m, loadAttachment, onDismiss = { viewing = null }) }
+    viewing?.let { m -> AttachmentOverlay(m, loadAttachment, onDismiss = { viewing = null }) }
     if (showDelete) {
         DeleteActions(
             name = name,

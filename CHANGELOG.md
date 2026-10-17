@@ -6,6 +6,24 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 17 de outubro de 2026: ficheiros e anexos nos grupos (app 0.9.0)
+
+- **Ficheiros até 25 MB** (PDF, documentos, folhas de cálculo, etc.): botão "+" > "Ficheiro".
+  Vão tal como estão, cifrados ponta a ponta como as imagens, com o nome e o tipo dentro da
+  mensagem cifrada (corpo do anexo na versão 2; imagens e voz continuam na versão 1). Ao tocar:
+  "Abrir" (a outra app lê o ficheiro da memória do SEALER, sem cópia decifrada em disco, ver
+  `SealerFileProvider` em `android/.../Files.kt`) ou "Guardar" (onde o utilizador escolher).
+- **Fotos, GIFs, voz e ficheiros nos grupos.** O ficheiro cifrado vai uma vez para o relay e a
+  chave vai a cada membro (`group_attachment_uploaded`). Nos grupos, quem recebe não apaga o
+  ficheiro do relay (os outros ainda o podem estar a descarregar): o relay apaga-o ao fim de
+  24 horas. O relay não mudou.
+- A caixa de escrita é a mesma nas conversas a dois e nos grupos (`Composer.kt`). Nos grupos,
+  tocar numa imagem abre-a em ecrã inteiro.
+- Apagar um grupo apaga também os anexos cifrados dele no telemóvel (antes ficavam no disco).
+- Testes: `ffi/tests/files.rs` (ficheiro a dois, nomes e tipos inválidos, foto, voz e ficheiro
+  num grupo com três pessoas, quem saiu do grupo não envia).
+- O exemplo `server/examples/peer.rs` voltou a compilar.
+
 ### 17 de outubro de 2026: grupos, reações, voz, convites e online (app 0.8.0)
 
 - **Online / offline** (`ffi/src/presence.rs`): ponto verde nos contactos com a app aberta,

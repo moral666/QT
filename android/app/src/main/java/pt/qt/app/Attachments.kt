@@ -263,7 +263,7 @@ fun AttachmentImage(bytes: ByteArray, key: String, modifier: Modifier, contentSc
     )
 }
 
-/** Conteudo de uma bolha com imagem/GIF: a imagem, ou o estado da descarga. */
+/** Conteudo de uma bolha com anexo: a imagem (ou voz, ou ficheiro), ou o estado da descarga. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun AttachmentContent(
@@ -274,6 +274,11 @@ fun AttachmentContent(
     onOpen: () -> Unit,
     onLongPress: () -> Unit = {},
 ) {
+    // Ficheiros (PDF, documentos...): nunca mostrados aqui, so abertos ou guardados a pedido.
+    if (att.fileName != null) {
+        FileContent(m, att, progress, onOpen, onLongPress)
+        return
+    }
     if (att.mime == VOICE_MIME) {
         VoiceContent(m, att, progress, load, onLongPress)
         return

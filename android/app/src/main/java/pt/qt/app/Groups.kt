@@ -1,5 +1,8 @@
 package pt.qt.app
 
+import android.net.Uri
+import java.io.File
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -80,10 +83,13 @@ fun GroupChatScreen(
     onLoadOlder: () -> Unit,
     onInfo: () -> Unit,
     loadAttachment: suspend (String, String) -> ByteArray?,
+    onSendImage: (Uri, Boolean, File?) -> Unit = { _, _, _ -> },
+    onSendFile: (Uri) -> Unit = {},
+    onSendVoice: (File, Long) -> Unit = { _, _ -> },
 ) {
     val colors = LocalChatColors.current
-    val input = rememberTextFieldState()
     var reactingTo by remember { mutableStateOf<ChatMessage?>(null) }
+    var viewing by remember { mutableStateOf<ChatMessage?>(null) }
     val msgs = ui.chatMessages
     val listState = rememberLazyListState()
     val nearOldest by remember {
@@ -139,7 +145,7 @@ fun GroupChatScreen(
                     val m = msgs[i]
                     item(key = m.seq) {
                         MessageBubble(
-                            m, ui.transfers[m.messageId], loadAttachment,
+                            m, ui.transfers[m.messageId], loadAttachment, onOpen = { viewing = m },
                             onLongPress = { if (group.active) reactingTo = m },
                             senderName = if (m.outgoing) null else ui.memberName(m.sender),
                         )
@@ -169,46 +175,16 @@ fun GroupChatScreen(
                     style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
                 )
             } else {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    BasicTextField(
-                        state = input,
-                        modifier = Modifier.weight(1f),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                        lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 1, maxHeightInLines = 5),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        decorator = { inner ->
-                            Box(
-                                Modifier.clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surface)
-                                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                            ) {
-                                if (input.text.isEmpty()) {
-                                    Text("Mensagem", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                inner()
-                            }
-                        },
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    FloatingActionButton(
-                        onClick = {
-                            val text = input.text.toString()
-                            if (text.isNotBlank()) {
-                                onSend(text)
-                                input.clearText()
-                            }
-                        },
-                        shape = CircleShape,
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(52.dp),
-                    ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Enviar") }
-                }
+                ChatComposer(
+                    onSendText = onSend,
+                    onSendImage = onSendImage,
+                    onSendFile = onSendFile,
+                    onSendVoice = onSendVoice,
+                )
             }
         }
     }
+    viewing?.let { m -> AttachmentOverlay(m, loadAttachment, onDismiss = { viewing = null }) }
     reactingTo?.let { m ->
         ReactionPicker(
             current = m.reactions.firstOrNull { it.mine }?.emoji,
