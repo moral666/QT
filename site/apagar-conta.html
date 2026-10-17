@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Apagar a conta · SEALER</title>
+    <meta
+      name="description"
+      content="Como apagar a tua conta SEALER e todos os dados, na app ou depois de a desinstalar."
+    />
+    <meta name="theme-color" content="#05060d" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="referrer" content="no-referrer" />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- Página exigida pela Google Play (link web para pedir a eliminação da conta).
+         Só texto, sem JavaScript. Tem de continuar verdadeira em relação ao relay
+         (DeleteAccount e prazos em server/src/store.rs). -->
+    <link rel="stylesheet" href="./src/legal.css" />
+  </head>
+  <body>
+    <header class="legal-bar">
+      <a class="legal-bar__brand" href="./">
+        <img src="./src/assets/logo/logo-96.webp" width="96" height="96" alt="" />
+        <span>SEALER</span>
+      </a>
+    </header>
+
+    <main class="legal">
+      <p class="legal__label">Última atualização: 17 de outubro de 2026</p>
+      <h1>Apagar a conta SEALER</h1>
+      <p class="legal__lede">
+        A tua conta SEALER não tem email nem palavra-passe: é um conjunto de chaves que vive no teu telemóvel. Por isso,
+        apaga-se a partir da app, e o que está no nosso servidor apaga-se também sozinho.
+      </p>
+
+      <h2>Se ainda tens a app</h2>
+      <ol>
+        <li>Abre a app SEALER.</li>
+        <li>Toca no menu (os três pontos, no canto superior direito).</li>
+        <li>Escolhe <strong>Destruir perfil e dados</strong>.</li>
+        <li>Escreve <strong>APAGAR</strong> para confirmar.</li>
+      </ol>
+      <p>Isto apaga:</p>
+      <ul>
+        <li>
+          <strong>do nosso servidor</strong>: as tuas chaves públicas e todas as mensagens e contagens à tua espera, logo
+          no momento;
+        </li>
+        <li>
+          <strong>do teu telemóvel</strong>: a tua identidade e as tuas chaves, todos os contactos, todas as conversas,
+          as imagens e as definições.
+        </li>
+      </ul>
+      <p>
+        Se o telemóvel estiver sem rede, a app avisa e deixa-te escolher entre tentar de novo ou apagar só do telemóvel
+        (nesse caso, o servidor apaga o resto sozinho, como explicado abaixo).
+      </p>
+
+      <h2>Se já desinstalaste a app</h2>
+      <p>
+        Ao desinstalar a app, tudo o que estava no telemóvel é apagado pelo próprio Android. O que ficou no nosso servidor
+        apaga-se automaticamente, sem precisares de fazer nada:
+      </p>
+      <ul>
+        <li>mensagens à tua espera: ao fim de 30 dias;</li>
+        <li>imagens e GIFs à tua espera: ao fim de 24 horas;</li>
+        <li>as tuas chaves públicas: ao fim de 90 dias sem usares a app.</li>
+      </ul>
+      <p>
+        Como não guardamos o teu telefone, email nem nome, não conseguimos encontrar a tua conta a partir de um pedido por
+        email. Se precisares de ajuda, escreve para <a href="mailto:privacidade@sealer.pt">privacidade@sealer.pt</a> e
+        explicamos as opções.
+      </p>
+
+      <h2>O que fica depois de apagar</h2>
+      <p>
+        Durante 30 dias, o servidor lembra-se só de que o teu ID (uma chave pública, que não diz quem és) foi apagado,
+        para avisar quem te tentar escrever de que a conta já não existe. Depois, não fica nada. Mais detalhes na
+        <a href="./privacidade">política de privacidade</a>.
+      </p>
+
+      <p class="legal__back"><a href="./">Voltar ao início</a></p>
+    </main>
+
+    <footer class="legal-footer">
+      <p>© 2026 SEALER, um projeto QT. <a href="./privacidade">Política de privacidade</a></p>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="pt-PT">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Política de privacidade · SEALER</title>
+    <meta
+      name="description"
+      content="Que dados a app SEALER e o seu servidor tratam, durante quanto tempo, e como apagar tudo. Sem telefone, sem email, sem publicidade."
+    />
+    <meta name="theme-color" content="#05060d" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="referrer" content="no-referrer" />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- Página só de texto: sem JavaScript. O estilo vem de src/legal.css.
+         Tem de continuar verdadeira em relação ao relay (server/src/store.rs, blobs.rs,
+         latency.rs) e às apps. Se a app passar a usar notificações (FCM), atualizar. -->
+    <link rel="stylesheet" href="./src/legal.css" />
+  </head>
+  <body>
+    <header class="legal-bar">
+      <a class="legal-bar__brand" href="./">
+        <img src="./src/assets/logo/logo-96.webp" width="96" height="96" alt="" />
+        <span>SEALER</span>
+      </a>
+    </header>
+
+    <main class="legal">
+      <p class="legal__label">Última atualização: 17 de outubro de 2026</p>
+      <h1>Política de privacidade</h1>
+      <p class="legal__lede">
+        Resumindo: não pedimos o teu número de telefone, nem email, nem nome. As tuas mensagens são cifradas no teu
+        telemóvel e nós não as conseguimos ler. O nosso servidor guarda só o mínimo para as entregar, durante pouco tempo.
+      </p>
+
+      <h2>Quem é responsável</h2>
+      <p>
+        A SEALER (app e servidor) é um projeto de Nuno Gonzalez, em Portugal, responsável pelo tratamento dos dados
+        descritos aqui. Contacto: <a href="mailto:privacidade@sealer.pt">privacidade@sealer.pt</a>.
+      </p>
+      <p>
+        A app está em testes fechados: por agora, só testadores convidados têm acesso ao serviço.
+      </p>
+
+      <h2>O que fica só no teu telemóvel</h2>
+      <p>
+        As tuas mensagens, imagens, contactos, a tua identidade (as tuas chaves) e as definições ficam guardados apenas no
+        teu telemóvel, numa base de dados cifrada (SQLCipher) cuja chave está protegida pelo próprio telemóvel. Nós nunca
+        recebemos estes dados. Se perderes o telemóvel ou desinstalares a app, não os conseguimos recuperar.
+      </p>
+
+      <h2>O que passa pelo nosso servidor</h2>
+      <p>
+        Para as mensagens chegarem a quem não está ligado no momento, passam por um servidor da SEALER (o "relay"),
+        alojado na Amazon Web Services, num centro de dados na Suécia (União Europeia). O servidor trata:
+      </p>
+      <ul>
+        <li>
+          <strong>O teu ID</strong>: uma chave pública criada no teu telemóvel, que não diz quem és. Não está ligado a
+          nenhum telefone, email ou nome.
+        </li>
+        <li>
+          <strong>As tuas chaves públicas</strong>: servem para outra pessoa poder começar uma conversa contigo de forma
+          cifrada. São públicas por natureza.
+        </li>
+        <li>
+          <strong>Mensagens e anexos à tua espera</strong>: chegam já cifrados. O servidor não consegue ler o conteúdo e
+          também não sabe quem os enviou (o remetente vai dentro da parte cifrada). Sabe só para que ID são.
+        </li>
+        <li>
+          <strong>O endereço de rede (IP) do teu telemóvel</strong>: é necessário para manter a ligação. Só é usado em
+          memória enquanto estás ligado e não fica registado.
+        </li>
+      </ul>
+      <p>
+        O servidor guarda também contagens anónimas (por exemplo, quantas mensagens passaram num minuto e quanto tempo
+        demoraram), sem IDs, IPs nem conteúdo. Servem para ver se o serviço está a funcionar bem.
+      </p>
+
+      <h2>Durante quanto tempo</h2>
+      <ul>
+        <li>Mensagens à tua espera: até as recebes; se nunca as fores buscar, são apagadas ao fim de 30 dias.</li>
+        <li>Imagens e GIFs à tua espera: apagados quando os descarregas, ou ao fim de 24 horas.</li>
+        <li>
+          As tuas chaves públicas: enquanto usares a app. Se não a abrires durante 90 dias, são apagadas sozinhas.
+        </li>
+        <li>Quanto enviaste em anexos por dia (só um número, para evitar abusos): 2 dias.</li>
+        <li>
+          Depois de apagares a conta: durante 30 dias, o servidor lembra-se só de que aquele ID foi apagado, para avisar
+          quem te tentar escrever. Depois, nada.
+        </li>
+      </ul>
+
+      <h2>Para que usamos estes dados</h2>
+      <p>
+        Só para entregar as tuas mensagens e manter o serviço a funcionar e protegido contra abusos. A base legal é a
+        prestação do serviço que pedes ao usar a app. Não usamos os dados para publicidade, não criamos perfis e não os
+        vendemos nem partilhamos com ninguém.
+      </p>
+
+      <h2>Quem mais está envolvido</h2>
+      <ul>
+        <li>Amazon Web Services: aloja o servidor (na Suécia). Só vê dados cifrados e técnicos.</li>
+        <li>Cloudflare: aloja este site (ver a <a href="./politica-de-cookies">política de cookies</a>).</li>
+      </ul>
+      <p>A app não tem publicidade, estatísticas de utilização nem relatórios de falhas de outras empresas.</p>
+
+      <h2>Apagar os teus dados</h2>
+      <p>
+        Na app, no menu, escolhe <strong>Destruir perfil e dados</strong>: apaga primeiro o que está no servidor e
+        depois tudo do teu telemóvel. Se já desinstalaste a app, vê a página
+        <a href="./apagar-conta">Apagar a conta</a>.
+      </p>
+
+      <h2>Os teus direitos</h2>
+      <p>
+        Tens direito a aceder aos teus dados, a corrigi-los, a apagá-los, a limitar ou a opor-te ao seu tratamento e a
+        recebê-los num formato portátil. Como não sabemos quem és (não há telefone, email nem nome), a forma mais segura
+        de exercer estes direitos é na própria app, que prova que és o dono do ID. Para outras questões, escreve para
+        <a href="mailto:privacidade@sealer.pt">privacidade@sealer.pt</a>. Podes também apresentar queixa à Comissão
+        Nacional de Proteção de Dados (CNPD), em <a href="https://www.cnpd.pt" rel="noopener">cnpd.pt</a>.
+      </p>
+
+      <h2>Alterações a esta política</h2>
+      <p>
+        Se mudarmos a forma como tratamos os dados (por exemplo, se a app passar a receber notificações com a app fechada),
+        atualizamos esta página antes de a mudança chegar à app. A data no topo mostra quando foi a última alteração.
+      </p>
+
+      <p class="legal__back"><a href="./">Voltar ao início</a></p>
+    </main>
+
+    <footer class="legal-footer">
+      <p>© 2026 SEALER, um projeto QT. <a href="./politica-de-cookies">Política de cookies</a></p>
+    </footer>
+  </body>
+</html>
