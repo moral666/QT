@@ -89,6 +89,8 @@ data class UiState(
     val wipeServerFailed: String? = null,
     /** Contactos bloqueados (contactId): as mensagens deles sao descartadas ao chegar. */
     val blocked: Set<String> = emptySet(),
+    /** Convites: quem me escreveu sem estar nos contactos e mandou o seu ID (contactId). */
+    val invites: Set<String> = emptySet(),
     /** Aceitou os termos de utilizacao em vigor (TERMS_VERSION). */
     val termsAccepted: Boolean = true,
 )
@@ -203,6 +205,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 bioEnabled = bio.isEnabled(), bioAvailable = bio.isAvailable(),
                 lockTimeoutMs = prefs.getLong("lock_timeout_ms", DEFAULT_LOCK_TIMEOUT_MS),
                 blocked = client.blockedContacts().toSet(),
+                invites = client.pendingIntros().toSet(),
                 termsAccepted = prefs.getInt("terms_version", 0) >= TERMS_VERSION,
             )
         }
@@ -687,6 +690,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * ACEITAR CONVITE: quem me escreveu mandou o seu Public ID (cifrado, verificado no Rust
+     * contra a identidade da sessao), por isso nao e preciso escreve-lo. Fica nos contactos.
+     */
+    fun acceptInvite(contactId: String, nickname: String) = io {
+        val client = qt ?: return@io
+        try {
+            val publicId = client.pendingIntro(contactId) ?: run { error("Este convite já não está disponível"); return@io }
+            val c = Contact(nickname.trim().ifBlank { "Contacto ${contactId.take(4)}" }, publicId, relayIdOfPublicId(publicId))
+            val list = _ui.value.contacts.filter { it.contactId != c.contactId } + c
+            contactStore.save(list, contactsKey ?: return@io)
+            client.dismissIntro(contactId)
+            _ui.update { it.copy(contacts = list, invites = it.invites - contactId) }
+            refreshViews(client)
+            flushOutbox()   // recibos que estavam a espera de saber o endereco deste contacto
+        } catch (e: Exception) {
+            error("Nao foi possivel aceitar o convite: ${e.safeMsg()}")
+        }
+    }
+
+    /** RECUSAR CONVITE: apaga a conversa e a sessao (se voltar a escrever, aparece outro convite). */
+    fun declineInvite(contactId: String) = deleteContact(contactId)
+
     /** Aceitou os termos de utilizacao e a politica de privacidade (ecra inicial). */
     fun acceptTerms() {
         prefs.edit().putInt("terms_version", TERMS_VERSION).apply()
@@ -780,7 +806,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun markRead(client: QtClient, contactId: String) {
-        if (client.markConversationRead(contactId, _ui.value.readReceipts) > 0u) {
+        // "Visto" so para contactos: a quem ainda nao aceitei (convite) nao se diz que li.
+        val receipts = _ui.value.readReceipts && _ui.value.contacts.any { it.contactId == contactId }
+        if (client.markConversationRead(contactId, receipts) > 0u) {
             flushOutbox()
         }
         refreshViews(client)
@@ -791,8 +819,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val st = _ui.value
         val cid = st.openChatId
         val window = if (cid != null) client.messagesPage(cid, null, maxOf(PAGE, st.chatMessages.size).toUInt()) else null
+        val invites = client.pendingIntros().toSet()
         _ui.update {
             it.copy(
+                invites = invites,
                 conversations = client.conversations(),
                 chatMessages = if (window != null && it.openChatId == cid) window else it.chatMessages,
             )

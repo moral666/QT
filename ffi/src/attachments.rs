@@ -512,6 +512,7 @@ impl QtClient {
             return Err(bad("message_id"));
         }
         let tx = c.unchecked_transaction()?;
+        crate::history::queue_intro_if_needed(self, &tx, &contact_id)?;
         let plain = crate::history::encode_attachment(&idarr, m.sent_at, &encode_wire(&meta)?);
         let blob = self.seal_with(&tx, &contact_id, &plain)?;
         meta.st = ST_READY;

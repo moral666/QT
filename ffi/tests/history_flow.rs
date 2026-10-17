@@ -67,12 +67,14 @@ fn ciclo_completo_enviado_entregue_visto() {
 
     let item = a.c.send_text(bob.clone(), "olá Bob".into()).unwrap();
     assert_eq!(status_of(&a, &bob, &item.outbox_id), MessageStatus::Pending);
-    assert_eq!(a.c.outbox().unwrap().len(), 1);
+    // O convite (o Public ID da Alice) vai antes da 1.a mensagem.
+    assert_eq!(a.c.outbox().unwrap().len(), 2);
 
     // Relay recebe e confirma -> "Enviado"; Bob recebe e guarda.
     let r = deliver_outbox(&a, &b);
     assert_eq!(status_of(&a, &bob, &item.outbox_id), MessageStatus::Sent);
-    match &r[0] {
+    assert!(matches!(&r[0], ReceiveResult::NoChange { .. }), "o convite nao aparece no historico");
+    match &r[1] {
         ReceiveResult::NewMessage { message } => {
             assert_eq!(message.text, "olá Bob");
             assert_eq!(message.contact_id, alice);
@@ -134,7 +136,7 @@ fn historico_e_outbox_sobrevivem_ao_reinicio() {
     // A app da Alice "morre" antes de conseguir enviar: tudo continua na outbox.
     a.restart();
     let pend = a.c.outbox().unwrap();
-    assert_eq!(pend.len(), 30);
+    assert_eq!(pend.len(), 31, "30 mensagens + o convite");
     for it in &pend {
         b.c.receive_sealed(it.blob.clone()).unwrap();
         a.c.outbox_sent(it.outbox_id.clone()).unwrap();
@@ -205,4 +207,39 @@ fn falha_a_meio_nao_perde_a_mensagem() {
     assert!(b.c.receive_sealed(bad).is_err());
     assert!(b.c.messages_page(a.cid(), None, 10).unwrap().is_empty());
     assert!(matches!(b.c.receive_sealed(item.blob).unwrap(), ReceiveResult::NewMessage { .. }));
+}
+
+#[test]
+fn convite_leva_o_id_de_quem_inicia_e_so_vai_uma_vez() {
+    let (a, b) = setup();
+    let (alice, bob) = (a.cid(), b.cid());
+    a.c.send_text(bob.clone(), "olá".into()).unwrap();
+    deliver_outbox(&a, &b);
+    assert_eq!(b.c.pending_intro(alice.clone()).unwrap(), Some(a.id.public_id.clone()));
+    assert_eq!(b.c.pending_intros().unwrap(), vec![alice.clone()]);
+
+    // A seguinte ja nao leva convite.
+    a.c.send_text(bob.clone(), "outra".into()).unwrap();
+    assert_eq!(a.c.outbox().unwrap().len(), 1);
+    deliver_outbox(&a, &b);
+
+    // Quem responde nao manda convite (nao iniciou a sessao).
+    b.c.send_text(alice.clone(), "resposta".into()).unwrap();
+    assert_eq!(b.c.outbox().unwrap().len(), 1);
+    deliver_outbox(&b, &a);
+    assert!(a.c.pending_intros().unwrap().is_empty());
+
+    // Aceite (a app guardou o contacto): o convite sai.
+    b.c.dismiss_intro(alice.clone()).unwrap();
+    assert_eq!(b.c.pending_intro(alice.clone()).unwrap(), None);
+}
+
+#[test]
+fn recusar_apagando_o_contacto_limpa_o_convite() {
+    let (a, b) = setup();
+    let alice = a.cid();
+    a.c.send_text(b.cid(), "olá".into()).unwrap();
+    deliver_outbox(&a, &b);
+    b.c.delete_contact(alice.clone()).unwrap();
+    assert_eq!(b.c.pending_intro(alice).unwrap(), None);
 }
