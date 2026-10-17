@@ -462,9 +462,10 @@ tipo 1 = texto:  [texto UTF-8, máx. 9000 bytes]
 tipo 2 = recibo: [1 estado: 2=entregue, 3=vista][2 n BE][n × 16 msg_id], n ≤ 400
 tipo 3 = anexo:  [1 versão=1][32 chave][16 blob_id][8 tamanho BE][8 tamanho cifrado BE]
                  [4 largura BE][4 altura BE][1 n][n bytes do tipo MIME]
+                 ficheiro: [1 versão=2] e o mesmo, mais [1 k][k bytes do nome, UTF-8]
 tipo 4 = convite: [Public ID de quem escreve, UTF-8]
 tipo 5 = reação: [16 msg_id da mensagem][emoji UTF-8, máx. 32 bytes; vazio = retirar]
-tipo 6 = mensagem de grupo: [16 group_id][payload v1 completo: tipo 1 ou 5]
+tipo 6 = mensagem de grupo: [16 group_id][payload v1 completo: tipo 1, 3 ou 5]
 tipo 7 = info do grupo:     [16 group_id][JSON: versão, nome, membros e administradores]
 tipo 8 = saída do grupo:    [16 group_id]
 tipo 9 = presença: [1 estado: 1 = online, 0 = offline]  (msg_id sempre o mesmo)
@@ -472,6 +473,12 @@ tipo 9 = presença: [1 estado: 1 = online, 0 = offline]  (msg_id sempre o mesmo)
 
 **Mensagens de voz** são anexos (tipo 3) com o MIME `audio/mp4` (AAC), até 10 s e 1 MiB;
 a "largura" leva a duração em ms e a "altura" é 0.
+
+**Ficheiros** (desde a app 0.9.0) são anexos (tipo 3) na versão 2 do corpo: qualquer MIME
+`tipo/subtipo` em minúsculas (até 100 bytes, sem parâmetros) e o nome do ficheiro (1 a 200
+bytes UTF-8, sem `/`, `\` nem caracteres de controlo, nem `.` ou `..`); largura e altura 0.
+Imagens e voz continuam na versão 1, que as versões antigas conhecem. Uma versão antiga
+recebe um ficheiro como "atualiza a app".
 
 **Convite** (tipo 4): vai uma vez, antes da primeira mensagem a quem ainda não nos escreveu.
 O destinatário só aceita o Public ID se a chave de identidade dele for a da sessão que o
@@ -515,7 +522,7 @@ continua a ser reconhecido, sem o contacto ficar em claro. Tudo com
 **Tipos desconhecidos.** Um payload v1 com tipo que a versao nao conhece e
 guardado como aviso ("atualiza a app"), nunca como texto.
 
-## 14. Anexos: imagens e GIFs (ate 25 MiB)
+## 14. Anexos: imagens, GIFs, voz e ficheiros (ate 25 MiB)
 
 Implementado em `ffi/src/attachments.rs` (cliente) e `server/src/blobs.rs` (relay).
 Testes: `server/tests/attachments_e2e.rs` e `server/tests/relay_blobs.rs`.
@@ -527,7 +534,8 @@ com zeros) e cifrado em blocos de 40 944 bytes com ChaCha20-Poly1305, AAD
 Cada bloco cifrado tem 40 KiB, o tamanho de um `BlobPut`. Trocar, repetir,
 reordenar ou cortar blocos faz a verificacao falhar; o recetor so marca o
 anexo como pronto depois de verificar o ficheiro inteiro. Tipos aceites:
-`image/jpeg`, `image/png`, `image/gif`, `image/webp`.
+`image/jpeg`, `image/png`, `image/gif`, `image/webp`, `audio/mp4` (voz) e, nos
+ficheiros (versao 2, com nome), qualquer tipo bem formado.
 
 **Envio.** O cliente guarda o ficheiro cifrado, reserva espaco no relay, envia
 os blocos e so depois manda, pelo Double Ratchet (com Sealed Sender), a
@@ -535,7 +543,8 @@ mensagem tipo 3 com a chave, o `blob_id`, os tamanhos e o tipo. O `token` de
 escrita nunca sai do telemovel de quem envia.
 
 **Rececao.** A mensagem tipo 3 entra no historico como "a descarregar"; o
-cliente descarrega os blocos, verifica tudo e pede ao relay `BlobDelete`.
+cliente descarrega os blocos, verifica tudo e pede ao relay `BlobDelete` (so nas
+conversas a dois; nos grupos o relay apaga-o ao fim de 24 h, ver secao 15).
 
 **No relay.** Bytes opacos num ficheiro por anexo (`anexos/<blob_id>`, 0600),
 registo no Redis com TTL de 24 h (`size`, hash do token, completo/incompleto) e
@@ -544,9 +553,11 @@ ficheiro. Limites: 27 MiB por ficheiro, espaco total configuravel, espaco minimo
 no disco (1 GiB por omissao) e bytes enviados por utilizador por dia (contador `blobquota:<user>:<dia>`, 2 dias).
 
 **No telemovel.** Os ficheiros ficam cifrados em `<base de dados>.anexos/`, com
-nomes derivados de `SHA-256("QT-ATT-FILE" || contacto || msg_id)`; a chave fica
-no SQLCipher. A imagem em claro so existe em memoria, para o ecra. Eliminar a
-conversa, o contacto ou todos os dados apaga os ficheiros.
+nomes derivados de `SHA-256("QT-ATT-FILE" || conversa || msg_id)`; a chave fica
+no SQLCipher. A imagem em claro so existe em memoria, para o ecra. Um ficheiro so
+e decifrado a pedido: para outra app o ler da memoria (Android: `SealerFileProvider`,
+sem copia em disco) ou para o guardar onde o utilizador escolher. Eliminar a
+conversa, o contacto, o grupo ou todos os dados apaga os ficheiros.
 
 ## 15. Grupos (até 10 pessoas, 3 administradores)
 
@@ -563,7 +574,13 @@ sair). Quem é removido recebe a versão nova e fica com o grupo inativo.
 
 **Mensagens** (tipo 6) só são aceites de membros. Uma que chegue antes da info (envelopes
 de pessoas diferentes não chegam por ordem) fica guardada até a info chegar (no máximo 100).
-Nesta versão vão texto e reações; outros tipos aparecem como "atualiza a app".
+Vão texto, reações e, desde a app 0.9.0, anexos (fotos, GIFs, voz e ficheiros); outros tipos
+aparecem como "atualiza a app".
+
+**Anexos no grupo.** O ficheiro cifrado vai uma só vez para o relay; a mensagem tipo 3 (com a
+chave e o `blob_id`) vai dentro do tipo 6 a cada membro (`group_attachment_uploaded`). Quem
+recebe descarrega e verifica como numa conversa a dois, mas não pede `BlobDelete`: os outros
+membros ainda o podem estar a descarregar. O relay apaga-o ao fim de 24 horas.
 
 **Sair** (tipo 8): os administradores que o recebem publicam logo uma versão sem essa
 pessoa. Um administrador que sai publica ele a versão nova; se era o único, passa a sê-lo o

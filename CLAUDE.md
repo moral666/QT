@@ -31,7 +31,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
 - O **site nunca menciona "sem auditoria externa"**.
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.8.0**, `versionCode` 6), em
+- Versões da app: série 0.x (agora **0.9.0**, `versionCode` 7), em
   `android/app/build.gradle.kts`.
 - Conta de programador da Google Play (25 USD): só depois de testar a app.
 - Notificações (FCM) ficam para uma fase seguinte e precisam de aprovação.
@@ -45,6 +45,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
   `server` (relay, Redis). Nenhuma criptografia em Kotlin.
 - App Android: `android/` (Kotlin + Compose). Ficheiros principais:
   `MainViewModel.kt`, `MainActivity.kt`, `Groups.kt`, `Voice.kt`, `Attachments.kt`,
+  `Files.kt` (ficheiros), `Composer.kt` (caixa de escrita, igual a dois e nos grupos),
   `RelayLink.kt`.
 - Documentos de referência: `docs/protocol-spec.md` (formato de tudo o que vai
   na rede), `docs/known-limitations.md`, `docs/google-play.md`,
@@ -56,6 +57,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 2 recibo, 3 anexo (imagem, GIF ou voz `audio/mp4`), 4 convite, 5 reação,
 6 mensagem de grupo, 7 info do grupo, 8 saída do grupo, 9 presença. O próximo
 tipo livre é o 10. Uma versão antiga mostra "atualiza a app" para tipos novos.
+Ficheiros: tipo 3 com o corpo na versão 2 (com o nome); imagens e voz na versão 1.
 
 ### Funcionalidades da 0.8.0
 
@@ -65,6 +67,12 @@ pessoas com 3 administradores (envio a cada membro, `ffi/src/groups.rs`; criar
 não exige pessoas nem nome), online / offline só para contactos e cifrado
 (`ffi/src/presence.rs`, interruptor no menu), ecrã do ID só com QR (em
 maiúsculas, menos denso) e ID abreviado.
+
+### Funcionalidades da 0.9.0
+
+Ficheiros até 25 MB (PDF, documentos...) a dois e em grupos, "Abrir" noutra app (lê da
+memória, sem cópia em disco) ou "Guardar"; fotos, GIFs e voz também nos grupos (o ficheiro
+cifrado vai uma vez ao relay; nos grupos quem recebe não o apaga, o relay apaga ao fim de 24 h).
 
 ## Comandos
 
@@ -118,7 +126,7 @@ o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo
 
 ## Por decidir (perguntar quando fizer sentido)
 
-- O site ainda diz "versão 0.7" (topo e quadrado "O que é a versão 0.7"): passar a 0.8?
+- O site ainda diz "versão 0.7" (topo e quadrado "O que é a versão 0.7"): passar a 0.9?
 - Código do ID mais curto: A) mesmo ID noutra escrita (~92 caracteres, só núcleo),
   B) código curto no servidor que expira (precisa de mudar o relay),
   C) ID com metade do tamanho (mudança grande, os IDs atuais deixam de servir).

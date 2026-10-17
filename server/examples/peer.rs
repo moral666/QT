@@ -155,7 +155,7 @@ async fn main() {
                         Ok(ReceiveResult::StatusChanged { message_ids, status, .. }) => {
                             println!("[{} mensagem(ns) agora: {:?}]", message_ids.len(), status)
                         }
-                        Ok(ReceiveResult::NoChange { .. }) => {}
+                        Ok(ReceiveResult::NoChange { .. }) | Ok(ReceiveResult::Updated { .. }) => {}
                         Err(QtError::Storage) => continue, // nao confirmar: o relay volta a entregar
                         Err(e) => println!("[mensagem descartada: {e}]"),
                     }

@@ -38,7 +38,7 @@ use sha2::{Digest, Sha256};
 pub(crate) const PAYLOAD_V1: u8 = 0x01;
 pub(crate) const T_TEXT: u8 = 1;
 const T_RECEIPT: u8 = 2;
-const T_ATTACHMENT: u8 = 3;
+pub(crate) const T_ATTACHMENT: u8 = 3;
 const T_INTRO: u8 = 4;
 pub(crate) const T_REACTION: u8 = 5;
 pub(crate) const T_GROUP_MSG: u8 = 6;

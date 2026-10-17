@@ -97,11 +97,13 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     esconde nas mensagens de texto. O relay não guarda esta ligação (nem nos registos), mas um
     relay malicioso podia guardá-la. Quem tiver o `blob_id` consegue ler (cifrado) e apagar o
     ficheiro. Um anexo não descarregado em 24 horas perde-se. Ainda sem miniatura antes da
-    descarga, sem vídeos nem outros ficheiros, e a app iPhone só recebe GIFs do teclado colando-os.
+    descarga, sem vídeos, e a app iPhone só recebe GIFs do teclado colando-os.
     O tamanho e as dimensões da imagem vão dentro da mensagem cifrada; a localização da foto
     é removida ao recomprimir (as originais PNG/WebP/GIF vão como estão).
-37. **Grupos (desde a 0.8.0).** Só texto e reações: imagens e voz nos grupos ainda não. Sem
-    recibos de entregue e vista. Para escrever no grupo é preciso sessão com cada membro: quem
+37. **Grupos (desde a 0.8.0).** Texto, reações e, desde a 0.9.0, fotos, GIFs, voz e ficheiros. Sem
+    recibos de entregue e vista. Os anexos de grupo ficam no relay (cifrados) até 24 horas, mesmo
+    depois de todos os descarregarem: quem recebe não os apaga, porque os outros membros ainda
+    podem estar a descarregar. Para escrever no grupo é preciso sessão com cada membro: quem
     ainda não publicou as chaves no relay fica de fora dessa mensagem (não volta a recebê-la
     depois). Cada mensagem sai uma vez por membro (até 9 envelopes), por isso gasta mais
     dados do que uma conversa a dois. Os membros veem os Public IDs uns dos outros (estão na
@@ -113,3 +115,10 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     min. Bloquear a app (código) não manda "offline": passa a offline ao fim desses 5 min. O
     relay não sabe o que é, mas vê que, ao abrir a app, sai um envelope para cada contacto
     (como uma rajada de mensagens pequenas). Mostra-se só "online": não há "visto por último".
+40. **Ficheiros (desde a 0.9.0).** PDF, documentos e outros ficheiros até 25 MB vão tal como
+    estão (sem compressão nem limpeza de metadados, ao contrário das fotos). O nome e o tipo
+    vão dentro da mensagem cifrada. A app nunca mostra um ficheiro: abre-o noutra app, que o
+    lê da memória do SEALER (sem cópia decifrada em disco, até 10 minutos ou até a app
+    bloquear), ou guarda-o onde o utilizador escolher. Em ambos os casos, a partir daí, a
+    cópia está fora do SEALER e a outra app pode guardá-la. As versões 0.8 e anteriores
+    mostram "atualiza a app" no lugar de um ficheiro.

@@ -38,6 +38,7 @@ import uniffi.qt_ffi.QtException
 import uniffi.qt_ffi.ReceiveResult
 import uniffi.qt_ffi.RelayDelivered
 import uniffi.qt_ffi.RelayResponse
+import uniffi.qt_ffi.groupIdOfConversation
 import uniffi.qt_ffi.peerBundleFromRelayBytes
 import uniffi.qt_ffi.presenceHeartbeatMs
 import uniffi.qt_ffi.relayIdOfPublicId
@@ -261,8 +262,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         fileLink = null
         waitLink?.shutdown()
         waitLink = null
-        // Imagens decifradas que estavam em memoria para o ecra.
+        // Imagens decifradas que estavam em memoria para o ecra, e ficheiros abertos noutra app.
         SealerImages.clearMemory()
+        SealerFileProvider.clear()
         val c = qt
         qt = null
         c?.close()
@@ -948,11 +950,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Envia uma mensagem de voz gravada (`file` e apagado no fim, cifrado ou nao). */
-    fun sendVoice(contact: Contact, file: File, durationMs: Long) = io {
-        val client = qt ?: return@io
+    fun sendVoice(contact: Contact, file: File, durationMs: Long) = sendVoiceTo(contact.contactId, file, durationMs)
+
+    /** Voz para uma conversa a dois ou de grupo ("g:..."). */
+    fun sendVoiceTo(conversationId: String, file: File, durationMs: Long) = io {
+        val client = qt ?: run { file.delete(); return@io }
         try {
-            ensureSession(client, contact)
-            client.attachmentCreate(contact.contactId, file.path, VOICE_MIME, durationMs.coerceIn(1L, VOICE_MAX_MS).toUInt(), 0u)
+            prepareTarget(client, conversationId)
+            client.attachmentCreate(conversationId, file.path, VOICE_MIME, durationMs.coerceIn(1L, VOICE_MAX_MS).toUInt(), 0u)
             refreshViews(client)
             transferKick.trySend(Unit)
         } catch (e: Exception) {
@@ -1083,8 +1088,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * mandou (`keyboardCopy`, apagada no fim). O ficheiro e preparado no telemovel,
      * cifrado pelo Rust e enviado em segundo plano (ver `runTransfers`).
      */
-    fun sendImage(contact: Contact, uri: Uri, original: Boolean, keyboardCopy: File? = null) = io {
-        val client = qt ?: return@io
+    fun sendImage(contact: Contact, uri: Uri, original: Boolean, keyboardCopy: File? = null) =
+        sendImageTo(contact.contactId, uri, original, keyboardCopy)
+
+    /** Imagem/GIF para uma conversa a dois ou de grupo ("g:..."). */
+    fun sendImageTo(conversationId: String, uri: Uri, original: Boolean, keyboardCopy: File? = null) = io {
+        val client = qt ?: run { keyboardCopy?.delete(); return@io }
         val prepared = try {
             ImagePrep.prepare(getApplication<Application>(), uri, original, keepAsIs = keyboardCopy != null)
         } catch (e: ImageTooBigException) {
@@ -1097,8 +1106,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             keyboardCopy?.delete()
         }
         try {
-            ensureSession(client, contact)
-            client.attachmentCreate(contact.contactId, prepared.file.path, prepared.mime, prepared.width.toUInt(), prepared.height.toUInt())
+            prepareTarget(client, conversationId)
+            client.attachmentCreate(conversationId, prepared.file.path, prepared.mime, prepared.width.toUInt(), prepared.height.toUInt())
             refreshViews(client)
             transferKick.trySend(Unit)
         } catch (e: Exception) {
@@ -1108,7 +1117,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** A imagem decifrada, so em memoria, para mostrar no ecra. */
+    /** Ficheiro (PDF, documento...) ate 25 MB, tal como esta. */
+    fun sendFile(contact: Contact, uri: Uri) = sendFileTo(contact.contactId, uri)
+
+    /** Ficheiro para uma conversa a dois ou de grupo ("g:..."). O original nao e alterado. */
+    fun sendFileTo(conversationId: String, uri: Uri) = io {
+        val client = qt ?: return@io
+        val prepared = try {
+            FilePrep.prepare(getApplication<Application>(), uri)
+        } catch (e: FileTooBigException) {
+            error("O ficheiro tem mais de 25 MB.")
+            return@io
+        } catch (e: Exception) {
+            error("Não foi possível ler este ficheiro.")
+            return@io
+        }
+        try {
+            prepareTarget(client, conversationId)
+            client.attachmentCreateFile(conversationId, prepared.file.path, prepared.mime, prepared.name)
+            refreshViews(client)
+            transferKick.trySend(Unit)
+        } catch (e: Exception) {
+            error("Não foi possível enviar o ficheiro: ${e.safeMsg()}")
+        } finally {
+            prepared.file.delete()
+        }
+    }
+
+    /**
+     * Antes de criar um anexo: a dois, abre a sessao com o contacto; num grupo, abre as
+     * sessoes que faltam com os membros (quem falhar fica de fora, como no texto).
+     */
+    private suspend fun prepareTarget(client: QtClient, conversationId: String) {
+        val gid = groupIdOfConversation(conversationId)
+        if (gid != null) {
+            ensureSessions(client, client.groupMembersNeedingSession(gid))
+        } else {
+            val contact = _ui.value.contacts.firstOrNull { it.contactId == conversationId }
+                ?: throw IllegalStateException("contacto desconhecido")
+            ensureSession(client, contact)
+        }
+    }
+
+    /** O anexo decifrado, so em memoria (imagem para o ecra, voz, ou ficheiro para abrir/guardar). */
     suspend fun attachmentBytes(contactId: String, messageId: String): ByteArray? = withContext(Dispatchers.IO) {
         try {
             qt?.attachmentRead(contactId, messageId)
@@ -1129,10 +1180,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val client = qt ?: return false
         val l = fileLink ?: return false
         for (r in client.attachmentsPendingUpload()) {
-            if (r.contactId in _ui.value.blocked) continue   // bloqueado: nao se envia (o Rust recusaria)
-            val contact = _ui.value.contacts.firstOrNull { it.contactId == r.contactId } ?: continue
+            val gid = groupIdOfConversation(r.contactId)
+            val beforeSend: suspend () -> Unit
+            if (gid != null) {
+                // Grupo de que ja sai (ou apagado): o anexo nao chega a sair.
+                if (client.group(gid)?.active != true) {
+                    client.attachmentFailed(r.contactId, r.messageId, false)
+                    refreshViews(client)
+                    continue
+                }
+                beforeSend = { ensureSessions(client, client.groupMembersNeedingSession(gid)) }
+            } else {
+                if (r.contactId in _ui.value.blocked) continue   // bloqueado: nao se envia (o Rust recusaria)
+                val contact = _ui.value.contacts.firstOrNull { it.contactId == r.contactId } ?: continue
+                beforeSend = { ensureSession(client, contact) }
+            }
             try {
-                upload(client, l, r, contact)
+                upload(client, l, r, gid, beforeSend)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1153,7 +1217,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return false
     }
 
-    private suspend fun upload(client: QtClient, l: RelayLink, r: AttachmentRef, contact: Contact) {
+    private suspend fun upload(client: QtClient, l: RelayLink, r: AttachmentRef, groupId: String?, beforeSend: suspend () -> Unit) {
         val cid = r.contactId
         val mid = r.messageId
         val total = client.message(cid, mid)?.attachment?.transferSize ?: return
@@ -1189,8 +1253,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             offset = batch.last() + CHUNK
             setProgress(mid, (minOf(offset, total).toDouble() / total.toDouble()).toFloat())
         }
-        ensureSession(client, contact)
-        client.attachmentUploaded(cid, mid)   // a mensagem com a chave entra na outbox
+        beforeSend()
+        // A mensagem com a chave entra na outbox (num grupo, uma por membro).
+        if (groupId != null) client.groupAttachmentUploaded(groupId, mid) else client.attachmentUploaded(cid, mid)
         setProgress(mid, null)
         refreshViews(client)
         flushOutbox()
@@ -1226,18 +1291,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val done = client.attachmentDownloadFinished(cid, mid)
         setProgress(mid, null)
         refreshViews(client)
-        // Ja esta no telemovel (e verificado): o relay pode apagar a copia dele.
-        if (done.attachment?.state == AttachmentState.READY) {
+        // Ja esta no telemovel (e verificado): o relay pode apagar a copia dele. Nos grupos
+        // nao: os outros membros ainda a podem estar a descarregar (o relay apaga ao fim de 24 h).
+        if (done.attachment?.state == AttachmentState.READY && groupIdOfConversation(cid) == null) {
             runCatching { l.request(client.blobDeleteRequest(cid, mid)) }
         }
     }
 
     private fun relayRefusal(reason: String): String = when {
         reason.contains("invalida") || reason.contains("desativados") ->
-            "O servidor ainda não aceita imagens (tem de ser atualizado)."
-        reason.contains("limite") -> "Atingiste o limite diário de imagens. Tenta amanhã."
-        reason.contains("espaco") -> "O servidor está sem espaço para imagens. Tenta mais tarde."
-        else -> "Não foi possível enviar a imagem: $reason"
+            "O servidor ainda não aceita anexos (tem de ser atualizado)."
+        reason.contains("limite") -> "Atingiste o limite diário de anexos. Tenta amanhã."
+        reason.contains("espaco") -> "O servidor está sem espaço para anexos. Tenta mais tarde."
+        else -> "Não foi possível enviar o anexo: $reason"
     }
 
     private suspend fun ensureSession(client: QtClient, c: Contact) {

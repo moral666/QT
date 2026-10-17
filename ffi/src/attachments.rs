@@ -1,4 +1,15 @@
-//! Anexos (imagens e GIFs ate 25 MiB, mensagens de voz ate 10 s), cifrados ponta a ponta.
+//! Anexos (imagens e GIFs ate 25 MiB, mensagens de voz ate 10 s, ficheiros ate 25 MiB),
+//! cifrados ponta a ponta.
+//!
+//! FICHEIROS (PDF, documentos, etc.): qualquer tipo MIME bem formado, com o nome do
+//! ficheiro. Vao no formato v2 (com nome); imagens e voz continuam no v1, que as
+//! versoes antigas da app ja conhecem. A app nunca mostra um ficheiro: so o abre
+//! noutra app ou o guarda, a pedido de quem o recebeu.
+//!
+//! GRUPOS: o ficheiro cifrado vai uma vez para o relay e a mensagem com a chave vai a
+//! cada membro (`group_attachment_uploaded`). Quem recebe nao pede ao relay para o
+//! apagar (os outros membros ainda o podem estar a descarregar): o relay apaga-o ao
+//! fim de 24 horas.
 //!
 //! VOZ: `audio/mp4` (AAC). No mesmo formato dos outros anexos, com `width` = duracao
 //! em ms e `height` = 0. Limites: `MAX_VOICE_MS` e `MAX_VOICE_BYTES`.
@@ -38,7 +49,7 @@ use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
-use crate::client::{bad, contact_to_identity, hex, unhex, QtClient, QtError};
+use crate::client::{bad, hex, unhex, QtClient, QtError};
 use crate::history::{to_chat, ChatMessage, OutboxItem};
 use qt_storage as st;
 use qt_storage::messages as hm;
@@ -59,6 +70,29 @@ pub const VOICE_MIME: &str = "audio/mp4";
 pub const MAX_VOICE_MS: u32 = 10_500;
 /// Tamanho maximo de uma mensagem de voz (10 s de AAC ocupam ~40 a 160 KB).
 pub const MAX_VOICE_BYTES: u64 = 1024 * 1024;
+
+/// Nome maximo de um ficheiro (bytes UTF-8).
+pub const MAX_FILE_NAME_BYTES: usize = 200;
+/// Tipo maximo de um ficheiro (bytes).
+const MAX_MIME_BYTES: usize = 100;
+
+/// Tipo MIME bem formado ("tipo/subtipo", minusculas, sem espacos nem parametros).
+pub(crate) fn file_mime_ok(m: &str) -> bool {
+    let ok_part = |p: &str| !p.is_empty() && p.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"!#$&^_.+-".contains(&b));
+    match m.split_once('/') {
+        Some((t, st)) => m.len() <= MAX_MIME_BYTES && ok_part(t) && ok_part(st),
+        None => false,
+    }
+}
+
+/// Nome de ficheiro aceite: 1 a 200 bytes, sem caminhos nem caracteres de controlo.
+pub(crate) fn file_name_ok(n: &str) -> bool {
+    !n.trim().is_empty()
+        && n.len() <= MAX_FILE_NAME_BYTES
+        && n != "."
+        && n != ".."
+        && !n.chars().any(|c| c.is_control() || c == '/' || c == '\\')
+}
 
 /// Uma mensagem de voz com estes dados e valida? (`w` = duracao em ms).
 fn voice_ok(size: u64, w: u32, h: u32) -> bool {
@@ -96,6 +130,8 @@ pub struct AttachmentInfo {
     pub state: AttachmentState,
     /// Bytes cifrados (o que viaja pelo relay). Para mostrar o progresso.
     pub transfer_size: u64,
+    /// So nos ficheiros (PDF, documentos...): o nome. `None` = imagem, GIF ou voz.
+    pub file_name: Option<String>,
 }
 
 /// Um anexo por enviar ou por descarregar.
@@ -120,6 +156,9 @@ pub(crate) struct AttMeta {
     pub w: u32,
     pub h: u32,
     pub st: u8,
+    /// Nome do ficheiro (so nos ficheiros; imagens e voz nao tem).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 impl AttMeta {
@@ -145,16 +184,19 @@ impl AttMeta {
                 _ => AttachmentState::Failed,
             },
             transfer_size: self.clen,
+            file_name: self.name.clone(),
         }
     }
 
-    pub(crate) fn label(&self) -> &'static str {
-        if self.mime == "image/gif" {
-            "GIF"
+    pub(crate) fn label(&self) -> String {
+        if let Some(n) = &self.name {
+            format!("📄 {n}")
+        } else if self.mime == "image/gif" {
+            "GIF".to_string()
         } else if self.mime == VOICE_MIME {
-            "🎤 Mensagem de voz"
+            "🎤 Mensagem de voz".to_string()
         } else {
-            "📷 Foto"
+            "📷 Foto".to_string()
         }
     }
 
@@ -244,11 +286,12 @@ fn decrypt_all(ct: &[u8], key: &[u8; 32], size: u64) -> Result<Vec<u8>, QtError>
 /// Corpo do tipo "anexo" (vai DENTRO do Double Ratchet):
 ///   [1 versao=1][32 chave][16 id no relay][8 tamanho BE][8 tamanho cifrado BE]
 ///   [4 largura BE][4 altura BE][1 n][n bytes do tipo, ex.: image/gif]
+/// Ficheiros (versao 2): o mesmo e, no fim, [1 k][k bytes do nome, UTF-8].
 pub(crate) fn encode_wire(m: &AttMeta) -> Result<Vec<u8>, QtError> {
     let key = m.key()?;
     let blob = m.blob.as_deref().and_then(unhex).filter(|b| b.len() == 16).ok_or(QtError::Storage)?;
     let mut out = Vec::with_capacity(80);
-    out.push(1);
+    out.push(if m.name.is_some() { 2 } else { 1 });
     out.extend_from_slice(&key);
     out.extend_from_slice(&blob);
     out.extend_from_slice(&m.size.to_be_bytes());
@@ -257,30 +300,50 @@ pub(crate) fn encode_wire(m: &AttMeta) -> Result<Vec<u8>, QtError> {
     out.extend_from_slice(&m.h.to_be_bytes());
     out.push(m.mime.len() as u8);
     out.extend_from_slice(m.mime.as_bytes());
+    if let Some(n) = &m.name {
+        out.push(n.len() as u8);
+        out.extend_from_slice(n.as_bytes());
+    }
     Ok(out)
 }
 
 /// Interpreta o corpo recebido. `None` = malformado ou com valores invalidos.
 pub(crate) fn decode_wire(b: &[u8]) -> Option<AttMeta> {
     const FIXED: usize = 1 + 32 + 16 + 8 + 8 + 4 + 4 + 1;
-    if b.len() < FIXED || b[0] != 1 {
+    if b.len() < FIXED || !(b[0] == 1 || b[0] == 2) {
         return None;
     }
+    let is_file = b[0] == 2;
     let mlen = b[FIXED - 1] as usize;
-    if b.len() != FIXED + mlen {
+    let mime_end = FIXED + mlen;
+    if b.len() < mime_end {
         return None;
     }
-    let mime = std::str::from_utf8(&b[FIXED..]).ok()?;
-    if !MIME_TYPES.contains(&mime) {
-        return None;
-    }
+    let mime = std::str::from_utf8(&b[FIXED..mime_end]).ok()?;
+    let name = if is_file {
+        // [1 k][k bytes do nome] e nada mais.
+        let k = *b.get(mime_end)? as usize;
+        if b.len() != mime_end + 1 + k {
+            return None;
+        }
+        let n = std::str::from_utf8(&b[mime_end + 1..]).ok()?;
+        if !file_mime_ok(mime) || !file_name_ok(n) {
+            return None;
+        }
+        Some(n.to_string())
+    } else {
+        if b.len() != mime_end || !MIME_TYPES.contains(&mime) {
+            return None;
+        }
+        None
+    };
     let size = u64::from_be_bytes(b[49..57].try_into().ok()?);
     let clen = u64::from_be_bytes(b[57..65].try_into().ok()?);
     if size == 0 || size > MAX_ATTACHMENT_BYTES || clen != cipher_len(size) {
         return None;
     }
     let (w, h) = (u32::from_be_bytes(b[65..69].try_into().ok()?), u32::from_be_bytes(b[69..73].try_into().ok()?));
-    if mime == VOICE_MIME && !voice_ok(size, w, h) {
+    if !is_file && mime == VOICE_MIME && !voice_ok(size, w, h) {
         return None;
     }
     Some(AttMeta {
@@ -291,9 +354,10 @@ pub(crate) fn decode_wire(b: &[u8]) -> Option<AttMeta> {
         size,
         clen,
         mime: mime.to_string(),
-        w: u32::from_be_bytes(b[65..69].try_into().ok()?).min(100_000),
-        h: u32::from_be_bytes(b[69..73].try_into().ok()?).min(100_000),
+        w: if is_file { 0 } else { w.min(100_000) },
+        h: if is_file { 0 } else { h.min(100_000) },
         st: ST_DOWNLOADING,
+        name,
     })
 }
 
@@ -388,6 +452,8 @@ impl QtClient {
     /// `source_path` e um ficheiro temporario da app (ja comprimido; pode ser
     /// apagado a seguir). A mensagem fica no historico como "a enviar".
     /// Voz: `mime` = `audio/mp4`, `width` = duracao em ms (ate 10 500), `height` = 0.
+    /// `contact_id` tambem pode ser a conversa de um grupo ("g:" + group_id); no fim
+    /// do envio chama-se entao `group_attachment_uploaded`.
     pub fn attachment_create(
         &self,
         contact_id: String,
@@ -396,15 +462,52 @@ impl QtClient {
         width: u32,
         height: u32,
     ) -> Result<ChatMessage, QtError> {
-        let _ = contact_to_identity(&contact_id)?;
         if !MIME_TYPES.contains(&mime.as_str()) {
             return Err(bad("mime"));
+        }
+        self.create_attachment(contact_id, source_path, mime, width, height, None)
+    }
+
+    /// Prepara um FICHEIRO (PDF, documento, etc., ate 25 MiB) para enviar a
+    /// `contact_id` (ou a um grupo, "g:" + group_id). `mime` = o tipo que o Android
+    /// indica (ou `application/octet-stream`); `file_name` = o nome a mostrar, sem
+    /// caminho. O ficheiro vai tal como esta (sem compressao).
+    pub fn attachment_create_file(
+        &self,
+        contact_id: String,
+        source_path: String,
+        mime: String,
+        file_name: String,
+    ) -> Result<ChatMessage, QtError> {
+        if !file_mime_ok(&mime) {
+            return Err(bad("mime"));
+        }
+        if !file_name_ok(&file_name) {
+            return Err(bad("file_name"));
+        }
+        self.create_attachment(contact_id, source_path, mime, 0, 0, Some(file_name))
+    }
+}
+
+impl QtClient {
+    fn create_attachment(
+        &self,
+        contact_id: String,
+        source_path: String,
+        mime: String,
+        width: u32,
+        height: u32,
+        name: Option<String>,
+    ) -> Result<ChatMessage, QtError> {
+        {
+            let c = self.lock()?;
+            crate::groups::check_conversation(&c, &contact_id)?;
         }
         let size = std::fs::metadata(&source_path).map_err(|_| bad("source_path"))?.len();
         if size == 0 || size > MAX_ATTACHMENT_BYTES {
             return Err(bad("size"));
         }
-        if mime == VOICE_MIME && !voice_ok(size, width, height) {
+        if name.is_none() && mime == VOICE_MIME && !voice_ok(size, width, height) {
             return Err(bad("voice"));
         }
         let mut plain = std::fs::read(&source_path).map_err(|_| bad("source_path"))?;
@@ -444,6 +547,7 @@ impl QtClient {
             w: width.min(100_000),
             h: height.min(100_000),
             st: ST_UPLOADING,
+            name,
         };
         key.zeroize();
         let now = crate::history::now_ms();
@@ -457,6 +561,23 @@ impl QtClient {
         Ok(to_chat(&m))
     }
 
+    /// Metadados de um anexo meu ja enviado ao relay, para a mensagem com a chave.
+    /// Marca-o como pronto (o token de escrita deixa de ser preciso). Dentro de `tx`.
+    pub(crate) fn finish_upload(&self, tx: &st::rusqlite::Connection, conv: &str, id: &[u8]) -> Result<(i64, Vec<u8>), QtError> {
+        let (m, mut meta) = self.load_meta(tx, conv, id)?;
+        if !m.outgoing || meta.blob.is_none() {
+            return Err(bad("message_id"));
+        }
+        let wire = encode_wire(&meta)?;
+        meta.st = ST_READY;
+        meta.token = None;
+        hm::update_body(tx, conv, id, &meta.to_body()?)?;
+        Ok((m.sent_at, wire))
+    }
+}
+
+#[uniffi::export]
+impl QtClient {
     /// Anexos meus ainda por enviar ao relay (retomar depois de falhas/reinicios).
     pub fn attachments_pending_upload(&self) -> Result<Vec<AttachmentRef>, QtError> {
         let c = self.lock()?;
@@ -527,21 +648,19 @@ impl QtClient {
 
     /// O relay ja tem o ficheiro inteiro: envia a mensagem com a chave (cifrada
     /// pelo Double Ratchet) pela outbox. A sessao com o contacto tem de existir.
+    /// Nos grupos usar `group_attachment_uploaded`.
     pub fn attachment_uploaded(&self, contact_id: String, message_id: String) -> Result<OutboxItem, QtError> {
+        if crate::groups::is_group_conv(&contact_id) {
+            return Err(bad("contact_id"));
+        }
         let id = parse_id(&message_id)?;
         let idarr: [u8; 16] = id.as_slice().try_into().map_err(|_| bad("message_id"))?;
         let c = self.lock()?;
-        let (m, mut meta) = self.load_meta(&c, &contact_id, &id)?;
-        if !m.outgoing || meta.blob.is_none() {
-            return Err(bad("message_id"));
-        }
         let tx = c.unchecked_transaction()?;
         crate::history::queue_intro_if_needed(self, &tx, &contact_id)?;
-        let plain = crate::history::encode_attachment(&idarr, m.sent_at, &encode_wire(&meta)?);
+        let (sent_at, wire) = self.finish_upload(&tx, &contact_id, &id)?;
+        let plain = crate::history::encode_attachment(&idarr, sent_at, &wire);
         let blob = self.seal_with(&tx, &contact_id, &plain)?;
-        meta.st = ST_READY;
-        meta.token = None; // ja nao e preciso escrever mais
-        hm::update_body(&tx, &contact_id, &id, &meta.to_body()?)?;
         hm::outbox_put(&tx, &id, &contact_id, hm::OUTBOX_MESSAGE, &blob)?;
         tx.commit()?;
         Ok(OutboxItem { outbox_id: message_id, contact_id, blob })
@@ -620,13 +739,19 @@ impl QtClient {
     }
 
     /// Pedido ao relay: apagar o ficheiro (depois de descarregado e verificado).
+    /// Nos grupos da erro: os outros membros ainda o podem estar a descarregar (o
+    /// relay apaga-o ao fim de 24 horas).
     pub fn blob_delete_request(&self, contact_id: String, message_id: String) -> Result<Vec<u8>, QtError> {
+        if crate::groups::is_group_conv(&contact_id) {
+            return Err(bad("group"));
+        }
         let (_, meta) = self.meta_of(&contact_id, &message_id)?;
         let blob = meta.blob.ok_or_else(|| bad("blob_id"))?;
         json_bytes(serde_json::json!({"BlobDelete": {"blob_id": blob}}))
     }
 
-    /// A imagem em claro, para mostrar (so em memoria; nunca escrita em disco).
+    /// O anexo em claro (imagem para mostrar, voz para ouvir, ficheiro para abrir ou
+    /// guardar). So em memoria; nunca escrito em disco pelo nucleo.
     pub fn attachment_read(&self, contact_id: String, message_id: String) -> Result<Vec<u8>, QtError> {
         let id = parse_id(&message_id)?;
         let (m, meta) = {
@@ -712,6 +837,7 @@ mod tests {
             w: 480,
             h: 270,
             st: ST_READY,
+            name: None,
         };
         let w = encode_wire(&m).unwrap();
         let back = decode_wire(&w).unwrap();
@@ -731,5 +857,41 @@ mod tests {
         wrong_clen.clen += 1;
         assert!(decode_wire(&encode_wire(&wrong_clen).unwrap()).is_none());
         assert!(decode_wire(&w[..w.len() - 1]).is_none());
+    }
+
+    #[test]
+    fn ficheiro_vai_no_formato_v2_com_o_nome() {
+        let m = AttMeta {
+            v: 1,
+            key: hex(&[3u8; 32]),
+            blob: Some(hex(&[4u8; 16])),
+            token: None,
+            size: 5_000,
+            clen: cipher_len(5_000),
+            mime: "application/pdf".into(),
+            w: 0,
+            h: 0,
+            st: ST_READY,
+            name: Some("Contrato ç.pdf".into()),
+        };
+        let w = encode_wire(&m).unwrap();
+        assert_eq!(w[0], 2);
+        let back = decode_wire(&w).unwrap();
+        assert_eq!((back.name.as_deref(), back.mime.as_str()), (Some("Contrato ç.pdf"), "application/pdf"));
+        // Sem o nome, ou com bytes a mais: recusado.
+        let cut = &w[..w.len() - 3];
+        assert!(decode_wire(cut).is_none());
+        let mut extra = w.clone();
+        extra.push(0);
+        assert!(decode_wire(&extra).is_none());
+        // Um v1 com um tipo que nao e imagem nem voz continua recusado.
+        let mut v1 = w.clone();
+        v1[0] = 1;
+        assert!(decode_wire(&v1).is_none());
+        // Imagens continuam no v1 (as versoes antigas da app conhecem-no).
+        let mut img = m.clone();
+        img.name = None;
+        img.mime = "image/png".into();
+        assert_eq!(encode_wire(&img).unwrap()[0], 1);
     }
 }

@@ -28,6 +28,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Abrir um ficheiro recebido noutra app (leitor de PDF, etc.): a outra app le-o
+             da memoria desta, sem copia decifrada em disco (ver Files.kt). So com a
+             permissao dada no momento, por cada ficheiro. -->
+        <provider
+            android:name=".SealerFileProvider"
+            android:authorities="${applicationId}.ficheiros"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <!-- Leitor de QR (biblioteca ZXing Android Embedded): por omissao so funciona
              deitado; assim roda com o telemovel. A permissao da camara e pedida so
              quando se carrega em "Ler codigo QR". -->
