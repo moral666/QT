@@ -84,7 +84,14 @@ data class UiState(
      * Nada foi apagado: a app pergunta se quer tentar de novo ou apagar so deste telemovel.
      */
     val wipeServerFailed: String? = null,
+    /** Contactos bloqueados (contactId): as mensagens deles sao descartadas ao chegar. */
+    val blocked: Set<String> = emptySet(),
+    /** Aceitou os termos de utilizacao em vigor (TERMS_VERSION). */
+    val termsAccepted: Boolean = true,
 )
+
+/** Versao dos termos de utilizacao: subir quando mudarem, para voltar a pedir a aceitacao. */
+const val TERMS_VERSION = 1
 
 const val DEFAULT_LOCK_TIMEOUT_MS = 60_000L
 
@@ -192,6 +199,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 lockEnabled = storageKeys.lockEnabled(),
                 bioEnabled = bio.isEnabled(), bioAvailable = bio.isAvailable(),
                 lockTimeoutMs = prefs.getLong("lock_timeout_ms", DEFAULT_LOCK_TIMEOUT_MS),
+                blocked = client.blockedContacts().toSet(),
+                termsAccepted = prefs.getInt("terms_version", 0) >= TERMS_VERSION,
             )
         }
         if (has) startLink()
@@ -650,6 +659,37 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * BLOQUEAR: as mensagens deste contacto passam a ser descartadas ao chegar (no Rust),
+     * sem recibos, e deixa de ser possivel enviar-lhe. Ele nao e avisado. A conversa fica.
+     */
+    fun blockContact(contactId: String) = io {
+        val client = qt ?: return@io
+        try {
+            client.blockContact(contactId)
+            _ui.update { it.copy(blocked = it.blocked + contactId) }
+            refreshViews(client)
+        } catch (e: Exception) {
+            error("Nao foi possivel bloquear: ${e.safeMsg()}")
+        }
+    }
+
+    fun unblockContact(contactId: String) = io {
+        val client = qt ?: return@io
+        try {
+            client.unblockContact(contactId)
+            _ui.update { it.copy(blocked = it.blocked - contactId) }
+        } catch (e: Exception) {
+            error("Nao foi possivel desbloquear: ${e.safeMsg()}")
+        }
+    }
+
+    /** Aceitou os termos de utilizacao e a politica de privacidade (ecra inicial). */
+    fun acceptTerms() {
+        prefs.edit().putInt("terms_version", TERMS_VERSION).apply()
+        _ui.update { it.copy(termsAccepted = true) }
+    }
+
+    /**
      * APAGAR CONTACTO: apaga para sempre as mensagens, o que estava por enviar,
      * as chaves da sessao cifrada e o proprio contacto. Se voltarem a falar,
      * comeca uma sessao nova (o outro lado adota-a automaticamente).
@@ -825,6 +865,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val client = qt ?: return false
         val l = fileLink ?: return false
         for (r in client.attachmentsPendingUpload()) {
+            if (r.contactId in _ui.value.blocked) continue   // bloqueado: nao se envia (o Rust recusaria)
             val contact = _ui.value.contacts.firstOrNull { it.contactId == r.contactId } ?: continue
             try {
                 upload(client, l, r, contact)

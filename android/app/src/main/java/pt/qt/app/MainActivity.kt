@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import java.io.File
@@ -67,11 +68,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -236,6 +240,7 @@ fun AppRoot(vm: MainViewModel) {
     when {
         ui.loading -> LoadingScreen()
         ui.locked -> LockScreen(ui, onCode = vm::unlockWithCode, onBio = vm::requestBioUnlock, onWipe = vm::wipeLockedData)
+        !ui.termsAccepted -> TermsScreen(onAccept = vm::acceptTerms)
         !ui.hasIdentity -> SetupScreen(ui, onCreate = vm::createIdentity)
         ui.openChatId != null -> {
             val chatId = ui.openChatId!!
@@ -246,6 +251,7 @@ fun AppRoot(vm: MainViewModel) {
                 onSafety = vm::showSafetyNumber, onLoadOlder = vm::loadOlder,
                 onDeleteConversation = vm::deleteConversation, onDeleteContact = vm::deleteContact,
                 onSendImage = vm::sendImage, loadAttachment = vm::attachmentBytes,
+                blocked = chatId in ui.blocked, onBlock = vm::blockContact, onUnblock = vm::unblockContact,
             )
         }
         showLockSettings -> {
@@ -266,6 +272,7 @@ fun AppRoot(vm: MainViewModel) {
             onReadReceipts = vm::setReadReceipts,
             onDeleteConversation = vm::deleteConversation, onDeleteContact = vm::deleteContact,
             onWipeAll = { vm.wipeAllData() },
+            onUnblock = vm::unblockContact,
             onLockSettings = { showLockSettings = true }, onLockNow = vm::lockNow,
         )
     }
@@ -505,9 +512,11 @@ fun HomeScreen(
     onWipeAll: () -> Unit,
     onLockSettings: () -> Unit,
     onLockNow: () -> Unit,
+    onUnblock: (String) -> Unit,
 ) {
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    var showBlocked by remember { mutableStateOf(false) }
     /** Conversa escolhida com toque longo: (contactId, nome). */
     var actionsFor by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showWipe by remember { mutableStateOf(false) }
@@ -528,6 +537,9 @@ fun HomeScreen(
                             DropdownMenuItem(text = { Text("Bloqueio da app") }, onClick = { menu = false; onLockSettings() })
                             if (ui.lockEnabled) {
                                 DropdownMenuItem(text = { Text("Bloquear agora") }, onClick = { menu = false; onLockNow() })
+                            }
+                            if (ui.blocked.isNotEmpty()) {
+                                DropdownMenuItem(text = { Text("Contactos bloqueados") }, onClick = { menu = false; showBlocked = true })
                             }
                             if (BuildConfig.RELAY_EDITABLE) {
                                 DropdownMenuItem(text = { Text("Relay (teste)") }, onClick = { menu = false; onSettings() })
@@ -580,6 +592,7 @@ fun HomeScreen(
                         val name = ui.contacts.firstOrNull { it.contactId == conv.contactId }?.nickname
                         ConversationRow(
                             name ?: "Desconhecido", conv.contactId, conv,
+                            blocked = conv.contactId in ui.blocked,
                             onClick = { onOpen(conv.contactId) },
                             onLongClick = { actionsFor = conv.contactId to (name ?: "Desconhecido") },
                         )
@@ -587,6 +600,7 @@ fun HomeScreen(
                     items(idle, key = { "idle-" + it.contactId }) { c ->
                         ConversationRow(
                             c.nickname, c.contactId, null,
+                            blocked = c.contactId in ui.blocked,
                             onClick = { onOpen(c.contactId) },
                             onLongClick = { actionsFor = c.contactId to c.nickname },
                         )
@@ -596,6 +610,13 @@ fun HomeScreen(
         }
     }
     if (showAdd) AddContactDialog(onDismiss = { showAdd = false }, onAdd = { n, p -> onAddContact(n, p); showAdd = false })
+    if (showBlocked) {
+        BlockedContactsDialog(
+            ui.blocked.map { cid -> cid to (ui.contacts.firstOrNull { it.contactId == cid }?.nickname ?: "Desconhecido (${cid.take(8)}…)") },
+            onUnblock = onUnblock,
+            onDismiss = { showBlocked = false },
+        )
+    }
     actionsFor?.let { (cid, name) ->
         DeleteActions(
             name = name,
@@ -655,6 +676,7 @@ fun Avatar(name: String, seed: String, sizeDp: Int = 48) {
 @Composable
 fun ConversationRow(
     name: String, contactId: String, conv: ConversationSummary?,
+    blocked: Boolean = false,
     onClick: () -> Unit, onLongClick: () -> Unit = {},
 ) {
     val last = conv?.lastMessage
@@ -679,6 +701,7 @@ fun ConversationRow(
                 Spacer(Modifier.height(2.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val preview = when {
+                        blocked -> "Bloqueado"
                         last == null -> "Toca para começar a conversar"
                         last.outgoing -> statusGlyph(last.status) + "  " + last.text
                         else -> last.text
@@ -817,6 +840,9 @@ fun ChatScreen(
     onDeleteConversation: (String) -> Unit, onDeleteContact: (String) -> Unit,
     onSendImage: (Contact, Uri, Boolean, File?) -> Unit,
     loadAttachment: suspend (String, String) -> ByteArray?,
+    blocked: Boolean = false,
+    onBlock: (String) -> Unit = {},
+    onUnblock: (String) -> Unit = {},
 ) {
     val colors = LocalChatColors.current
     val ctx = LocalContext.current
@@ -847,6 +873,7 @@ fun ChatScreen(
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var chatMenu by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
+    var confirmBlock by remember { mutableStateOf(false) }
     val name = contact?.nickname ?: "Desconhecido"
     // Mensagens da MAIS RECENTE para a mais antiga; com reverseLayout a lista
     // fica colada ao fundo e "subir" percorre o passado.
@@ -888,6 +915,19 @@ fun ChatScreen(
                     Box {
                         IconButton(onClick = { chatMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções") }
                         DropdownMenu(expanded = chatMenu, onDismissRequest = { chatMenu = false }) {
+                            if (blocked) {
+                                DropdownMenuItem(
+                                    text = { Text("Desbloquear") },
+                                    leadingIcon = { Icon(Icons.Filled.Check, contentDescription = null) },
+                                    onClick = { chatMenu = false; onUnblock(contactId) },
+                                )
+                            } else {
+                                DropdownMenuItem(
+                                    text = { Text("Bloquear") },
+                                    leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) },
+                                    onClick = { chatMenu = false; confirmBlock = true },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Eliminar conversa ou contacto") },
                                 leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
@@ -934,7 +974,16 @@ fun ChatScreen(
                     item(key = "e2e") { EncryptionNotice() }
                 }
             }
-            if (contact == null) {
+            if (blocked) {
+                Column(
+                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text("Bloqueaste esta pessoa. As mensagens dela não te chegam.", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = { onUnblock(contactId) }) { Text("Desbloquear") }
+                }
+            } else if (contact == null) {
                 Column(
                     Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -1007,6 +1056,25 @@ fun ChatScreen(
             onDismiss = { showDelete = false },
             onDeleteConversation = { onDeleteConversation(contactId); showDelete = false },
             onDeleteContact = { onDeleteContact(contactId); showDelete = false },
+        )
+    }
+    if (confirmBlock) {
+        AlertDialog(
+            onDismissRequest = { confirmBlock = false },
+            icon = { Icon(Icons.Filled.Close, contentDescription = null) },
+            title = { Text("Bloquear $name?") },
+            text = {
+                Text(
+                    "As mensagens desta pessoa deixam de te chegar e não lhe consegues escrever. " +
+                        "Ela não é avisada. A conversa fica, e podes desbloquear quando quiseres.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmBlock = false; onBlock(contactId) }) {
+                    Text("Bloquear", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmBlock = false }) { Text("Cancelar") } },
         )
     }
 }
@@ -1111,6 +1179,74 @@ fun WipeAllDialog(onDismiss: () -> Unit, onConfirm: () -> Unit, serverToo: Boole
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}
+
+// ===================================================================== termos
+
+/** Endereco dos termos de utilizacao e da politica de privacidade (site). */
+private const val TERMS_URL = "https://sealer.pt/termos"
+private const val PRIVACY_URL = "https://sealer.pt/privacidade"
+
+/**
+ * Antes de usar a app: aceitar os termos de utilizacao e a politica de privacidade
+ * (a Google Play exige-o em apps com conversas entre utilizadores). Volta a aparecer
+ * se TERMS_VERSION subir, ou depois de apagar todos os dados.
+ */
+@Composable
+fun TermsScreen(onAccept: () -> Unit) {
+    val uri = LocalUriHandler.current
+    var agreed by rememberSaveable { mutableStateOf(false) }
+    Scaffold { pad ->
+        Column(
+            Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Spacer(Modifier.height(24.dp))
+            Text("Antes de começar", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text("A SEALER está em testes. Ao usá-la, aceitas o seguinte:", style = MaterialTheme.typography.bodyLarge)
+            for (line in listOf(
+                "Não uses a SEALER para nada ilegal, para ameaçar, assediar ou enganar outras pessoas, nem para enviar spam.",
+                "Se alguém te incomodar, podes bloqueá-lo na conversa (menu ⋮ → Bloquear).",
+                "As tuas mensagens só existem nos telemóveis. Se perderes o telemóvel ou apagares a app, as conversas perdem-se.",
+                "Por estar em testes, a app pode ter falhas. Não a uses para informação crítica.",
+            )) {
+                Row {
+                    Text("•  ", style = MaterialTheme.typography.bodyMedium)
+                    Text(line, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { runCatching { uri.openUri(TERMS_URL) } }) { Text("Termos de utilização") }
+                TextButton(onClick = { runCatching { uri.openUri(PRIVACY_URL) } }) { Text("Política de privacidade") }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { agreed = !agreed }) {
+                Checkbox(checked = agreed, onCheckedChange = { agreed = it })
+                Text("Li e aceito os Termos de utilização e a Política de privacidade.", style = MaterialTheme.typography.bodyMedium)
+            }
+            Button(onClick = onAccept, enabled = agreed, modifier = Modifier.fillMaxWidth()) { Text("Continuar") }
+        }
+    }
+}
+
+/** Contactos bloqueados, cada um com "Desbloquear" (tambem para quem ja nao tem conversa). */
+@Composable
+fun BlockedContactsDialog(items: List<Pair<String, String>>, onUnblock: (String) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Contactos bloqueados") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (items.isEmpty()) Text("Não tens ninguém bloqueado.")
+                for ((cid, name) in items) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        TextButton(onClick = { onUnblock(cid) }) { Text("Desbloquear") }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Fechar") } },
     )
 }
 

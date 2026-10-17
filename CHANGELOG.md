@@ -6,6 +6,19 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 17 de outubro de 2026: bloquear contactos e termos de utilização
+
+- **Bloquear** (núcleo Rust, `block_contact` / `unblock_contact` / `blocked_contacts`): as
+  mensagens de quem está bloqueado são descartadas ao chegar (a sessão avança, mas nada é
+  guardado nem mostrado e não se enviam recibos), e nada lhe pode ser enviado (o bloqueio
+  está em `seal_with`, por onde passa tudo o que sai). O que estava por enviar sai da
+  outbox. Fica só no telemóvel, na base cifrada; o relay não sabe de nada.
+- Android: "Bloquear" e "Desbloquear" no menu da conversa, aviso no lugar da caixa de
+  escrita, "Bloqueado" na lista de conversas e "Contactos bloqueados" no menu principal.
+- **Termos de utilização** em sealer.pt/termos, e a app pede que sejam aceites (com a
+  política de privacidade) antes de a usar. Os dois pontos são exigidos pela política de
+  conteúdo gerado por utilizadores da Google Play.
+
 ### 17 de outubro de 2026: apagar a conta também no servidor (app 0.7.0)
 
 - Novo pedido `DeleteAccount`: o relay apaga o bundle de chaves públicas, a fila de

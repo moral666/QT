@@ -263,6 +263,63 @@ fn queue_receipts(
     Ok(n)
 }
 
+// --------------------------------------------------------------- bloqueio
+
+/// Contactos bloqueados: so neste telemovel, dentro da base cifrada (`kv`).
+/// O relay nao sabe de nada (com sealed sender nem sabe quem envia).
+const KV_BLOCKED: &str = "blocked:";
+
+pub(crate) fn is_blocked_in(c: &st::rusqlite::Connection, contact_id: &str) -> Result<bool, QtError> {
+    Ok(st::kv_get(c, &format!("{KV_BLOCKED}{contact_id}"))?.is_some())
+}
+
+/// Erro de quem tenta cifrar algo para um contacto bloqueado.
+pub(crate) fn blocked_error() -> QtError {
+    bad("blocked")
+}
+
+#[uniffi::export]
+impl QtClient {
+    /// BLOQUEAR: as mensagens deste contacto passam a ser descartadas ao chegar
+    /// (nada e guardado nem mostrado, e nao se enviam recibos de entregue/visto);
+    /// deixa de ser possivel enviar-lhe mensagens e o que estava por enviar sai da
+    /// outbox. O contacto nao e avisado. A conversa e a sessao mantem-se: ao
+    /// desbloquear, tudo volta a funcionar (as mensagens recebidas entretanto ja
+    /// nao voltam). Funciona tambem para quem nao esta nos contactos.
+    pub fn block_contact(&self, contact_id: String) -> Result<(), QtError> {
+        let _ = contact_to_identity(&contact_id)?;
+        let c = self.lock()?;
+        let tx = c.unchecked_transaction()?;
+        st::kv_set(&tx, &format!("{KV_BLOCKED}{contact_id}"), &[1])?;
+        st::kv_delete(&tx, &format!("{KV_PENDING_DELIVERED}{contact_id}"))?;
+        tx.execute("DELETE FROM outbox WHERE contact_id = ?1", [&contact_id])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// DESBLOQUEAR: volta a receber e a poder enviar.
+    pub fn unblock_contact(&self, contact_id: String) -> Result<(), QtError> {
+        let _ = contact_to_identity(&contact_id)?;
+        let c = self.lock()?;
+        st::kv_delete(&c, &format!("{KV_BLOCKED}{contact_id}"))?;
+        Ok(())
+    }
+
+    pub fn is_blocked(&self, contact_id: String) -> Result<bool, QtError> {
+        let c = self.lock()?;
+        is_blocked_in(&c, &contact_id)
+    }
+
+    /// Todos os contactos bloqueados (contact_id).
+    pub fn blocked_contacts(&self) -> Result<Vec<String>, QtError> {
+        let c = self.lock()?;
+        let mut stmt = c.prepare("SELECT k FROM kv WHERE k LIKE ?1 ORDER BY k")?;
+        let rows = stmt.query_map([format!("{KV_BLOCKED}%")], |r| r.get::<_, String>(0))?;
+        let keys = rows.collect::<Result<Vec<_>, _>>()?;
+        Ok(keys.into_iter().map(|k| k[KV_BLOCKED.len()..].to_string()).collect())
+    }
+}
+
 #[uniffi::export]
 impl QtClient {
     /// Envia texto a um contacto (a sessao tem de existir: ver `start_session`).
@@ -316,6 +373,12 @@ impl QtClient {
         let c = self.lock()?;
         let mut result: Option<ReceiveResult> = None;
         let mut hook = |tx: &st::rusqlite::Connection, contact_id: &str, env_id: &[u8], plain: &[u8]| -> Result<(), QtError> {
+            // Bloqueado: a sessao avanca (para continuar a funcionar se for desbloqueado), mas
+            // nada e guardado nem mostrado e nao se agenda recibo. Quem enviou nao e avisado.
+            if is_blocked_in(tx, contact_id)? {
+                result = Some(ReceiveResult::NoChange { contact_id: contact_id.to_string() });
+                return Ok(());
+            }
             let now = now_ms();
             result = Some(match decode(plain, &legacy_msg_id(env_id)) {
                 Payload::Text { id, sent_at, text } => {
@@ -393,7 +456,7 @@ impl QtClient {
             let contact_id = key[KV_PENDING_DELIVERED.len()..].to_string();
             let raw = st::kv_get(&tx, &key)?.unwrap_or_default();
             let ids: Vec<Vec<u8>> = raw.chunks(16).filter(|c| c.len() == 16).map(|c| c.to_vec()).collect();
-            if !ids.is_empty() && st::load_session(&tx, &contact_id)?.is_some() {
+            if !ids.is_empty() && !is_blocked_in(&tx, &contact_id)? && st::load_session(&tx, &contact_id)?.is_some() {
                 n += queue_receipts(self, &tx, &contact_id, hm::ST_DELIVERED, &ids)?;
             }
             st::kv_delete(&tx, &key)?;
@@ -409,7 +472,7 @@ impl QtClient {
         let c = self.lock()?;
         let tx = c.unchecked_transaction()?;
         let ids = hm::mark_incoming_read(&tx, &contact_id)?;
-        if send_read_receipt && !ids.is_empty() && st::load_session(&tx, &contact_id)?.is_some() {
+        if send_read_receipt && !ids.is_empty() && !is_blocked_in(&tx, &contact_id)? && st::load_session(&tx, &contact_id)?.is_some() {
             queue_receipts(self, &tx, &contact_id, hm::ST_READ, &ids)?;
         }
         tx.commit()?;

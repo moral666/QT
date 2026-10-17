@@ -67,14 +67,25 @@ para que outros possam iniciar uma conversa, e usa o ID para guardar as mensagen
 
 ---
 
-## 3. Criptografia / exportação
+## 3. Conteúdo gerado por utilizadores (UGC)
+
+A política da Play aplica-se a conversas 1 a 1. O que exige e onde está:
+
+- **Bloquear utilizadores:** na conversa, menu ⋮ → Bloquear (também para quem não está nos
+  contactos). Lista e desbloqueio em menu → Contactos bloqueados.
+- **Aceitar os termos antes de usar:** ecrã "Antes de começar", com os termos
+  (`https://sealer.pt/termos`) e a política de privacidade.
+- **Denunciar:** os termos indicam `privacidade@sealer.pt`. As mensagens são cifradas ponta a
+  ponta, por isso não há moderação de conteúdo no servidor.
+
+## 4. Criptografia / exportação
 
 A Play Console não tem questionário. O enquadramento está em
 [`export-compliance.md`](export-compliance.md).
 
 ---
 
-## 4. Outras secções da Play Console
+## 5. Outras secções da Play Console
 
 | Secção | Resposta |
 |---|---|
@@ -84,7 +95,7 @@ A Play Console não tem questionário. O enquadramento está em
 | Funcionalidades financeiras | Nenhuma |
 | Saúde | Nenhuma |
 
-## 5. Antes de publicar
+## 6. Antes de publicar
 
 - **Conta de programador:** 25 dólares, uma vez.
 - **Teste fechado obrigatório** (contas pessoais novas): pelo menos **12 testers durante 14
