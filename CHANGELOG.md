@@ -18,6 +18,8 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - **Termos de utilização** em sealer.pt/termos, e a app pede que sejam aceites (com a
   política de privacidade) antes de a usar. Os dois pontos são exigidos pela política de
   conteúdo gerado por utilizadores da Google Play.
+- Android: sem avisos de ligação na app ("A ligar ao relay", "Sem ligação" e o diagnóstico
+  da entrega imediata). Os problemas de ligação ficam só no registo (`adb logcat -s SealerRelay`).
 
 ### 17 de outubro de 2026: apagar a conta também no servidor (app 0.7.0)
 

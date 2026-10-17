@@ -47,7 +47,10 @@ data class UiState(
     val relayUrl: String = BuildConfig.RELAY_URL,
     val relayKeyHex: String = BuildConfig.RELAY_PIN,
     val status: String = "",
-    /** Diagnostico da entrega imediata: vazio quando esta ativa; senao, o motivo (versao alpha). */
+    /**
+     * Diagnostico da entrega imediata: vazio quando esta ativa; senao, o motivo. Ja nao e
+     * mostrado na app (como `status`): fica para depuracao.
+     */
     val delivery: String = "",
     val error: String? = null,
     val contacts: List<Contact> = emptyList(),
@@ -572,7 +575,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 // Publicar (ou re-publicar) o bundle publico para que outros nos possam contactar.
                 val r = bundleLink.request(client.relayRequestRegisterBundle(client.publishableBundle()))
-                if (r !is RelayResponse.Ack) error("O relay recusou as tuas chaves públicas: ${r.describe()}")
+                // Sem avisos de ligacao na app (por agora): so no registo (adb logcat -s SealerRelay).
+                if (r !is RelayResponse.Ack) Log.w(TAG, "relay recusou o bundle: ${r.describe()}")
             } catch (e: Exception) {
                 // Sem rede: o receiveLoop mostra o estado da ligacao; volta a publicar no proximo arranque.
             }

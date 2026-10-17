@@ -579,9 +579,6 @@ fun HomeScreen(
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
-            if (ui.status.isNotBlank() && ui.status != "Ligado ao relay") ConnectionBanner(ui.status)
-            // Diagnostico da versao alpha: so aparece quando a entrega imediata nao esta ativa.
-            if (ui.delivery.isNotBlank()) ConnectionBanner(ui.delivery)
             val withHistory = ui.conversations.map { it.contactId }.toSet()
             val idle = ui.contacts.filter { it.contactId !in withHistory }
             if (ui.conversations.isEmpty() && idle.isEmpty()) {
@@ -627,17 +624,6 @@ fun HomeScreen(
         )
     }
     if (showWipe) WipeAllDialog(onDismiss = { showWipe = false }, onConfirm = { showWipe = false; onWipeAll() })
-}
-
-@Composable
-fun ConnectionBanner(status: String) {
-    Text(
-        status,
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 16.dp, vertical = 6.dp),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSecondaryContainer,
-        maxLines = 1, overflow = TextOverflow.Ellipsis,
-    )
 }
 
 @Composable
