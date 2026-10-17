@@ -6,6 +6,23 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 17 de outubro de 2026: grupos, reações, voz e convites (app 0.7.1)
+
+- **Grupos até 10 pessoas, com até 3 administradores** (`ffi/src/groups.rs`). Envio a cada
+  membro pelas sessões 1 a 1: o relay não muda e não sabe que existe um grupo. Os
+  administradores mudam o nome, acrescentam e retiram pessoas e escolhem os outros
+  administradores; cada mudança sobe a versão do grupo. Quem sai avisa os outros. Nesta
+  versão: texto e reações (ver `docs/protocol-spec.md`, secção 15).
+- **Reações com emoji** a mensagens, imagens e mensagens de voz (toque longo). Cifradas como
+  as mensagens; tocar outra vez troca, "Retirar a minha" apaga.
+- **Mensagens de voz até 10 segundos** (botão do microfone com a caixa vazia). AAC, cifradas
+  ponta a ponta como as imagens; ouvem-se a partir da memória, sem ficheiro decifrado em disco.
+- **Convite:** quem escreve a alguém pela primeira vez manda, cifrado, o seu Public ID. Do
+  outro lado aparece "Aceitar / Recusar / Bloquear", sem pedir o ID à mão.
+- Sessões cruzadas: quem ganha o desempate passa a ler a mensagem do outro em vez de a
+  descartar, e os envelopes de grupo por enviar são cifrados de novo com a sessão nova.
+- iPhone: ainda não tem estas funções (ver `docs/known-limitations.md`, ponto 38).
+
 ### 17 de outubro de 2026: bloquear contactos e termos de utilização
 
 - **Bloquear** (núcleo Rust, `block_contact` / `unblock_contact` / `blocked_contacts`): as

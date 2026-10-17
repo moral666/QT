@@ -30,6 +30,9 @@ pub const KIND_ATTACHMENT: i64 = 2;
 /// Tipo de entrada na outbox (o que a app tem de fazer quando o relay confirma).
 pub const OUTBOX_MESSAGE: i64 = 1;
 pub const OUTBOX_RECEIPT: i64 = 2;
+/// Envelope de uma mensagem de grupo para um membro (a mensagem fica "Enviada"
+/// quando o relay confirmar os de todos os membros; ver qt_ffi::groups).
+pub const OUTBOX_GROUP: i64 = 3;
 
 pub(crate) const SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS messages (
@@ -64,7 +67,24 @@ pub(crate) const SCHEMA: &str = "
         reactor TEXT NOT NULL,
         emoji   TEXT NOT NULL,
         PRIMARY KEY (conv_id, msg_id, reactor)
+    );
+    -- Grupos: info em JSON (nome, versao, membros com Public ID e se sao admins).
+    -- active = 0: sai do grupo ou fui removido (o historico fica ate o apagar).
+    CREATE TABLE IF NOT EXISTS groups (
+        group_id TEXT PRIMARY KEY,
+        info     TEXT NOT NULL,
+        active   INTEGER NOT NULL DEFAULT 1
     );";
+
+/// Atualiza bases de dados criadas por versoes anteriores (colunas novas).
+pub(crate) fn migrate(conn: &Connection) -> Result<(), StorageError> {
+    // `sender`: quem escreveu a mensagem num grupo ('' nas conversas 1 a 1 e nas minhas).
+    let has_sender = conn.prepare("SELECT 1 FROM pragma_table_info('messages') WHERE name = 'sender'")?.exists([])?;
+    if !has_sender {
+        conn.execute_batch("ALTER TABLE messages ADD COLUMN sender TEXT NOT NULL DEFAULT ''")?;
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoredMessage {
@@ -79,6 +99,8 @@ pub struct StoredMessage {
     /// Relogio deste aparelho quando a mensagem foi criada/recebida (ms).
     pub local_at: i64,
     pub status: i64,
+    /// Num grupo: o contact_id de quem escreveu. Vazio nas conversas 1 a 1 e nas minhas.
+    pub sender: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,10 +129,11 @@ fn row_to_msg(r: &rusqlite::Row<'_>) -> rusqlite::Result<StoredMessage> {
         sent_at: r.get(6)?,
         local_at: r.get(7)?,
         status: r.get(8)?,
+        sender: r.get(9)?,
     })
 }
 
-const COLS: &str = "seq, msg_id, contact_id, outgoing, kind, body, sent_at, local_at, status";
+const COLS: &str = "seq, msg_id, contact_id, outgoing, kind, body, sent_at, local_at, status, sender";
 
 /// Insere uma mensagem. Devolve `Some(seq)` se for nova e `None` se ja existia
 /// (mesmo `msg_id` do mesmo contacto: entrega duplicada, ignorada).
@@ -126,10 +149,27 @@ pub fn insert_message(
     local_at: i64,
     status: i64,
 ) -> Result<Option<i64>, StorageError> {
+    insert_message_from(conn, msg_id, contact_id, outgoing, kind, body, sent_at, local_at, status, "")
+}
+
+/// Como `insert_message`, com quem escreveu (`sender`, nas mensagens de grupo).
+#[allow(clippy::too_many_arguments)] // um argumento por coluna da mensagem
+pub fn insert_message_from(
+    conn: &Connection,
+    msg_id: &[u8],
+    contact_id: &str,
+    outgoing: bool,
+    kind: i64,
+    body: &str,
+    sent_at: i64,
+    local_at: i64,
+    status: i64,
+    sender: &str,
+) -> Result<Option<i64>, StorageError> {
     let n = conn.execute(
-        "INSERT OR IGNORE INTO messages (msg_id, contact_id, outgoing, kind, body, sent_at, local_at, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![msg_id, contact_id, outgoing as i64, kind, body, sent_at, local_at, status],
+        "INSERT OR IGNORE INTO messages (msg_id, contact_id, outgoing, kind, body, sent_at, local_at, status, sender)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![msg_id, contact_id, outgoing as i64, kind, body, sent_at, local_at, status, sender],
     )?;
     Ok(if n == 1 { Some(conn.last_insert_rowid()) } else { None })
 }
@@ -215,7 +255,7 @@ pub fn conversations(conn: &Connection) -> Result<Vec<ConversationSummary>, Stor
     ))?;
     let rows = stmt.query_map([], |r| {
         let last = row_to_msg(r)?;
-        Ok(ConversationSummary { contact_id: last.contact_id.clone(), last, unread: r.get(9)? })
+        Ok(ConversationSummary { contact_id: last.contact_id.clone(), last, unread: r.get(10)? })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
@@ -269,10 +309,11 @@ pub fn attachment_ids(conn: &Connection, contact_id: &str) -> Result<Vec<Vec<u8>
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
-/// Apaga o historico (e a outbox) de um contacto.
+/// Apaga o historico (e a outbox) de um contacto. Os envelopes de grupos para
+/// esse contacto ficam: sao de outra conversa (a do grupo).
 pub fn delete_conversation(conn: &Connection, contact_id: &str) -> Result<(), StorageError> {
     conn.execute("DELETE FROM messages WHERE contact_id = ?1", [contact_id])?;
-    conn.execute("DELETE FROM outbox WHERE contact_id = ?1", [contact_id])?;
+    conn.execute("DELETE FROM outbox WHERE contact_id = ?1 AND kind != ?2", params![contact_id, OUTBOX_GROUP])?;
     conn.execute("DELETE FROM reactions WHERE conv_id = ?1", [contact_id])?;
     Ok(())
 }
@@ -290,6 +331,36 @@ pub fn set_reaction(conn: &Connection, conv_id: &str, msg_id: &[u8], reactor: &s
             params![conv_id, msg_id, reactor, emoji],
         )?;
     }
+    Ok(())
+}
+
+/// Guarda (ou substitui) um grupo.
+pub fn group_put(conn: &Connection, group_id: &str, info: &str, active: bool) -> Result<(), StorageError> {
+    conn.execute(
+        "INSERT OR REPLACE INTO groups (group_id, info, active) VALUES (?1, ?2, ?3)",
+        params![group_id, info, active as i64],
+    )?;
+    Ok(())
+}
+
+/// (info, active) de um grupo.
+pub fn group_get(conn: &Connection, group_id: &str) -> Result<Option<(String, bool)>, StorageError> {
+    Ok(conn
+        .query_row("SELECT info, active FROM groups WHERE group_id = ?1", [group_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? != 0))
+        })
+        .optional()?)
+}
+
+/// Todos os grupos: (group_id, info, active).
+pub fn groups_all(conn: &Connection) -> Result<Vec<(String, String, bool)>, StorageError> {
+    let mut stmt = conn.prepare("SELECT group_id, info, active FROM groups ORDER BY group_id")?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)? != 0)))?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+pub fn group_delete(conn: &Connection, group_id: &str) -> Result<(), StorageError> {
+    conn.execute("DELETE FROM groups WHERE group_id = ?1", [group_id])?;
     Ok(())
 }
 
@@ -324,9 +395,10 @@ pub fn reset_outgoing_to_pending(conn: &Connection, contact_id: &str, msg_id: &[
     Ok(())
 }
 
-/// Apaga da outbox tudo o que ia para `contact_id` (envelopes de uma sessao antiga).
+/// Apaga da outbox o que ia para `contact_id` (envelopes de uma sessao antiga),
+/// menos os de grupos: esses sao cifrados de novo um a um (qt_ffi::groups).
 pub fn outbox_delete_contact(conn: &Connection, contact_id: &str) -> Result<(), StorageError> {
-    conn.execute("DELETE FROM outbox WHERE contact_id = ?1", [contact_id])?;
+    conn.execute("DELETE FROM outbox WHERE contact_id = ?1 AND kind != ?2", params![contact_id, OUTBOX_GROUP])?;
     Ok(())
 }
 

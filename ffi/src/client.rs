@@ -668,6 +668,7 @@ impl QtClient {
         // reiniciou a dele): as nossas mensagens ainda nao entregues tem de ser
         // cifradas de novo com a sessao nova.
         let mut replaced = false;
+        // `None`: a mensagem foi lida com a sessao do outro lado, mas a nossa fica (ver abaixo).
         let (state, plaintext) = match st::load_session(c, contact_id)? {
             None => {
                 let h = header.ok_or(QtError::UnknownSession)?;
@@ -675,10 +676,10 @@ impl QtClient {
                 let p = s.decrypt(&msg).map_err(|_| QtError::Crypto)?;
                 used_opk = opk;
                 new_session = true;
-                (s, p)
+                (Some(s), p)
             }
             Some(mut s) => match s.decrypt(&msg) {
-                Ok(p) => (s, p),
+                Ok(p) => (Some(s), p),
                 Err(_) => {
                     // So uma mensagem com cabecalho PQXDH pode abrir uma sessao nova.
                     // Forjar uma exige a chave privada de identidade do contacto
@@ -694,32 +695,36 @@ impl QtClient {
                     let (mut ns, opk) = self.establish_responder(c, contact_id, h).map_err(|_| QtError::Crypto)?;
                     let p = ns.decrypt(&msg).map_err(|_| QtError::Crypto)?;
                     let ours_pending = st::kv_get(c, &format!("pending:{contact_id}"))?.is_some();
-                    if ours_pending {
-                        // SESSOES CRUZADAS: os dois iniciaram uma sessao ao mesmo tempo.
-                        // Desempate deterministico e igual nos dois lados: fica a sessao
-                        // iniciada por quem tem a chave de identidade "menor". O outro
-                        // lado adota-a ao receber a nossa mensagem e reenvia as dele.
-                        let mine = st::load_identity(c)?.identity.public.to_bytes();
-                        let theirs = contact_to_identity(contact_id)?.to_bytes();
-                        if theirs >= mine {
-                            return Err(QtError::Crypto);
-                        }
+                    // SESSOES CRUZADAS: os dois iniciaram uma sessao ao mesmo tempo (ex.:
+                    // dois membros de um grupo novo). Desempate deterministico e igual nos
+                    // dois lados: fica a sessao iniciada por quem tem a chave de identidade
+                    // "menor". O outro lado adota-a ao receber a nossa primeira mensagem.
+                    let mine = st::load_identity(c)?.identity.public.to_bytes();
+                    let theirs = contact_to_identity(contact_id)?.to_bytes();
+                    if ours_pending && theirs >= mine {
+                        // Ganhamos: a nossa sessao fica. A mensagem dele e autentica (o AEAD
+                        // da sessao dele passou), por isso e lida na mesma, sem trocar de
+                        // sessao. A OPK (se houver) fica para as mensagens seguintes dele.
+                        (None, p)
+                    } else {
+                        used_opk = opk;
+                        new_session = true;
+                        replaced = true;
+                        (Some(ns), p)
                     }
-                    used_opk = opk;
-                    new_session = true;
-                    replaced = true;
-                    (ns, p)
                 }
             },
         };
 
         let tx = c.unchecked_transaction()?;
-        st::save_session(&tx, contact_id, &state)?;
+        if let Some(state) = &state {
+            st::save_session(&tx, contact_id, state)?;
+            st::kv_delete(&tx, &format!("pending:{contact_id}"))?;
+        }
         st::record_envelope(&tx, contact_id, &env_id)?;
         if let Some(id) = used_opk {
             st::delete_one_time_prekey(&tx, id)?;
         }
-        st::kv_delete(&tx, &format!("pending:{contact_id}"))?;
         if new_session {
             st::save_session_meta(
                 &tx,
