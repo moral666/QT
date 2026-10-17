@@ -24,8 +24,8 @@ const MAX_QUEUED_MESSAGES_PER_USER: usize = 1000;
 /// docs/protocol-spec.md.
 const QUEUE_TTL_SECONDS: i64 = 60 * 60 * 24 * 30;
 
-/// TTL do bundle de pre-keys: as apps voltam a publica-lo sempre que se ligam ao
-/// relay, por isso so expira para quem nao abre a app ha 90 dias (ou a
+/// TTL do bundle de pre-keys: as apps voltam a publica-lo sempre que abrem
+/// (arranque ou desbloqueio), por isso so expira para quem nao abre a app ha 90 dias (ou a
 /// desinstalou sem apagar a conta). Antes nao expirava nunca.
 pub const BUNDLE_TTL_SECONDS: u64 = 60 * 60 * 24 * 90;
 

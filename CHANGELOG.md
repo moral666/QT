@@ -12,7 +12,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   mensagens e a contagem de anexos da identidade. Durante 30 dias recusa mensagens
   para ela (quem envia vê "apagou a conta").
 - O bundle de chaves públicas expira ao fim de 90 dias (antes nunca expirava). As
-  apps voltam a publicá-lo sempre que se ligam.
+  apps voltam a publicá-lo sempre que abrem (arranque ou desbloqueio).
 - Android: "Apagar todos os dados" passa a "Destruir perfil e dados" e apaga
   primeiro no servidor. Sem rede, não apaga nada e pergunta se quer tentar de novo
   ou apagar só do telemóvel. Requisito da Google Play (eliminação de conta).
@@ -26,6 +26,9 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - Android, rede: um só cliente HTTP (OkHttp) para as 3 ligações, em vez de um por
   ligação. Os certificados do sistema são preparados uma vez e as ligações novas
   reaproveitam a sessão TLS: religar ao voltar à app gasta menos tempo e bateria.
+- Android, ao ligar: vai buscar as mensagens primeiro e só depois republica as chaves
+  públicas (pela ligação dos anexos, para não passar à frente). Ao voltar de segundo
+  plano já não as republica (duram 90 dias e não mudaram).
 
 ### 17 de outubro de 2026: tempo de envio
 
