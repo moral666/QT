@@ -6,7 +6,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
-### 17 de outubro de 2026: grupos, reações, voz, convites e online (app 0.7.1)
+### 17 de outubro de 2026: grupos, reações, voz, convites e online (app 0.8.0)
 
 - **Online / offline** (`ffi/src/presence.rs`): ponto verde nos contactos com a app aberta,
   "online" na conversa e a fila "Online agora" no topo da lista. Só para contactos e cifrado
