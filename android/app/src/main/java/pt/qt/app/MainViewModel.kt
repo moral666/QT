@@ -38,6 +38,7 @@ import uniffi.qt_ffi.RelayDelivered
 import uniffi.qt_ffi.RelayResponse
 import uniffi.qt_ffi.peerBundleFromRelayBytes
 import uniffi.qt_ffi.relayIdOfPublicId
+import uniffi.qt_ffi.relayRecipientDeletedReason
 
 data class UiState(
     val loading: Boolean = true,
@@ -78,6 +79,11 @@ data class UiState(
     val lockMessage: String? = null,
     /** Progresso (0 a 1) dos anexos a enviar/descarregar, por message_id. */
     val transfers: Map<String, Float> = emptyMap(),
+    /**
+     * Pediu-se para apagar a conta mas nao foi possivel apaga-la no servidor (motivo).
+     * Nada foi apagado: a app pergunta se quer tentar de novo ou apagar so deste telemovel.
+     */
+    val wipeServerFailed: String? = null,
 )
 
 const val DEFAULT_LOCK_TIMEOUT_MS = 60_000L
@@ -597,8 +603,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * APAGAR TODOS OS DADOS: identidade, chaves, contactos, conversas e
      * definicoes deste aparelho. Irreversivel: o teu ID deixa de existir.
      */
-    fun wipeAllData() = io {
+    /**
+     * Apaga a conta: primeiro no relay (bundle de chaves publicas e mensagens em espera),
+     * depois tudo deste telemovel. Se nao for possivel apagar no relay (sem rede, relay
+     * antigo), nao apaga nada e pergunta ([UiState.wipeServerFailed]). Com [localOnly], o
+     * utilizador aceitou apagar so deste telemovel: o que ficou no relay apaga-se sozinho
+     * (o bundle ao fim de 90 dias, as mensagens ao fim de 30).
+     */
+    fun wipeAllData(localOnly: Boolean = false) = io {
         val client = qt ?: return@io
+        _ui.update { it.copy(wipeServerFailed = null) }
+        if (!localOnly) {
+            val problem = deleteOnRelay(client)
+            if (problem != null) {
+                _ui.update { it.copy(wipeServerFailed = problem) }
+                return@io
+            }
+        }
         try {
             poller?.cancel()
             link?.close()
@@ -613,6 +634,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             resetStorage()
         } catch (e: Exception) {
             error("Nao foi possivel apagar os dados: ${e.safeMsg()}")
+        }
+    }
+
+    fun dismissWipeServerFailed() = _ui.update { it.copy(wipeServerFailed = null) }
+
+    /** Pede ao relay para apagar a conta. `null` se apagou; senao, o motivo (para mostrar). */
+    private suspend fun deleteOnRelay(client: QtClient): String? {
+        val l = link ?: return "sem ligação ao servidor"
+        return try {
+            when (val r = l.request(client.relayRequestDeleteAccount())) {
+                is RelayResponse.Ack -> null
+                is RelayResponse.Error ->
+                    if (r.reason == RELAY_UNKNOWN_REQUEST) "o servidor ainda não tem esta função" else "o servidor respondeu: ${r.reason}"
+                else -> "resposta inesperada do servidor"
+            }
+        } catch (e: Exception) {
+            "sem ligação ao servidor"
         }
     }
 
@@ -836,6 +874,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * de criacao. So sai da outbox o que o relay confirmar; o resto fica guardado
      * (cifrado) e volta a ser tentado no proximo ciclo - mesmo depois de reiniciar a app.
      */
+    /** Contactos que ja se avisou nesta sessao que apagaram a conta. */
+    private val deletedNotified = mutableSetOf<String>()
+
     private suspend fun flushOutbox() = flushLock.withLock {
         val client = qt ?: return@withLock
         val l = link ?: return@withLock
@@ -851,6 +892,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (r is RelayResponse.Ack) {
                 client.outboxSent(item.outboxId)
                 changed = true
+            } else if (r is RelayResponse.Error && r.reason == relayRecipientDeletedReason()) {
+                // O contacto apagou a conta: avisa uma vez por sessao (a mensagem fica por enviar).
+                if (deletedNotified.add(item.contactId)) {
+                    val name = _ui.value.contacts.firstOrNull { it.contactId == item.contactId }?.nickname ?: "Este contacto"
+                    error("$name apagou a conta SEALER: as mensagens para este contacto já não são entregues.")
+                }
             }
             // Outra resposta (ex.: fila do destinatario cheia): fica na outbox e segue para o proximo.
         }

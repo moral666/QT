@@ -510,6 +510,16 @@ impl QtClient {
         json_bytes(serde_json::json!({"WaitMessages": {"user_id": uid, "timeout_secs": timeout_secs}}))
     }
 
+    /// Apaga a conta deste utilizador no relay: bundle de pre-keys, fila de mensagens
+    /// e contagem de anexos. Resposta `Ack`. Depois, quem tentar enviar-lhe uma mensagem
+    /// recebe `Error` com `relay_recipient_deleted_reason()`. Um relay antigo responde
+    /// `Error` (pedido desconhecido). Chamar ANTES de `delete_identity` (depois ja nao ha
+    /// chave para autenticar).
+    pub fn relay_request_delete_account(&self) -> Result<Vec<u8>, QtError> {
+        let uid = self.relay_user_id()?;
+        json_bytes(serde_json::json!({"DeleteAccount": {"user_id": uid}}))
+    }
+
     /// Confirmar so DEPOIS de `decrypt` ter persistido cada mensagem.
     pub fn relay_request_ack(&self, ids: Vec<u64>) -> Result<Vec<u8>, QtError> {
         let uid = self.relay_user_id()?;
@@ -862,6 +872,13 @@ pub fn relay_parse_response(bytes: Vec<u8>) -> Result<RelayResponse, QtError> {
         }
         WireServerMsg::BlobNotFound => RelayResponse::BlobNotFound,
     })
+}
+
+/// Motivo do `Error` do relay a um envio para quem apagou a conta
+/// (ver `relay_request_delete_account`).
+#[uniffi::export]
+pub fn relay_recipient_deleted_reason() -> String {
+    "o destinatario apagou a conta".to_string()
 }
 
 /// Caixa de correio no relay correspondente a um QT Public ID.

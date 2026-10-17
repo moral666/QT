@@ -6,6 +6,17 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 17 de outubro de 2026: apagar a conta também no servidor (app 0.4-alpha)
+
+- Novo pedido `DeleteAccount`: o relay apaga o bundle de chaves públicas, a fila de
+  mensagens e a contagem de anexos da identidade. Durante 30 dias recusa mensagens
+  para ela (quem envia vê "apagou a conta").
+- O bundle de chaves públicas expira ao fim de 90 dias (antes nunca expirava). As
+  apps voltam a publicá-lo sempre que se ligam.
+- Android: "Apagar todos os dados" passa a "Destruir perfil e dados" e apaga
+  primeiro no servidor. Sem rede, não apaga nada e pergunta se quer tentar de novo
+  ou apagar só do telemóvel. Requisito da Google Play (eliminação de conta).
+
 ### 17 de outubro de 2026: tempo de envio
 
 - **Tempo médio de envio** (telemóvel de quem envia até ao relay): logo depois de

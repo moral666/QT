@@ -401,6 +401,19 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
                     stats::inc(&STATS.queue_full);
                     err("fila do destinatario cheia")
                 }
+                Err(StoreError::RecipientDeleted) => err(crate::protocol::RECIPIENT_DELETED),
+                Err(e) => internal(e),
+            }
+        }
+        ClientMessage::DeleteAccount { user_id } => {
+            if user_id != me {
+                return err("so podes apagar a tua propria conta");
+            }
+            match store.delete_account(&user_id).await {
+                Ok(()) => {
+                    stats::inc(&STATS.accounts_deleted);
+                    ServerMessage::Ack
+                }
                 Err(e) => internal(e),
             }
         }

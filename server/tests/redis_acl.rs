@@ -85,5 +85,18 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     // (DECRBY). Se nao voltassem, o pedido pequeno a seguir tambem seria recusado.
     assert!(matches!(store.blob_create(&alice, 2000).await, Err(qt_server::blobs::BlobError::Quota)));
     assert!(store.blob_create(&alice, 5).await.is_ok());
+
+    // Apagar a conta (DeleteAccount): so comandos da lista (DEL, SET, EXPIRE, GET).
+    store.enqueue_message(alice.clone(), vec![], vec![1; 4]).await.unwrap();
+    store.delete_account(&alice).await.unwrap();
+    assert_eq!(store.get_bundle(&alice).await.unwrap(), None);
+    assert!(store.peek_messages(&alice, 40_000).await.unwrap().is_empty());
+    assert!(matches!(
+        store.enqueue_message(alice.clone(), vec![], vec![1; 4]).await,
+        Err(qt_server::store::StoreError::RecipientDeleted)
+    ));
+    // Publicar um bundle de novo desfaz a eliminacao.
+    store.register_bundle(alice.clone(), vec![4]).await.unwrap();
+    store.enqueue_message(alice.clone(), vec![], vec![1; 4]).await.unwrap();
     let _ = std::fs::remove_dir_all(dir);
 }

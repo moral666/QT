@@ -414,6 +414,8 @@ Um pedido ↔ uma resposta, sequenciais.
    O `user_id` passa a ser `hex(signing_public)`. Sem autenticação válida → erro
    e fecho. A assinatura liga-se à sessão (channel binding): não é reutilizável.
 2. `RegisterPreKeyBundle{user_id, bundle_bytes}`: só para o próprio `user_id`; ≤ 24 000 bytes.
+   O bundle expira ao fim de 90 dias; as apps voltam a publicá-lo sempre que se ligam,
+   por isso só expira para quem não abre a app há 90 dias.
 3. `FetchPreKeyBundle{user_id}`: qualquer utilizador autenticado.
 4. `SendMessage{to, sealed_from, ciphertext}`: `to` = 64 hex minúsculos;
    `ciphertext` 1…14 000 bytes; `sealed_from` ≤ 1024 (vazio no modo `QtClient`,
@@ -428,6 +430,11 @@ Um pedido ↔ uma resposta, sequenciais.
    anterior a este pedido responde `Error{"mensagem invalida"}`; as apps passam
    então a `FetchMessages` de 3 em 3 s.
 6. `AckMessages{user_id, ids}`: só a própria fila; ≤ 200 ids; apaga as confirmadas.
+   `DeleteAccount{user_id}`: só a própria conta. Apaga o bundle, a fila e a contagem
+   diária de anexos (os anexos não estão ligados a quem os enviou e apagam-se em 24 h).
+   Durante 30 dias o relay lembra-se só de que este `user_id` foi apagado: um
+   `SendMessage` para ele recebe `Error{"o destinatario apagou a conta"}`. Publicar
+   um bundle de novo desfaz isto. Relays antigos respondem `Error{"mensagem invalida"}`.
 
 7. **Anexos** (ver secção 14), com o ficheiro JÁ cifrado pelo cliente:
    `BlobCreate{size}` (≤ 27 MiB) → `BlobCreated{blob_id, token}`;

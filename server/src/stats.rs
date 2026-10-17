@@ -32,6 +32,8 @@ pub struct Stats {
     pub internal_errors: AtomicU64,
     pub blob_uploads: AtomicU64,
     pub blob_downloads: AtomicU64,
+    /// Contas apagadas pelo proprio utilizador (`DeleteAccount`).
+    pub accounts_deleted: AtomicU64,
 }
 
 pub static STATS: Stats = Stats {
@@ -55,6 +57,7 @@ pub static STATS: Stats = Stats {
     internal_errors: AtomicU64::new(0),
     blob_uploads: AtomicU64::new(0),
     blob_downloads: AtomicU64::new(0),
+    accounts_deleted: AtomicU64::new(0),
 };
 
 pub fn inc(c: &AtomicU64) {
@@ -89,6 +92,7 @@ pub fn take_line(s: &Stats) -> Option<String> {
         ("erros_internos", t(&s.internal_errors)),
         ("anexos_enviados", t(&s.blob_uploads)),
         ("anexos_descarregados", t(&s.blob_downloads)),
+        ("contas_apagadas", t(&s.accounts_deleted)),
     ];
     let active = s.active.load(Relaxed);
     if active == 0 && v.iter().all(|(_, n)| *n == 0) {
