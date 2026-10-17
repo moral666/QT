@@ -5,6 +5,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -37,10 +38,6 @@ class RelayLink(
     /** Chave publica estatica Noise do relay (hex), impressa no arranque do `relay_server`. Opcional. */
     private val pinnedRelayKeyHex: String?,
 ) {
-    private val http = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .pingInterval(25, TimeUnit.SECONDS)   // mantem a ligacao viva e deteta quedas
-        .build()
     private val lock = Mutex()
     private var conn: Conn? = null
     /** Terminada de vez ([shutdown]): nao volta a ligar, os pedidos falham logo. */
@@ -184,6 +181,24 @@ class RelayLink(
     }
 
     companion object {
+        /**
+         * Um so cliente HTTP para todas as ligacoes (a dos pedidos, a de espera e a dos anexos),
+         * como recomenda o OkHttp: os certificados do sistema so sao preparados uma vez, as
+         * threads sao partilhadas e as ligacoes novas reaproveitam a sessao TLS das anteriores.
+         * Antes cada RelayLink criava o seu (3 por arranque e 3 por cada regresso a app).
+         */
+        private val http: OkHttpClient by lazy {
+            // Cada WebSocket ocupa um lugar do Dispatcher enquanto esta aberto (o OkHttp le-o
+            // dentro da chamada). O limite normal e 5 por servidor: ao mudar de rede, as 3
+            // ligacoes antigas podem demorar a fechar enquanto abrem 3 novas, e uma ficaria
+            // em fila. Com 16 isso nunca acontece.
+            val dispatcher = Dispatcher().apply { maxRequestsPerHost = 16 }
+            OkHttpClient.Builder()
+                .dispatcher(dispatcher)
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .pingInterval(25, TimeUnit.SECONDS)   // mantem a ligacao viva e deteta quedas
+                .build()
+        }
         private const val MAX_RETRIES = 3
         private const val BACKOFF_MS = 300L
         private const val HANDSHAKE_MS = 10_000L
