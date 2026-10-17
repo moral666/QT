@@ -64,6 +64,22 @@ jobs:
         working-directory: android
         run: ../.github/gradle-anotado.sh :app:testDebugUnitTest
 
+      - name: Keystore descartavel (so para o R8 da release correr aqui)
+        # O build.gradle.kts recusa qualquer release sem keystore. Esta e criada nesta
+        # maquina, com uma password aleatoria, e desaparece com ela: nao e a keystore
+        # de publicacao (essa nunca sai do PC do Nuno) e o APK daqui nao e guardado.
+        run: |
+          PASS=$(openssl rand -hex 16)
+          keytool -genkeypair -keystore "$RUNNER_TEMP/ci.jks" -storepass "$PASS" -keypass "$PASS" \
+            -alias ci -keyalg RSA -keysize 2048 -validity 1 -dname "CN=CI descartavel" -noprompt
+          echo "::add-mask::$PASS"
+          {
+            echo "QT_KEYSTORE_FILE=$RUNNER_TEMP/ci.jks"
+            echo "QT_KEYSTORE_PASSWORD=$PASS"
+            echo "QT_KEY_ALIAS=ci"
+            echo "QT_KEY_PASSWORD=$PASS"
+          } >> "$GITHUB_ENV"
+
       - name: Compilar (debug) e R8 da release
         working-directory: android
         run: ../.github/gradle-anotado.sh :app:assembleDebug :app:minifyReleaseWithR8
