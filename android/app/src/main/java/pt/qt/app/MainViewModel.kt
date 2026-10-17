@@ -31,6 +31,8 @@ import uniffi.qt_ffi.AttachmentRef
 import uniffi.qt_ffi.AttachmentState
 import uniffi.qt_ffi.ChatMessage
 import uniffi.qt_ffi.ConversationSummary
+import uniffi.qt_ffi.GroupInfo
+import uniffi.qt_ffi.GroupMemberInput
 import uniffi.qt_ffi.QtClient
 import uniffi.qt_ffi.QtException
 import uniffi.qt_ffi.ReceiveResult
@@ -93,7 +95,19 @@ data class UiState(
     val invites: Set<String> = emptySet(),
     /** Aceitou os termos de utilizacao em vigor (TERMS_VERSION). */
     val termsAccepted: Boolean = true,
+    /** Grupos (ate 10 pessoas). A conversa de cada um tem o id `conversationId` ("g:..."). */
+    val groups: List<GroupInfo> = emptyList(),
 )
+
+/** O grupo de uma conversa ("g:..."), se for de um grupo. */
+fun UiState.groupOf(conversationId: String): GroupInfo? =
+    if (conversationId.startsWith("g:")) groups.firstOrNull { it.conversationId == conversationId } else null
+
+/** Nome a mostrar para um membro de um grupo: "Tu", o nome nos contactos, ou um nome curto. */
+fun UiState.memberName(contactId: String): String = when {
+    publicId.length >= 68 && publicId.substring(4, 68) == contactId -> "Tu"
+    else -> contacts.firstOrNull { it.contactId == contactId }?.nickname ?: "Membro ${contactId.take(6)}"
+}
 
 /** Versao dos termos de utilizacao: subir quando mudarem, para voltar a pedir a aceitacao. */
 const val TERMS_VERSION = 1
@@ -820,9 +834,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val cid = st.openChatId
         val window = if (cid != null) client.messagesPage(cid, null, maxOf(PAGE, st.chatMessages.size).toUInt()) else null
         val invites = client.pendingIntros().toSet()
+        val groups = client.groups()
         _ui.update {
             it.copy(
                 invites = invites,
+                groups = groups,
                 conversations = client.conversations(),
                 chatMessages = if (window != null && it.openChatId == cid) window else it.chatMessages,
             )
@@ -870,6 +886,108 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             flushOutbox()
         } catch (e: Exception) {
             error("Nao foi possivel reagir: ${e.safeMsg()}")
+        }
+    }
+
+    // ---------------------------------------------------------------------- grupos
+    //
+    // Envio a cada membro (ver ffi/src/groups.rs): o relay so ve envelopes 1 a 1. Para
+    // escrever no grupo e preciso ter sessao com cada membro; quem ainda nao a tem fica
+    // de fora ate a sessao abrir (normalmente no envio seguinte).
+
+    /** Abre sessao com quem ainda nao a tem (bundle no relay). Quem falhar fica para depois. */
+    private suspend fun ensureSessions(client: QtClient, publicIds: List<String>) {
+        val l = link ?: return
+        for (pid in publicIds) {
+            val cid = pid.substring(4, 68)
+            if (cid in _ui.value.blocked || client.hasSession(cid)) continue
+            try {
+                val r = l.request(client.relayRequestFetchBundle(relayIdOfPublicId(pid)))
+                if (r is RelayResponse.Bundle) client.startSession(pid, peerBundleFromRelayBytes(r.bytes))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "sessao com membro do grupo: ${e.safeMsg()}")
+            }
+        }
+    }
+
+    /** NOVO GRUPO: eu (administrador) + ate 9 contactos. Abre a conversa do grupo. */
+    fun createGroup(name: String, members: List<Contact>) = io {
+        val client = qt ?: return@io
+        try {
+            ensureSessions(client, members.map { it.publicId })
+            val g = client.groupCreate(name.trim(), members.map { it.publicId })
+            refreshViews(client)
+            flushOutbox()
+            openChat(g.conversationId)
+        } catch (e: Exception) {
+            error("Não foi possível criar o grupo: ${e.safeMsg()}")
+        }
+    }
+
+    fun sendGroup(groupId: String, text: String) = io {
+        val client = qt ?: return@io
+        val bytes = text.trim().toByteArray(Charsets.UTF_8)
+        if (bytes.isEmpty() || bytes.size > MAX_TEXT_BYTES) { error("Mensagem vazia ou maior que $MAX_TEXT_BYTES bytes"); return@io }
+        try {
+            ensureSessions(client, client.groupMembersNeedingSession(groupId))
+            client.groupSendText(groupId, text.trim())
+            refreshViews(client)
+            flushOutbox()
+        } catch (e: Exception) {
+            error("Nao foi possivel enviar: ${e.safeMsg()}")
+        }
+    }
+
+    fun reactGroup(groupId: String, messageId: String, emoji: String) = io {
+        val client = qt ?: return@io
+        try {
+            ensureSessions(client, client.groupMembersNeedingSession(groupId))
+            client.groupReact(groupId, messageId, emoji)
+            refreshViews(client)
+            flushOutbox()
+        } catch (e: Exception) {
+            error("Nao foi possivel reagir: ${e.safeMsg()}")
+        }
+    }
+
+    /** MUDAR O GRUPO (so administradores): nome, membros e administradores (ate 3). */
+    fun updateGroup(groupId: String, name: String, members: List<GroupMemberInput>) = io {
+        val client = qt ?: return@io
+        try {
+            ensureSessions(client, members.map { it.publicId })
+            client.groupUpdate(groupId, name.trim(), members)
+            refreshViews(client)
+            flushOutbox()
+        } catch (e: Exception) {
+            error("Não foi possível mudar o grupo: ${e.safeMsg()}")
+        }
+    }
+
+    /** SAIR DO GRUPO: os outros sao avisados; a conversa fica ate ser apagada. */
+    fun leaveGroup(groupId: String) = io {
+        val client = qt ?: return@io
+        try {
+            client.groupLeave(groupId)
+            refreshViews(client)
+            flushOutbox()
+        } catch (e: Exception) {
+            error("Não foi possível sair do grupo: ${e.safeMsg()}")
+        }
+    }
+
+    /** APAGAR GRUPO deste telemovel (sai, se ainda estiver, e apaga as mensagens). */
+    fun deleteGroup(groupId: String) = io {
+        val client = qt ?: return@io
+        try {
+            val conv = client.group(groupId)?.conversationId
+            client.groupDelete(groupId)
+            if (conv != null && _ui.value.openChatId == conv) closeChat()
+            refreshViews(client)
+            flushOutbox()
+        } catch (e: Exception) {
+            error("Não foi possível apagar o grupo: ${e.safeMsg()}")
         }
     }
 
@@ -1056,9 +1174,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val client = qt ?: return@withLock
         val l = link ?: return@withLock
         var changed = false
+        // Membros dos grupos que nao estao nos contactos: o endereco vem do Public ID na info do grupo.
+        val members by lazy {
+            client.groups().flatMap { it.members }.associate { it.contactId to it.publicId }
+        }
         for (item in client.outbox()) {
             // O relay identifica caixas pela chave de assinatura (do Public ID do contacto).
-            val relayId = _ui.value.contacts.firstOrNull { it.contactId == item.contactId }?.relayId ?: continue
+            val relayId = _ui.value.contacts.firstOrNull { it.contactId == item.contactId }?.relayId
+                ?: members[item.contactId]?.let { runCatching { relayIdOfPublicId(it) }.getOrNull() }
+                ?: continue
             val r = try {
                 l.request(client.relayRequestSend(relayId, item.blob))
             } catch (e: Exception) {

@@ -240,12 +240,40 @@ fun AppRoot(vm: MainViewModel) {
     var showSettings by remember { mutableStateOf(false) }
     var showMyId by remember { mutableStateOf(false) }
     var showLockSettings by remember { mutableStateOf(false) }
+    var showGroupInfo by remember { mutableStateOf(false) }
+    LaunchedEffect(ui.openChatId) { showGroupInfo = false }
+    val openGroup = ui.openChatId?.let { ui.groupOf(it) }
 
     when {
         ui.loading -> LoadingScreen()
         ui.locked -> LockScreen(ui, onCode = vm::unlockWithCode, onBio = vm::requestBioUnlock, onWipe = vm::wipeLockedData)
         !ui.termsAccepted -> TermsScreen(onAccept = vm::acceptTerms)
         !ui.hasIdentity -> SetupScreen(ui, onCreate = vm::createIdentity)
+        openGroup != null && showGroupInfo -> {
+            BackHandler { showGroupInfo = false }
+            GroupInfoScreen(
+                ui, openGroup, onBack = { showGroupInfo = false },
+                onUpdate = { name, members -> vm.updateGroup(openGroup.groupId, name, members) },
+                onLeave = { vm.leaveGroup(openGroup.groupId) },
+                onDelete = { showGroupInfo = false; vm.deleteGroup(openGroup.groupId) },
+                onAddContact = vm::addContact,
+            )
+        }
+        openGroup != null -> {
+            BackHandler { vm.closeChat() }
+            GroupChatScreen(
+                ui, openGroup,
+                onSend = { text -> vm.sendGroup(openGroup.groupId, text) },
+                onReact = { mid, emoji -> vm.reactGroup(openGroup.groupId, mid, emoji) },
+                onBack = vm::closeChat, onLoadOlder = vm::loadOlder,
+                onInfo = { showGroupInfo = true }, loadAttachment = vm::attachmentBytes,
+            )
+        }
+        ui.openChatId?.startsWith("g:") == true -> {
+            // O grupo foi apagado (ou ainda nao carregou): volta a lista.
+            LaunchedEffect(ui.openChatId) { vm.closeChat() }
+            LoadingScreen()
+        }
         ui.openChatId != null -> {
             val chatId = ui.openChatId!!
             BackHandler { vm.closeChat() }
@@ -280,6 +308,7 @@ fun AppRoot(vm: MainViewModel) {
             onWipeAll = { vm.wipeAllData() },
             onUnblock = vm::unblockContact,
             onLockSettings = { showLockSettings = true }, onLockNow = vm::lockNow,
+            onCreateGroup = vm::createGroup, onDeleteGroup = vm::deleteGroup,
         )
     }
     if (showMyId && !ui.locked) MyIdDialog(ui.publicId, onDismiss = { showMyId = false })
@@ -519,10 +548,15 @@ fun HomeScreen(
     onLockSettings: () -> Unit,
     onLockNow: () -> Unit,
     onUnblock: (String) -> Unit,
+    onCreateGroup: (String, List<Contact>) -> Unit = { _, _ -> },
+    onDeleteGroup: (String) -> Unit = {},
 ) {
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var showBlocked by remember { mutableStateOf(false) }
+    var showNewGroup by remember { mutableStateOf(false) }
+    /** Grupo escolhido com toque longo (para apagar). */
+    var groupActions by remember { mutableStateOf<uniffi.qt_ffi.GroupInfo?>(null) }
     /** Conversa escolhida com toque longo: (contactId, nome). */
     var actionsFor by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showWipe by remember { mutableStateOf(false) }
@@ -535,6 +569,7 @@ fun HomeScreen(
                         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text("O meu ID") }, onClick = { menu = false; onMyId() })
+                            DropdownMenuItem(text = { Text("Novo grupo") }, onClick = { menu = false; showNewGroup = true })
                             DropdownMenuItem(
                                 text = { Text("Notificações") },
                                 onClick = { onReadReceipts(!ui.readReceipts) },
@@ -587,18 +622,36 @@ fun HomeScreen(
         Column(Modifier.padding(pad).fillMaxSize()) {
             val withHistory = ui.conversations.map { it.contactId }.toSet()
             val idle = ui.contacts.filter { it.contactId !in withHistory }
-            if (ui.conversations.isEmpty() && idle.isEmpty()) {
+            val idleGroups = ui.groups.filter { it.conversationId !in withHistory }
+            if (ui.conversations.isEmpty() && idle.isEmpty() && idleGroups.isEmpty()) {
                 EmptyConversations(onMyId)
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     items(ui.conversations, key = { it.contactId }) { conv ->
-                        val name = ui.contacts.firstOrNull { it.contactId == conv.contactId }?.nickname
+                        val group = ui.groupOf(conv.contactId)
+                        if (group != null) {
+                            ConversationRow(
+                                group.name, group.groupId, conv,
+                                previewPrefix = conv.lastMessage.takeIf { !it.outgoing }?.let { ui.memberName(it.sender) },
+                                onClick = { onOpen(conv.contactId) },
+                                onLongClick = { groupActions = group },
+                            )
+                        } else {
+                            val name = ui.contacts.firstOrNull { it.contactId == conv.contactId }?.nickname
+                            ConversationRow(
+                                name ?: "Desconhecido", conv.contactId, conv,
+                                blocked = conv.contactId in ui.blocked,
+                                invite = name == null && conv.contactId in ui.invites,
+                                onClick = { onOpen(conv.contactId) },
+                                onLongClick = { actionsFor = conv.contactId to (name ?: "Desconhecido") },
+                            )
+                        }
+                    }
+                    items(idleGroups, key = { "idle-" + it.conversationId }) { g ->
                         ConversationRow(
-                            name ?: "Desconhecido", conv.contactId, conv,
-                            blocked = conv.contactId in ui.blocked,
-                            invite = name == null && conv.contactId in ui.invites,
-                            onClick = { onOpen(conv.contactId) },
-                            onLongClick = { actionsFor = conv.contactId to (name ?: "Desconhecido") },
+                            g.name, g.groupId, null,
+                            onClick = { onOpen(g.conversationId) },
+                            onLongClick = { groupActions = g },
                         )
                     }
                     items(idle, key = { "idle-" + it.contactId }) { c ->
@@ -614,6 +667,12 @@ fun HomeScreen(
         }
     }
     if (showAdd) AddContactDialog(onDismiss = { showAdd = false }, onAdd = { n, p -> onAddContact(n, p); showAdd = false })
+    if (showNewGroup) {
+        NewGroupDialog(ui, onDismiss = { showNewGroup = false }, onCreate = { n, members -> showNewGroup = false; onCreateGroup(n, members) })
+    }
+    groupActions?.let { g ->
+        GroupDeleteDialog(g.name, onDismiss = { groupActions = null }, onConfirm = { groupActions = null; onDeleteGroup(g.groupId) })
+    }
     if (showBlocked) {
         BlockedContactsDialog(
             ui.blocked.map { cid -> cid to (ui.contacts.firstOrNull { it.contactId == cid }?.nickname ?: "Desconhecido (${cid.take(8)}…)") },
@@ -671,6 +730,8 @@ fun ConversationRow(
     name: String, contactId: String, conv: ConversationSummary?,
     blocked: Boolean = false,
     invite: Boolean = false,
+    /** Nos grupos: quem escreveu a ultima mensagem recebida ("Ana: ..."). */
+    previewPrefix: String? = null,
     onClick: () -> Unit, onLongClick: () -> Unit = {},
 ) {
     val last = conv?.lastMessage
@@ -699,6 +760,7 @@ fun ConversationRow(
                         invite -> "Quer falar contigo · toca para aceitar"
                         last == null -> "Toca para começar a conversar"
                         last.outgoing -> statusGlyph(last.status) + "  " + last.text
+                        previewPrefix != null -> "$previewPrefix: ${last.text}"
                         else -> last.text
                     }
                     Text(
@@ -1404,6 +1466,8 @@ fun MessageBubble(
     loadAttachment: suspend (String, String) -> ByteArray? = { _, _ -> null },
     onOpen: () -> Unit = {},
     onLongPress: () -> Unit = {},
+    /** Nos grupos: quem escreveu (so nas recebidas). */
+    senderName: String? = null,
 ) {
     val c = LocalChatColors.current
     val shape = if (m.outgoing) {
@@ -1422,6 +1486,13 @@ fun MessageBubble(
                     top = if (att != null) 4.dp else 6.dp, bottom = 4.dp,
                 ),
         ) {
+            if (senderName != null && !m.outgoing) {
+                Text(
+                    senderName, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = if (att != null) 6.dp else 0.dp, bottom = 2.dp),
+                )
+            }
             if (att != null) {
                 AttachmentContent(m, att, progress, loadAttachment, onOpen, onLongPress)
             } else {

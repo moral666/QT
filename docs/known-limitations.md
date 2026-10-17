@@ -100,3 +100,11 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     descarga, sem vídeos nem outros ficheiros, e a app iPhone só recebe GIFs do teclado colando-os.
     O tamanho e as dimensões da imagem vão dentro da mensagem cifrada; a localização da foto
     é removida ao recomprimir (as originais PNG/WebP/GIF vão como estão).
+37. **Grupos (desde a 0.7.1).** Só texto e reações: imagens e voz nos grupos ainda não. Sem
+    recibos de entregue e vista. Para escrever no grupo é preciso sessão com cada membro: quem
+    ainda não publicou as chaves no relay fica de fora dessa mensagem (não volta a recebê-la
+    depois). Cada mensagem sai uma vez por membro (até 9 envelopes), por isso gasta mais
+    dados do que uma conversa a dois. Os membros veem os Public IDs uns dos outros (estão na
+    info do grupo, cifrada).
+38. **App iPhone desatualizada:** ainda não tem convites, reações, voz nem grupos (o código Swift
+    tem de ser atualizado aos tipos novos do núcleo Rust antes da próxima build iOS).

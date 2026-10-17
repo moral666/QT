@@ -9,6 +9,7 @@
 //!   tipo 4 = convite: [Public ID de quem envia, "qt1:..."]. Vai antes da 1.a
 //!                    mensagem de quem inicia a conversa; nao aparece no historico.
 //!   tipo 5 = reacao: [16 msg_id da mensagem][emoji UTF-8; vazio = retirar]
+//!   tipos 6 a 8 = grupos (mensagem, info, saida): ver `groups.rs`
 //! Um plaintext que nao siga este formato (clientes antigos) e tratado como
 //! texto simples, com um msg_id derivado do envelope (deduplicacao estavel).
 //!
@@ -34,15 +35,18 @@ use qt_storage as st;
 use qt_storage::messages as hm;
 use sha2::{Digest, Sha256};
 
-const PAYLOAD_V1: u8 = 0x01;
-const T_TEXT: u8 = 1;
+pub(crate) const PAYLOAD_V1: u8 = 0x01;
+pub(crate) const T_TEXT: u8 = 1;
 const T_RECEIPT: u8 = 2;
 const T_ATTACHMENT: u8 = 3;
 const T_INTRO: u8 = 4;
-const T_REACTION: u8 = 5;
+pub(crate) const T_REACTION: u8 = 5;
+pub(crate) const T_GROUP_MSG: u8 = 6;
+pub(crate) const T_GROUP_INFO: u8 = 7;
+pub(crate) const T_GROUP_LEAVE: u8 = 8;
 /// Emoji maximo por reacao (bytes UTF-8): chega para um emoji composto (familia, bandeira).
 const MAX_EMOJI_BYTES: usize = 32;
-const HDR: usize = 1 + 1 + 16 + 8;
+pub(crate) const HDR: usize = 1 + 1 + 16 + 8;
 /// Texto maximo por mensagem (bytes UTF-8). Cabe no limite do envelope.
 pub const MAX_TEXT_BYTES: usize = 9_000;
 /// Ids por recibo (16 bytes cada; 400 x 16 = 6400 bytes).
@@ -99,6 +103,8 @@ pub struct ChatMessage {
     pub attachment: Option<AttachmentInfo>,
     /// Reacoes com emoji (vazio na lista de conversas e nas mensagens acabadas de chegar).
     pub reactions: Vec<Reaction>,
+    /// Num grupo: o contact_id de quem escreveu (vazio nas conversas 1 a 1 e nas minhas).
+    pub sender: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -141,7 +147,7 @@ pub(crate) fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
-fn new_id() -> Result<[u8; 16], QtError> {
+pub(crate) fn new_id() -> Result<[u8; 16], QtError> {
     let mut id = [0u8; 16];
     getrandom::getrandom(&mut id).map_err(|_| QtError::Crypto)?;
     Ok(id)
@@ -164,6 +170,7 @@ pub(crate) fn to_chat(m: &hm::StoredMessage) -> ChatMessage {
         status: MessageStatus::from_db(m.status),
         attachment: att.map(|a| a.info()),
         reactions: Vec::new(),
+        sender: m.sender.clone(),
     }
 }
 
@@ -186,7 +193,7 @@ pub(crate) fn with_reactions(c: &st::rusqlite::Connection, conv_id: &str, mut ms
 
 // ------------------------------------------------------------ codificacao
 
-fn encode_text(id: &[u8; 16], sent_at: i64, text: &str) -> Vec<u8> {
+pub(crate) fn encode_text(id: &[u8; 16], sent_at: i64, text: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(HDR + text.len());
     out.push(PAYLOAD_V1);
     out.push(T_TEXT);
@@ -207,7 +214,7 @@ pub(crate) fn encode_attachment(id: &[u8; 16], sent_at: i64, wire: &[u8]) -> Vec
 }
 
 /// Mensagem de controlo (convite, reacao...): cabecalho v1 + corpo.
-fn encode_control(kind: u8, body: &[u8]) -> Result<Vec<u8>, QtError> {
+pub(crate) fn encode_control(kind: u8, body: &[u8]) -> Result<Vec<u8>, QtError> {
     let id = new_id()?;
     let mut out = Vec::with_capacity(HDR + body.len());
     out.push(PAYLOAD_V1);
@@ -258,6 +265,10 @@ enum Payload {
     Intro { public_id: String },
     /// Reacao (emoji vazio = retirar) a uma mensagem desta conversa.
     Reaction { target: Vec<u8>, emoji: String },
+    /// Grupos (ver `groups.rs`): o corpo comeca pelo group_id (16 bytes).
+    GroupMsg { body: Vec<u8> },
+    GroupInfo { body: Vec<u8> },
+    GroupLeave { body: Vec<u8> },
     /// Mensagem de controlo invalida: ignora-se, sem aviso.
     Ignored,
 }
@@ -303,6 +314,17 @@ fn decode(plain: &[u8], legacy_id: &[u8]) -> Payload {
             match std::str::from_utf8(&b[16..]) {
                 Ok(e) if !e.contains(['\n', '\r']) => Payload::Reaction { target: b[..16].to_vec(), emoji: e.to_string() },
                 _ => Payload::Ignored,
+            }
+        }
+        T_GROUP_MSG | T_GROUP_INFO | T_GROUP_LEAVE => {
+            let body = plain[HDR..].to_vec();
+            if body.len() < 16 || body.len() > 12_000 {
+                return Payload::Ignored;
+            }
+            match plain[1] {
+                T_GROUP_MSG => Payload::GroupMsg { body },
+                T_GROUP_INFO => Payload::GroupInfo { body },
+                _ => Payload::GroupLeave { body },
             }
         }
         T_INTRO => match std::str::from_utf8(&plain[HDR..]) {
@@ -493,6 +515,8 @@ impl QtClient {
         if let Some(e) = hm::outbox_take(&tx, &id)? {
             if e.kind == hm::OUTBOX_MESSAGE {
                 hm::mark_sent(&tx, &id)?;
+            } else if e.kind == hm::OUTBOX_GROUP {
+                crate::groups::on_outbox_sent(&tx, &id)?;
             }
         }
         tx.commit()?;
@@ -577,6 +601,9 @@ impl QtClient {
                         ReceiveResult::NoChange { contact_id: contact_id.to_string() }
                     }
                 }
+                Payload::GroupMsg { body } => crate::groups::on_group_msg(tx, contact_id, &body)?,
+                Payload::GroupInfo { body } => crate::groups::on_group_info(tx, contact_id, &body)?,
+                Payload::GroupLeave { body } => crate::groups::on_group_leave(self, tx, contact_id, &body)?,
                 Payload::Ignored => ReceiveResult::NoChange { contact_id: contact_id.to_string() },
                 Payload::Unsupported { id, sent_at } => {
                     match hm::insert_message(tx, &id, contact_id, false, hm::KIND_TEXT, UNSUPPORTED_TEXT, sent_at, now, hm::ST_RECEIVED)? {
@@ -713,6 +740,7 @@ pub const UNSUPPORTED_TEXT: &str =
 /// destinatario nunca as mostra em duplicado) e volta a pô-las na outbox.
 /// Corre DENTRO da transacao que instala a sessao nova.
 pub(crate) fn requeue_after_session_reset(client: &QtClient, tx: &st::rusqlite::Connection, contact_id: &str) -> Result<(), QtError> {
+    crate::groups::requeue_outbox_of(client, tx, contact_id)?;
     hm::outbox_delete_contact(tx, contact_id)?;
     for m in hm::outgoing_undelivered(tx, contact_id, 200)? {
         let Ok(id) = <[u8; 16]>::try_from(m.msg_id.as_slice()) else { continue };
@@ -743,7 +771,7 @@ mod tests {
     fn tipo_desconhecido_de_versao_nova_vira_aviso_e_nao_lixo() {
         let id = [7u8; 16];
         let mut p = encode_text(&id, 123, "x");
-        p[1] = 9; // tipo que esta versao nao conhece (ex.: ficheiro)
+        p[1] = 99; // tipo que esta versao nao conhece
         assert_eq!(decode(&p, &[0; 16]), Payload::Unsupported { id: id.to_vec(), sent_at: 123 });
     }
 

@@ -24,6 +24,7 @@ pub mod applock;
 pub mod attachments;
 #[cfg(feature = "pq")]
 pub mod client;
+pub mod groups;
 pub mod history;
 #[cfg(feature = "pq")]
 pub use client::*;

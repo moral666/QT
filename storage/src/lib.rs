@@ -166,6 +166,7 @@ fn init_connection(conn: &Connection) -> Result<(), StorageError> {
     // guardado, SEMPRE dentro desta base cifrada e na mesma transacao que o
     // avanco do ratchet, para nunca se perder uma mensagem ja decifrada.
     conn.execute_batch(messages::SCHEMA)?;
+    messages::migrate(conn)?;
     Ok(())
 }
 
@@ -510,7 +511,7 @@ pub fn wipe_all(conn: &Connection) -> Result<(), StorageError> {
         "DELETE FROM identity; DELETE FROM sessions; DELETE FROM one_time_prekeys;
          DELETE FROM pq_prekeys; DELETE FROM noise_static; DELETE FROM session_meta;
          DELETE FROM seen_envelopes; DELETE FROM seen_tombstones; DELETE FROM kv;
-         DELETE FROM messages; DELETE FROM outbox; DELETE FROM reactions; VACUUM;",
+         DELETE FROM messages; DELETE FROM outbox; DELETE FROM reactions; DELETE FROM groups; VACUUM;",
     )?;
     Ok(())
 }

@@ -46,9 +46,9 @@ formato que já mudou outra vez.
 5. [Armazenamento local](#5-armazenamento-local-no-cliente-implementado-e-testado): SQLCipher
 6. [Bindings FFI](#6-bindings-ffi-androidiospython-implementado-e-testado): Kotlin/Swift/Python
 7. [Sealed sender](#7-sealed-sender-implementado-e-testado): esconder o remetente do servidor
-8. a 14. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v3,
+8. a 15. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v3,
    envelope v2, protocolo do relay, mensagem dentro do ratchet, sessões cruzadas e
-   eliminação, anexos (imagens e GIFs)
+   eliminação, anexos (imagens, GIFs e voz), grupos
 
 *(Se preferires uma explicação sem jargão técnico, começa antes por
 o [`README.md`](../README.md). Este
@@ -462,7 +462,19 @@ tipo 1 = texto:  [texto UTF-8, máx. 9000 bytes]
 tipo 2 = recibo: [1 estado: 2=entregue, 3=vista][2 n BE][n × 16 msg_id], n ≤ 400
 tipo 3 = anexo:  [1 versão=1][32 chave][16 blob_id][8 tamanho BE][8 tamanho cifrado BE]
                  [4 largura BE][4 altura BE][1 n][n bytes do tipo MIME]
+tipo 4 = convite: [Public ID de quem escreve, UTF-8]
+tipo 5 = reação: [16 msg_id da mensagem][emoji UTF-8, máx. 32 bytes; vazio = retirar]
+tipo 6 = mensagem de grupo: [16 group_id][payload v1 completo: tipo 1 ou 5]
+tipo 7 = info do grupo:     [16 group_id][JSON: versão, nome, membros e administradores]
+tipo 8 = saída do grupo:    [16 group_id]
 ```
+
+**Mensagens de voz** são anexos (tipo 3) com o MIME `audio/mp4` (AAC), até 10 s e 1 MiB;
+a "largura" leva a duração em ms e a "altura" é 0.
+
+**Convite** (tipo 4): vai uma vez, antes da primeira mensagem a quem ainda não nos escreveu.
+O destinatário só aceita o Public ID se a chave de identidade dele for a da sessão que o
+trouxe. Com ele, a app mostra "Aceitar / Recusar / Bloquear" sem pedir o ID à mão.
 
 Um plaintext fora deste formato (clientes antigos) é tratado como texto simples, com `msg_id` derivado do envelope.
 
@@ -478,8 +490,12 @@ sessao nao decifra. Desempate deterministico, igual nos dois lados: fica a
 sessao iniciada por quem tem a chave de identidade X25519 *menor* (comparacao
 byte a byte). Quem perde adota a sessao do outro e volta a cifrar, com a sessao
 nova, as mensagens que ainda nao tinham recibo "entregue" (mesmo `msg_id`, por
-isso o destinatario nunca as mostra em duplicado). Quem ganha descarta a
-mensagem do outro (ela volta a chegar, ja na sessao certa).
+isso o destinatario nunca as mostra em duplicado). Os envelopes de grupos que
+ainda estavam na outbox tambem sao cifrados de novo. Quem ganha le a mensagem
+do outro na mesma (o AEAD da sessao dele autentica-a), mas fica com a sua
+sessao; o outro adota-a quando receber a primeira mensagem dela. Isto acontece
+sobretudo nos grupos: dois membros que nao se conheciam abrem sessao um com o
+outro ao mesmo tempo.
 
 **Reinicio de sessao.** Com uma sessao estabelecida, uma mensagem tipo 1 que a
 sessao atual nao decifra, mas que abre uma sessao nova valida a partir do seu
@@ -530,6 +546,31 @@ no disco (1 GiB por omissao) e bytes enviados por utilizador por dia (contador `
 nomes derivados de `SHA-256("QT-ATT-FILE" || contacto || msg_id)`; a chave fica
 no SQLCipher. A imagem em claro so existe em memoria, para o ecra. Eliminar a
 conversa, o contacto ou todos os dados apaga os ficheiros.
+
+## 15. Grupos (até 10 pessoas, 3 administradores)
+
+**Envio a cada membro.** Cada mensagem de grupo é cifrada uma vez para cada membro, pelas
+sessões 1 a 1 (PQXDH + Double Ratchet + Sealed Sender). O relay não muda e não sabe que
+existe um grupo: vê envelopes 1 a 1 como os outros (no máximo 9 por mensagem).
+
+**Info do grupo** (tipo 7): `{"v": versão, "name": nome, "members": [{"pid": Public ID,
+"admin": bool}]}`. Válida com 1 a 10 membros, 1 a 3 administradores, sem repetidos e nome
+até 100 bytes. Um grupo desconhecido só é aceite se a info vier de um administrador que ela
+própria nomeia e se eu estiver nos membros. Num grupo conhecido, a info tem de vir de quem
+já era administrador e com versão maior (uma versão sem ele próprio é um administrador a
+sair). Quem é removido recebe a versão nova e fica com o grupo inativo.
+
+**Mensagens** (tipo 6) só são aceites de membros. Uma que chegue antes da info (envelopes
+de pessoas diferentes não chegam por ordem) fica guardada até a info chegar (no máximo 100).
+Nesta versão vão texto e reações; outros tipos aparecem como "atualiza a app".
+
+**Sair** (tipo 8): os administradores que o recebem publicam logo uma versão sem essa
+pessoa. Um administrador que sai publica ele a versão nova; se era o único, passa a sê-lo o
+primeiro membro que fica.
+
+**Estados:** sem recibos de entregue e vista nos grupos. A mensagem fica "enviada" quando o
+relay confirmou os envelopes de todos os membros. Na base local, a conversa do grupo tem o
+id `g:` + group_id e cada mensagem recebida guarda quem a escreveu. Testes: `ffi/tests/groups.rs`.
 
 ## Documentos relacionados
 

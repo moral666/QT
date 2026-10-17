@@ -3,6 +3,7 @@
 
 use qt_storage::messages::*;
 use qt_storage::open_database_with_key;
+use qt_storage::messages as hm;
 
 fn db(name: &str) -> String {
     let p = std::env::temp_dir().join(format!("qt-hist-{}-{}.db", name, std::process::id()));
@@ -99,4 +100,27 @@ fn outbox_ordem_e_remocao() {
     assert!(outbox_take(&c, &[1; 16]).unwrap().is_none());
     assert_eq!(outbox_all(&c).unwrap().len(), 1);
     let _ = std::fs::remove_file(&path);
+}
+
+/// Uma base criada por uma versao anterior (sem a coluna `sender`) ganha-a ao abrir,
+/// sem perder as mensagens.
+#[test]
+fn base_antiga_ganha_a_coluna_sender() {
+    let path = db("migra");
+    {
+        let c = open_database_with_key(&path, &KEY).unwrap();
+        hm::insert_message(&c, &[1; 16], "aa", false, hm::KIND_TEXT, "antiga", 1, 1, hm::ST_RECEIVED).unwrap();
+        // Simula a versao anterior: sem a coluna.
+        c.execute_batch("ALTER TABLE messages DROP COLUMN sender").unwrap();
+    }
+    let c = open_database_with_key(&path, &KEY).unwrap();
+    let m = hm::messages_page(&c, "aa", None, 10).unwrap();
+    assert_eq!(m.len(), 1);
+    assert_eq!((m[0].body.as_str(), m[0].sender.as_str()), ("antiga", ""));
+    hm::insert_message_from(&c, &[2; 16], "g:01", false, hm::KIND_TEXT, "no grupo", 2, 2, hm::ST_RECEIVED, "bb").unwrap();
+    assert_eq!(hm::messages_page(&c, "g:01", None, 10).unwrap()[0].sender, "bb");
+    // A lista de conversas continua a contar as por ler (a coluna nova mudou os indices).
+    let conv = hm::conversations(&c).unwrap();
+    assert_eq!(conv.len(), 2);
+    assert!(conv.iter().all(|s| s.unread == 1));
 }
