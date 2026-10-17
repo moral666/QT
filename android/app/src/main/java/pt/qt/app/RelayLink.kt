@@ -101,6 +101,9 @@ class RelayLink(
         conn?.let {
             runCatching { it.ws.close(1000, null) }
             it.inbox.close()
+            // Liberta ja a sessao Noise no Rust (e as chaves desta ligacao), sem esperar pelo GC.
+            // Se outro pedido ainda a estiver a usar, o UniFFI so a apaga quando esse acabar.
+            runCatching { it.noise.close() }
         }
         conn = null
     }
@@ -165,6 +168,7 @@ class RelayLink(
             return c
         } catch (e: Exception) {
             runCatching { ws.cancel() }; inbox.close()
+            runCatching { noise.close() }   // ligacao falhada: liberta ja a sessao Noise
             throw e
         }
     }
