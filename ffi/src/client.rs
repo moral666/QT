@@ -576,6 +576,10 @@ impl QtClient {
     /// `encrypt_with` + caixa selada com a identidade do remetente.
     pub(crate) fn seal_with(&self, c: &st::rusqlite::Connection, contact_id: &str, plaintext: &[u8]) -> Result<Vec<u8>, QtError> {
         let recipient = contact_to_identity(contact_id)?;
+        // Ponto unico por onde passa tudo o que sai (mensagens, imagens, recibos).
+        if crate::history::is_blocked_in(c, contact_id)? {
+            return Err(crate::history::blocked_error());
+        }
         let env = self.encrypt_with(c, contact_id, plaintext)?;
         let me = st::load_identity(c)?.identity.public;
         let sealed = seal_sender_identity_bound(&me, &recipient, &envelope_binding(&env)).map_err(|_| QtError::Crypto)?;

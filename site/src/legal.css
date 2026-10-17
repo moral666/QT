@@ -1,5 +1,5 @@
 /*
-  SEALER, páginas de texto (política de cookies, privacidade, apagar a conta).
+  SEALER, páginas de texto (política de cookies, privacidade, termos, apagar a conta).
 
   Usa a mesma paleta e os mesmos tipos de letra de styles.css, mas sem a grelha nem o 3D.
   Tudo é servido pelo próprio site (CSP: style-src 'self', font-src 'self').
