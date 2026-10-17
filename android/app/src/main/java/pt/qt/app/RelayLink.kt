@@ -43,6 +43,8 @@ class RelayLink(
         .build()
     private val lock = Mutex()
     private var conn: Conn? = null
+    /** Terminada de vez ([shutdown]): nao volta a ligar, os pedidos falham logo. */
+    @Volatile private var shut = false
 
     private class Conn(val ws: WebSocket, val noise: NoiseSession, val inbox: Channel<ByteArray>)
 
@@ -58,8 +60,9 @@ class RelayLink(
         var last: Exception? = null
         for (attempt in 0..MAX_RETRIES) {
             if (attempt > 0) delay((BACKOFF_MS shl (attempt - 1)).coerceAtMost(8_000L))
+            if (shut) throw IOException(SHUT_MSG)
             try {
-                val c = conn ?: connect().also { conn = it }
+                val c = conn ?: connect().also { conn = it; closeIfShut() }
                 return roundtrip(c, bytes, timeoutMs)
             } catch (e: PermanentRelayException) {
                 close(); throw e
@@ -77,8 +80,9 @@ class RelayLink(
      * Sem repeticao automatica: se falhar, quem chama retoma (o relay diz onde ficou).
      */
     suspend fun requestMany(requests: List<ByteArray>): List<RelayResponse> = lock.withLock {
+        if (shut) throw IOException(SHUT_MSG)
         val c = try {
-            conn ?: connect().also { conn = it }
+            conn ?: connect().also { conn = it; closeIfShut() }
         } catch (e: Exception) {
             close(); throw e
         }
@@ -99,6 +103,24 @@ class RelayLink(
             it.inbox.close()
         }
         conn = null
+    }
+
+    /**
+     * Fecha de vez. Ao contrario de [close], um pedido que ja estivesse a meio (ou que chegue
+     * depois) NAO volta a ligar: falha logo. Sem isto, esse pedido abria uma ligacao nova que
+     * ninguem fechava e que ficava viva em segundo plano (com ping de 25 em 25 s).
+     */
+    fun shutdown() {
+        shut = true
+        close()
+    }
+
+    /** Uma ligacao que acabou de abrir depois de [shutdown]: fecha-a ja. */
+    private fun closeIfShut() {
+        if (shut) {
+            close()
+            throw IOException(SHUT_MSG)
+        }
     }
 
     private suspend fun connect(): Conn {
@@ -162,6 +184,7 @@ class RelayLink(
         private const val BACKOFF_MS = 300L
         private const val HANDSHAKE_MS = 10_000L
         private const val REQUEST_MS = 15_000L
+        private const val SHUT_MSG = "ligacao terminada"
         /** Etiqueta dos registos (adb logcat -s SealerRelay). Nunca regista conteudo nem chaves. */
         private const val TAG = "SealerRelay"
     }

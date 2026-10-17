@@ -118,6 +118,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var pendingBioKey: ByteArray? = null
     /** Quando a app foi para segundo plano (relogio desde o arranque do telemovel). */
     @Volatile private var hiddenAt: Long? = null
+    /** Fecha as ligacoes ao relay depois de BACKGROUND_GRACE_MS em segundo plano (ver onAppHidden). */
+    @Volatile private var pauseJob: Job? = null
+    /** As ligacoes foram fechadas por a app estar em segundo plano: religar ao voltar. */
+    @Volatile private var linksPaused = false
+    /** A app esta no ecra. Com [pauseLock]: fechar e religar nunca se cruzam. */
+    @Volatile private var visible = true
+    private val pauseLock = Any()
     /** Ha um BiometricPrompt aberto: sair/voltar a app nao conta para o bloqueio. */
     @Volatile var authInProgress = false
     /** Para que serve o BiometricPrompt aberto (no ViewModel para sobreviver a rodar o ecra). */
@@ -206,11 +213,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         poller = null
         transferJob?.cancel()
         transferJob = null
-        link?.close()
+        link?.shutdown()
         link = null
-        fileLink?.close()
+        fileLink?.shutdown()
         fileLink = null
-        waitLink?.close()
+        waitLink?.shutdown()
         waitLink = null
         // Imagens decifradas que estavam em memoria para o ecra.
         SealerImages.clearMemory()
@@ -230,22 +237,79 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         showLocked()
     }
 
-    /** A app saiu do ecra (Activity.onStop). */
+    /**
+     * A app saiu do ecra (Activity.onStop). Conta o tempo para o bloqueio automatico e, ao fim de
+     * BACKGROUND_GRACE_MS, fecha as ligacoes ao relay: em segundo plano a app nao mostra nada
+     * (ainda nao ha notificacoes), e cada ligacao aberta acordava o radio de 25 em 25 s (ping e
+     * pedido de espera), gastando bateria sem proveito. As mensagens ficam no relay ate voltar.
+     */
     fun onAppHidden() {
         if (authInProgress) return
         hiddenAt = SystemClock.elapsedRealtime()
+        synchronized(pauseLock) { visible = false }
+        pauseJob?.cancel()
+        pauseJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(BACKGROUND_GRACE_MS)
+            // Anexos a meio (enviar ou descarregar): deixa-os acabar, ate BACKGROUND_TRANSFER_MAX_MS.
+            val until = SystemClock.elapsedRealtime() + BACKGROUND_TRANSFER_MAX_MS
+            while (_ui.value.transfers.isNotEmpty() && SystemClock.elapsedRealtime() < until) delay(5_000L)
+            pauseLinks()
+        }
     }
 
-    /** A app voltou ao ecra (Activity.onStart): bloqueia se passou o tempo escolhido. */
+    /**
+     * A app voltou ao ecra (Activity.onStart): bloqueia se passou o tempo escolhido; senao,
+     * religa ao relay se as ligacoes tinham sido fechadas em segundo plano.
+     */
     fun onAppVisible() {
-        val t = hiddenAt ?: return
+        synchronized(pauseLock) {
+            visible = true
+            pauseJob?.cancel()
+            pauseJob = null
+        }
+        val t = hiddenAt
         hiddenAt = null
-        // Voltar do leitor de QR: mais AutoLockPause.GRACE_MS antes de bloquear.
-        val grace = if (AutoLockPause.active) AutoLockPause.GRACE_MS else 0L
-        AutoLockPause.active = false
-        if (authInProgress) return
-        val st = _ui.value
-        if (st.lockEnabled && !st.locked && SystemClock.elapsedRealtime() - t - grace >= st.lockTimeoutMs) lockNow()
+        if (t != null) {
+            // Voltar do leitor de QR: mais AutoLockPause.GRACE_MS antes de bloquear.
+            val grace = if (AutoLockPause.active) AutoLockPause.GRACE_MS else 0L
+            AutoLockPause.active = false
+            val st = _ui.value
+            if (!authInProgress && st.lockEnabled && !st.locked && SystemClock.elapsedRealtime() - t - grace >= st.lockTimeoutMs) {
+                lockNow()
+            }
+        }
+        resumeLinks()
+    }
+
+    /** Fecha as ligacoes ao relay e para a rececao e as transferencias (app em segundo plano). */
+    private fun pauseLinks() {
+        synchronized(pauseLock) {
+            // Voltou ao ecra entretanto; ou bloqueada, sem identidade ou ja fechadas.
+            if (visible || qt == null || link == null) return
+            poller?.cancel()
+            poller = null
+            transferJob?.cancel()
+            transferJob = null
+            link?.shutdown()
+            link = null
+            fileLink?.shutdown()
+            fileLink = null
+            waitLink?.shutdown()
+            waitLink = null
+            linksPaused = true
+        }
+        Log.d(TAG, "segundo plano: ligacoes ao relay fechadas")
+    }
+
+    /** Religa ao relay (e vai buscar o que chegou entretanto) se as ligacoes estavam fechadas. */
+    private fun resumeLinks() {
+        synchronized(pauseLock) {
+            if (!linksPaused) return
+            linksPaused = false
+        }
+        // Bloqueada: ao desbloquear, openClient religa.
+        if (_ui.value.locked) return
+        io { if (qt?.hasIdentity() == true && link == null) startLink() }
     }
 
     fun unlockWithCode(code: String) = io {
@@ -462,12 +526,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun startLink() {
         val client = qt ?: return
         poller?.cancel()
-        link?.close()
+        link?.shutdown()
         link = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
         transferJob?.cancel()
-        fileLink?.close()
+        fileLink?.shutdown()
         fileLink = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
-        waitLink?.close()
+        waitLink?.shutdown()
         waitLink = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
         status("A ligar ao relay…")
         try {
@@ -622,12 +686,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         try {
             poller?.cancel()
-            link?.close()
+            link?.shutdown()
             link = null
             transferJob?.cancel()
-            fileLink?.close()
+            fileLink?.shutdown()
             fileLink = null
-            waitLink?.close()
+            waitLink?.shutdown()
             waitLink = null
             client.deleteIdentity()          // secure_delete + VACUUM no Rust (e os ficheiros dos anexos)
             // Depois apaga os ficheiros e as chaves (incluindo o bloqueio) e abre um armazenamento novo.
@@ -1041,6 +1105,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         /** Sem entrega imediata (relay antigo ou sem rede): perguntar de 3 em 3 s. */
         private const val POLL_MS = 3_000L
+        /** Em segundo plano ha mais do que isto: fecha as ligacoes ao relay (poupa bateria). */
+        private const val BACKGROUND_GRACE_MS = 30_000L
+        /** Maximo que se espera por anexos a meio antes de fechar, em segundo plano. */
+        private const val BACKGROUND_TRANSFER_MAX_MS = 5 * 60_000L
         /** Espera maxima de cada pedido de espera (o relay limita a 25 s). */
         private const val WAIT_SECONDS = 25
         /** Tempo pela resposta a um pedido de espera: a espera mais margem para a rede. */
