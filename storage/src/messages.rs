@@ -55,6 +55,15 @@ pub(crate) const SCHEMA: &str = "
         contact_id TEXT    NOT NULL,
         kind       INTEGER NOT NULL,
         blob       BLOB    NOT NULL
+    );
+    -- Reacoes com emoji: uma por pessoa e por mensagem. reactor = '' sou eu;
+    -- senao, o contact_id de quem reagiu. conv_id = a conversa (contact_id ou grupo).
+    CREATE TABLE IF NOT EXISTS reactions (
+        conv_id TEXT NOT NULL,
+        msg_id  BLOB NOT NULL,
+        reactor TEXT NOT NULL,
+        emoji   TEXT NOT NULL,
+        PRIMARY KEY (conv_id, msg_id, reactor)
     );";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -264,7 +273,31 @@ pub fn attachment_ids(conn: &Connection, contact_id: &str) -> Result<Vec<Vec<u8>
 pub fn delete_conversation(conn: &Connection, contact_id: &str) -> Result<(), StorageError> {
     conn.execute("DELETE FROM messages WHERE contact_id = ?1", [contact_id])?;
     conn.execute("DELETE FROM outbox WHERE contact_id = ?1", [contact_id])?;
+    conn.execute("DELETE FROM reactions WHERE conv_id = ?1", [contact_id])?;
     Ok(())
+}
+
+/// Define (ou, com `emoji` vazio, retira) a reacao de `reactor` a uma mensagem.
+pub fn set_reaction(conn: &Connection, conv_id: &str, msg_id: &[u8], reactor: &str, emoji: &str) -> Result<(), StorageError> {
+    if emoji.is_empty() {
+        conn.execute(
+            "DELETE FROM reactions WHERE conv_id = ?1 AND msg_id = ?2 AND reactor = ?3",
+            params![conv_id, msg_id, reactor],
+        )?;
+    } else {
+        conn.execute(
+            "INSERT OR REPLACE INTO reactions (conv_id, msg_id, reactor, emoji) VALUES (?1, ?2, ?3, ?4)",
+            params![conv_id, msg_id, reactor, emoji],
+        )?;
+    }
+    Ok(())
+}
+
+/// Todas as reacoes de uma conversa: (msg_id, reactor, emoji).
+pub fn reactions(conn: &Connection, conv_id: &str) -> Result<Vec<(Vec<u8>, String, String)>, StorageError> {
+    let mut stmt = conn.prepare("SELECT msg_id, reactor, emoji FROM reactions WHERE conv_id = ?1 ORDER BY reactor")?;
+    let rows = stmt.query_map([conv_id], |r| Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
 /// Mensagens ENVIADAS a `contact_id` que ainda nao chegaram (por enviar ou so

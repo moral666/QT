@@ -243,3 +243,44 @@ fn recusar_apagando_o_contacto_limpa_o_convite() {
     b.c.delete_contact(alice.clone()).unwrap();
     assert_eq!(b.c.pending_intro(alice).unwrap(), None);
 }
+
+#[test]
+fn reacoes_nos_dois_sentidos_trocar_e_retirar() {
+    let (a, b) = setup();
+    let (alice, bob) = (a.cid(), b.cid());
+    let item = a.c.send_text(bob.clone(), "olá".into()).unwrap();
+    deliver_outbox(&a, &b);
+    let mid = item.outbox_id.clone();
+
+    // O Bob reage à mensagem da Alice.
+    b.c.react(alice.clone(), mid.clone(), "❤️".into()).unwrap();
+    let mine = b.c.message(alice.clone(), mid.clone()).unwrap().unwrap().reactions;
+    assert_eq!(mine, vec![Reaction { emoji: "❤️".into(), mine: true, from_contact: String::new() }]);
+    let r = deliver_outbox(&b, &a);
+    assert!(matches!(&r[0], ReceiveResult::Updated { contact_id } if *contact_id == bob));
+    let got = a.c.messages_page(bob.clone(), None, 10).unwrap();
+    assert_eq!(got[0].reactions, vec![Reaction { emoji: "❤️".into(), mine: false, from_contact: bob.clone() }]);
+
+    // A Alice também reage (à sua própria mensagem): ficam as duas.
+    a.c.react(bob.clone(), mid.clone(), "👍".into()).unwrap();
+    deliver_outbox(&a, &b);
+    assert_eq!(b.c.message(alice.clone(), mid.clone()).unwrap().unwrap().reactions.len(), 2);
+
+    // O Bob troca e depois retira a dele.
+    b.c.react(alice.clone(), mid.clone(), "😂".into()).unwrap();
+    deliver_outbox(&b, &a);
+    assert!(a.c.message(bob.clone(), mid.clone()).unwrap().unwrap().reactions.iter().any(|r| r.emoji == "😂" && !r.mine));
+    b.c.react(alice.clone(), mid.clone(), String::new()).unwrap();
+    deliver_outbox(&b, &a);
+    let left = a.c.message(bob.clone(), mid.clone()).unwrap().unwrap().reactions;
+    assert_eq!(left, vec![Reaction { emoji: "👍".into(), mine: true, from_contact: String::new() }]);
+
+    // Reação a uma mensagem que não existe: recusada.
+    assert!(b.c.react(alice.clone(), "00".repeat(16), "👍".into()).is_err());
+    // Emoji grande demais: recusado.
+    assert!(b.c.react(alice.clone(), mid.clone(), "😀".repeat(20)).is_err());
+
+    // Apagar a conversa apaga as reações.
+    b.c.delete_conversation(alice.clone()).unwrap();
+    assert!(b.c.messages_page(alice, None, 10).unwrap().is_empty());
+}
