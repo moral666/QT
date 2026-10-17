@@ -1,0 +1,126 @@
+# Notas de trabalho (para o Claude)
+
+Este ficheiro é lido no início de cada conversa com este repositório. Diz como o
+Nuno Gonzalez (dono do projeto, desenvolve sozinho) quer que se trabalhe e onde
+está cada coisa. Mantém-no atualizado quando algo mudar.
+
+## Como falar e trabalhar com o Nuno
+
+- Responder em **português de Portugal**, com **respostas curtas** e diretas.
+- **Nada de travessões (—)** na documentação nem no site: usar dois pontos,
+  vírgulas, parênteses ou frases separadas.
+- **Aprovação obrigatória:** qualquer mudança significativa na arquitetura do
+  projeto ou introdução de SDKs proprietários (Firebase/FCM, etc.) tem de ser
+  aprovada manualmente por ele. Apresentar as soluções de forma modular,
+  explicando o impacto técnico de cada escolha **antes** de gerar o código.
+- **Auditorias / revisões de código:** para cada problema encontrado, explicar
+  de forma direta O QUE está incorreto, COMO propões corrigir e o impacto no
+  comportamento da app, e PARAR a pedir aprovação explícita. Só escrever a
+  correção depois de ele responder.
+- Ele testa as builds nos telemóveis (2 Galaxy S23 e 1 S26) e no emulador. No
+  fim de cada mudança, dar-lhe os passos exatos de build e instalação (abaixo).
+- Fazer commit e push no fim de cada tarefa (ramo `site-sealer`).
+
+## Decisões que não se mudam sem ele pedir
+
+- **iOS fica de lado por agora** (tratar depois). A app iPhone está atrás da
+  Android (sem convites, reações, voz, grupos nem presença).
+- **Sem avisos de ligação na app** ("A ligar ao relay", "Sem ligação",
+  barras de estado): se houver problemas, só no registo (`adb logcat -s SealerRelay`).
+- A build de release **não mostra opções de teste do relay** (URL, chave).
+- O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
+- O **site nunca menciona "sem auditoria externa"**.
+- README: não falar da mudança de critérios dos tempos (ms) da página de estado.
+- Versões da app: série 0.x (agora **0.8.0**, `versionCode` 6), em
+  `android/app/build.gradle.kts`.
+- Conta de programador da Google Play (25 USD): só depois de testar a app.
+- Notificações (FCM) ficam para uma fase seguinte e precisam de aprovação.
+
+## O projeto
+
+- QT é o protocolo e o repositório; as apps chamam-se **SEALER**. Site em
+  `site/` (sealer.pt, Cloudflare Worker com deploy automático a partir do git).
+- Núcleo Rust: `core` (PQXDH + Double Ratchet + Sealed Sender), `storage`
+  (SQLCipher), `ffi` (UniFFI para Kotlin/Swift), `transport` (WebSocket + Noise),
+  `server` (relay, Redis). Nenhuma criptografia em Kotlin.
+- App Android: `android/` (Kotlin + Compose). Ficheiros principais:
+  `MainViewModel.kt`, `MainActivity.kt`, `Groups.kt`, `Voice.kt`, `Attachments.kt`,
+  `RelayLink.kt`.
+- Documentos de referência: `docs/protocol-spec.md` (formato de tudo o que vai
+  na rede), `docs/known-limitations.md`, `docs/google-play.md`,
+  `docs/export-compliance.md`, `CHANGELOG.md`.
+
+### Mensagens dentro do ratchet (payload v1)
+
+`[1 versão=0x01][1 tipo][16 msg_id][8 sent_at]` e o corpo. Tipos: 1 texto,
+2 recibo, 3 anexo (imagem, GIF ou voz `audio/mp4`), 4 convite, 5 reação,
+6 mensagem de grupo, 7 info do grupo, 8 saída do grupo, 9 presença. O próximo
+tipo livre é o 10. Uma versão antiga mostra "atualiza a app" para tipos novos.
+
+### Funcionalidades da 0.8.0
+
+Bloquear contactos, termos de utilização, apagar a conta também no servidor,
+convite (Aceitar / Recusar / Bloquear), reações, voz até 10 s, grupos até 10
+pessoas com 3 administradores (envio a cada membro, `ffi/src/groups.rs`; criar
+não exige pessoas nem nome), online / offline só para contactos e cifrado
+(`ffi/src/presence.rs`, interruptor no menu), ecrã do ID só com QR (em
+maiúsculas, menos denso) e ID abreviado.
+
+## Comandos
+
+### Testes (na nuvem do Claude ou no PC)
+
+```
+cargo test -p qt_ffi --features pq      # núcleo da app (inclui grupos e presença)
+cargo test -p qt_storage
+cargo test -p qt_server                 # precisa de Redis local: redis-cli ping || redis-server --daemonize yes
+./ffi/generate_bindings.sh              # gera os bindings e corre os testes em Python
+```
+
+### Build e instalação no PC do Nuno (pasta `~/QT-repo`)
+
+Se o Rust mudou (núcleo, ffi, storage):
+```
+cd ~/QT-repo && git pull
+export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/30.0.16248370
+ABIS="arm64-v8a armeabi-v7a x86_64" ./scripts/build-android.sh
+cd android && ./sync-native.sh
+```
+Depois, no Android Studio: Sync e, com Ctrl Ctrl, `gradle assembleRelease`
+(confirmar a hora do APK com `ls -l`; "up-to-date" pode querer dizer APK antigo).
+Instalar:
+```
+~/Android/Sdk/platform-tools/adb install -r ~/QT-repo/android/app/build/outputs/apk/release/app-release.apk
+```
+Se só mudou Kotlin, basta `git pull`, Sync, `assembleRelease` e instalar.
+Notas: o NDK r26d não compila a x86_64 (o emulador precisa dela, usar o NDK 30);
+o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo.
+
+### Relay (AWS EC2, eu-north-1)
+
+- `wss://13-51-46-213.sslip.io`, pin `f018d46b67d2437571cefc86827dec0dc3b0fd586bd22c664d3839f6a1c67f1a`
+  (a build lê `qtRelayUrl` / `qtRelayPin` das propriedades do Gradle).
+- Atualizar o servidor (no EC2):
+  ```
+  sudo git -C /opt/qt-src fetch --depth 1 origin site-sealer && sudo git -C /opt/qt-src reset --hard FETCH_HEAD && sudo QT_BRANCH=site-sealer bash /opt/qt-src/deploy/aws/setup-ec2.sh
+  ```
+- O Redis de produção tem uma ACL com poucos comandos (ver `server/tests/redis_acl.rs`):
+  sem SETEX nem EXISTS (usar SET + EXPIRE e GET).
+- Estado e tempos públicos: `https://sealer.pt/api/estado` (Worker em `site/worker/`).
+
+## Ambiente do Claude (nuvem)
+
+- Não há rede para o Maven: não se consegue compilar a app Android aqui. Para
+  apanhar erros de sintaxe em Kotlin, usar o `kotlinc` (descarregado do GitHub)
+  e procurar "expecting|syntax|unexpected|unclosed". A build do Nuno é o teste real.
+- `curl` para sealer.pt e sslip.io é bloqueado: usar o WebFetch.
+- Não usar `pkill -f` (mata a própria shell).
+
+## Por decidir (perguntar quando fizer sentido)
+
+- O site ainda diz "versão 0.7" (topo e quadrado "O que é a versão 0.7"): passar a 0.8?
+- Código do ID mais curto: A) mesmo ID noutra escrita (~92 caracteres, só núcleo),
+  B) código curto no servidor que expira (precisa de mudar o relay),
+  C) ID com metade do tamanho (mudança grande, os IDs atuais deixam de servir).
+  Sugestão dada: deixar como está.
+- Depois: notificações (FCM, com aprovação), atualizar a app iPhone, AAB e ficha da Play Store.
