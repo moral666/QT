@@ -437,7 +437,7 @@ fun GroupInfoScreen(
         AlertDialog(
             onDismissRequest = { confirmLeave = false },
             title = { Text("Sair de ${group.name}?") },
-            text = { Text("Deixas de receber as mensagens do grupo. As que já tens ficam neste telemóvel até apagares o grupo.") },
+            text = { ObscuredTouchGuard(); Text("Deixas de receber as mensagens do grupo. As que já tens ficam neste telemóvel até apagares o grupo.") },
             confirmButton = {
                 TextButton(onClick = { confirmLeave = false; onLeave() }) { Text("Sair", color = MaterialTheme.colorScheme.error) }
             },
@@ -455,7 +455,7 @@ fun GroupDeleteDialog(name: String, onDismiss: () -> Unit, onConfirm: () -> Unit
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Apagar $name?") },
-        text = {
+        text = { ObscuredTouchGuard()
             Text(
                 "Sais do grupo (se ainda estiveres) e todas as mensagens dele são apagadas para sempre deste telemóvel. " +
                     "As mensagens nos telemóveis dos outros membros não são apagadas.",

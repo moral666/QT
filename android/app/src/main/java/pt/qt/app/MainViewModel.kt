@@ -264,6 +264,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         waitLink = null
         // Imagens decifradas que estavam em memoria para o ecra, e ficheiros abertos noutra app.
         SealerImages.clearMemory()
+        AttachmentCache.clear()
         SealerFileProvider.clear()
         val c = qt
         qt = null
@@ -751,6 +752,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun deleteConversation(contactId: String) = io {
         val client = qt ?: return@io
+        AttachmentCache.clear()   // nada do que vai ser apagado fica decifrado em memoria
         try {
             client.deleteConversation(contactId)
             _ui.update {
@@ -824,6 +826,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun deleteContact(contactId: String) = io {
         val client = qt ?: return@io
+        AttachmentCache.clear()   // nada do que vai ser apagado fica decifrado em memoria
         try {
             // Primeiro o Rust (mensagens + chaves), na mesma transacao; depois a lista.
             client.deleteContact(contactId)
@@ -913,11 +916,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         refreshViews(client)
     }
 
-    /** Recarrega a lista de conversas e a janela da conversa aberta (estados ✓/✓✓ e mensagens novas). */
+    /**
+     * Recarrega a lista de conversas e as mensagens mais recentes da conversa aberta (estados
+     * ✓/✓✓, reacoes e mensagens novas). So relê ate REFRESH_MAX mensagens, mesmo que o
+     * utilizador tenha subido muito na conversa: as mais antigas ficam como estavam (ver
+     * `mergeWindow`; as que mudam la em cima sao relidas uma a uma, `refreshMessages`).
+     */
     private fun refreshViews(client: QtClient) {
         val st = _ui.value
         val cid = st.openChatId
-        val window = if (cid != null) client.messagesPage(cid, null, maxOf(PAGE, st.chatMessages.size).toUInt()) else null
+        val n = st.chatMessages.size.coerceIn(PAGE, REFRESH_MAX)
+        val window = if (cid != null) client.messagesPage(cid, null, n.toUInt()) else null
         val invites = client.pendingIntros().toSet()
         val groups = client.groups()
         val online = client.presenceOnline().toSet()
@@ -927,8 +936,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 groups = groups,
                 online = online,
                 conversations = client.conversations(),
-                chatMessages = if (window != null && it.openChatId == cid) window else it.chatMessages,
+                chatMessages = if (window != null && it.openChatId == cid) mergeWindow(window, it.chatMessages, n) else it.chatMessages,
             )
+        }
+    }
+
+    /** Janela nova (as `n` mais recentes) + as mais antigas que ja estavam carregadas. */
+    private fun mergeWindow(fresh: List<ChatMessage>, current: List<ChatMessage>, n: Int): List<ChatMessage> {
+        if (fresh.size < n) return fresh   // a conversa inteira cabe na janela
+        val oldest = fresh.last().seq
+        return fresh + current.filter { it.seq < oldest }
+    }
+
+    /** Rele mensagens concretas da conversa aberta (ex.: reacao ou recibo numa mensagem antiga). */
+    private fun refreshMessages(client: QtClient, conversationId: String, ids: Collection<String>) {
+        if (ids.isEmpty() || _ui.value.openChatId != conversationId) return
+        val loaded = _ui.value.chatMessages.map { it.messageId }.toSet()
+        val updated = ids.filter { it in loaded }.mapNotNull { id -> runCatching { client.message(conversationId, id) }.getOrNull() }
+            .associateBy { it.messageId }
+        if (updated.isEmpty()) return
+        _ui.update {
+            if (it.openChatId != conversationId) it
+            else it.copy(chatMessages = it.chatMessages.map { m -> updated[m.messageId] ?: m })
         }
     }
 
@@ -973,6 +1002,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         try {
             client.react(contactId, messageId, emoji)
             refreshViews(client)
+            refreshMessages(client, contactId, listOf(messageId))
             flushOutbox()
         } catch (e: Exception) {
             error("Nao foi possivel reagir: ${e.safeMsg()}")
@@ -1036,6 +1066,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             ensureSessions(client, client.groupMembersNeedingSession(groupId))
             client.groupReact(groupId, messageId, emoji)
             refreshViews(client)
+            client.group(groupId)?.let { refreshMessages(client, it.conversationId, listOf(messageId)) }
             flushOutbox()
         } catch (e: Exception) {
             error("Nao foi possivel reagir: ${e.safeMsg()}")
@@ -1070,6 +1101,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** APAGAR GRUPO deste telemovel (sai, se ainda estiver, e apaga as mensagens). */
     fun deleteGroup(groupId: String) = io {
         val client = qt ?: return@io
+        AttachmentCache.clear()   // nada do que vai ser apagado fica decifrado em memoria
         try {
             val conv = client.group(groupId)?.conversationId
             client.groupDelete(groupId)
@@ -1161,8 +1193,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** O anexo decifrado, so em memoria (imagem para o ecra, voz, ou ficheiro para abrir/guardar). */
     suspend fun attachmentBytes(contactId: String, messageId: String): ByteArray? = withContext(Dispatchers.IO) {
+        AttachmentCache.get(contactId, messageId)?.let { return@withContext it }
         try {
-            qt?.attachmentRead(contactId, messageId)
+            val client = qt ?: return@withContext null
+            val bytes = client.attachmentRead(contactId, messageId)
+            // Ficheiros (PDF...) nao ficam em cache: sao entregues a outra app ou guardados e depois apagados da memoria.
+            if (client.message(contactId, messageId)?.attachment?.fileName == null) {
+                AttachmentCache.put(contactId, messageId, bytes)
+            }
+            bytes
         } catch (e: Exception) {
             null
         }
@@ -1427,11 +1466,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (msgs.isEmpty()) break
                 val ackIds = mutableListOf<ULong>()
                 var gotPage = false
+                val statusIds = mutableMapOf<String, MutableSet<String>>()   // recibos: conversa -> mensagens
                 for (m in msgs) {
                     try {
                         // Decifrar + guardar no historico + agendar o recibo, tudo numa transacao.
-                        when (client.receiveSealed(m.ciphertext)) {
-                            is ReceiveResult.NewMessage, is ReceiveResult.StatusChanged, is ReceiveResult.Updated -> { received = true; gotPage = true }
+                        when (val r = client.receiveSealed(m.ciphertext)) {
+                            is ReceiveResult.StatusChanged -> {
+                                received = true; gotPage = true
+                                statusIds.getOrPut(r.contactId) { mutableSetOf() }.addAll(r.messageIds)
+                            }
+                            is ReceiveResult.NewMessage, is ReceiveResult.Updated -> { received = true; gotPage = true }
                             is ReceiveResult.NoChange -> {}
                         }
                         ackIds += m.id
@@ -1444,7 +1488,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 // Mostra ja: as mensagens estao guardadas no telemovel. A confirmacao ao relay e o
                 // pedido da pagina seguinte (duas idas a rede) vem depois, sem atrasar o ecra.
-                if (gotPage) refreshViews(client)
+                if (gotPage) {
+                    refreshViews(client)
+                    for ((conv, ids) in statusIds) refreshMessages(client, conv, ids)
+                }
                 if (ackIds.isNotEmpty()) l.request(client.relayRequestAck(ackIds))   // so DEPOIS de guardar
             }
             if (received) {
@@ -1508,6 +1555,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val MAX_PAGES = 20
         private const val MAX_TEXT_BYTES = 9_000
         private const val PAGE = 50
+        /** Maximo de mensagens relidas de cada vez que algo muda na conversa aberta. */
+        private const val REFRESH_MAX = 200
         /** Bytes cifrados por bloco de anexo (igual ao Rust e ao relay). */
         private const val CHUNK = 40_960uL
         /** Blocos em transito ao mesmo tempo (~320 KB). */

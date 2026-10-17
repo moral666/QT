@@ -85,6 +85,13 @@ cargo test -p qt_server                 # precisa de Redis local: redis-cli ping
 ./ffi/generate_bindings.sh              # gera os bindings e corre os testes em Python
 ```
 
+### Build automática (GitHub Actions)
+
+`.github/workflows/android.yml` corre a cada push que mexa em `android/` ou no Rust:
+gera os bindings, `gradle :app:testDebugUnitTest`, `:app:assembleDebug`,
+`:app:minifyReleaseWithR8` e `:app:lintDebug`. Ver com `gh run list -w Android` e
+`gh run view <id> --log-failed`. É a forma de apanhar erros de Kotlin antes da build do Nuno.
+
 ### Build e instalação no PC do Nuno (pasta `~/QT-repo`)
 
 Se o Rust mudou (núcleo, ffi, storage):

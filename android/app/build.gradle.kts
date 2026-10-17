@@ -132,6 +132,9 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-gif:2.7.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+
+    // Testes unitarios (JVM, sem telemovel): logica pura em Kotlin. `gradle :app:testDebugUnitTest`
+    testImplementation("junit:junit:4.13.2")
 }
 
 // Verificacao da assinatura do APK de release: `./gradlew :app:verifyReleaseSignature`

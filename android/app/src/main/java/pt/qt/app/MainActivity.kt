@@ -1131,7 +1131,7 @@ fun ChatScreen(
             onDismissRequest = { confirmBlock = false },
             icon = { Icon(Icons.Filled.Close, contentDescription = null) },
             title = { Text("Bloquear $name?") },
-            text = {
+            text = { ObscuredTouchGuard()
                 Text(
                     "As mensagens desta pessoa deixam de te chegar e não lhe consegues escrever. " +
                         "Ela não é avisada. A conversa fica, e podes desbloquear quando quiseres.",
@@ -1182,7 +1182,7 @@ fun DeleteActions(
             onDismissRequest = onDismiss,
             icon = { Icon(Icons.Filled.Delete, contentDescription = null) },
             title = { Text("Eliminar conversa?") },
-            text = {
+            text = { ObscuredTouchGuard()
                 Text(
                     "Todas as mensagens com $name são apagadas para sempre deste telemóvel, incluindo as que ainda " +
                         "não foram enviadas. Não é possível recuperá-las.\n\nO contacto mantém-se e podem continuar a falar. " +
@@ -1198,7 +1198,7 @@ fun DeleteActions(
             onDismissRequest = onDismiss,
             icon = { Icon(Icons.Filled.Delete, contentDescription = null) },
             title = { Text("Apagar contacto?") },
-            text = {
+            text = { ObscuredTouchGuard()
                 Text(
                     "$name é removido da tua lista e são apagadas para sempre deste telemóvel: as mensagens, " +
                         "as que estavam por enviar e as chaves da conversa cifrada. Não é possível recuperar.\n\n" +
@@ -1222,7 +1222,7 @@ fun WipeAllDialog(onDismiss: () -> Unit, onConfirm: () -> Unit, serverToo: Boole
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
         title = { Text("Destruir perfil e dados?") },
-        text = {
+        text = { ObscuredTouchGuard()
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     if (serverToo) {
@@ -1357,7 +1357,7 @@ fun WipeServerFailedDialog(reason: String, onRetry: () -> Unit, onLocalOnly: () 
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
         title = { Text("Não foi possível apagar no servidor") },
-        text = {
+        text = { ObscuredTouchGuard()
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Motivo: $reason. Ainda não foi apagado nada.")
                 Text(
@@ -1598,7 +1598,7 @@ fun LockScreen(ui: UiState, onCode: (String) -> Unit, onBio: () -> Unit, onWipe:
         AlertDialog(
             onDismissRequest = { forgot = false },
             title = { Text("Esqueceste o código?") },
-            text = {
+            text = { ObscuredTouchGuard()
                 Text(
                     "Sem o código não é possível abrir as conversas: estão cifradas com ele e ninguém o pode " +
                         "recuperar. A única saída é apagar todos os dados deste telemóvel e começar de novo, com um ID novo.",
@@ -1738,7 +1738,7 @@ fun CodeDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Filled.Lock, contentDescription = null) },
         title = { Text(title) },
-        text = {
+        text = { ObscuredTouchGuard()
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 text?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                 if (askCurrent) CodeField(cur, { cur = it }, "Código atual")
