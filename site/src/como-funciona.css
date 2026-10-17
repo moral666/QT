@@ -1,5 +1,5 @@
 /*
-  SEALER, página "Como funciona": animação em 6 passos (src/como-funciona.js).
+  SEALER, página "Como funciona": animação em 5 passos (src/como-funciona.js).
 
   Usa os tipos de letra, a barra e o rodapé de legal.css. A chave e o cadeado partilham
   uma cor própria (--key) para se perceber que um abre o outro.
@@ -251,21 +251,6 @@
   stroke-linejoin: round;
 }
 
-.mini-lock--1 { fill: var(--key); }
-.mini-lock--2 { fill: #5ee0c1; }
-.mini-lock--3 { fill: #f08bb4; }
-
-.mini-shackle--1,
-.mini-shackle--2,
-.mini-shackle--3 {
-  fill: none;
-  stroke-width: 3;
-}
-
-.mini-shackle--1 { stroke: var(--key); }
-.mini-shackle--2 { stroke: #5ee0c1; }
-.mini-shackle--3 { stroke: #f08bb4; }
-
 .shield {
   fill: rgba(93, 134, 240, 0.14);
   stroke: var(--cold);
@@ -297,14 +282,12 @@
 [data-scene="2"] :is(#g-server, #g-rui),
 [data-scene="3"] :is(#g-ana, #g-rui),
 [data-scene="4"] :is(#g-ana, #g-server),
-[data-scene="5"] :is(#g-ana, #g-server, #g-rui),
-[data-scene="6"] :is(#g-ana, #g-server, #g-rui) {
+[data-scene="5"] :is(#g-ana, #g-server, #g-rui) {
   opacity: 0.3;
 }
 
 [data-scene="3"] .sees,
-[data-scene="5"] .many,
-[data-scene="6"] .quantum,
+[data-scene="5"] .quantum,
 .got .rui-msg {
   opacity: 1;
 }
@@ -314,26 +297,8 @@
 }
 
 [data-scene="1"] .key-part,
-[data-scene="5"] .key-part,
-[data-scene="6"] .key-part {
+[data-scene="5"] .key-part {
   opacity: 0;
-}
-
-.many .mini {
-  opacity: 0;
-  transition: opacity 0.4s ease;
-}
-
-[data-scene="5"] .many .mini {
-  opacity: 1;
-}
-
-[data-scene="5"] .many .mini:nth-of-type(2) {
-  transition-delay: 0.6s;
-}
-
-[data-scene="5"] .many .mini:nth-of-type(3) {
-  transition-delay: 1.2s;
 }
 
 /* ---------- Legenda e controlos ---------- */
@@ -445,7 +410,6 @@
   .fade,
   .actor,
   .key-part,
-  .many .mini,
   .lock-shackle {
     transition: none;
   }

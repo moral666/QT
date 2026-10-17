@@ -53,7 +53,7 @@ Parâmetros úteis no endereço (por exemplo `http://localhost:4173/?debug`):
 ```
 index.html                  Página: barra, logótipo, grelha e o conteúdo de todas as janelas
 politica-de-cookies.html    Política de cookies (só texto, sem JavaScript; estilo em src/legal.css)
-como-funciona.html          Animação "Como viaja uma mensagem" em 6 passos (src/como-funciona.js e .css)
+como-funciona.html          Animação "Como viaja uma mensagem" em 5 passos (src/como-funciona.js e .css)
 vite.config.js              Compilação, política de segurança de conteúdo (CSP) e dist/_headers
 wrangler.jsonc              Publicação na Cloudflare (Worker sealer, os dois domínios e o endereço do relay)
 worker/index.js             Código do Worker: só /api/estado (estado do relay na AWS); o resto é estático
