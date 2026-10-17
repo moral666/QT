@@ -64,10 +64,9 @@ import uniffi.qt_ffi.GroupInfo
 import uniffi.qt_ffi.GroupMember
 import uniffi.qt_ffi.GroupMemberInput
 
-/** Limites dos grupos (iguais aos do Rust, ffi/src/groups.rs). */
+/** Limites dos grupos (iguais aos do Rust, ffi/src/groups.rs). O nome e livre: o Rust trata dele. */
 const val GROUP_MAX_MEMBERS = 10
 const val GROUP_MAX_ADMINS = 3
-const val GROUP_MAX_NAME = 100
 
 /** Conversa de um grupo: so texto e reacoes nesta versao (imagens e voz ainda nao). */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -232,15 +231,15 @@ fun NewGroupDialog(ui: UiState, onDismiss: () -> Unit, onCreate: (String, List<C
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
-                    name, { if (it.toByteArray().size <= GROUP_MAX_NAME) name = it },
-                    label = { Text("Nome do grupo") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    name, { name = it },
+                    label = { Text("Nome do grupo (opcional)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    "Escolhe até ${GROUP_MAX_MEMBERS - 1} contactos (${chosen.size} escolhidos).",
+                    "Pessoas (opcional, até ${GROUP_MAX_MEMBERS - 1}): ${chosen.size} escolhidas. Podes acrescentar mais tarde.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (choices.isEmpty()) {
-                    Text("Ainda não tens contactos. Adiciona primeiro as pessoas do grupo.", style = MaterialTheme.typography.bodyMedium)
+                    Text("Ainda não tens contactos: o grupo começa só contigo.", style = MaterialTheme.typography.bodyMedium)
                 }
                 LazyColumn(Modifier.heightIn(max = 320.dp)) {
                     items(choices, key = { it.contactId }) { c ->
@@ -264,7 +263,6 @@ fun NewGroupDialog(ui: UiState, onDismiss: () -> Unit, onCreate: (String, List<C
         confirmButton = {
             TextButton(
                 onClick = { onCreate(name.trim(), choices.filter { it.contactId in chosen }) },
-                enabled = name.isNotBlank() && chosen.isNotEmpty(),
             ) { Text("Criar") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
@@ -409,12 +407,12 @@ fun GroupInfoScreen(
             title = { Text("Nome do grupo") },
             text = {
                 OutlinedTextField(
-                    name, { if (it.toByteArray().size <= GROUP_MAX_NAME) name = it },
+                    name, { name = it },
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )
             },
             confirmButton = {
-                TextButton(enabled = name.isNotBlank(), onClick = { rename = false; onUpdate(name.trim(), current()) }) { Text("Guardar") }
+                TextButton(onClick = { rename = false; onUpdate(name.trim(), current()) }) { Text("Guardar") }
             },
             dismissButton = { TextButton(onClick = { rename = false }) { Text("Cancelar") } },
         )

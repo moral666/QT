@@ -16,7 +16,8 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - **Grupos até 10 pessoas, com até 3 administradores** (`ffi/src/groups.rs`). Envio a cada
   membro pelas sessões 1 a 1: o relay não muda e não sabe que existe um grupo. Os
   administradores mudam o nome, acrescentam e retiram pessoas e escolhem os outros
-  administradores; cada mudança sobe a versão do grupo. Quem sai avisa os outros. Nesta
+  administradores; cada mudança sobe a versão do grupo. Quem sai avisa os outros. Para
+  criar não é preciso escolher pessoas nem dar nome (sem nome fica "Grupo"). Nesta
   versão: texto e reações (ver `docs/protocol-spec.md`, secção 15).
 - **Reações com emoji** a mensagens, imagens e mensagens de voz (toque longo). Cifradas como
   as mensagens; tocar outra vez troca, "Retirar a minha" apaga.
