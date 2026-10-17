@@ -1,5 +1,5 @@
 /**
- * Página "Como funciona": animação em 6 passos de como viaja uma mensagem.
+ * Página "Como funciona": animação em 5 passos de como viaja uma mensagem.
  *
  * O desenho é um só <svg> (como-funciona.html). Em ecrãs largos, Ana, servidor e Rui
  * ficam lado a lado; em telemóveis, em coluna (LAYOUTS). Cada passo põe data-scene no
@@ -7,7 +7,7 @@
  *
  * Os textos dos passos estão em SCENES. Têm de continuar verdadeiros em relação à app:
  *   passo 3: as apps enviam com Sealed Sender (o envelope no relay não diz quem enviou);
- *   passo 6: as apps são compiladas com PQXDH (feature "pq" do qt_ffi).
+ *   passo 5: as apps são compiladas com PQXDH (feature "pq" do qt_ffi).
  *
  * Com "reduzir movimento" ligado no sistema, não avança sozinho e não há animações.
  */
@@ -24,11 +24,6 @@ const SCENES = [
     ms: 6800,
   },
   { title: 'O Rui abre com a sua chave', text: 'A chave está só no telemóvel do Rui. Nem a SEALER a tem.', ms: 6500 },
-  {
-    title: 'Cada mensagem, um cadeado novo',
-    text: 'A chave muda a cada mensagem. Se alguém roubasse uma, só abria essa mensagem.',
-    ms: 6000,
-  },
   {
     title: 'Protegida também para o futuro',
     text: 'A SEALER usa também uma proteção pensada para os computadores quânticos, que um dia poderão quebrar a criptografia de hoje.',
@@ -59,7 +54,6 @@ const LAYOUTS = {
       'g-sees': 'translate(-200 288)',
       'g-rui': 'translate(-340 544) scale(0.8)',
       'key-label': 'translate(-340 544) scale(0.8)',
-      'g-many': 'translate(-200 200)',
       'g-quantum': 'translate(200 520) scale(0.6) translate(-400 -310)',
     },
     pos: { ana: [200, 150], server: [200, 505], rui: [200, 740], key: [200, 798.4] },
