@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Excecoes do Android Lint. So para codigo GERADO, nunca para o codigo da app. -->
+<lint>
+    <!-- Bindings do UniFFI (src/main/java/uniffi, gerados do Rust): usam java.lang.ref.Cleaner
+         (Android 13+) so depois de confirmarem com Class.forName que existe; nos Android mais
+         antigos usam o Cleaner do JNA. O Lint nao ve essa verificacao e acusa NewApi. -->
+    <issue id="NewApi">
+        <ignore path="**/uniffi/**" />
+    </issue>
+</lint>
