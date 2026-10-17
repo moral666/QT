@@ -77,7 +77,7 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     imediata com `WaitMessages` (o relay responde no instante em que a mensagem chega; ver
     `docs/protocol-spec.md`). Continua sem notificações com a app fechada (precisa de FCM/APNs;
     o interruptor "Notificações" do menu só decide se a app envia o aviso de "vista"). Android
-    (desde a 0.4-alpha): 30 s depois de a app sair do ecrã, fecha as ligações ao relay (antes
+    (desde a 0.7.0): 30 s depois de a app sair do ecrã, fecha as ligações ao relay (antes
     ficavam abertas, com ping e pedido de espera de 25 em 25 s, a gastar bateria sem mostrar
     nada); ao voltar, religa e vai buscar o que chegou. Até lá, quem envia vê só ✓.
 34. Sem ABI `x86_64` com o NDK r26d (o OpenSSL embebido não compila o assembly x86 de SM3/SM4);

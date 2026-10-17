@@ -33,7 +33,7 @@ android {
         // Android 16. Exigido pela Play Store para apps novas e atualizacoes.
         targetSdk = 36
         versionCode = 5
-        versionName = "0.4-alpha"
+        versionName = "0.7.0"
         // So as ABIs que o Rust compilou. Adiciona "x86_64" quando tiveres esse .so (emulador).
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
