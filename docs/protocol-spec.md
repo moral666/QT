@@ -46,9 +46,9 @@ formato que já mudou outra vez.
 5. [Armazenamento local](#5-armazenamento-local-no-cliente-implementado-e-testado): SQLCipher
 6. [Bindings FFI](#6-bindings-ffi-androidiospython-implementado-e-testado): Kotlin/Swift/Python
 7. [Sealed sender](#7-sealed-sender-implementado-e-testado): esconder o remetente do servidor
-8. a 16. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v3,
+8. a 17. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v3,
    envelope v2, protocolo do relay, mensagem dentro do ratchet, sessões cruzadas e
-   eliminação, anexos (imagens, GIFs e voz), grupos, presença
+   eliminação, anexos (imagens, GIFs, voz e ficheiros), grupos, presença, notificações
 
 *(Se preferires uma explicação sem jargão técnico, começa antes por
 o [`README.md`](../README.md). Este
@@ -607,6 +607,28 @@ como os outros. Nada é guardado em disco; o estado fica em memória (`ffi/src/p
   há menos de 30 s): quem acabou de abrir a app fica logo a saber quem está online.
 * O `msg_id` é sempre o mesmo: uma versão antiga da app mostra o aviso "atualiza a app" uma só
   vez por contacto. Testes: `ffi/tests/presence.rs`.
+
+## 17. Notificações com a app fechada (FCM)
+
+Implementado em `server/src/push.rs` (relay) e `android/.../Push.kt` (app). Testes:
+`server/tests/relay_push.rs` e `server/tests/relay_push_send.rs` (servidor falso no lugar da Google).
+
+**Registo.** A app, sempre que se liga, envia `RegisterPushToken { user_id, token }` com o token
+do Firebase Cloud Messaging deste telemóvel (só letras, dígitos e `-_:.`, até 4096). Só o próprio
+`user_id` autenticado; `token` vazio apaga (interruptor "Notificações" desligado). No Redis:
+`<prefixo>:push:<user_id>`, com TTL de 90 dias (como o bundle), apagado também com `DeleteAccount`.
+
+**Campainha.** Depois de pôr uma mensagem na fila, se ninguém desse destinatário estiver em
+`WaitMessages` (app fechada ou em segundo plano há mais de 30 s) e não tiver havido campainha nos
+últimos 10 s, o relay envia à Google (FCM HTTP v1, conta de serviço OAuth) uma mensagem só com o
+token, `priority: HIGH`, `ttl: 3600s`, `collapse_key: qt` e o campo fixo `{"qt": "1"}`. Não leva o
+remetente, o conteúdo, o tamanho nem o `user_id`. Um token que a Google diga já não existir é
+apagado. Sem `QT_FCM_CREDENTIALS` no relay, as notificações ficam desligadas.
+
+**Na app.** Ao receber a campainha, a app mostra sempre a mesma notificação, "Tens mensagens
+novas", sem abrir a base de dados nem decifrar nada em segundo plano (funciona com o telemóvel
+bloqueado e com o bloqueio da app). As mensagens só são buscadas quando a app abre. Nos primeiros
+30 s em segundo plano a app ainda está ligada (o relay não toca): o aviso é então criado pela app.
 
 ## Documentos relacionados
 

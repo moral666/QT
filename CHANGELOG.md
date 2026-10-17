@@ -24,6 +24,20 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   num grupo com três pessoas, quem saiu do grupo não envia).
 - O exemplo `server/examples/peer.rs` voltou a compilar.
 
+### 17 de outubro de 2026: notificações com a app fechada (FCM)
+
+- **Relay** (`server/src/push.rs`): pedido `RegisterPushToken` (o próprio utilizador, token
+  validado, vazio apaga), guardado no Redis 90 dias e apagado com a conta. Quando chega uma
+  mensagem e ninguém está à espera, pede à Google (FCM HTTP v1) para acordar o telemóvel, com
+  uma mensagem vazia; no máximo uma vez a cada 10 s por pessoa. Tokens mortos são apagados.
+  Sem `QT_FCM_CREDENTIALS`, desligado. Deploy: `/etc/qt/fcm.json` (ver `setup-ec2.sh`).
+- **App** (`Push.kt`): Firebase Cloud Messaging iniciado à mão (sem Analytics, sem início
+  automático, sem o plugin google-services), aviso "Tens mensagens novas" sem decifrar nada,
+  permissão de notificações no Android 13+ (pedida uma vez), interruptor "Notificações" no
+  menu. O interruptor antigo com esse nome era o dos recibos de leitura: passa a chamar-se
+  "Confirmações de leitura".
+- Política de privacidade e `docs/google-play.md` atualizados (a Google como entregadora do aviso).
+
 ### 17 de outubro de 2026: identificador da app `sealer.app`
 
 - O identificador da app (Play Store) passa de `pt.qt.app` para `sealer.app`. Para o Android é

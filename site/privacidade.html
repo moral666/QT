@@ -79,6 +79,11 @@
           também não sabe quem os enviou (o remetente vai dentro da parte cifrada). Sabe só para que ID são.
         </li>
         <li>
+          <strong>O endereço de notificações do teu telemóvel</strong> (se tiveres as notificações ligadas): um código
+          dado pela Google ao telemóvel. Serve só para o servidor pedir à Google que acorde o telemóvel quando te chega
+          uma mensagem e tens a app fechada. Esse pedido vai vazio: não leva a mensagem, quem a enviou nem o teu ID.
+        </li>
+        <li>
           <strong>O endereço de rede (IP) do teu telemóvel</strong>: é necessário para manter a ligação. Só é usado em
           memória enquanto estás ligado e não fica registado.
         </li>
@@ -94,6 +99,10 @@
         <li>Imagens, GIFs e mensagens de voz à tua espera: apagados quando os descarregas, ou ao fim de 24 horas.</li>
         <li>
           As tuas chaves públicas: enquanto usares a app. Se não a abrires durante 90 dias, são apagadas sozinhas.
+        </li>
+        <li>
+          O endereço de notificações: enquanto as notificações estiverem ligadas. É renovado sempre que abres a app e
+          apagado ao fim de 90 dias sem a abrires, quando desligas as notificações ou quando apagas a conta.
         </li>
         <li>Quanto enviaste em anexos por dia (só um número, para evitar abusos): 2 dias.</li>
         <li>
@@ -113,6 +122,12 @@
       <ul>
         <li>Amazon Web Services: aloja o servidor (na Suécia). Só vê dados cifrados e técnicos.</li>
         <li>Cloudflare: aloja este site (ver a <a href="./politica-de-cookies">política de cookies</a>).</li>
+        <li>
+          Google (Firebase Cloud Messaging): entrega o aviso que acorda o telemóvel quando tens a app fechada. A Google
+          fica a saber que aquele telemóvel recebeu um aviso e a que horas, mas não o conteúdo, quem enviou nem o teu ID.
+          A notificação que vês ("Tens mensagens novas") é criada pela própria app. Podes desligar as notificações no
+          menu da app.
+        </li>
       </ul>
       <p>A app não tem publicidade, estatísticas de utilização nem relatórios de falhas de outras empresas.</p>
 
@@ -134,8 +149,7 @@
 
       <h2>Alterações a esta política</h2>
       <p>
-        Se mudarmos a forma como tratamos os dados (por exemplo, se a app passar a receber notificações com a app fechada),
-        atualizamos esta página antes de a mudança chegar à app. A data no topo mostra quando foi a última alteração.
+        Se mudarmos a forma como tratamos os dados, atualizamos esta página antes de a mudança chegar à app. A data no topo mostra quando foi a última alteração.
       </p>
 
       <p class="legal__back"><a href="./">Voltar ao início</a></p>
