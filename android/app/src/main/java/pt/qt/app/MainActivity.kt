@@ -848,27 +848,21 @@ fun MyIdDialog(publicId: String, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text("O teu ID") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Quem tiver este ID pode escrever-te. Se estiverem juntos, a outra pessoa lê este código " +
-                        "com a SEALER (Novo contacto, Ler código QR). À distância, partilha o texto.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (publicId.isNotBlank()) {
-                    val qr = remember(publicId) { qrCode(publicId) }
+                    // Em maiusculas o QR usa o modo alfanumerico: menos quadrados, as camaras leem melhor.
+                    val qr = remember(publicId) { qrCode(publicId.uppercase()) }
                     Image(
                         bitmap = qr,
                         contentDescription = "Código QR do teu ID",
-                        modifier = Modifier.align(Alignment.CenterHorizontally).size(220.dp)
-                            .clip(RoundedCornerShape(12.dp)).background(Color.White).padding(6.dp),
+                        modifier = Modifier.size(250.dp).clip(RoundedCornerShape(12.dp)).background(Color.White).padding(6.dp),
                     )
                 }
-                SelectionContainer {
-                    Text(
-                        publicId, fontFamily = FontFamily.Monospace, fontSize = 12.sp,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(10.dp),
-                    )
-                }
+                // So o inicio e o fim (para reconhecer); Copiar e Partilhar dao o ID completo.
+                Text(
+                    shortId(publicId), fontFamily = FontFamily.Monospace, fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
         confirmButton = {

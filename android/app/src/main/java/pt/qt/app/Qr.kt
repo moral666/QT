@@ -20,9 +20,15 @@ fun qrCode(text: String, sizePx: Int = 600): ImageBitmap {
     return Bitmap.createBitmap(px, w, m.height, Bitmap.Config.ARGB_8888).asImageBitmap()
 }
 
-/** O texto lido de um QR e um ID SEALER? Devolve-o limpo, ou null. O Rust valida-o a seguir. */
+/**
+ * O texto lido de um QR e um ID SEALER? Devolve-o limpo (em minusculas), ou null. O QR da
+ * app vai em maiusculas (modo alfanumerico, menos denso); o Rust valida-o a seguir.
+ */
 fun idFromQr(contents: String?): String? =
-    contents?.trim()?.takeIf { it.startsWith("qt1:") && it.length in 68..400 }
+    contents?.trim()?.takeIf { it.startsWith("qt1:", ignoreCase = true) && it.length in 68..400 }?.lowercase()
+
+/** "qt1:66543d…bc5a39": o ID abreviado, so para mostrar. */
+fun shortId(id: String): String = if (id.length > 20) id.take(10) + "…" + id.takeLast(6) else id
 
 /**
  * O leitor de QR e outro ecra, por isso abri-lo conta como sair da app. Sem isto,
