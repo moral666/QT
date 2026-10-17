@@ -42,6 +42,8 @@ pub const MAX_GROUP_MEMBERS: usize = 10;
 pub const MAX_GROUP_ADMINS: usize = 3;
 /// Nome maximo do grupo (bytes UTF-8).
 pub const MAX_GROUP_NAME: usize = 100;
+/// Nome de um grupo criado sem nome.
+pub const DEFAULT_GROUP_NAME: &str = "Grupo";
 /// Mensagens de grupos ainda desconhecidos guardadas a espera da info.
 const MAX_PENDING: usize = 100;
 /// Prefixo da conversa de um grupo no historico.
@@ -127,6 +129,21 @@ pub struct GroupInfo {
 pub struct GroupMemberInput {
     pub public_id: String,
     pub admin: bool,
+}
+
+/// Qualquer nome serve: vazio passa a "Grupo", mudancas de linha a espacos e um
+/// nome comprido e cortado (sem partir letras) em vez de recusado.
+pub(crate) fn clean_name(name: &str) -> String {
+    let one_line: String = name.chars().map(|c| if c == '\n' || c == '\r' { ' ' } else { c }).collect();
+    let t = one_line.trim();
+    if t.is_empty() {
+        return DEFAULT_GROUP_NAME.to_string();
+    }
+    let mut end = t.len().min(MAX_GROUP_NAME);
+    while !t.is_char_boundary(end) {
+        end -= 1;
+    }
+    t[..end].trim_end().to_string()
 }
 
 pub(crate) fn member_cid(pid: &str) -> Option<String> {
@@ -454,7 +471,8 @@ pub(crate) fn on_group_leave(client: &QtClient, c: &st::rusqlite::Connection, fr
 
 #[uniffi::export]
 impl QtClient {
-    /// CRIAR GRUPO: eu (administrador) + ate 9 pessoas. Abrir antes as sessoes com
+    /// CRIAR GRUPO: eu (administrador) + ate 9 pessoas (pode comecar so comigo; o
+    /// nome e opcional, ver `clean_name`). Abrir antes as sessoes com
     /// todas (`start_session`): quem nao tiver sessao nao recebe a info do grupo.
     pub fn group_create(&self, name: String, member_public_ids: Vec<String>) -> Result<GroupInfo, QtError> {
         let c = self.lock()?;
@@ -465,7 +483,7 @@ impl QtClient {
                 members.push(StoredMember { pid, admin: false });
             }
         }
-        let g = StoredGroup { v: 1, name: name.trim().to_string(), members };
+        let g = StoredGroup { v: 1, name: clean_name(&name), members };
         if !g.valid() {
             return Err(bad("group"));
         }
@@ -508,7 +526,7 @@ impl QtClient {
         }
         let g = StoredGroup {
             v: old.v + 1,
-            name: name.trim().to_string(),
+            name: clean_name(&name),
             members: members.into_iter().map(|m| StoredMember { pid: m.public_id, admin: m.admin }).collect(),
         };
         if !g.valid() || !g.has(&me) {

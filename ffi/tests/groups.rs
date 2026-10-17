@@ -261,6 +261,23 @@ fn dois_membros_novos_escrevem_ao_mesmo_tempo() {
 }
 
 #[test]
+fn criar_sem_ninguem_e_sem_nome() {
+    let a = peer("alice", 0x61);
+    let g = a.c.group_create("   ".into(), vec![]).unwrap();
+    assert_eq!((g.name.as_str(), g.members.len(), g.i_am_admin), ("Grupo", 1, true));
+    assert!(a.c.outbox().unwrap().is_empty());
+    // Escrever num grupo so comigo: fica "Enviada" logo (nao ha a quem entregar).
+    let m = a.c.group_send_text(g.group_id.clone(), "nota".into()).unwrap();
+    assert_eq!(m.status, MessageStatus::Sent);
+    // Nome comprido ou com mudancas de linha: cortado e numa so linha, nunca recusado.
+    let long = "á".repeat(80);
+    let g2 = a.c.group_create(format!("linha 1\nlinha 2 {long}"), vec![]).unwrap();
+    assert!(g2.name.starts_with("linha 1 linha 2") && g2.name.len() <= 100);
+    let r = a.c.group_update(g.group_id.clone(), "".into(), vec![GroupMemberInput { public_id: a.id.public_id.clone(), admin: true }]).unwrap();
+    assert_eq!(r.name, "Grupo");
+}
+
+#[test]
 fn id_da_conversa_do_grupo() {
     assert_eq!(group_id_of_conversation("g:00ff".into()), Some("00ff".into()));
     assert_eq!(group_id_of_conversation("00ff".into()), None);
