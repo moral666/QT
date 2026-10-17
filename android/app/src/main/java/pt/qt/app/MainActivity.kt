@@ -537,6 +537,19 @@ fun HomeScreen(
                                 text = { Text("Destruir perfil e dados", color = MaterialTheme.colorScheme.error) },
                                 onClick = { menu = false; showWipe = true },
                             )
+                            HorizontalDivider()
+                            // Versao instalada (build.gradle.kts, versionName), so informativa.
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "Versão ${BuildConfig.VERSION_NAME}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                },
+                                onClick = {},
+                                enabled = false,
+                            )
                         }
                     }
                 },
