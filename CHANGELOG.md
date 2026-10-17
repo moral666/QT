@@ -21,6 +21,8 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   25 em 25 s, sem mostrar nada ao utilizador). Ao voltar, religa e vai buscar o que
   chegou. Anexos a meio terminam primeiro (até 5 min). Uma ligação fechada já não se
   reabre sozinha por causa de um pedido que estivesse a meio.
+- Android, memória: a sessão Noise (no Rust) de cada ligação é libertada logo que a
+  ligação fecha ou falha, em vez de esperar pelo GC do Java.
 
 ### 17 de outubro de 2026: tempo de envio
 
