@@ -17,6 +17,7 @@ pub mod client;
 pub mod connection;
 pub mod latency;
 pub mod protocol;
+pub mod push;
 pub mod stats;
 pub mod store;
 pub mod waiters;

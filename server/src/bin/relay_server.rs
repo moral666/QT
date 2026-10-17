@@ -165,6 +165,12 @@ async fn main() {
 
     let mut store = Store::new(&redis_url).unwrap_or_else(|_| fatal("URL do Redis invalido"));
     configure_blobs(&mut store, &noise_key_path);
+    // Notificacoes com a app fechada (FCM). Sem QT_FCM_CREDENTIALS ficam desligadas.
+    match qt_server::push::init_from_env() {
+        Ok(true) => println!("Notificacoes (FCM): ativas"),
+        Ok(false) => println!("Notificacoes (FCM): desligadas (falta QT_FCM_CREDENTIALS)"),
+        Err(e) => fatal(&format!("notificacoes: {e}")),
+    }
     let store = Arc::new(store);
     if store.blobs_enabled() {
         // Limpeza dos anexos: ao arrancar e de 10 em 10 minutos (expirados e orfaos).
