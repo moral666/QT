@@ -274,6 +274,10 @@ fun AttachmentContent(
     onOpen: () -> Unit,
     onLongPress: () -> Unit = {},
 ) {
+    if (att.mime == VOICE_MIME) {
+        VoiceContent(m, att, progress, load, onLongPress)
+        return
+    }
     val ready = m.outgoing || att.state == AttachmentState.READY
     val bytes = rememberAttachmentBytes(m, ready, load)
     // Proporcao da imagem, limitada para nao haver bolhas gigantes nem tiras finas.

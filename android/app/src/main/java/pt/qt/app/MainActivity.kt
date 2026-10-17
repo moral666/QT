@@ -25,6 +25,9 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import java.io.File
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.compose.runtime.DisposableEffect
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -254,7 +257,7 @@ fun AppRoot(vm: MainViewModel) {
                 onSendImage = vm::sendImage, loadAttachment = vm::attachmentBytes,
                 blocked = chatId in ui.blocked, onBlock = vm::blockContact, onUnblock = vm::unblockContact,
                 invite = chatId in ui.invites, onAcceptInvite = vm::acceptInvite, onDeclineInvite = vm::declineInvite,
-                onReact = vm::react,
+                onReact = vm::react, onSendVoice = vm::sendVoice,
             )
         }
         showLockSettings -> {
@@ -839,6 +842,7 @@ fun ChatScreen(
     onAcceptInvite: (String, String) -> Unit = { _, _ -> },
     onDeclineInvite: (String) -> Unit = {},
     onReact: (String, String, String) -> Unit = { _, _, _ -> },
+    onSendVoice: (Contact, File, Long) -> Unit = { _, _, _ -> },
 ) {
     val colors = LocalChatColors.current
     val ctx = LocalContext.current
@@ -850,6 +854,22 @@ fun ChatScreen(
     var viewing by remember { mutableStateOf<ChatMessage?>(null) }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) picked = uri
+    }
+    // Mensagens de voz: gravador (para e apaga a gravacao se o ecra sair) e permissao do microfone.
+    val recorder = remember { VoiceRecorder(ctx) }
+    var recording by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) { onDispose { recorder.cancel() } }
+    fun startRecording() {
+        recording = try {
+            recorder.start(); true
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(ctx, "Não foi possível usar o microfone.", android.widget.Toast.LENGTH_SHORT).show()
+            false
+        }
+    }
+    val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startRecording()
+        else android.widget.Toast.makeText(ctx, "Sem acesso ao microfone, não é possível gravar.", android.widget.Toast.LENGTH_SHORT).show()
     }
     val keyboardImages = remember(contact) {
         ReceiveContentListener { content ->
@@ -998,6 +1018,16 @@ fun ChatScreen(
                     Spacer(Modifier.height(8.dp))
                     Button(onClick = { showAdd = true }) { Text("Adicionar para responder") }
                 }
+            } else if (recording) {
+                VoiceRecordBar(
+                    recorder,
+                    onCancel = { recorder.cancel(); recording = false },
+                    onSend = {
+                        val rec = recorder.stop()
+                        recording = false
+                        if (rec != null) onSendVoice(contact, rec.first, rec.second)
+                    },
+                )
             } else {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
@@ -1030,16 +1060,28 @@ fun ChatScreen(
                         },
                     )
                     Spacer(Modifier.width(6.dp))
+                    // Sem texto escrito, o botao grava uma mensagem de voz (ate 10 s).
+                    val empty = input.text.isBlank()
                     FloatingActionButton(
                         onClick = {
                             val text = input.text.toString()
-                            if (text.isNotBlank()) { onSend(contact, text); input.clearText() }
+                            if (text.isNotBlank()) {
+                                onSend(contact, text); input.clearText()
+                            } else if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                startRecording()
+                            } else {
+                                AutoLockPause.active = true   // o pedido de permissao nao conta como sair da app
+                                askMic.launch(Manifest.permission.RECORD_AUDIO)
+                            }
                         },
                         shape = CircleShape,
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(52.dp),
-                    ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Enviar") }
+                    ) {
+                        if (empty) Text("🎤", fontSize = 22.sp)
+                        else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Enviar")
+                    }
                 }
             }
         }

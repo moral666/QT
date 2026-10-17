@@ -1,4 +1,7 @@
-//! Anexos (imagens e GIFs ate 25 MiB), cifrados ponta a ponta.
+//! Anexos (imagens e GIFs ate 25 MiB, mensagens de voz ate 10 s), cifrados ponta a ponta.
+//!
+//! VOZ: `audio/mp4` (AAC). No mesmo formato dos outros anexos, com `width` = duracao
+//! em ms e `height` = 0. Limites: `MAX_VOICE_MS` e `MAX_VOICE_BYTES`.
 //!
 //! ENVIAR
 //!   1. `attachment_create`: o ficheiro (ja comprimido pela app) e cifrado com
@@ -49,7 +52,18 @@ const PLAIN_CHUNK: usize = BLOB_CHUNK - TAG;
 const AAD: &[u8] = b"QT-ATT-v1";
 
 /// Tipos aceites. Tudo o resto e recusado (nao se envia nem se mostra).
-pub const MIME_TYPES: [&str; 4] = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+pub const MIME_TYPES: [&str; 5] = ["image/jpeg", "image/png", "image/gif", "image/webp", VOICE_MIME];
+/// Mensagem de voz (AAC em MP4): Android e iPhone tocam-no sem bibliotecas extra.
+pub const VOICE_MIME: &str = "audio/mp4";
+/// Duracao maxima de uma mensagem de voz (10 s, com uma pequena folga).
+pub const MAX_VOICE_MS: u32 = 10_500;
+/// Tamanho maximo de uma mensagem de voz (10 s de AAC ocupam ~40 a 160 KB).
+pub const MAX_VOICE_BYTES: u64 = 1024 * 1024;
+
+/// Uma mensagem de voz com estes dados e valida? (`w` = duracao em ms).
+fn voice_ok(size: u64, w: u32, h: u32) -> bool {
+    size <= MAX_VOICE_BYTES && w > 0 && w <= MAX_VOICE_MS && h == 0
+}
 
 // Estado guardado nos metadados (`st`).
 const ST_UPLOADING: u8 = 0;
@@ -137,6 +151,8 @@ impl AttMeta {
     pub(crate) fn label(&self) -> &'static str {
         if self.mime == "image/gif" {
             "GIF"
+        } else if self.mime == VOICE_MIME {
+            "🎤 Mensagem de voz"
         } else {
             "📷 Foto"
         }
@@ -263,6 +279,10 @@ pub(crate) fn decode_wire(b: &[u8]) -> Option<AttMeta> {
     if size == 0 || size > MAX_ATTACHMENT_BYTES || clen != cipher_len(size) {
         return None;
     }
+    let (w, h) = (u32::from_be_bytes(b[65..69].try_into().ok()?), u32::from_be_bytes(b[69..73].try_into().ok()?));
+    if mime == VOICE_MIME && !voice_ok(size, w, h) {
+        return None;
+    }
     Some(AttMeta {
         v: 1,
         key: hex(&b[1..33]),
@@ -364,9 +384,10 @@ fn json_bytes(v: serde_json::Value) -> Result<Vec<u8>, QtError> {
 
 #[uniffi::export]
 impl QtClient {
-    /// Prepara uma imagem/GIF para enviar a `contact_id`. `source_path` e um
-    /// ficheiro temporario da app (ja comprimido; pode ser apagado a seguir).
-    /// A mensagem fica no historico como "a enviar".
+    /// Prepara uma imagem/GIF (ou mensagem de voz) para enviar a `contact_id`.
+    /// `source_path` e um ficheiro temporario da app (ja comprimido; pode ser
+    /// apagado a seguir). A mensagem fica no historico como "a enviar".
+    /// Voz: `mime` = `audio/mp4`, `width` = duracao em ms (ate 10 500), `height` = 0.
     pub fn attachment_create(
         &self,
         contact_id: String,
@@ -382,6 +403,9 @@ impl QtClient {
         let size = std::fs::metadata(&source_path).map_err(|_| bad("source_path"))?.len();
         if size == 0 || size > MAX_ATTACHMENT_BYTES {
             return Err(bad("size"));
+        }
+        if mime == VOICE_MIME && !voice_ok(size, width, height) {
+            return Err(bad("voice"));
         }
         let mut plain = std::fs::read(&source_path).map_err(|_| bad("source_path"))?;
         let mut key = [0u8; 32];

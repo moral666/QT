@@ -284,3 +284,23 @@ fn reacoes_nos_dois_sentidos_trocar_e_retirar() {
     b.c.delete_conversation(alice.clone()).unwrap();
     assert!(b.c.messages_page(alice, None, 10).unwrap().is_empty());
 }
+
+#[test]
+fn mensagem_de_voz_ate_10_segundos() {
+    let (a, b) = setup();
+    let bob = b.cid();
+    let f = format!("/tmp/qt_voz_{}.m4a", std::process::id());
+    std::fs::write(&f, vec![7u8; 40_000]).unwrap();
+
+    let m = a.c.attachment_create(bob.clone(), f.clone(), "audio/mp4".into(), 6_200, 0).unwrap();
+    assert_eq!(m.text, "🎤 Mensagem de voz");
+    let att = m.attachment.unwrap();
+    assert_eq!((att.mime.as_str(), att.width), ("audio/mp4", 6_200), "a duração vai em width");
+
+    // Mais de 10 s, ou com altura, ou grande demais: recusado.
+    assert!(a.c.attachment_create(bob.clone(), f.clone(), "audio/mp4".into(), 20_000, 0).is_err());
+    assert!(a.c.attachment_create(bob.clone(), f.clone(), "audio/mp4".into(), 5_000, 10).is_err());
+    std::fs::write(&f, vec![7u8; 2 * 1024 * 1024]).unwrap();
+    assert!(a.c.attachment_create(bob, f.clone(), "audio/mp4".into(), 5_000, 0).is_err());
+    let _ = std::fs::remove_file(f);
+}

@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Mensagens de voz (ate 10 s): pedida so quando se carrega no microfone. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- allowBackup=false + dataExtractionRules: o ficheiro SQLCipher so abre com a chave
          do Keystore deste aparelho; nem backup na nuvem nem copia entre aparelhos
