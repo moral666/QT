@@ -23,6 +23,25 @@ fun signingProp(key: String, env: String): String? = keystoreProps.getProperty(k
 val relayUrl: String = (findProperty("qtRelayUrl") as String?) ?: System.getenv("QT_RELAY_URL") ?: ""
 val relayPin: String = ((findProperty("qtRelayPin") as String?) ?: System.getenv("QT_RELAY_PIN") ?: "").lowercase()
 
+// Notificacoes (FCM): valores do projeto Firebase, lidos de android/app/google-services.json
+// (descarregado da consola do Firebase; NAO vai para o git). Sem o plugin google-services:
+// a app inicia o Firebase a mao (Push.kt). Sem o ficheiro, compila sem notificacoes.
+data class FcmConfig(val projectId: String, val appId: String, val apiKey: String, val senderId: String)
+val fcm: FcmConfig? = run {
+    val f = file("google-services.json")
+    if (!f.exists()) return@run null
+    @Suppress("UNCHECKED_CAST")
+    val root = groovy.json.JsonSlurper().parse(f) as Map<String, Any?>
+    val info = root["project_info"] as? Map<String, Any?> ?: return@run null
+    val clients = root["client"] as? List<Map<String, Any?>> ?: return@run null
+    val client = clients.firstOrNull {
+        ((it["client_info"] as? Map<*, *>)?.get("android_client_info") as? Map<*, *>)?.get("package_name") == "sealer.app"
+    } ?: return@run null
+    val appId = (client["client_info"] as? Map<*, *>)?.get("mobilesdk_app_id") as? String ?: return@run null
+    val apiKey = ((client["api_key"] as? List<*>)?.firstOrNull() as? Map<*, *>)?.get("current_key") as? String ?: return@run null
+    FcmConfig(info["project_id"] as String, appId, apiKey, info["project_number"] as String)
+}
+
 android {
     namespace = "pt.qt.app"
     compileSdk = 36
@@ -41,6 +60,14 @@ android {
     }
 
     buildFeatures { buildConfig = true }
+
+    defaultConfig {
+        buildConfigField("boolean", "FCM_ENABLED", (fcm != null).toString())
+        buildConfigField("String", "FCM_PROJECT_ID", "\"${fcm?.projectId ?: ""}\"")
+        buildConfigField("String", "FCM_APP_ID", "\"${fcm?.appId ?: ""}\"")
+        buildConfigField("String", "FCM_API_KEY", "\"${fcm?.apiKey ?: ""}\"")
+        buildConfigField("String", "FCM_SENDER_ID", "\"${fcm?.senderId ?: ""}\"")
+    }
 
     signingConfigs {
         create("release") {
@@ -134,6 +161,9 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-gif:2.7.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+    // Notificacoes com a app fechada: so o Firebase Cloud Messaging (sem Analytics). Ver Push.kt.
+    implementation(platform("com.google.firebase:firebase-bom:35.0.1"))
+    implementation("com.google.firebase:firebase-messaging")
 
     // Testes unitarios (JVM, sem telemovel): logica pura em Kotlin. `gradle :app:testDebugUnitTest`
     testImplementation("junit:junit:4.13.2")

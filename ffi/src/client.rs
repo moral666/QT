@@ -532,6 +532,20 @@ impl QtClient {
         json_bytes(serde_json::json!({"DeleteAccount": {"user_id": uid}}))
     }
 
+    /// Notificacoes com a app fechada: regista no relay o token do Firebase Cloud
+    /// Messaging deste telemovel (o relay so o usa para pedir a Google que acorde o
+    /// telemovel, com uma mensagem vazia). `token` vazio = deixar de receber. Resposta
+    /// `Ack`; um relay antigo responde `Error` (ignorar).
+    pub fn relay_request_push_token(&self, token: String) -> Result<Vec<u8>, QtError> {
+        let ok = token.is_empty()
+            || (token.len() <= 4096 && token.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_:.".contains(&b)));
+        if !ok {
+            return Err(bad("token"));
+        }
+        let uid = self.relay_user_id()?;
+        json_bytes(serde_json::json!({"RegisterPushToken": {"user_id": uid, "token": token}}))
+    }
+
     /// Confirmar so DEPOIS de `decrypt` ter persistido cada mensagem.
     pub fn relay_request_ack(&self, ids: Vec<u64>) -> Result<Vec<u8>, QtError> {
         let uid = self.relay_user_id()?;

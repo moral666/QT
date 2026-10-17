@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Mensagens de voz (ate 10 s): pedida so quando se carrega no microfone. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Notificacoes (Android 13+): "Tens mensagens novas", sem conteudo. Pedida uma vez. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- allowBackup=false + dataExtractionRules: o ficheiro SQLCipher so abre com a chave
          do Keystore deste aparelho; nem backup na nuvem nem copia entre aparelhos
@@ -36,6 +38,26 @@
             android:authorities="${applicationId}.ficheiros"
             android:exported="false"
             android:grantUriPermissions="true" />
+        <!-- Notificacoes (FCM, ver Push.kt): so recebe a campainha vazia do relay. -->
+        <service
+            android:name=".SealerPushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <!-- O Firebase e iniciado a mao (Push.init), so com o Cloud Messaging: sem o
+             FirebaseInitProvider automatico, sem token antes de a app o pedir e sem
+             recolha de dados de utilizacao. -->
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            android:authorities="${applicationId}.firebaseinitprovider"
+            tools:node="remove" />
+        <meta-data android:name="firebase_messaging_auto_init_enabled" android:value="false" />
+        <meta-data android:name="firebase_analytics_collection_deactivated" android:value="true" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="mensagens" />
         <!-- Leitor de QR (biblioteca ZXing Android Embedded): por omissao so funciona
              deitado; assim roda com o telemovel. A permissao da camara e pedida so
              quando se carrega em "Ler codigo QR". -->

@@ -67,6 +67,10 @@ data class UiState(
     val chatHasMore: Boolean = false,
     /** Enviar recibos "Visto" (o utilizador pode desligar). */
     val readReceipts: Boolean = true,
+    /** Notificacoes com a app fechada (interruptor "Notificações"). */
+    val pushOn: Boolean = true,
+    /** Ja se pediu a permissao de notificacoes (Android 13+) uma vez. */
+    val pushAsked: Boolean = false,
     /** Safety number a mostrar (nome + 60 digitos), ou null. */
     val safetyNumber: String? = null,
     // ----- bloqueio da app -----
@@ -223,6 +227,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 contacts = contactStore.load(ck),
                 conversations = client.conversations(),
                 readReceipts = prefs.getBoolean("read_receipts", true),
+                pushOn = Push.isOn(getApplication()),
+                pushAsked = prefs.getBoolean("push_asked", false),
                 locked = false, unlocking = false, lockMessage = null,
                 lockEnabled = storageKeys.lockEnabled(),
                 bioEnabled = bio.isEnabled(), bioAvailable = bio.isAvailable(),
@@ -289,6 +295,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * pedido de espera), gastando bateria sem proveito. As mensagens ficam no relay ate voltar.
      */
     fun onAppHidden() {
+        Push.appVisible = false
         if (authInProgress) return
         hiddenAt = SystemClock.elapsedRealtime()
         synchronized(pauseLock) { visible = false }
@@ -309,6 +316,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * religa ao relay se as ligacoes tinham sido fechadas em segundo plano.
      */
     fun onAppVisible() {
+        Push.appVisible = true
+        Push.clear(getApplication())
         synchronized(pauseLock) {
             visible = true
             pauseJob?.cancel()
@@ -616,8 +625,47 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 // Sem rede: o receiveLoop mostra o estado da ligacao; volta a publicar no proximo arranque.
             }
         }
+        // Notificacoes: o "endereco de campainha" vai sempre que a app se liga (renova o prazo no relay).
+        registerPush(client, bundleLink)
         // Presenca: "online" aos contactos (se a app estiver no ecra).
         if (visible) presenceAnnounce(true)
+    }
+
+    /**
+     * Envia ao relay o token FCM deste telemovel (ou vazio, com o interruptor desligado).
+     * Sem Firebase nesta build, sem Google Play Services ou sem rede: nada (tenta no proximo arranque).
+     */
+    private suspend fun registerPush(client: QtClient, l: RelayLink) {
+        if (!Push.available) return
+        val app = getApplication<Application>()
+        val token = if (Push.isOn(app)) Push.token(app) ?: return else ""
+        try {
+            val r = l.request(client.relayRequestPushToken(token))
+            if (r !is RelayResponse.Ack) Log.w(TAG, "relay recusou o token de notificacoes: ${r.describe()}")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "token de notificacoes: ${e.safeMsg()}")
+        }
+    }
+
+    /** Interruptor "Notificações". Desligar avisa o relay (token vazio) e esquece o token na Google. */
+    fun setPush(on: Boolean) {
+        val app = getApplication<Application>()
+        Push.setOn(app, on)
+        _ui.update { it.copy(pushOn = on) }
+        io {
+            val client = qt
+            val l = fileLink
+            if (client != null && l != null) registerPush(client, l)
+            if (!on) Push.deleteToken(app)
+        }
+    }
+
+    /** O pedido de permissao de notificacoes (Android 13+) ja foi mostrado. */
+    fun markPushAsked() {
+        prefs.edit().putBoolean("push_asked", true).apply()
+        _ui.update { it.copy(pushAsked = true) }
     }
 
     /** "online" (app no ecra) ou "offline" aos contactos. Sem avisos na app se falhar. */
@@ -878,6 +926,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             waitLink?.shutdown()
             waitLink = null
             client.deleteIdentity()          // secure_delete + VACUUM no Rust (e os ficheiros dos anexos)
+            Push.deleteToken(getApplication())   // a Google esquece este telemovel (o relay ja apagou o token)
             // Depois apaga os ficheiros e as chaves (incluindo o bloqueio) e abre um armazenamento novo.
             resetStorage()
         } catch (e: Exception) {
@@ -1467,6 +1516,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val ackIds = mutableListOf<ULong>()
                 var gotPage = false
                 val statusIds = mutableMapOf<String, MutableSet<String>>()   // recibos: conversa -> mensagens
+                var newMessage = false
                 for (m in msgs) {
                     try {
                         // Decifrar + guardar no historico + agendar o recibo, tudo numa transacao.
@@ -1475,7 +1525,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                                 received = true; gotPage = true
                                 statusIds.getOrPut(r.contactId) { mutableSetOf() }.addAll(r.messageIds)
                             }
-                            is ReceiveResult.NewMessage, is ReceiveResult.Updated -> { received = true; gotPage = true }
+                            is ReceiveResult.NewMessage -> { received = true; gotPage = true; newMessage = true }
+                            is ReceiveResult.Updated -> { received = true; gotPage = true }
                             is ReceiveResult.NoChange -> {}
                         }
                         ackIds += m.id
@@ -1488,6 +1539,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 // Mostra ja: as mensagens estao guardadas no telemovel. A confirmacao ao relay e o
                 // pedido da pagina seguinte (duas idas a rede) vem depois, sem atrasar o ecra.
+                // App em segundo plano (ainda ligada, nos primeiros 30 s): o relay nao toca a
+                // campainha porque a ligacao de espera estava aberta, por isso o aviso e daqui.
+                if (newMessage && !Push.appVisible) Push.showGeneric(getApplication())
                 if (gotPage) {
                     refreshViews(client)
                     for ((conv, ids) in statusIds) refreshMessages(client, conv, ids)
