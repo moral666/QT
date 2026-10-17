@@ -122,3 +122,9 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     bloquear), ou guarda-o onde o utilizador escolher. Em ambos os casos, a partir daí, a
     cópia está fora do SEALER e a outra app pode guardá-la. As versões 0.8 e anteriores
     mostram "atualiza a app" no lugar de um ficheiro.
+41. **Notificações (desde a 0.9.0).** Usam o Firebase Cloud Messaging da Google: a Google fica a
+    saber que aquele telemóvel recebeu um aviso e a que horas (não o conteúdo, quem enviou nem o
+    ID). O relay guarda o token FCM de cada utilizador, o que liga o ID a um identificador do
+    telemóvel dado pela Google. A notificação é sempre genérica ("Tens mensagens novas"): para
+    ver quem escreveu é preciso abrir a app. Telemóveis sem serviços Google (ex.: Huawei
+    recentes) não recebem avisos com a app fechada. Ainda não existe na app iPhone (APNs).

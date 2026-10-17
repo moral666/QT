@@ -37,7 +37,10 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
   empresa: decide ele mais tarde.
 - **Identificador da app: `sealer.app`** (desde a 0.9.0; antes `pt.qt.app`). Nunca mudar depois de
   publicar. O `namespace` e o pacote Kotlin continuam `pt.qt.app`.
-- **Notificações: FCM** (escolhido a 17/10/2026), com mensagem vazia ("acorda"), como o Signal.
+- **Notificações: FCM, opção 1** (17/10/2026): campainha vazia e aviso genérico "Tens mensagens
+  novas", sem decifrar nada em segundo plano. Nome/texto na notificação (opção 2) fica para depois.
+  App: `Push.kt` lê `android/app/google-services.json` (fora do git). Relay: `/etc/qt/fcm.json`
+  (conta de serviço, fora do git) e o `setup-ec2.sh` liga as notificações se o ficheiro existir.
 
 ## O projeto
 
@@ -141,4 +144,4 @@ o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo
   B) código curto no servidor que expira (precisa de mudar o relay),
   C) ID com metade do tamanho (mudança grande, os IDs atuais deixam de servir).
   Sugestão dada: deixar como está.
-- Depois: notificações FCM (desenho a aprovar), atualizar a app iPhone, AAB e ficha da Play Store.
+- Depois: atualizar a app iPhone (inclui notificações APNs), AAB e ficha da Play Store.

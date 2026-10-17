@@ -1,7 +1,7 @@
 # Google Play: o que preencher na Play Console
 
-Respostas para a app SEALER **sem notificações FCM** (versão atual, 0.8.0). Se um dia a
-app passar a usar FCM, ver a secção no fim: algumas respostas mudam.
+Respostas para a app SEALER. **Desde a 0.9.0 a app usa notificações FCM**: aplicar também
+a secção no fim ("Notificações FCM"), que muda algumas respostas.
 
 Endereços que a Play pede:
 
@@ -103,12 +103,13 @@ A Play Console não tem questionário. O enquadramento está em
 
 ---
 
-## Se a app passar a usar FCM (notificações com a app fechada)
+## Notificações FCM (desde a 0.9.0)
 
 Mudam estas respostas:
 
 - Juntar **Dispositivo ou outros IDs (Device or other IDs)**: recolhido, não partilhado,
   obrigatório, finalidade **Funcionalidade da app** (o token do Firebase, que o servidor
   guarda para pedir à Google que acorde o telemóvel).
-- Atualizar a política de privacidade: a Google passa a saber quando o telemóvel recebe um
-  aviso (sem conteúdo, sem remetente).
+- Política de privacidade: já atualizada (a Google sabe quando o telemóvel recebe um aviso,
+  sem conteúdo, sem remetente).
+- Permissão `POST_NOTIFICATIONS` (Android 13+): pedida uma vez, ao começar a usar a app.
