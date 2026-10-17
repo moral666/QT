@@ -2,7 +2,7 @@
 
 **Versão alpha, NÃO auditada. Não uses para informação sensível.**
 Toda a criptografia está no Rust (`libqt_ffi.so`); o Kotlin só move bytes e desenha ecrãs.
-No telemóvel a app chama-se **SEALER**; por dentro o pacote continua a ser `pt.qt.app`.
+No telemóvel a app chama-se **SEALER**. O identificador na Play Store é `sealer.app` (desde a 0.9.0; antes `pt.qt.app`); o código Kotlin continua no pacote `pt.qt.app`.
 
 ```
 Compose UI -> MainViewModel -> QtClient (UniFFI/Rust: identidade, PQXDH, ratchet, sealed sender, SQLCipher)

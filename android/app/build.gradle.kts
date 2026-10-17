@@ -28,7 +28,9 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "pt.qt.app"
+        // Identificador na Play Store (play.google.com/store/apps/details?id=sealer.app).
+        // NUNCA mudar depois de publicar. O codigo Kotlin continua no pacote pt.qt.app (namespace).
+        applicationId = "sealer.app"
         minSdk = 24            // igual ao `-P 24` do cargo-ndk
         // Android 16. Exigido pela Play Store para apps novas e atualizacoes.
         targetSdk = 36
