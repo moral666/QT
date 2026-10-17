@@ -76,9 +76,10 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
 33. ~~**Poll de 3 s** em vez de *push*~~ (resolvido com a app aberta, 16/10/2026): entrega
     imediata com `WaitMessages` (o relay responde no instante em que a mensagem chega; ver
     `docs/protocol-spec.md`). Continua sem notificações com a app fechada (precisa de FCM/APNs;
-    o interruptor "Notificações" do menu só decide se a app envia o aviso de "vista"). Enquanto o
-    Android não termina a app, a ligação de espera fica aberta em segundo plano (um pedido a cada
-    25 s, menos do que os pedidos de 3 em 3 s de antes).
+    o interruptor "Notificações" do menu só decide se a app envia o aviso de "vista"). Android
+    (desde a 0.4-alpha): 30 s depois de a app sair do ecrã, fecha as ligações ao relay (antes
+    ficavam abertas, com ping e pedido de espera de 25 em 25 s, a gastar bateria sem mostrar
+    nada); ao voltar, religa e vai buscar o que chegou. Até lá, quem envia vê só ✓.
 34. Sem ABI `x86_64` com o NDK r26d (o OpenSSL embebido não compila o assembly x86 de SM3/SM4);
     testar em telemóvel arm64, ou compilar com um NDK mais recente.
 35. **Bloqueio da app (Android):** o código só tem números (mínimo 6). Fora do telemóvel não serve

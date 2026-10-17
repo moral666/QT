@@ -16,6 +16,11 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - Android: "Apagar todos os dados" passa a "Destruir perfil e dados" e apaga
   primeiro no servidor. Sem rede, não apaga nada e pergunta se quer tentar de novo
   ou apagar só do telemóvel. Requisito da Google Play (eliminação de conta).
+- Android, bateria: 30 s depois de a app sair do ecrã, fecha as ligações ao relay e
+  para a receção (antes ficavam até 3 ligações abertas, cada uma a acordar o rádio de
+  25 em 25 s, sem mostrar nada ao utilizador). Ao voltar, religa e vai buscar o que
+  chegou. Anexos a meio terminam primeiro (até 5 min). Uma ligação fechada já não se
+  reabre sozinha por causa de um pedido que estivesse a meio.
 
 ### 17 de outubro de 2026: tempo de envio
 
