@@ -269,6 +269,8 @@ enum Payload {
     GroupMsg { body: Vec<u8> },
     GroupInfo { body: Vec<u8> },
     GroupLeave { body: Vec<u8> },
+    /// Presenca (ver `presence.rs`): o contacto abriu ou fechou a app.
+    Presence { online: bool, sent_at: i64 },
     /// Mensagem de controlo invalida: ignora-se, sem aviso.
     Ignored,
 }
@@ -327,6 +329,10 @@ fn decode(plain: &[u8], legacy_id: &[u8]) -> Payload {
                 _ => Payload::GroupLeave { body },
             }
         }
+        crate::presence::T_PRESENCE => match &plain[HDR..] {
+            [state @ (0 | 1)] => Payload::Presence { online: *state == 1, sent_at },
+            _ => Payload::Ignored,
+        },
         T_INTRO => match std::str::from_utf8(&plain[HDR..]) {
             Ok(p) if p.len() <= 200 => Payload::Intro { public_id: p.to_string() },
             _ => Payload::Ignored,
@@ -604,6 +610,7 @@ impl QtClient {
                 Payload::GroupMsg { body } => crate::groups::on_group_msg(tx, contact_id, &body)?,
                 Payload::GroupInfo { body } => crate::groups::on_group_info(tx, contact_id, &body)?,
                 Payload::GroupLeave { body } => crate::groups::on_group_leave(self, tx, contact_id, &body)?,
+                Payload::Presence { online, sent_at } => crate::presence::on_presence(self, tx, contact_id, online, sent_at)?,
                 Payload::Ignored => ReceiveResult::NoChange { contact_id: contact_id.to_string() },
                 Payload::Unsupported { id, sent_at } => {
                     match hm::insert_message(tx, &id, contact_id, false, hm::KIND_TEXT, UNSUPPORTED_TEXT, sent_at, now, hm::ST_RECEIVED)? {

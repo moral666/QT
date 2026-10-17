@@ -6,7 +6,12 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
-### 17 de outubro de 2026: grupos, reações, voz e convites (app 0.7.1)
+### 17 de outubro de 2026: grupos, reações, voz, convites e online (app 0.7.1)
+
+- **Online / offline** (`ffi/src/presence.rs`): ponto verde nos contactos com a app aberta,
+  "online" na conversa e a fila "Online agora" no topo da lista. Só para contactos e cifrado
+  (tipo 9); nada fica guardado. Interruptor "Mostrar quando estou online" no menu: desligado,
+  não mostra o meu estado nem vejo o dos outros.
 
 - **Grupos até 10 pessoas, com até 3 administradores** (`ffi/src/groups.rs`). Envio a cada
   membro pelas sessões 1 a 1: o relay não muda e não sabe que existe um grupo. Os

@@ -157,6 +157,8 @@ pub struct QtClient {
     conn: Mutex<st::rusqlite::Connection>,
     /// Pasta dos anexos (ficheiros cifrados), ao lado da base de dados.
     pub(crate) files_dir: std::path::PathBuf,
+    /// Quem esta online (so em memoria, nunca em disco; ver presence.rs).
+    pub(crate) presence: Mutex<crate::presence::Presence>,
 }
 
 pub(crate) fn parse_public_id(id: &str) -> Result<([u8; 32], [u8; 32]), QtError> {
@@ -206,7 +208,11 @@ impl QtClient {
             st::StorageError::InvalidStorageKey => bad("storage_key"),
             _ => QtError::Storage,
         })?;
-        Ok(Arc::new(QtClient { conn: Mutex::new(conn), files_dir: std::path::PathBuf::from(format!("{path}.anexos")) }))
+        Ok(Arc::new(QtClient {
+            conn: Mutex::new(conn),
+            files_dir: std::path::PathBuf::from(format!("{path}.anexos")),
+            presence: Mutex::new(Default::default()),
+        }))
     }
 
     // ---------------------------------------------------------- identidade
@@ -247,6 +253,9 @@ impl QtClient {
     pub fn delete_identity(&self) -> Result<(), QtError> {
         let c = self.lock()?;
         st::wipe_all(&c)?;
+        if let Ok(mut p) = self.presence.lock() {
+            *p = Default::default();
+        }
         // Os anexos estao cifrados com chaves que estavam na base de dados (ja
         // apagadas); os ficheiros vao tambem.
         let _ = std::fs::remove_dir_all(&self.files_dir);

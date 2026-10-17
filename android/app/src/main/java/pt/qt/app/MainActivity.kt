@@ -61,6 +61,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -309,6 +310,7 @@ fun AppRoot(vm: MainViewModel) {
             onUnblock = vm::unblockContact,
             onLockSettings = { showLockSettings = true }, onLockNow = vm::lockNow,
             onCreateGroup = vm::createGroup, onDeleteGroup = vm::deleteGroup,
+            onPresence = vm::setPresence,
         )
     }
     if (showMyId && !ui.locked) MyIdDialog(ui.publicId, onDismiss = { showMyId = false })
@@ -550,6 +552,7 @@ fun HomeScreen(
     onUnblock: (String) -> Unit,
     onCreateGroup: (String, List<Contact>) -> Unit = { _, _ -> },
     onDeleteGroup: (String) -> Unit = {},
+    onPresence: (Boolean) -> Unit = {},
 ) {
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
@@ -574,6 +577,11 @@ fun HomeScreen(
                                 text = { Text("Notificações") },
                                 onClick = { onReadReceipts(!ui.readReceipts) },
                                 trailingIcon = { Switch(checked = ui.readReceipts, onCheckedChange = { onReadReceipts(it) }) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Mostrar quando estou online") },
+                                onClick = { onPresence(!ui.presenceOn) },
+                                trailingIcon = { Switch(checked = ui.presenceOn, onCheckedChange = { onPresence(it) }) },
                             )
                             DropdownMenuItem(text = { Text("Bloqueio da app") }, onClick = { menu = false; onLockSettings() })
                             if (ui.lockEnabled) {
@@ -627,6 +635,10 @@ fun HomeScreen(
                 EmptyConversations(onMyId)
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
+                    val onlineNow = ui.contacts.filter { it.contactId in ui.online && it.contactId !in ui.blocked }
+                    if (onlineNow.isNotEmpty()) {
+                        item(key = "online-now") { OnlineNowStrip(onlineNow, onOpen) }
+                    }
                     items(ui.conversations, key = { it.contactId }) { conv ->
                         val group = ui.groupOf(conv.contactId)
                         if (group != null) {
@@ -642,6 +654,7 @@ fun HomeScreen(
                                 name ?: "Desconhecido", conv.contactId, conv,
                                 blocked = conv.contactId in ui.blocked,
                                 invite = name == null && conv.contactId in ui.invites,
+                                online = name != null && conv.contactId in ui.online,
                                 onClick = { onOpen(conv.contactId) },
                                 onLongClick = { actionsFor = conv.contactId to (name ?: "Desconhecido") },
                             )
@@ -658,6 +671,7 @@ fun HomeScreen(
                         ConversationRow(
                             c.nickname, c.contactId, null,
                             blocked = c.contactId in ui.blocked,
+                            online = c.contactId in ui.online,
                             onClick = { onOpen(c.contactId) },
                             onLongClick = { actionsFor = c.contactId to c.nickname },
                         )
@@ -713,16 +727,57 @@ fun EmptyConversations(onMyId: () -> Unit) {
     }
 }
 
+/** "Online agora": os contactos com a app aberta, numa fila no topo da lista (tocar abre a conversa). */
+@Composable
+fun OnlineNowStrip(contacts: List<Contact>, onOpen: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+        Text(
+            "Online agora", Modifier.padding(horizontal = 16.dp),
+            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        LazyRow(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(contacts, key = { it.contactId }) { c ->
+                Column(
+                    Modifier.width(64.dp).clip(RoundedCornerShape(12.dp)).clickable { onOpen(c.contactId) }.padding(4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Avatar(c.nickname, c.contactId, sizeDp = 48, online = true)
+                    Spacer(Modifier.height(4.dp))
+                    Text(c.nickname, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+    }
+}
+
 /** Avatar com as iniciais, numa cor estavel por contacto. */
 @Composable
-fun Avatar(name: String, seed: String, sizeDp: Int = 48) {
+fun Avatar(name: String, seed: String, sizeDp: Int = 48, online: Boolean = false) {
     val palette = LocalChatColors.current.avatarPalette
     val color = palette[(seed.hashCode() and 0x7fffffff) % palette.size]
     val initials = name.trim().split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase() }.ifBlank { "?" }
-    Box(Modifier.size(sizeDp.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
-        Text(initials, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = (sizeDp / 2.6).sp)
+    Box(Modifier.size(sizeDp.dp)) {
+        Box(Modifier.matchParentSize().clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+            Text(initials, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = (sizeDp / 2.6).sp)
+        }
+        // Ponto verde: o contacto tem a app aberta agora (presenca).
+        if (online) {
+            Box(
+                Modifier.align(Alignment.BottomEnd).size((sizeDp / 4).coerceAtLeast(10).dp)
+                    .clip(CircleShape).background(MaterialTheme.colorScheme.surface).padding(2.dp)
+                    .clip(CircleShape).background(OnlineGreen)
+                    .semantics { contentDescription = "online" },
+            )
+        }
     }
 }
+
+/** Cor do ponto "online". */
+val OnlineGreen = Color(0xFF2EB872)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -732,13 +787,14 @@ fun ConversationRow(
     invite: Boolean = false,
     /** Nos grupos: quem escreveu a ultima mensagem recebida ("Ana: ..."). */
     previewPrefix: String? = null,
+    online: Boolean = false,
     onClick: () -> Unit, onLongClick: () -> Unit = {},
 ) {
     val last = conv?.lastMessage
     val unread = conv?.unread ?: 0u
     Column(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Avatar(name, contactId)
+            Avatar(name, contactId, online = online)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -979,11 +1035,15 @@ fun ChatScreen(
                 onBack = onBack,
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Avatar(name, contactId, sizeDp = 38)
+                        val isOnline = contact != null && contactId in ui.online
+                        Avatar(name, contactId, sizeDp = 38, online = isOnline)
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("cifrada ponta a ponta", style = MaterialTheme.typography.labelSmall, color = colors.onTopBar.copy(alpha = 0.8f))
+                            Text(
+                                if (isOnline) "online" else "cifrada ponta a ponta",
+                                style = MaterialTheme.typography.labelSmall, color = colors.onTopBar.copy(alpha = 0.8f),
+                            )
                         }
                     }
                 },

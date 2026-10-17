@@ -328,7 +328,7 @@ fun GroupInfoScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     val n = ui.memberName(m.contactId)
-                    Avatar(n, m.contactId, sizeDp = 40)
+                    Avatar(n, m.contactId, sizeDp = 40, online = m.contactId in ui.online)
                     Spacer(Modifier.width(12.dp))
                     Text(n, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (m.admin) {
