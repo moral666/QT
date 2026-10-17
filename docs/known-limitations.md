@@ -80,8 +80,9 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     (desde a 0.7.0): 30 s depois de a app sair do ecrã, fecha as ligações ao relay (antes
     ficavam abertas, com ping e pedido de espera de 25 em 25 s, a gastar bateria sem mostrar
     nada); ao voltar, religa e vai buscar o que chegou. Até lá, quem envia vê só ✓.
-34. Sem ABI `x86_64` com o NDK r26d (o OpenSSL embebido não compila o assembly x86 de SM3/SM4);
-    testar em telemóvel arm64, ou compilar com um NDK mais recente.
+34. Sem ABI `x86_64` com o NDK r26d (o OpenSSL embebido não compila o assembly x86 de SM3/SM4).
+    Com o NDK 30 (30.0.16248370) compila: `ABIS="arm64-v8a armeabi-v7a x86_64"`. Sem a
+    x86_64, a app fecha logo no emulador do Android Studio (não encontra `libqt_ffi.so`).
 35. **Bloqueio da app (Android):** o código só tem números (mínimo 6). Fora do telemóvel não serve
     para nada, porque a chave cifrada também depende do Keystore do aparelho. Mas num telemóvel com
     root, quem conseguir correr código como a app pode tentar códigos através desse Keystore: cada
