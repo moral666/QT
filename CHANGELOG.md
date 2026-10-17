@@ -23,6 +23,9 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   reabre sozinha por causa de um pedido que estivesse a meio.
 - Android, memória: a sessão Noise (no Rust) de cada ligação é libertada logo que a
   ligação fecha ou falha, em vez de esperar pelo GC do Java.
+- Android, rede: um só cliente HTTP (OkHttp) para as 3 ligações, em vez de um por
+  ligação. Os certificados do sistema são preparados uma vez e as ligações novas
+  reaproveitam a sessão TLS: religar ao voltar à app gasta menos tempo e bateria.
 
 ### 17 de outubro de 2026: tempo de envio
 
