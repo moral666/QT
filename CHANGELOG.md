@@ -6,7 +6,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
-### 17 de outubro de 2026: apagar a conta também no servidor (app 0.4-alpha)
+### 17 de outubro de 2026: apagar a conta também no servidor (app 0.7.0)
 
 - Novo pedido `DeleteAccount`: o relay apaga o bundle de chaves públicas, a fila de
   mensagens e a contagem de anexos da identidade. Durante 30 dias recusa mensagens
