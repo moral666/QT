@@ -846,6 +846,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Envia uma mensagem de voz gravada (`file` e apagado no fim, cifrado ou nao). */
+    fun sendVoice(contact: Contact, file: File, durationMs: Long) = io {
+        val client = qt ?: return@io
+        try {
+            ensureSession(client, contact)
+            client.attachmentCreate(contact.contactId, file.path, VOICE_MIME, durationMs.coerceIn(1L, VOICE_MAX_MS).toUInt(), 0u)
+            refreshViews(client)
+            transferKick.trySend(Unit)
+        } catch (e: Exception) {
+            error("Não foi possível enviar a mensagem de voz: ${e.safeMsg()}")
+        } finally {
+            file.delete()
+        }
+    }
+
     /** Reagir com um emoji a uma mensagem (vazio = retirar a minha reacao). */
     fun react(contactId: String, messageId: String, emoji: String) = io {
         val client = qt ?: return@io
