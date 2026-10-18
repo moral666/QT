@@ -297,6 +297,13 @@ fn pending_msg_id(p: &[u8]) -> Option<&[u8]> {
     }
 }
 
+/// Envelope de grupo que nao e uma mensagem (reacao, info, saida): vai `silent`,
+/// sem campainha a uma app fechada.
+pub(crate) fn is_silent_envelope(c: &st::rusqlite::Connection, outbox_id: &[u8]) -> Result<bool, QtError> {
+    let pending = st::kv_get(c, &format!("{KV_OUT}{}", hex(outbox_id)))?;
+    Ok(pending.as_deref().is_some_and(|p| pending_msg_id(p).is_none()))
+}
+
 /// O relay confirmou um envelope de grupo (`outbox_sent`).
 pub(crate) fn on_outbox_sent(c: &st::rusqlite::Connection, outbox_id: &[u8]) -> Result<(), QtError> {
     let key = format!("{KV_OUT}{}", hex(outbox_id));

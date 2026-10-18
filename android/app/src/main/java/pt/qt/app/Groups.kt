@@ -102,10 +102,7 @@ fun GroupChatScreen(
     LaunchedEffect(nearOldest, msgs.size, ui.chatHasMore) {
         if (nearOldest && ui.chatHasMore) onLoadOlder()
     }
-    val newest = msgs.firstOrNull()?.seq
-    LaunchedEffect(newest) {
-        if (listState.firstVisibleItemIndex <= 1) listState.animateScrollToItem(0)
-    }
+    FollowNewest(listState, msgs.firstOrNull()?.seq, msgs.firstOrNull()?.outgoing == true)
     Scaffold(
         topBar = {
             SealerTopBar(

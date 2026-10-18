@@ -230,3 +230,86 @@ fn sessoes_cruzadas_nao_perdem_anexos() {
         let _ = std::fs::remove_file(src);
     }
 }
+
+#[test]
+fn recibos_convites_e_presenca_vao_sem_campainha() {
+    let a = peer("sa", 0x77);
+    let b = peer("sb", 0x78);
+    a.start_with(&b);
+    a.c.send_text(b.cid(), "olá".into()).unwrap();
+    // Convite (o meu Public ID) primeiro, sem campainha; depois a mensagem, com campainha.
+    let out = a.c.outbox().unwrap();
+    assert_eq!(out.iter().map(|i| i.silent).collect::<Vec<_>>(), vec![true, false]);
+    assert!(out.iter().all(|i| i.relay_id.is_none()));
+    settle(&a, &b);
+    // O recibo "entregue" do Bob tambem vai sem campainha.
+    b.c.send_text(a.cid(), "resposta".into()).unwrap();
+    b.c.prepare_delivery_receipts().unwrap();
+    let flags: Vec<bool> = b.c.outbox().unwrap().iter().map(|i| i.silent).collect();
+    assert!(flags.contains(&false), "a mensagem toca: {flags:?}");
+    let req = String::from_utf8(b.c.relay_request_send_item(a.c.relay_user_id().unwrap(), b.c.outbox().unwrap()[0].clone()).unwrap()).unwrap();
+    assert!(req.contains("\"silent\""), "{req}");
+}
+
+#[test]
+fn apagar_contacto_avisa_e_o_outro_volta_a_conseguir_escrever() {
+    let a = peer("ea", 0x81);
+    let b = peer("eb", 0x82);
+    a.start_with(&b);
+    a.c.send_text(b.cid(), "olá".into()).unwrap();
+    settle(&a, &b);
+    b.c.send_text(a.cid(), "resposta".into()).unwrap();
+    settle(&a, &b);
+
+    // A Alice apaga o Bob e avisa (o aviso vai para o endereco dele, que ja nao esta nos contactos).
+    let b_relay = b.c.relay_user_id().unwrap();
+    a.c.delete_contact_notify(b.cid(), b_relay.clone()).unwrap();
+    assert!(!a.c.has_session(b.cid()).unwrap());
+    assert!(a.texts(&b.cid()).is_empty());
+    let out = a.c.outbox().unwrap();
+    assert_eq!(out.len(), 1, "so o aviso");
+    assert!(out[0].silent);
+    assert_eq!(out[0].relay_id.as_deref(), Some(b_relay.as_str()));
+
+    // O Bob escreve antes de o aviso chegar: a Alice nao consegue ler (sem sessao).
+    b.c.send_text(a.cid(), "perdida".into()).unwrap();
+    relay(&b, &a);
+    assert!(a.texts(&b.cid()).is_empty());
+
+    // O aviso chega: o Bob apaga a sessao, mas fica com o contacto e o historico.
+    relay(&a, &b);
+    assert!(a.c.outbox().unwrap().is_empty());
+    assert!(!b.c.has_session(a.cid()).unwrap());
+    assert_eq!(b.c.sessions_to_restart().unwrap(), vec![a.cid()]);
+    assert_eq!(b.texts(&a.cid()).len(), 3, "{:?}", b.texts(&a.cid()));
+    assert!(b.c.outbox().unwrap().is_empty(), "o que foi cifrado com a sessao antiga fica retido");
+
+    // A app do Bob abre uma sessao nova: a mensagem perdida volta a seguir, com o convite.
+    b.start_with(&a);
+    assert!(b.c.sessions_to_restart().unwrap().is_empty());
+    settle(&a, &b);
+    assert!(a.texts(&b.cid()).contains(&"perdida".to_string()), "{:?}", a.texts(&b.cid()));
+    assert_eq!(a.c.pending_intro(b.cid()).unwrap(), Some(b.id.public_id.clone()), "aparece como convite");
+    assert_eq!(a.texts(&b.cid()).len(), 1, "sem duplicados: {:?}", a.texts(&b.cid()));
+
+    // E a conversa continua nos dois sentidos.
+    b.c.send_text(a.cid(), "outra".into()).unwrap();
+    settle(&a, &b);
+    assert!(a.texts(&b.cid()).contains(&"outra".to_string()));
+    a.c.send_text(b.cid(), "aceite".into()).unwrap();
+    settle(&a, &b);
+    assert!(b.texts(&a.cid()).contains(&"aceite".to_string()));
+}
+
+#[test]
+fn apagar_contacto_bloqueado_nao_avisa() {
+    let a = peer("fa", 0x83);
+    let b = peer("fb", 0x84);
+    a.start_with(&b);
+    a.c.send_text(b.cid(), "olá".into()).unwrap();
+    settle(&a, &b);
+    a.c.block_contact(b.cid()).unwrap();
+    a.c.delete_contact_notify(b.cid(), b.c.relay_user_id().unwrap()).unwrap();
+    assert!(a.c.outbox().unwrap().is_empty());
+    assert!(a.c.delete_contact_notify(b.cid(), "x".into()).is_err());
+}

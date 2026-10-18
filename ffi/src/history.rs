@@ -44,6 +44,10 @@ pub(crate) const T_REACTION: u8 = 5;
 pub(crate) const T_GROUP_MSG: u8 = 6;
 pub(crate) const T_GROUP_INFO: u8 = 7;
 pub(crate) const T_GROUP_LEAVE: u8 = 8;
+/// Tipo 10: "sessao terminada". Quem apagou o contacto avisa, com a sessao antiga, que
+/// apagou as chaves: quem recebe apaga a sessao dele e a proxima mensagem abre uma nova
+/// (do outro lado aparece como convite). Corpo vazio. Nunca mostrado no ecra.
+pub(crate) const T_SESSION_END: u8 = 10;
 /// Emoji maximo por reacao (bytes UTF-8): chega para um emoji composto (familia, bandeira).
 const MAX_EMOJI_BYTES: usize = 32;
 pub(crate) const HDR: usize = 1 + 1 + 16 + 8;
@@ -56,6 +60,12 @@ const KV_PENDING_DELIVERED: &str = "rcpt_delivered:";
 pub(crate) const KV_SEND_INTRO: &str = "send_intro:";
 /// Recebido: o Public ID de quem me escreveu sem estar nos meus contactos (convite).
 const KV_INTRO: &str = "intro:";
+/// O contacto terminou a sessao (tipo 10): falta abrir uma nova e voltar a cifrar o
+/// que estava por entregar. Enquanto isto existir, a outbox dele fica retida.
+pub(crate) const KV_RESTART: &str = "restart:";
+/// Endereco no relay de uma entrada da outbox para quem ja nao esta nos contactos
+/// (o aviso "sessao terminada" de `delete_contact_notify`).
+const KV_OUT_RELAY: &str = "out_relay:";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum MessageStatus {
@@ -127,8 +137,14 @@ pub struct ConversationSummary {
 pub struct OutboxItem {
     pub outbox_id: String,
     pub contact_id: String,
-    /// Envelope selado, pronto para `relay_request_send`.
+    /// Envelope selado, pronto para `relay_request_send_item`.
     pub blob: Vec<u8>,
+    /// Recibo, reacao, convite ou presenca: o relay entrega, mas nao toca a
+    /// campainha (notificacao) a uma app fechada. Mensagens e grupos: `false`.
+    pub silent: bool,
+    /// So no aviso "sessao terminada" a quem ja nao esta nos contactos: o endereco no
+    /// relay (nos outros casos, `None`: a app usa o do contacto).
+    pub relay_id: Option<String>,
 }
 
 #[derive(Debug, Clone, uniffi::Enum)]
@@ -271,6 +287,8 @@ enum Payload {
     GroupLeave { body: Vec<u8> },
     /// Presenca (ver `presence.rs`): o contacto abriu ou fechou a app.
     Presence { online: bool, sent_at: i64 },
+    /// O contacto apagou-me e as chaves da sessao (tipo 10).
+    SessionEnd,
     /// Mensagem de controlo invalida: ignora-se, sem aviso.
     Ignored,
 }
@@ -333,6 +351,7 @@ fn decode(plain: &[u8], legacy_id: &[u8]) -> Payload {
             [state @ (0 | 1)] => Payload::Presence { online: *state == 1, sent_at },
             _ => Payload::Ignored,
         },
+        T_SESSION_END => Payload::SessionEnd,
         T_INTRO => match std::str::from_utf8(&plain[HDR..]) {
             Ok(p) if p.len() <= 200 => Payload::Intro { public_id: p.to_string() },
             _ => Payload::Ignored,
@@ -478,7 +497,7 @@ impl QtClient {
         hm::insert_message(&tx, &id, &contact_id, true, hm::KIND_TEXT, &text, now, now, hm::ST_PENDING)?;
         hm::outbox_put(&tx, &id, &contact_id, hm::OUTBOX_MESSAGE, &blob)?;
         tx.commit()?;
-        Ok(OutboxItem { outbox_id: hex(&id), contact_id, blob })
+        Ok(OutboxItem { outbox_id: hex(&id), contact_id, blob, silent: false, relay_id: None })
     }
 
     /// REAGIR a uma mensagem desta conversa (minha ou do contacto) com um emoji;
@@ -506,10 +525,26 @@ impl QtClient {
     /// de rede ou reinicio da app), pela ordem em que foi criado.
     pub fn outbox(&self) -> Result<Vec<OutboxItem>, QtError> {
         let c = self.lock()?;
-        Ok(hm::outbox_all(&c)?
+        // Contactos que terminaram a sessao: o que la esta foi cifrado com a sessao antiga
+        // e volta a ser cifrado quando abrir a nova (`requeue_after_session_reset`).
+        let restart: std::collections::HashSet<String> = {
+            let mut stmt = c.prepare("SELECT k FROM kv WHERE k LIKE ?1")?;
+            let rows = stmt.query_map([format!("{KV_RESTART}%")], |r| r.get::<_, String>(0))?;
+            rows.collect::<Result<Vec<_>, _>>()?.into_iter().map(|k| k[KV_RESTART.len()..].to_string()).collect()
+        };
+        hm::outbox_all(&c)?
             .into_iter()
-            .map(|e| OutboxItem { outbox_id: hex(&e.outbox_id), contact_id: e.contact_id, blob: e.blob })
-            .collect())
+            .filter(|e| !restart.contains(&e.contact_id))
+            .map(|e| -> Result<OutboxItem, QtError> {
+                let silent = match e.kind {
+                    hm::OUTBOX_RECEIPT => true,
+                    hm::OUTBOX_GROUP => crate::groups::is_silent_envelope(&c, &e.outbox_id)?,
+                    _ => false,
+                };
+                let relay_id = st::kv_get(&c, &format!("{KV_OUT_RELAY}{}", hex(&e.outbox_id)))?.and_then(|v| String::from_utf8(v).ok());
+                Ok(OutboxItem { outbox_id: hex(&e.outbox_id), contact_id: e.contact_id, silent, relay_id, blob: e.blob })
+            })
+            .collect()
     }
 
     /// O relay confirmou (`Ack`) o envio deste item: sai da outbox e, se era
@@ -518,6 +553,7 @@ impl QtClient {
         let id = parse_msg_id(&outbox_id)?;
         let c = self.lock()?;
         let tx = c.unchecked_transaction()?;
+        st::kv_delete(&tx, &format!("{KV_OUT_RELAY}{}", hex(&id)))?;
         if let Some(e) = hm::outbox_take(&tx, &id)? {
             if e.kind == hm::OUTBOX_MESSAGE {
                 hm::mark_sent(&tx, &id)?;
@@ -611,6 +647,7 @@ impl QtClient {
                 Payload::GroupInfo { body } => crate::groups::on_group_info(tx, contact_id, &body)?,
                 Payload::GroupLeave { body } => crate::groups::on_group_leave(self, tx, contact_id, &body)?,
                 Payload::Presence { online, sent_at } => crate::presence::on_presence(self, tx, contact_id, online, sent_at)?,
+                Payload::SessionEnd => on_session_end(tx, contact_id)?,
                 Payload::Ignored => ReceiveResult::NoChange { contact_id: contact_id.to_string() },
                 Payload::Unsupported { id, sent_at } => {
                     match hm::insert_message(tx, &id, contact_id, false, hm::KIND_TEXT, UNSUPPORTED_TEXT, sent_at, now, hm::ST_RECEIVED)? {
@@ -720,11 +757,67 @@ impl QtClient {
     /// contacto em claro), para o relay nao conseguir reentregar mensagens
     /// antigas. Se o contacto voltar a ser adicionado, comeca uma sessao nova.
     pub fn delete_contact(&self, contact_id: String) -> Result<(), QtError> {
+        self.delete_contact_inner(contact_id, None)
+    }
+
+    /// Como `delete_contact`, mas antes de apagar as chaves poe na outbox o aviso
+    /// "sessao terminada" (tipo 10, cifrado com a sessao que vai ser apagada) para
+    /// `relay_id` (o endereco do contacto no relay). Sem isto, o contacto continuava a
+    /// cifrar com a sessao antiga e as mensagens dele perdiam-se. Ao receber o aviso,
+    /// a app dele apaga a sessao e a proxima mensagem abre uma nova (aqui aparece como
+    /// convite). Bloqueado ou sem sessao: nao avisa (apaga na mesma).
+    pub fn delete_contact_notify(&self, contact_id: String, relay_id: String) -> Result<(), QtError> {
+        let ok = relay_id.len() == 64 && relay_id.bytes().all(|b| b.is_ascii_hexdigit());
+        if !ok {
+            return Err(bad("relay_id"));
+        }
+        self.delete_contact_inner(contact_id, Some(relay_id))
+    }
+}
+
+/// Tipo 10 recebido (ja autenticado pelo AEAD da sessao, dentro da transacao da
+/// rececao, DEPOIS de a sessao avancada ter sido guardada): o contacto apagou as
+/// chaves dele. Apaga a nossa sessao (o contacto e o historico ficam) e marca que
+/// falta abrir uma nova; a outbox dele fica retida ate la (ver `outbox`).
+fn on_session_end(tx: &st::rusqlite::Connection, contact_id: &str) -> Result<ReceiveResult, QtError> {
+    st::delete_session(tx, contact_id)?;
+    st::kv_delete(tx, &format!("pending:{contact_id}"))?;
+    st::kv_delete(tx, &format!("{KV_PENDING_DELIVERED}{contact_id}"))?;
+    st::kv_set(tx, &format!("{KV_RESTART}{contact_id}"), &[1])?;
+    Ok(ReceiveResult::NoChange { contact_id: contact_id.to_string() })
+}
+
+/// Sessao nova instalada para `contact_id` (`start_session` ou recebida). Se ele
+/// tinha terminado a anterior, volta a cifrar o que estava por entregar (mensagens,
+/// envelopes de grupo) com a nova, depois do convite. Corre na transacao da sessao.
+pub(crate) fn after_new_session(client: &QtClient, tx: &st::rusqlite::Connection, contact_id: &str) -> Result<(), QtError> {
+    let key = format!("{KV_RESTART}{contact_id}");
+    if st::kv_get(tx, &key)?.is_none() || is_blocked_in(tx, contact_id)? {
+        return Ok(());
+    }
+    st::kv_delete(tx, &key)?;
+    // Primeiro o que estava por entregar (isto limpa a outbox antiga dele), depois o convite.
+    requeue_after_session_reset(client, tx, contact_id)?;
+    queue_intro_if_needed(client, tx, contact_id)
+}
+
+impl QtClient {
+    pub(crate) fn delete_contact_inner(&self, contact_id: String, notify_relay: Option<String>) -> Result<(), QtError> {
         let _ = contact_to_identity(&contact_id)?;
         let c = self.lock()?;
         let tx = c.unchecked_transaction()?;
         self.remove_contact_files(&tx, &contact_id)?;
         hm::delete_conversation(&tx, &contact_id)?;
+        // Depois de limpar a outbox dele (fica so o aviso) e antes de apagar a sessao.
+        if let Some(relay) = notify_relay {
+            if !is_blocked_in(&tx, &contact_id)? && st::load_session(&tx, &contact_id)?.is_some() {
+                let blob = self.seal_with(&tx, &contact_id, &encode_control(T_SESSION_END, &[])?)?;
+                let out = new_id()?;
+                hm::outbox_put(&tx, &out, &contact_id, hm::OUTBOX_RECEIPT, &blob)?;
+                st::kv_set(&tx, &format!("{KV_OUT_RELAY}{}", hex(&out)), relay.as_bytes())?;
+            }
+        }
+        st::kv_delete(&tx, &format!("{KV_RESTART}{contact_id}"))?;
         st::kv_delete(&tx, &format!("{KV_PENDING_DELIVERED}{contact_id}"))?;
         st::kv_delete(&tx, &format!("pending:{contact_id}"))?;
         st::kv_delete(&tx, &format!("{}{contact_id}", crate::client::KV_PEER_EPH))?;
@@ -733,6 +826,20 @@ impl QtClient {
         st::delete_session(&tx, &contact_id)?;
         tx.commit()?;
         Ok(())
+    }
+}
+
+#[uniffi::export]
+impl QtClient {
+    /// Contactos que terminaram a sessao (tipo 10) e com quem ainda nao ha sessao
+    /// nova. A app abre uma (`relay_request_fetch_bundle` + `start_session`) para o
+    /// que estava por entregar seguir logo, sem esperar pela proxima mensagem.
+    pub fn sessions_to_restart(&self) -> Result<Vec<String>, QtError> {
+        let c = self.lock()?;
+        let mut stmt = c.prepare("SELECT k FROM kv WHERE k LIKE ?1")?;
+        let rows = stmt.query_map([format!("{KV_RESTART}%")], |r| r.get::<_, String>(0))?;
+        let keys = rows.collect::<Result<Vec<_>, _>>()?;
+        Ok(keys.into_iter().map(|k| k[KV_RESTART.len()..].to_string()).collect())
     }
 }
 

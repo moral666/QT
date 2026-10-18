@@ -41,6 +41,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
   novas", sem decifrar nada em segundo plano. Nome/texto na notificação (opção 2) fica para depois.
   App: `Push.kt` lê `android/app/google-services.json` (fora do git). Relay: `/etc/qt/fcm.json`
   (conta de serviço, fora do git) e o `setup-ec2.sh` liga as notificações se o ficheiro existir.
+  Só tocam para mensagens: recibos, reações, convites e presença vão com `silent: true` (18/10/2026).
 
 ## O projeto
 
@@ -61,8 +62,8 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 
 `[1 versão=0x01][1 tipo][16 msg_id][8 sent_at]` e o corpo. Tipos: 1 texto,
 2 recibo, 3 anexo (imagem, GIF ou voz `audio/mp4`), 4 convite, 5 reação,
-6 mensagem de grupo, 7 info do grupo, 8 saída do grupo, 9 presença. O próximo
-tipo livre é o 10. Uma versão antiga mostra "atualiza a app" para tipos novos.
+6 mensagem de grupo, 7 info do grupo, 8 saída do grupo, 9 presença, 10 sessão terminada. O próximo
+tipo livre é o 11. Uma versão antiga mostra "atualiza a app" para tipos novos.
 Ficheiros: tipo 3 com o corpo na versão 2 (com o nome); imagens e voz na versão 1.
 
 ### Funcionalidades da 0.8.0
@@ -136,6 +137,8 @@ o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo
   e procurar "expecting|syntax|unexpected|unclosed". A build do Nuno é o teste real.
 - `curl` para sealer.pt e sslip.io é bloqueado: usar o WebFetch.
 - Não usar `pkill -f` (mata a própria shell).
+- Às vezes o crates.io e o push para o GitHub estão bloqueados na nuvem: aí o Rust não compila
+  aqui (só `rustfmt --check` para a sintaxe) e o Nuno faz o commit e o push no PC; a CI compila e testa.
 
 ## Por decidir (perguntar quando fizer sentido)
 

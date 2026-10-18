@@ -417,9 +417,10 @@ Um pedido ↔ uma resposta, sequenciais.
    O bundle expira ao fim de 90 dias; as apps voltam a publicá-lo sempre que abrem
    (arranque, desbloqueio ou ID novo), por isso só expira para quem não abre a app há 90 dias.
 3. `FetchPreKeyBundle{user_id}`: qualquer utilizador autenticado.
-4. `SendMessage{to, sealed_from, ciphertext}`: `to` = 64 hex minúsculos;
+4. `SendMessage{to, sealed_from, ciphertext, silent}`: `to` = 64 hex minúsculos;
    `ciphertext` 1…14 000 bytes; `sealed_from` ≤ 1024 (vazio no modo `QtClient`,
    que envia o blob selado inteiro em `ciphertext`); fila ≤ 1000 mensagens.
+   `silent` (opcional, `false` se faltar): entregue igual, mas sem campainha (secção 17).
 5. `FetchMessages{user_id}`: só a própria fila; **não apaga**; devolve uma
    página (≈ 40 kB de JSON) de `{id, sealed_from, ciphertext}`.
    `WaitMessages{user_id, timeout_secs}`: igual a `FetchMessages`, mas, com a
@@ -469,6 +470,7 @@ tipo 6 = mensagem de grupo: [16 group_id][payload v1 completo: tipo 1, 3 ou 5]
 tipo 7 = info do grupo:     [16 group_id][JSON: versão, nome, membros e administradores]
 tipo 8 = saída do grupo:    [16 group_id]
 tipo 9 = presença: [1 estado: 1 = online, 0 = offline]  (msg_id sempre o mesmo)
+tipo 10 = sessão terminada: [vazio]
 ```
 
 **Mensagens de voz** são anexos (tipo 3) com o MIME `audio/mp4` (AAC), até 10 s e 1 MiB;
@@ -518,6 +520,20 @@ registos anti-repeticao, que sao trocados por `SHA-256("QT-SEEN-TOMBSTONE-v1"
 || len || contact_id || envelope_id)`: um envelope antigo reentregue pelo relay
 continua a ser reconhecido, sem o contacto ficar em claro. Tudo com
 `secure_delete` (paginas apagadas sobrescritas).
+
+**Sessao terminada (tipo 10, desde a app 0.9.0 de 18/10/2026).** Sem aviso, quem foi
+apagado continuava a cifrar com a sessao antiga: a app de quem apagou nao tinha chaves
+(`UnknownSession`), confirmava e descartava, e as mensagens perdiam-se em silencio.
+Agora, antes de apagar as chaves (`delete_contact_notify`, tambem ao recusar um
+convite), a app cifra um tipo 10 com a sessao que vai apagar e deixa-o na outbox com o
+endereco do contacto no relay (ele ja nao esta nos contactos). Bloqueado: nao avisa.
+Quem recebe (autenticado pelo AEAD da sessao) apaga a sessao dele, fica com o contacto
+e o historico, e retem a outbox desse contacto (`restart:`). A app abre logo uma
+sessao nova (`sessions_to_restart` + `start_session`): o que estava por entregar
+(mensagens sem recibo "entregue" e envelopes de grupo) volta a ser cifrado com a sessao
+nova, seguido do convite (tipo 4). Do lado de quem apagou, chega como convite. Se a
+sessao nova vier do outro lado primeiro, o reenvio acontece ao recebe-la. Uma versao
+antiga mostra o tipo 10 como "atualiza a app". Testes: `ffi/tests/session_reset.rs`.
 
 **Tipos desconhecidos.** Um payload v1 com tipo que a versao nao conhece e
 guardado como aviso ("atualiza a app"), nunca como texto.
@@ -624,6 +640,13 @@ do Firebase Cloud Messaging deste telemóvel (só letras, dígitos e `-_:.`, at�
 token, `priority: HIGH`, `ttl: 3600s`, `collapse_key: qt` e o campo fixo `{"qt": "1"}`. Não leva o
 remetente, o conteúdo, o tamanho nem o `user_id`. Um token que a Google diga já não existir é
 apagado. Sem `QT_FCM_CREDENTIALS` no relay, as notificações ficam desligadas.
+
+**Só para mensagens.** Recibos, reações, convites, presença e envelopes de grupo que não são
+mensagens (info, saída, reações) vão com `SendMessage{…, silent: true}` (`OutboxItem.silent`,
+`relay_request_send_item`): o relay entrega-os, mas não toca. Antes tocava para tudo, por isso
+alguém abrir a app (presença a todos os contactos) ou ler uma mensagem acordava os outros com
+"Tens mensagens novas". O relay fica a saber que um envio é "silencioso", não o conteúdo nem
+quem o enviou. Um relay antigo ignora o campo (toca sempre); uma app antiga não o envia.
 
 **Na app.** Ao receber a campainha, a app mostra sempre a mesma notificação, "Tens mensagens
 novas", sem abrir a base de dados nem decifrar nada em segundo plano (funciona com o telemóvel

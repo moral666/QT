@@ -6,6 +6,27 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 18 de outubro de 2026: notificações só para mensagens, contactos apagados e scroll (app 0.9.0)
+
+- **Notificações só quando há mensagens.** O relay tocava a campainha (FCM) para tudo o que
+  chegava a uma app fechada, incluindo a presença (enviada a todos os contactos sempre que alguém
+  abre a app) e os recibos. Agora recibos, reações, convites, presença e envelopes de grupo que
+  não são mensagens vão com `SendMessage{…, silent: true}` e não tocam (`OutboxItem.silent`,
+  `relay_request_send_item`). Relay e app têm de ser atualizados; um relay antigo ignora o campo.
+- **Apagar um contacto já não o impede de voltar a escrever.** Antes, só quem apagava esquecia a
+  sessão; o outro continuava a cifrar com ela e as mensagens perdiam-se em silêncio. Agora, antes
+  de apagar as chaves, a app envia o aviso cifrado "sessão terminada" (tipo 10,
+  `delete_contact_notify`; também ao recusar um convite, nunca a quem está bloqueado). Quem o
+  recebe apaga a sessão (fica com o contacto e o histórico), abre logo uma nova e volta a enviar o
+  que não tinha sido entregue; do outro lado aparece como convite. Só vale para contactos apagados
+  a partir desta versão: para os que já estavam avariados, quem não consegue escrever apaga o
+  contacto e volta a adicioná-lo.
+- **Scroll automático com muitas mensagens seguidas** (a dois e nos grupos, `FollowNewest` em
+  `MainActivity.kt`): a lista só deixa de seguir as mensagens novas quando a pessoa a arrasta para
+  cima. Antes, quando chegavam várias de uma vez, ficava parada.
+- Testes: `server/tests/relay_push_send.rs` (envio `silent` não toca) e
+  `ffi/tests/session_reset.rs` (aviso, reenvio do que se perdeu, convite, bloqueado não avisa).
+
 ### 17 de outubro de 2026: ficheiros e anexos nos grupos (app 0.9.0)
 
 - **Ficheiros até 25 MB** (PDF, documentos, folhas de cálculo, etc.): botão "+" > "Ficheiro".
