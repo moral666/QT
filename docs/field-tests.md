@@ -26,7 +26,7 @@ envios simultâneos e em rajada a partir de vários aparelhos ao mesmo tempo.
 | 1 Mac | macOS, com o simulador de iPhone do Xcode | SealerMessenger (SwiftUI) |
 
 - **Relay:** AWS EC2 `t3.small` (região eu-north-1, Estocolmo), relay atrás do
-  Caddy com TLS (`wss://`, certificado Let's Encrypt), pinning da chave Noise
+  Caddy com TLS (`wss://`, certificado Let's Encrypt; desde 18/10/2026 é o HAProxy), pinning da chave Noise
   nas apps, Redis só em `127.0.0.1` com ACL.
 - **Núcleo:** o mesmo código Rust nas duas plataformas (PQXDH com
   X25519 + ML-KEM-768, Double Ratchet, Sealed Sender, histórico e fila de saída
@@ -68,9 +68,8 @@ envios simultâneos e em rajada a partir de vários aparelhos ao mesmo tempo.
 ### Ainda por testar
 
 - Notificações (as apps só recebem mensagens enquanto estão abertas).
-- Muitos utilizadores em simultâneo no relay da AWS (teste de carga com
-  `loadtest` e `conntest` contra a instância real). Numa máquina local, o relay
-  aguentou 10 000 ligações em simultâneo: ver `performance.md`.
+- Muitas ligações em simultâneo com o HAProxy (o teste com o Caddy, a
+  18/10/2026, está em `performance.md`, secção "Na AWS").
 - Mensagens longas perto do limite (cerca de 9 000 caracteres) e a fila do
   relay cheia (1 000 mensagens à espera para a mesma pessoa).
 - Redes instáveis (perda de rede a meio de um envio, modo avião).

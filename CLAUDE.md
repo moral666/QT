@@ -130,6 +130,8 @@ o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo
 - O Redis de produção tem uma ACL com poucos comandos (ver `server/tests/redis_acl.rs`):
   sem SETEX nem EXISTS (usar SET + EXPIRE e GET).
 - Estado e tempos públicos: `https://sealer.pt/api/estado` (Worker em `site/worker/`).
+- TLS no servidor: **HAProxy + certbot** (desde 18/10/2026; antes Caddy, que gastava ~137 KB por
+  ligação). Sem registos de acesso. Limite medido com o Caddy: ~8 000 ligações (2 por app aberta).
 
 ## Ambiente do Claude (nuvem)
 

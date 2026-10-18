@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Instala o relay QT numa EC2 nova (Ubuntu 24.04, x86_64 ou ARM), de uma vez:
-#   Redis (so localhost, ACL)  ->  relay (systemd, so localhost)  ->  Caddy (TLS, wss://)
+#   Redis (so localhost, ACL)  ->  relay (systemd, so localhost)  ->  HAProxy (TLS, wss://)
+#   Certificado: Let's Encrypt pelo certbot (renovacao automatica).
 #
 # Uso, na EC2:
 #   curl -fsSLO https://raw.githubusercontent.com/moral666/QT/security-hardening/deploy/aws/setup-ec2.sh
@@ -35,10 +36,10 @@ fi
 log "Nome publico do relay: $DOMAIN"
 
 # ---------- 1. Pacotes ----------
-log "A instalar pacotes (Redis, Caddy, ferramentas de compilacao)"
+log "A instalar pacotes (Redis, HAProxy, certbot, ferramentas de compilacao)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q build-essential pkg-config git curl ca-certificates redis-server caddy
+apt-get install -y -q build-essential pkg-config git curl ca-certificates redis-server haproxy certbot python3
 
 # ---------- 2. Swap (instancias de 1-2 GB ficam sem memoria a compilar com LTO) ----------
 if ! swapon --show | grep -q /swapfile; then
@@ -69,7 +70,7 @@ cargo build --release --manifest-path "$SRC/Cargo.toml" -p qt_server --bin relay
 # ---------- 4. Utilizador e binario ----------
 id qt >/dev/null 2>&1 || useradd --system --home /var/lib/qt --shell /usr/sbin/nologin qt
 install -d -o qt -g qt -m 700 /var/lib/qt
-# Estado publico (tempo medio de entrega), lido pelo Caddy: so este ficheiro, nada mais.
+# Estado publico (tempo medio de entrega), servido em /estado.json: so este ficheiro, nada mais.
 install -d -o qt -g qt -m 755 /var/lib/qt-estado
 install -d -o root -g qt -m 750 /etc/qt
 install -o root -g root -m 755 "$SRC/target/release/relay_server" /usr/local/bin/qt-relay
@@ -94,12 +95,15 @@ cat > "$ENV_FILE" <<EOF
 RELAY_BIND_ADDR=127.0.0.1:9443
 REDIS_URL=redis://qt-relay:${REDIS_PASS}@127.0.0.1:6379
 NOISE_KEY_PATH=/var/lib/qt/relay_noise_key.bin
-# Tempo medio de entrega (anonimo), publicado pelo Caddy em /estado.json para o site.
+# Tempo medio de entrega (anonimo), publicado em /estado.json para o site.
 RELAY_STATUS_FILE=/var/lib/qt-estado/estado.json
 # Imagens/GIFs (ja cifrados pelas apps) em /var/lib/qt/anexos, apagados ao fim de 24 h.
 RELAY_BLOB_MAX_TOTAL_MB=${RELAY_BLOB_MAX_TOTAL_MB:-2048}
 RELAY_BLOB_USER_DAILY_MB=${RELAY_BLOB_USER_DAILY_MB:-1024}
 RELAY_BLOB_MIN_FREE_MB=${RELAY_BLOB_MIN_FREE_MB:-1024}
+# Ligacoes em simultaneo (cada app aberta usa 2). Com o Caddy a memoria de um t3.small
+# (2 GB) acabava perto das 8000 (medido a 18/10/2026); com o HAProxy chega para isto.
+RELAY_MAX_CONNECTIONS=${RELAY_MAX_CONNECTIONS:-16000}
 EOF
 umask 022
 # Notificacoes com a app fechada (FCM): so se existir /etc/qt/fcm.json (a chave da conta
@@ -130,34 +134,127 @@ systemctl daemon-reload
 systemctl enable qt-relay >/dev/null 2>&1
 systemctl restart qt-relay
 
-# ---------- 7. Caddy (TLS automatico, wss://) ----------
-log "A configurar o Caddy para $DOMAIN"
-cat > /etc/caddy/Caddyfile <<EOF
-# O Caddy obtem o certificado Let's Encrypt sozinho e encaminha os WebSockets.
-$DOMAIN {
-    # Estado publico do relay (tempo medio de entrega), lido pelo site sealer.pt.
-    handle /estado.json {
-        root * /var/lib/qt-estado
-        header Cache-Control "no-store"
-        file_server
-    }
-    handle {
-        reverse_proxy 127.0.0.1:9443
-    }
-    log {
-        output discard
-    }
+# ---------- 7. HAProxy (TLS, wss://) + certificado Let's Encrypt ----------
+# Antes era o Caddy: medido a 18/10/2026, gastava ~137 KB de RAM por ligacao (o relay
+# ~14 KB) e a memoria de um t3.small acabava perto das 8000 ligacoes. O HAProxy so
+# ocupa buffers enquanto ha dados a passar. Sem registos de acesso (nem IPs nem horas).
+if systemctl list-unit-files caddy.service >/dev/null 2>&1; then
+  log "A desligar o Caddy (substituido pelo HAProxy)"
+  systemctl disable --now caddy >/dev/null 2>&1 || true
+  apt-get purge -y -q caddy >/dev/null 2>&1 || true
+fi
+
+# /estado.json: servidor minimo so em localhost, so de leitura, sem registos.
+cat > /etc/systemd/system/qt-estado.service <<'UNIT'
+[Unit]
+Description=QT: /estado.json para o site (so localhost, so leitura)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 -m http.server 9444 --bind 127.0.0.1 --directory /var/lib/qt-estado
+DynamicUser=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ReadOnlyPaths=/var/lib/qt-estado
+StandardOutput=null
+StandardError=null
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable qt-estado >/dev/null 2>&1
+systemctl restart qt-estado
+
+install -d -m 700 /etc/haproxy/certs
+PEM="/etc/haproxy/certs/$DOMAIN.pem"
+
+# Parte comum: porta 80 (desafio do Let's Encrypt para o certbot em 127.0.0.1:8888; o
+# resto vai para https). Sem "log" em lado nenhum: o HAProxy nao regista nada.
+haproxy_base() {
+cat <<'CFG'
+global
+    maxconn 40000
+    user haproxy
+    group haproxy
+    ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets
+
+defaults
+    mode http
+    timeout connect 5s
+    timeout client 60s
+    timeout server 60s
+    # WebSocket aberto e parado (a app espera ate 25 s por mensagens).
+    timeout tunnel 1h
+    timeout http-request 10s
+    timeout client-fin 10s
+
+frontend http
+    bind :80
+    acl acme path_beg /.well-known/acme-challenge/
+    use_backend acme if acme
+    http-request redirect scheme https code 301 unless acme
+
+backend acme
+    server certbot 127.0.0.1:8888
+CFG
 }
-EOF
-systemctl enable caddy >/dev/null 2>&1
-systemctl restart caddy
+
+if [ ! -s "$PEM" ]; then
+  log "A obter o certificado TLS para $DOMAIN (Let's Encrypt)"
+  haproxy_base > /etc/haproxy/haproxy.cfg
+  systemctl enable haproxy >/dev/null 2>&1
+  systemctl restart haproxy
+  certbot certonly --standalone --http-01-port 8888 --http-01-address 127.0.0.1 \
+    -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --keep-until-expiring \
+    || { echo "Falhou o certificado: confirma que a porta 80 esta aberta no Security Group."; exit 1; }
+fi
+
+# Depois de cada renovacao (o certbot.timer corre 2x por dia): junta certificado e chave
+# no ficheiro que o HAProxy le e recarrega sem cortar as ligacoes abertas.
+install -d /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/haproxy.sh <<HOOK
+#!/bin/sh
+umask 077
+cat /etc/letsencrypt/live/$DOMAIN/fullchain.pem /etc/letsencrypt/live/$DOMAIN/privkey.pem > $PEM
+systemctl reload haproxy
+HOOK
+chmod 755 /etc/letsencrypt/renewal-hooks/deploy/haproxy.sh
+( umask 077; cat "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "/etc/letsencrypt/live/$DOMAIN/privkey.pem" > "$PEM" )
+
+log "A configurar o HAProxy para $DOMAIN"
+{
+haproxy_base
+cat <<CFG
+
+frontend https
+    bind :443 ssl crt $PEM alpn http/1.1
+    acl estado path /estado.json
+    use_backend estado if estado
+    default_backend relay
+
+backend relay
+    server relay 127.0.0.1:9443 maxconn 40000
+
+backend estado
+    http-response set-header Cache-Control no-store
+    server estado 127.0.0.1:9444
+CFG
+} > /etc/haproxy/haproxy.cfg
+haproxy -c -q -f /etc/haproxy/haproxy.cfg || { echo "Configuracao do HAProxy invalida"; exit 1; }
+systemctl enable haproxy >/dev/null 2>&1
+systemctl restart haproxy
 
 # ---------- 8. Verificacao ----------
 log "Verificacao"
 sleep 3
 systemctl is-active --quiet redis-server && echo "  Redis: ativo"   || { echo "  Redis: FALHOU (journalctl -u redis-server)"; exit 1; }
 systemctl is-active --quiet qt-relay     && echo "  Relay: ativo"   || { echo "  Relay: FALHOU (journalctl -u qt-relay)"; exit 1; }
-systemctl is-active --quiet caddy        && echo "  Caddy: ativo"   || { echo "  Caddy: FALHOU (journalctl -u caddy)"; exit 1; }
+systemctl is-active --quiet haproxy      && echo "  HAProxy: ativo" || { echo "  HAProxy: FALHOU (journalctl -u haproxy)"; exit 1; }
+systemctl is-active --quiet qt-estado    && echo "  Estado: ativo"  || echo "  Estado: FALHOU (journalctl -u qt-estado); o resto funciona"
 
 echo "  Portas abertas para fora (so devem aparecer 22, 80 e 443):"
 ss -tlnH | awk '{print $4}' | grep -v -E '^(127\.0\.0\.1|\[::1\]):' | sed 's/^/    /'
@@ -169,7 +266,7 @@ for _ in $(seq 1 10); do
   sleep 1
 done
 
-echo "  A obter o certificado TLS (pode levar ate 1 min)..."
+echo "  A verificar o TLS..."
 CERT_OK=no
 for _ in $(seq 1 30); do
   # Qualquer resposta HTTP (mesmo 400, porque nao e um pedido WebSocket) prova que o TLS funciona.
@@ -187,7 +284,7 @@ cat <<EOF
  Na app (URL do relay):   wss://$DOMAIN
  Chave publica (pinning): ${PIN:-<ver: sudo journalctl -u qt-relay | grep pinning>}
 
- Certificado TLS: $( [ "$CERT_OK" = yes ] && echo "OK" || echo "ainda nao - confirma que as portas 80 e 443 estao abertas no Security Group e ve: sudo journalctl -u caddy" )
+ Certificado TLS: $( [ "$CERT_OK" = yes ] && echo "OK" || echo "ainda nao - confirma que as portas 80 e 443 estao abertas no Security Group e ve: sudo journalctl -u haproxy" )
 
  Para a build release, em android/gradle.properties:
    qtRelayUrl=wss://$DOMAIN

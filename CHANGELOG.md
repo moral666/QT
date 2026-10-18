@@ -6,6 +6,17 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 18 de outubro de 2026: HAProxy em vez do Caddy no relay
+
+- **Teste de carga na AWS** (t3.small, `conntest` com TLS real): 4 000 e 6 000 ligações sem
+  falhas; perto das 8 000 a memória acabava. Medido no servidor: o Caddy gastava ~137 KB por
+  ligação, quase toda a memória. Detalhes em `docs/performance.md`, secção "Na AWS".
+- `deploy/aws/setup-ec2.sh`: TLS pelo **HAProxy** com certificado Let's Encrypt do **certbot**
+  (renovação automática, o HAProxy recarrega sem cortar ligações). Sem registos de acesso, como
+  antes. O `/estado.json` do site passa a ser servido por um serviço mínimo só em localhost
+  (`qt-estado`). O script desliga e remove o Caddy. `RELAY_MAX_CONNECTIONS` passa a 16 000.
+  A app, o endereço e o pin não mudam.
+
 ### 18 de outubro de 2026: notificações só para mensagens, contactos apagados e scroll (app 0.9.0)
 
 - **Notificações só quando há mensagens.** O relay tocava a campainha (FCM) para tudo o que
