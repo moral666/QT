@@ -8,6 +8,10 @@
 #   curl -fsSLO https://raw.githubusercontent.com/moral666/QT/security-hardening/deploy/aws/setup-ec2.sh
 #   sudo bash setup-ec2.sh                 # nome automatico: <ip-com-hifenes>.sslip.io
 #   sudo bash setup-ec2.sh relay.exemplo.pt   # ou um dominio teu ja apontado para o IP
+#   sudo bash setup-ec2.sh relay.exemplo.pt 1-2-3-4.sslip.io   # varios nomes ao mesmo tempo
+#
+# Com varios nomes, o primeiro e o principal (o que as apps novas usam) e todos tem
+# certificado. Os nomes ficam em /etc/qt/domains: sem argumentos, o script volta a usa-los.
 #
 # Pode ser corrido de novo (atualiza o codigo e recompila); a password do Redis
 # e a chave Noise do relay sao mantidas.
@@ -25,15 +29,19 @@ ENV_FILE=/etc/qt/relay.env
 log() { printf '\n\033[1;34m>>> %s\033[0m\n' "$*"; }
 
 # ---------- 0. Nome publico (para o certificado TLS) ----------
+DOMAINS_FILE=/etc/qt/domains
 if [ $# -ge 1 ]; then
-  DOMAIN="$1"
+  DOMAINS="$*"
+elif [ -s "$DOMAINS_FILE" ]; then
+  DOMAINS=$(cat "$DOMAINS_FILE")
 else
   TOKEN=$(curl -fsS -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
   PUBIP=$(curl -fsS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4 || true)
   [ -n "$PUBIP" ] || { echo "Sem IP publico: associa um IP elastico a instancia e volta a correr."; exit 1; }
-  DOMAIN="${PUBIP//./-}.sslip.io"
+  DOMAINS="${PUBIP//./-}.sslip.io"
 fi
-log "Nome publico do relay: $DOMAIN"
+DOMAIN="${DOMAINS%% *}"
+log "Nomes publicos do relay: $DOMAINS (principal: $DOMAIN)"
 
 # ---------- 1. Pacotes ----------
 log "A instalar pacotes (Redis, HAProxy, certbot, ferramentas de compilacao)"
@@ -207,7 +215,6 @@ systemctl enable qt-estado >/dev/null 2>&1
 systemctl restart qt-estado
 
 install -d -m 700 /etc/haproxy/certs
-PEM="/etc/haproxy/certs/$DOMAIN.pem"
 
 # Parte comum: porta 80 (desafio do Let's Encrypt para o certbot em 127.0.0.1:8888; o
 # resto vai para https). Sem "log" em lado nenhum: o HAProxy nao regista nada.
@@ -248,35 +255,52 @@ backend acme
 CFG
 }
 
-if [ ! -s "$PEM" ]; then
-  log "A obter o certificado TLS para $DOMAIN (Let's Encrypt)"
-  haproxy_base > /etc/haproxy/haproxy.cfg
-  systemctl enable haproxy >/dev/null 2>&1
-  systemctl restart haproxy
+# Um certificado por nome. Na primeira instalacao (ainda sem certificado nenhum) o HAProxy
+# arranca so com a porta 80; depois, a configuracao completa ja encaminha o desafio do
+# Let's Encrypt, por isso acrescentar um nome nao corta as ligacoes abertas.
+for D in $DOMAINS; do
+  [ -s "/etc/letsencrypt/live/$D/fullchain.pem" ] && continue
+  if ! ls /etc/haproxy/certs/*.pem >/dev/null 2>&1; then
+    haproxy_base > /etc/haproxy/haproxy.cfg
+    systemctl enable haproxy >/dev/null 2>&1
+    systemctl restart haproxy
+  fi
+  log "A obter o certificado TLS para $D (Let's Encrypt)"
   certbot certonly --standalone --http-01-port 8888 --http-01-address 127.0.0.1 \
-    -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --keep-until-expiring \
-    || { echo "Falhou o certificado: confirma que a porta 80 esta aberta no Security Group."; exit 1; }
-fi
+    -d "$D" --non-interactive --agree-tos --register-unsafely-without-email --keep-until-expiring \
+    || { echo "Falhou o certificado para $D: confirma que o nome aponta para este servidor (DNS) e que a porta 80 esta aberta no Security Group."; exit 1; }
+done
+echo "$DOMAINS" > "$DOMAINS_FILE"
+chmod 644 "$DOMAINS_FILE"
 
 # Depois de cada renovacao (o certbot.timer corre 2x por dia): junta certificado e chave
 # no ficheiro que o HAProxy le e recarrega sem cortar as ligacoes abertas.
 install -d /etc/letsencrypt/renewal-hooks/deploy
-cat > /etc/letsencrypt/renewal-hooks/deploy/haproxy.sh <<HOOK
+cat > /etc/letsencrypt/renewal-hooks/deploy/haproxy.sh <<'HOOK'
 #!/bin/sh
 umask 077
-cat /etc/letsencrypt/live/$DOMAIN/fullchain.pem /etc/letsencrypt/live/$DOMAIN/privkey.pem > $PEM
+D=$(basename "$RENEWED_LINEAGE")
+[ -s "/etc/haproxy/certs/$D.pem" ] || exit 0
+cat "$RENEWED_LINEAGE/fullchain.pem" "$RENEWED_LINEAGE/privkey.pem" > "/etc/haproxy/certs/$D.pem"
 systemctl reload haproxy
 HOOK
 chmod 755 /etc/letsencrypt/renewal-hooks/deploy/haproxy.sh
-( umask 077; cat "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "/etc/letsencrypt/live/$DOMAIN/privkey.pem" > "$PEM" )
+# O HAProxy le todos os ficheiros da pasta: so os nomes da lista atual ficam la.
+for F in /etc/haproxy/certs/*.pem; do
+  [ -e "$F" ] || continue
+  case " $DOMAINS " in *" $(basename "$F" .pem) "*) ;; *) rm -f "$F" ;; esac
+done
+for D in $DOMAINS; do
+  ( umask 077; cat "/etc/letsencrypt/live/$D/fullchain.pem" "/etc/letsencrypt/live/$D/privkey.pem" > "/etc/haproxy/certs/$D.pem" )
+done
 
-log "A configurar o HAProxy para $DOMAIN"
+log "A configurar o HAProxy para $DOMAINS"
 {
 haproxy_base
 cat <<CFG
 
 frontend https
-    bind :443 ssl crt $PEM alpn http/1.1
+    bind :443 ssl crt /etc/haproxy/certs/ alpn http/1.1
     # Limites por IP (decididos a 19/10/2026): no maximo 100 ligacoes abertas ao mesmo
     # tempo e 100 ligacoes novas a cada 10 s. Cada app aberta usa 2 ligacoes, e nas redes
     # moveis muitos clientes saem pelo mesmo IP da operadora (CGNAT). Rever se o contador
@@ -319,13 +343,18 @@ for _ in $(seq 1 10); do
 done
 
 echo "  A verificar o TLS..."
-CERT_OK=no
-for _ in $(seq 1 30); do
-  # Qualquer resposta HTTP (mesmo 400, porque nao e um pedido WebSocket) prova que o TLS funciona.
-  if [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$DOMAIN/" || true)" != "000" ]; then
-    CERT_OK=yes; break
-  fi
-  sleep 2
+CERT_OK=yes
+for D in $DOMAINS; do
+  OK=no
+  for _ in $(seq 1 30); do
+    # Qualquer resposta HTTP (mesmo 400, porque nao e um pedido WebSocket) prova que o TLS funciona.
+    if [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$D/" || true)" != "000" ]; then
+      OK=yes; break
+    fi
+    sleep 2
+  done
+  echo "    $D: $OK"
+  [ "$OK" = yes ] || CERT_OK=no
 done
 
 cat <<EOF

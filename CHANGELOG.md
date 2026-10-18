@@ -6,6 +6,16 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: relay em relay.sealer.pt (app 0.9.2)
+
+- As apps passam a usar **`wss://relay.sealer.pt`** em vez de `13-51-46-213.sslip.io` (um serviço de
+  terceiros). O nome é um registo DNS do `sealer.pt`, sem proxy: o tráfego continua a ir direto do
+  telemóvel para o servidor, e mudar de servidor passa a ser só mudar o DNS. O pin não muda.
+- `deploy/aws/setup-ec2.sh` aceita vários nomes (`setup-ec2.sh relay.sealer.pt 13-51-46-213.sslip.io`):
+  um certificado Let's Encrypt para cada um, o HAProxy serve-os todos e os nomes ficam em
+  `/etc/qt/domains` para as atualizações seguintes. Acrescentar um nome não corta as ligações abertas.
+- App Android **0.9.2** (`versionCode` 9): só muda o endereço do relay.
+
 ### 19 de outubro de 2026: limites contra abusos no relay
 
 - **Por IP, no HAProxy** (`deploy/aws/setup-ec2.sh`): no máximo 100 ligações abertas ao mesmo
