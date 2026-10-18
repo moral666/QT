@@ -113,6 +113,7 @@ pub fn fast_cfg() -> ServerConfig {
         handshake_timeout: std::time::Duration::from_secs(5),
         auth_timeout: std::time::Duration::from_secs(5),
         idle_timeout: std::time::Duration::from_secs(60),
+        ..ServerConfig::default()
     }
 }
 

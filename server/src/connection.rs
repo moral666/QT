@@ -40,14 +40,22 @@ pub struct ServerConfig {
     pub handshake_timeout: Duration,
     pub auth_timeout: Duration,
     pub idle_timeout: Duration,
+    /// Ligacoes por autenticar ao mesmo tempo, em todo o relay (0 = sem limite).
+    pub max_unauthenticated: usize,
+    /// Ligacoes autenticadas por conta; acima disto fecha-se a mais antiga (0 = sem limite).
+    pub max_connections_per_user: usize,
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            handshake_timeout: Duration::from_secs(10),
-            auth_timeout: Duration::from_secs(10),
+            // 5 + 5 s (antes 10 + 10): as apps fazem os dois em menos de 1 s, e uma
+            // ligacao que nunca se autentica ocupa a vaga menos tempo.
+            handshake_timeout: Duration::from_secs(5),
+            auth_timeout: Duration::from_secs(5),
             idle_timeout: Duration::from_secs(300),
+            max_unauthenticated: 2000,
+            max_connections_per_user: 8,
         }
     }
 }
@@ -58,6 +66,8 @@ pub enum ConnectionError {
     Transport(#[from] TransportError),
     #[error("autenticacao falhou")]
     AuthFailed,
+    #[error("demasiadas ligacoes por autenticar")]
+    Busy,
 }
 
 pub async fn handle_connection(
@@ -78,6 +88,11 @@ pub async fn handle_connection_with(
     // `BlobStatus` por cada bloco de um anexo) e o Nagle segurava cada uma a espera
     // do ACK do cliente. Com ele, enviar 25 MB demorava ~9x mais (docs/performance.md).
     let _ = tcp_stream.set_nodelay(true);
+    // Vaga de "por autenticar": libertada logo que a autenticacao passa (ou a ligacao cai).
+    let Some(unauthenticated) = crate::limits::UnauthenticatedSlot::try_acquire(cfg.max_unauthenticated) else {
+        stats::inc(&STATS.rejected_unauthenticated);
+        return Err(ConnectionError::Busy);
+    };
     let (mut ws, mut noise) =
         match ws_transport::server_accept_with(tcp_stream, &server_static_private, cfg.handshake_timeout).await {
             Ok(x) => x,
@@ -109,55 +124,67 @@ pub async fn handle_connection_with(
         }
     };
     stats::inc(&STATS.auth_ok);
+    drop(unauthenticated);
+    // No maximo `max_connections_per_user` por conta: as mais antigas fecham.
+    let (slot, closed) = crate::limits::UserSlot::register(&user_id, cfg.max_connections_per_user);
+    stats::add(&STATS.closed_oldest, closed as u64);
     reply(&mut ws, &mut noise, &ServerMessage::Ack).await?;
 
     // ---------- Loop principal ----------
     // Pedido que chegou a meio de uma espera (WaitMessages): tratado a seguir.
     let mut pending: Option<Vec<u8>> = None;
     let mut probe = IdaProbe::default();
-    loop {
-        let payload = match pending.take() {
-            Some(p) => p,
-            None => match next_request(&mut ws, &mut noise, cfg.idle_timeout, &mut probe).await {
+    let main_loop = async {
+        loop {
+            let payload = match pending.take() {
                 Some(p) => p,
-                // Fecho normal, timeout de inatividade ou frame invalido: encerra a sessao.
-                None => break,
-            },
-        };
-        let mut sent_message = false;
-        let response = match deserialize_client_message(&payload) {
-            Ok(ClientMessage::WaitMessages { user_id: asked, timeout_secs }) => {
-                match wait_messages(&store, &user_id, &asked, timeout_secs, &mut ws, &mut noise, &mut probe).await {
-                    WaitEnd::Reply(r) => r,
-                    WaitEnd::ReplyThen(r, next) => {
-                        pending = Some(next);
-                        r
+                None => match next_request(&mut ws, &mut noise, cfg.idle_timeout, &mut probe).await {
+                    Some(p) => p,
+                    // Fecho normal, timeout de inatividade ou frame invalido: encerra a sessao.
+                    None => break,
+                },
+            };
+            let mut sent_message = false;
+            let response = match deserialize_client_message(&payload) {
+                Ok(ClientMessage::WaitMessages { user_id: asked, timeout_secs }) => {
+                    match wait_messages(&store, &user_id, &asked, timeout_secs, &mut ws, &mut noise, &mut probe).await {
+                        WaitEnd::Reply(r) => r,
+                        WaitEnd::ReplyThen(r, next) => {
+                            pending = Some(next);
+                            r
+                        }
+                        WaitEnd::Closed => break,
                     }
-                    WaitEnd::Closed => break,
+                }
+                Ok(m) => {
+                    sent_message = matches!(m, ClientMessage::SendMessage { .. });
+                    handle_client_message(&store, &user_id, m).await
+                }
+                Err(_) => {
+                    stats::inc(&STATS.invalid_requests);
+                    err("mensagem invalida")
+                }
+            };
+            if reply(&mut ws, &mut noise, &response).await.is_err() {
+                break;
+            }
+            // Acabou de enviar uma mensagem: mede a ida e volta ate este telemovel.
+            if sent_message && matches!(response, ServerMessage::Ack) {
+                if let Some(ping) = probe.start() {
+                    if ws_transport::send_ping(&mut ws, ping).await.is_err() {
+                        break;
+                    }
                 }
             }
-            Ok(m) => {
-                sent_message = matches!(m, ClientMessage::SendMessage { .. });
-                handle_client_message(&store, &user_id, m).await
-            }
-            Err(_) => {
-                stats::inc(&STATS.invalid_requests);
-                err("mensagem invalida")
-            }
-        };
-        if reply(&mut ws, &mut noise, &response).await.is_err() {
-            break;
         }
-        // Acabou de enviar uma mensagem: mede a ida e volta ate este telemovel.
-        if sent_message && matches!(response, ServerMessage::Ack) {
-            if let Some(ping) = probe.start() {
-                if ws_transport::send_ping(&mut ws, ping).await.is_err() {
-                    break;
-                }
-            }
-        }
+    };
+    // Termina com o loop ou quando uma ligacao mais nova da mesma conta ocupa a vaga.
+    tokio::select! {
+        _ = main_loop => {}
+        _ = slot.must_close() => {}
     }
     ws_transport::close_gracefully(&mut ws).await;
+    drop(slot);
     Ok(())
 }
 

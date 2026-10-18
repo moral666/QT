@@ -236,6 +236,23 @@ async fn main() {
     // ficheiro (um cliente mal comportado nao derruba o relay para todos).
     let max_conns: usize = std::env::var("RELAY_MAX_CONNECTIONS").ok().and_then(|v| v.parse().ok()).unwrap_or(4096);
     let slots = Arc::new(tokio::sync::Semaphore::new(max_conns));
+    // Limites contra abusos (limits.rs): ligacoes por autenticar e por conta.
+    let defaults = qt_server::ServerConfig::default();
+    let cfg = Arc::new(qt_server::ServerConfig {
+        max_unauthenticated: std::env::var("RELAY_MAX_UNAUTHENTICATED")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(defaults.max_unauthenticated),
+        max_connections_per_user: std::env::var("RELAY_MAX_CONNECTIONS_PER_USER")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(defaults.max_connections_per_user),
+        ..defaults
+    });
+    println!(
+        "Limites: {max_conns} ligacoes, {} por autenticar, {} por conta",
+        cfg.max_unauthenticated, cfg.max_connections_per_user
+    );
 
     // LOGS: so informacao operacional. NUNCA enderecos IP/identificadores de
     // utilizadores, conteudo, chaves ou tokens.
@@ -259,13 +276,14 @@ async fn main() {
 
         let store = store.clone();
         let static_private = static_keys.private.clone();
+        let cfg = cfg.clone();
 
         tokio::spawn(async move {
             let stats = &qt_server::stats::STATS;
             stats.active.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             // O erro e descartado de proposito: nao e registado para nao
             // criar um log de metadados por ligacao.
-            let _ = qt_server::handle_connection(tcp_stream, store, static_private).await;
+            let _ = qt_server::handle_connection_with(tcp_stream, store, static_private, &cfg).await;
             stats.active.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
             drop(permit);
         });
