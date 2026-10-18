@@ -6,6 +6,20 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: limites contra abusos no relay
+
+- **Por IP, no HAProxy** (`deploy/aws/setup-ec2.sh`): no máximo 100 ligações abertas ao mesmo
+  tempo e 100 ligações novas a cada 10 s por IP; o pedido inicial tem de chegar em 5 s (antes
+  10 s). As ligações recusadas contam-se no HAProxy (`dcon`, por `stats socket`).
+- **No relay** (`server/src/limits.rs`): no máximo 2 000 ligações por autenticar ao mesmo tempo
+  (`RELAY_MAX_UNAUTHENTICATED`), para uma enxurrada de ligações caladas não tirar a vaga a quem
+  já está autenticado; no máximo 8 ligações por conta (`RELAY_MAX_CONNECTIONS_PER_USER`): acima
+  disso fecha-se a mais antiga dessa conta, por isso um telemóvel que muda de rede nunca fica de
+  fora por causa das ligações mortas que deixou. Handshake e autenticação em 5 + 5 s (antes
+  10 + 10). Novos contadores na linha de estatísticas: `por_autenticar_cheio` e
+  `antigas_fechadas`. Teste: `server/tests/relay_limits.rs`. As apps não mudam.
+- `RELAY_MAX_CONNECTIONS` por omissão no `setup-ec2.sh` passa a 10 000.
+
 ### 18 de outubro de 2026: site, tempo entre telemóveis
 
 - O marcador de estado do sealer.pt mostra o tempo de telemóvel a telemóvel (envio até ao

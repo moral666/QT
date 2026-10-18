@@ -39,6 +39,10 @@ pub struct Stats {
     /// Campainhas enviadas a Google (FCM) e as que falharam.
     pub pushes: AtomicU64,
     pub push_failed: AtomicU64,
+    /// Ligacoes recusadas por haver demasiadas por autenticar (`limits.rs`).
+    pub rejected_unauthenticated: AtomicU64,
+    /// Ligacoes antigas fechadas porque a mesma conta abriu uma nova acima do maximo.
+    pub closed_oldest: AtomicU64,
 }
 
 pub static STATS: Stats = Stats {
@@ -66,6 +70,8 @@ pub static STATS: Stats = Stats {
     push_registered: AtomicU64::new(0),
     pushes: AtomicU64::new(0),
     push_failed: AtomicU64::new(0),
+    rejected_unauthenticated: AtomicU64::new(0),
+    closed_oldest: AtomicU64::new(0),
 };
 
 pub fn inc(c: &AtomicU64) {
@@ -104,6 +110,8 @@ pub fn take_line(s: &Stats) -> Option<String> {
         ("tokens_notificacao", t(&s.push_registered)),
         ("notificacoes", t(&s.pushes)),
         ("notificacoes_falhadas", t(&s.push_failed)),
+        ("por_autenticar_cheio", t(&s.rejected_unauthenticated)),
+        ("antigas_fechadas", t(&s.closed_oldest)),
     ];
     let active = s.active.load(Relaxed);
     if active == 0 && v.iter().all(|(_, n)| *n == 0) {

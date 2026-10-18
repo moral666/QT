@@ -449,7 +449,10 @@ Respostas: `Ack`, `PreKeyBundle`, `PreKeyBundleNotFound`, `Messages`, `Error{rea
 (`reason` genérico, nunca detalhes internos), e as dos anexos acima.
 O cliente pode enviar vários pedidos seguidos antes de ler as respostas: o relay
 responde pela mesma ordem (as apps usam isto para os blocos dos anexos).
-Timeouts do servidor (omissão): handshake 10 s, autenticação 10 s, inatividade 300 s.
+Timeouts do servidor (omissão): handshake 5 s, autenticação 5 s, inatividade 300 s.
+Limites (omissão): no máximo 2 000 ligações por autenticar no relay inteiro (as seguintes são
+fechadas logo) e 8 ligações autenticadas por conta: uma 9.ª fecha a mais antiga dessa conta.
+À frente do relay, o HAProxy limita cada IP a 100 ligações abertas e 100 novas a cada 10 s.
 Qualquer frame Noise inválido/repetido/fora de ordem encerra a sessão.
 Entrega *at-least-once*: o cliente tem de deduplicar (o `QtClient` faz-o).
 

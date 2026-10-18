@@ -29,7 +29,10 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
 11. **Sem verificação de tempo constante / canais laterais** das dependências.
 
 ## Relay / rede
-12. **Sem rate limiting, anti-spam nem consentimento de contacto**; fila ≤ 1000.
+12. **Sem rate limiting de mensagens, anti-spam nem consentimento de contacto**; fila ≤ 1000.
+    Desde 19/10/2026 há limites de ligações (100 por IP no HAProxy, 2 000 por autenticar e 8 por
+    conta no relay), mas criar contas não custa nada, por isso os limites por conta contornam-se
+    com contas novas.
 13. **Metadados visíveis ao relay:** destinatário, tamanho, instante, IP.
 14. **Sem federação:** ponto único de falha e de pressão legal.
 15. **`ws://` nos testes.** Produção: `wss://` + pinning da chave Noise.
