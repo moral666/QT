@@ -32,13 +32,27 @@ export function initStatus(el) {
   const fmt = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 0 });
   let timer = 0;
 
-  const HOW = 'o tempo que uma mensagem demora a ir do telemóvel de quem a envia até ao servidor da SEALER';
+  const HOW = 'o tempo que uma mensagem demora do telemóvel de quem a envia até o telemóvel de quem a recebe confirmar que a tem (envio até ao servidor mais entrega)';
+
+  /** Envio (telemóvel -> servidor) + entrega (servidor -> destinatário confirmar), em ms. */
+  function sum(a, b) {
+    return Number.isFinite(a) && Number.isFinite(b) ? a + b : null;
+  }
+
+  /** Média da última hora (só com o serviço a funcionar e as duas partes medidas). */
+  function currentValue(data) {
+    if (!data || data.estado !== 'on') return null;
+    return sum(data.envio_media_ms, data.entrega_media_ms);
+  }
+
+  /** Última medição conhecida, mesmo antiga. */
+  function lastValue(data) {
+    return data ? sum(data.ultimo_envio_ms, data.ultima_media_ms) : null;
+  }
 
   /** Valor a mostrar: a média da última hora ou, sem mensagens recentes, a última medição. */
-  function sendValue(data) {
-    if (!data) return null;
-    if (data.estado === 'on' && Number.isFinite(data.envio_media_ms)) return data.envio_media_ms;
-    return Number.isFinite(data.ultimo_envio_ms) ? data.ultimo_envio_ms : null;
+  function totalValue(data) {
+    return currentValue(data) ?? lastValue(data);
   }
 
   /** "há 5 minutos", "há 3 horas", "há 2 dias". */
@@ -51,16 +65,18 @@ export function initStatus(el) {
     return `há ${Math.round(h / 24)} dias`;
   }
 
-  /** Frase sobre o tempo de envio, para o title; vazia se não se aplica. */
-  function sendText(data) {
-    if (!data) return '';
-    if (data.estado === 'on' && Number.isFinite(data.envio_media_ms)) {
-      const n = data.envios === 1 ? '1 mensagem' : `${fmt.format(data.envios)} mensagens`;
-      return ` Tempo médio de envio na última hora: ${fmt.format(data.envio_media_ms)} ms (${n}), ${HOW}.`;
+  /** Frase sobre o tempo entre telemóveis, para o title; vazia se não se aplica. */
+  function totalText(data) {
+    const now = currentValue(data);
+    if (now != null) {
+      const n = data.mensagens === 1 ? '1 mensagem' : `${fmt.format(data.mensagens)} mensagens`;
+      return ` Tempo médio entre telemóveis na última hora: ${fmt.format(now)} ms (${n}), ${HOW}.`;
     }
-    if (Number.isFinite(data.ultimo_envio_ms)) {
-      const when = Number.isFinite(data.ultimo_envio_medicao) ? ` (medido ${ago(data.ultimo_envio_medicao)})` : '';
-      return ` Último tempo médio de envio: ${fmt.format(data.ultimo_envio_ms)} ms${when}, ${HOW}.`;
+    const last = lastValue(data);
+    if (last != null) {
+      const at = Math.max(data.ultimo_envio_medicao || 0, data.ultima_medicao || 0);
+      const when = at > 0 ? ` (medido ${ago(at)})` : '';
+      return ` Último tempo médio entre telemóveis: ${fmt.format(last)} ms${when}, ${HOW}.`;
     }
     return '';
   }
@@ -71,13 +87,13 @@ export function initStatus(el) {
     if (mini) mini.textContent = TEXT[state].mini;
     if (ms) {
       // Fica sempre a última leitura conhecida, mesmo sem mensagens recentes ou com o serviço em baixo.
-      const value = sendValue(data);
+      const value = totalValue(data);
       if (value != null) {
         ms.hidden = false;
         ms.textContent = `${fmt.format(value)} ms`;
       }
     }
-    const full = `${TEXT[state].long}.${sendText(data)} ${TESTING}`;
+    const full = `${TEXT[state].long}.${totalText(data)} ${TESTING}`;
     el.title = full;
     el.setAttribute('aria-label', full);
   }

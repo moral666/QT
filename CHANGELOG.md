@@ -6,6 +6,11 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 18 de outubro de 2026: site, tempo entre telemóveis
+
+- O marcador de estado do sealer.pt mostra o tempo de telemóvel a telemóvel (envio até ao
+  servidor mais entrega até o destinatário confirmar), em vez de só o envio. `site/src/status.js`.
+
 ### 18 de outubro de 2026: HAProxy em vez do Caddy no relay
 
 - **Teste de carga na AWS** (t3.small, `conntest` com TLS real): 4 000 e 6 000 ligações sem
