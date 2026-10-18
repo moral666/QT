@@ -53,8 +53,8 @@ android {
         minSdk = 24            // igual ao `-P 24` do cargo-ndk
         // Android 16. Exigido pela Play Store para apps novas e atualizacoes.
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.9.0"
+        versionCode = 8
+        versionName = "0.9.1"
         // So as ABIs que o Rust compilou. Adiciona "x86_64" quando tiveres esse .so (emulador).
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
