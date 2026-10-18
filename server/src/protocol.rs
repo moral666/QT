@@ -40,7 +40,17 @@ pub enum ClientMessage {
     /// consegue ler quem enviou (so o destinatario, com a sua chave
     /// privada de identidade, consegue abrir o envelope). O servidor
     /// continua a saber `to` (precisa disso para rotear para a fila certa).
-    SendMessage { to: UserId, sealed_from: Vec<u8>, ciphertext: Vec<u8> },
+    ///
+    /// `silent = true`: recibos, reacoes e avisos de presenca. A mensagem e entregue
+    /// igual, mas o relay NAO toca a campainha (FCM) a uma app fechada. Ausente
+    /// (clientes antigos) = `false`: toca como antes.
+    SendMessage {
+        to: UserId,
+        sealed_from: Vec<u8>,
+        ciphertext: Vec<u8>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        silent: bool,
+    },
 
     /// Pede todas as mensagens em fila destinadas ao proprio utilizador
     /// (chamado logo apos autenticar-se/ligar-se).

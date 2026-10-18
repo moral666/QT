@@ -4,6 +4,7 @@
 //!     da mensagem;
 //!   * logo a seguir (limite de frequencia): nao toca outra vez;
 //!   * app aberta (`WaitMessages` pendente): nao toca;
+//!   * envio `silent` (recibo, reacao, presenca): entregue, mas nao toca;
 //!   * token que a Google diz que ja nao existe: e apagado do Redis.
 //! Precisa de um Redis em 127.0.0.1:6379 e do `openssl` (gera uma chave RSA de teste).
 
@@ -145,7 +146,9 @@ async fn toca_so_com_a_app_fechada_e_sem_nada_da_mensagem() {
     let mut b = client(&relay, &bob).await;
     let mut c = client(&relay, &carol).await;
     let mut d = client(&relay, &dave).await;
-    for (cl, who, tok) in [(&mut b, &bob, "tok-bob:APA91"), (&mut c, &carol, "tok-carol"), (&mut d, &dave, "morto-dave")] {
+    let erin = SigningKeyPair::generate();
+    let mut e = client(&relay, &erin).await;
+    for (cl, who, tok) in [(&mut b, &bob, "tok-bob:APA91"), (&mut c, &carol, "tok-carol"), (&mut d, &dave, "morto-dave"), (&mut e, &erin, "tok-erin")] {
         let r = cl.request(ClientMessage::RegisterPushToken { user_id: uid(who), token: tok.into() }).await.unwrap();
         assert!(matches!(r, ServerMessage::Ack), "{r:?}");
     }
@@ -182,6 +185,17 @@ async fn toca_so_com_a_app_fechada_e_sem_nada_da_mensagem() {
     assert!(matches!(got, ServerMessage::Messages { ref messages } if !messages.is_empty()), "{got:?}");
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert_eq!(sends(&log).len(), 1, "com a app aberta nao toca");
+
+    // 3b) Erin com a app fechada, mas o envio e `silent` (recibo/presenca): fica na fila, sem campainha.
+    let r = a
+        .request(ClientMessage::SendMessage { to: uid(&erin), sealed_from: vec![], ciphertext: vec![9], silent: true })
+        .await
+        .unwrap();
+    assert!(matches!(r, ServerMessage::Ack), "{r:?}");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(sends(&log).len(), 1, "um envio silent nao toca");
+    let r = e.request(ClientMessage::FetchMessages { user_id: uid(&erin) }).await.unwrap();
+    assert!(matches!(r, ServerMessage::Messages { ref messages } if messages.len() == 1), "{r:?}");
 
     // 4) Token que ja nao existe (app desinstalada): apagado do Redis.
     a.send_message(&uid(&dave), vec![1], vec![2]).await.unwrap();

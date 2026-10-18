@@ -117,6 +117,7 @@ async fn entrega_assincrona_atraves_do_relay() {
             to: uid(&bob_identity_signing),
             sealed_from: sealed_from.clone(),
             ciphertext: wire_bytes.clone(),
+            silent: false,
         },
     )
     .await;

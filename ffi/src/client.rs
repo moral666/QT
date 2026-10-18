@@ -26,6 +26,7 @@ use qt_core::ratchet::{EncryptedMessage, RatchetState};
 use qt_core::sealed_sender::{seal_sender_identity_bound, unseal_sender_identity_bound};
 use sha2::{Digest, Sha256};
 use qt_storage as st;
+use crate::history::OutboxItem;
 use x25519_dalek::PublicKey;
 use zeroize::Zeroize;
 
@@ -368,6 +369,8 @@ impl QtClient {
         // Quem inicia a conversa manda o seu Public ID (cifrado) antes da 1.a mensagem:
         // assim quem recebe pode aceitar o convite sem ter de escrever o ID.
         st::kv_set(&tx, &format!("{}{contact_id}", crate::history::KV_SEND_INTRO), &[1])?;
+        // O contacto tinha terminado a sessao antiga: o que estava por entregar segue ja.
+        crate::history::after_new_session(self, &tx, &contact_id)?;
         tx.commit()?;
         Ok(contact_id)
     }
@@ -504,6 +507,18 @@ impl QtClient {
     /// fica vazio: o remetente (quando selado) ja vai dentro do blob.
     pub fn relay_request_send(&self, to_relay_id: String, blob: Vec<u8>) -> Result<Vec<u8>, QtError> {
         json_bytes(serde_json::json!({"SendMessage": {"to": to_relay_id, "sealed_from": Vec::<u8>::new(), "ciphertext": blob}}))
+    }
+
+    /// Como `relay_request_send`, para um item da outbox: recibos, reacoes, convites e
+    /// presenca vao com `silent` (o relay nao toca a campainha a uma app fechada; so as
+    /// mensagens tocam). Um relay antigo ignora o campo e toca sempre, como antes.
+    pub fn relay_request_send_item(&self, to_relay_id: String, item: OutboxItem) -> Result<Vec<u8>, QtError> {
+        json_bytes(serde_json::json!({"SendMessage": {
+            "to": to_relay_id,
+            "sealed_from": Vec::<u8>::new(),
+            "ciphertext": item.blob,
+            "silent": item.silent,
+        }}))
     }
 
     pub fn relay_request_fetch(&self) -> Result<Vec<u8>, QtError> {
@@ -769,6 +784,10 @@ impl QtClient {
         }
         if replaced {
             crate::history::requeue_after_session_reset(self, &tx, contact_id)?;
+            st::kv_delete(&tx, &format!("{}{contact_id}", crate::history::KV_RESTART))?;
+        } else if new_session && state.is_some() {
+            // Sessao nova recebida depois de o contacto ter terminado a anterior (tipo 10).
+            crate::history::after_new_session(self, &tx, contact_id)?;
         }
         // Ganchos do chamador (ex.: guardar a mensagem no historico) na MESMA transacao.
         after(&tx, contact_id, &env_id, &plaintext)?;

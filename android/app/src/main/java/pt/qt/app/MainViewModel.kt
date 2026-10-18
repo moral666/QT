@@ -869,15 +869,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * APAGAR CONTACTO: apaga para sempre as mensagens, o que estava por enviar,
-     * as chaves da sessao cifrada e o proprio contacto. Se voltarem a falar,
-     * comeca uma sessao nova (o outro lado adota-a automaticamente).
+     * as chaves da sessao cifrada e o proprio contacto. Antes de apagar as chaves, avisa o
+     * outro lado ("sessao terminada", sem nada no ecra dele): a app dele apaga a sessao e a
+     * proxima mensagem dele abre uma nova (aqui aparece como convite). Sem o aviso, ele
+     * continuava a cifrar com a sessao antiga e as mensagens perdiam-se. Bloqueado: nao avisa.
      */
     fun deleteContact(contactId: String) = io {
         val client = qt ?: return@io
         AttachmentCache.clear()   // nada do que vai ser apagado fica decifrado em memoria
         try {
-            // Primeiro o Rust (mensagens + chaves), na mesma transacao; depois a lista.
-            client.deleteContact(contactId)
+            // Endereco no relay: do contacto ou, num convite recusado, do Public ID que ele mandou.
+            val relayId = _ui.value.contacts.firstOrNull { it.contactId == contactId }?.relayId
+                ?: client.pendingIntro(contactId)?.let { runCatching { relayIdOfPublicId(it) }.getOrNull() }
+            // Primeiro o Rust (mensagens + chaves + aviso na outbox), na mesma transacao; depois a lista.
+            if (relayId != null) client.deleteContactNotify(contactId, relayId) else client.deleteContact(contactId)
             val list = _ui.value.contacts.filter { it.contactId != contactId }
             contactStore.save(list, contactsKey ?: return@io)
             _ui.update {
@@ -890,6 +895,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             syncPresence(client)
             refreshViews(client)
+            flushOutbox()   // o aviso "sessao terminada" (fica na outbox se nao houver rede)
         } catch (e: Exception) {
             error("Nao foi possivel apagar o contacto: ${e.safeMsg()}")
         }
@@ -1394,6 +1400,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         else -> "Não foi possível enviar o anexo: $reason"
     }
 
+    /**
+     * Um contacto apagou-me e as chaves dele ("sessao terminada"): abre ja uma sessao nova com
+     * ele, para o que estava por entregar seguir (o Rust volta a cifra-lo, com o convite).
+     * Membros de grupos que nao estao nos contactos: tratados pelo ciclo das sessoes dos grupos.
+     */
+    private suspend fun restartSessions(client: QtClient) {
+        val ids = client.sessionsToRestart()
+        if (ids.isEmpty()) return
+        var started = false
+        for (cid in ids) {
+            val c = _ui.value.contacts.firstOrNull { it.contactId == cid } ?: continue
+            if (cid in _ui.value.blocked) continue
+            try {
+                ensureSession(client, c)
+                started = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "sessao nova depois de terminada: ${e.safeMsg()}")
+            }
+        }
+        if (started) {
+            refreshViews(client)
+            flushOutbox()
+        }
+    }
+
     private suspend fun ensureSession(client: QtClient, c: Contact) {
         if (client.hasSession(c.contactId)) return
         val l = link ?: throw IllegalStateException("sem ligacao ao relay")
@@ -1419,11 +1452,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         for (item in client.outbox()) {
             // O relay identifica caixas pela chave de assinatura (do Public ID do contacto).
-            val relayId = _ui.value.contacts.firstOrNull { it.contactId == item.contactId }?.relayId
+            val relayId = item.relayId   // aviso "sessao terminada" a quem ja nao esta nos contactos
+                ?: _ui.value.contacts.firstOrNull { it.contactId == item.contactId }?.relayId
                 ?: members[item.contactId]?.let { runCatching { relayIdOfPublicId(it) }.getOrNull() }
                 ?: continue
             val r = try {
-                l.request(client.relayRequestSend(relayId, item.blob))
+                l.request(client.relayRequestSendItem(relayId, item))   // recibos/presenca: sem campainha
             } catch (e: Exception) {
                 break   // sem rede: tenta no proximo ciclo, mantendo a ordem
             }
@@ -1548,6 +1582,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 if (ackIds.isNotEmpty()) l.request(client.relayRequestAck(ackIds))   // so DEPOIS de guardar
             }
+            restartSessions(client)
             if (received) {
                 transferKick.trySend(Unit)   // imagens recebidas: descarregar ja
                 client.prepareDeliveryReceipts()

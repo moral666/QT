@@ -663,7 +663,7 @@ impl QtClient {
         let blob = self.seal_with(&tx, &contact_id, &plain)?;
         hm::outbox_put(&tx, &id, &contact_id, hm::OUTBOX_MESSAGE, &blob)?;
         tx.commit()?;
-        Ok(OutboxItem { outbox_id: message_id, contact_id, blob })
+        Ok(OutboxItem { outbox_id: message_id, contact_id, blob, silent: false, relay_id: None })
     }
 
     /// Pedido ao relay: o bloco cifrado que comeca em `offset`.

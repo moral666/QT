@@ -60,7 +60,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -230,6 +232,31 @@ class MainActivity : FragmentActivity() {
             if (req.purpose == BioPurpose.ENABLE) vm.cancelBioEnable()
             vm.bioMessage("Não foi possível pedir a autenticação do telemóvel.")
         }
+    }
+}
+
+/**
+ * Mantem a conversa colada a mensagem mais recente (lista com reverseLayout: o item 0 e o
+ * fundo). Antes so descia se o primeiro item visivel fosse o 0 ou o 1, mas quando chegam
+ * varias mensagens de uma vez a lista mantem visivel a mesma bolha (pela key), o indice
+ * salta para 2 ou mais e deixava de descer. Agora "seguir" so se desliga quando a pessoa
+ * arrasta a lista para cima, e volta a ligar-se quando ela regressa ao fundo. As minhas
+ * mensagens descem sempre. Com muitas de uma vez, salta sem animacao (mais rapido).
+ */
+@Composable
+internal fun FollowNewest(listState: LazyListState, newestKey: Long?, newestIsMine: Boolean) {
+    var follow by remember { mutableStateOf(true) }
+    val atBottom by remember {
+        derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset <= 8 }
+    }
+    val dragged by listState.interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(atBottom, dragged) {
+        if (atBottom) follow = true else if (dragged) follow = false
+    }
+    LaunchedEffect(newestKey) {
+        if (newestKey == null || !(follow || newestIsMine)) return@LaunchedEffect
+        follow = true
+        if (listState.firstVisibleItemIndex > 6) listState.scrollToItem(0) else listState.animateScrollToItem(0)
     }
 }
 
@@ -1012,10 +1039,7 @@ fun ChatScreen(
     LaunchedEffect(nearOldest, msgs.size, ui.chatHasMore) {
         if (nearOldest && ui.chatHasMore) onLoadOlder()
     }
-    val newest = msgs.firstOrNull()?.seq
-    LaunchedEffect(newest) {
-        if (listState.firstVisibleItemIndex <= 1) listState.animateScrollToItem(0)
-    }
+    FollowNewest(listState, msgs.firstOrNull()?.seq, msgs.firstOrNull()?.outgoing == true)
 
     Scaffold(
         topBar = {
