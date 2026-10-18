@@ -39,7 +39,7 @@ log "Nome publico do relay: $DOMAIN"
 log "A instalar pacotes (Redis, HAProxy, certbot, ferramentas de compilacao)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q build-essential pkg-config git curl ca-certificates redis-server haproxy certbot python3
+apt-get install -y -q build-essential pkg-config git curl ca-certificates redis-server haproxy certbot python3 socat
 
 # ---------- 1b. Servicos que nao fazem falta num relay (memoria e CPU) ----------
 # Desligados a mao a 18/10/2026; aqui ficam para cada EC2 nova vir igual.
@@ -222,6 +222,9 @@ global
     # precisam de caber no buffer) e os cabecalhos das apps sao pequenos.
     tune.bufsize 8192
     tune.maxrewrite 1024
+    # So para consultar contadores (ligacoes recusadas por IP), apenas localmente:
+    #   echo "show stat" | sudo socat stdio /var/lib/haproxy/stats.sock
+    stats socket /var/lib/haproxy/stats.sock mode 600 level user
 
 defaults
     mode http
@@ -230,7 +233,8 @@ defaults
     timeout server 60s
     # WebSocket aberto e parado (a app espera ate 25 s por mensagens).
     timeout tunnel 1h
-    timeout http-request 10s
+    # Quem abre a ligacao e nao manda o pedido em 5 s e cortado (antes 10 s).
+    timeout http-request 5s
     timeout client-fin 10s
 
 frontend http
@@ -273,6 +277,13 @@ cat <<CFG
 
 frontend https
     bind :443 ssl crt $PEM alpn http/1.1
+    # Limites por IP (decididos a 19/10/2026): no maximo 100 ligacoes abertas ao mesmo
+    # tempo e 100 ligacoes novas a cada 10 s. Cada app aberta usa 2 ligacoes, e nas redes
+    # moveis muitos clientes saem pelo mesmo IP da operadora (CGNAT). Rever se o contador
+    # de recusadas (dcon, ver "stats socket" acima) subir com clientes legitimos.
+    stick-table type ipv6 size 100k expire 60s store conn_cur,conn_rate(10s)
+    tcp-request connection track-sc0 src
+    tcp-request connection reject if { sc0_conn_cur gt 100 } || { sc0_conn_rate gt 100 }
     acl estado path /estado.json
     use_backend estado if estado
     default_backend relay
