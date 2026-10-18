@@ -41,6 +41,41 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 apt-get install -y -q build-essential pkg-config git curl ca-certificates redis-server haproxy certbot python3
 
+# ---------- 1b. Servicos que nao fazem falta num relay (memoria e CPU) ----------
+# Desligados a mao a 18/10/2026; aqui ficam para cada EC2 nova vir igual.
+# O amazon-ssm-agent (Session Manager) fica ligado, a nao ser que QT_DISABLE_SSM=1:
+# sem ele so se entra por SSH.
+log "A desligar servicos desnecessarios"
+for UNIT in multipathd.service multipathd.socket snapd.service snapd.socket snapd.seeded.service \
+            fwupd.service fwupd-refresh.timer networkd-dispatcher.service; do
+  systemctl disable --now "$UNIT" >/dev/null 2>&1 || true
+done
+if [ "${QT_DISABLE_SSM:-0}" = 1 ]; then
+  systemctl disable --now snap.amazon-ssm-agent.amazon-ssm-agent.service amazon-ssm-agent.service >/dev/null 2>&1 || true
+fi
+
+# ---------- 1c. Kernel/TCP para dezenas de milhares de ligacoes paradas ----------
+# Cada app tem ligacoes WebSocket quase sempre paradas: buffers pequenos por omissao
+# (crescem sozinhos quando ha trafego), mais portas locais (cada ligacao do HAProxy ao
+# relay em 127.0.0.1 gasta uma porta; o intervalo normal so tem ~28 000) e filas de
+# aceitacao maiores para picos de reconexao.
+log "A afinar o kernel (TCP)"
+cat > /etc/sysctl.d/90-qt-relay.conf <<'EOF'
+net.core.somaxconn = 8192
+net.ipv4.tcp_max_syn_backlog = 8192
+net.core.netdev_max_backlog = 8192
+net.ipv4.ip_local_port_range = 10240 65535
+net.ipv4.tcp_rmem = 4096 8192 4194304
+net.ipv4.tcp_wmem = 4096 8192 4194304
+net.ipv4.tcp_fin_timeout = 15
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_keepalive_time = 300
+net.ipv4.tcp_keepalive_intvl = 30
+net.ipv4.tcp_keepalive_probes = 5
+fs.file-max = 1048576
+EOF
+sysctl -q --system
+
 # ---------- 2. Swap (instancias de 1-2 GB ficam sem memoria a compilar com LTO) ----------
 if ! swapon --show | grep -q /swapfile; then
   log "A criar 2 GB de swap para a compilacao"
@@ -101,9 +136,11 @@ RELAY_STATUS_FILE=/var/lib/qt-estado/estado.json
 RELAY_BLOB_MAX_TOTAL_MB=${RELAY_BLOB_MAX_TOTAL_MB:-2048}
 RELAY_BLOB_USER_DAILY_MB=${RELAY_BLOB_USER_DAILY_MB:-1024}
 RELAY_BLOB_MIN_FREE_MB=${RELAY_BLOB_MIN_FREE_MB:-1024}
-# Ligacoes em simultaneo (cada app aberta usa 2). Com o Caddy a memoria de um t3.small
-# (2 GB) acabava perto das 8000 (medido a 18/10/2026); com o HAProxy chega para isto.
-RELAY_MAX_CONNECTIONS=${RELAY_MAX_CONNECTIONS:-16000}
+# Ligacoes em simultaneo (cada app aberta usa 2). Com o HAProxy, ~40 KB por ligacao:
+# 8000 sem falhas e ~12 000 a funcionar (medido a 18/10/2026, limite foi o router de
+# casa). Travao em 10 000 ate ao teste de 25 000 a partir da AWS.
+# Para mudar: sudo RELAY_MAX_CONNECTIONS=20000 bash setup-ec2.sh
+RELAY_MAX_CONNECTIONS=${RELAY_MAX_CONNECTIONS:-10000}
 EOF
 umask 022
 # Notificacoes com a app fechada (FCM): so se existir /etc/qt/fcm.json (a chave da conta
@@ -181,6 +218,10 @@ global
     user haproxy
     group haproxy
     ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets
+    # Buffers de 8 KB em vez de 16 KB: as mensagens WebSocket passam em fluxo (nao
+    # precisam de caber no buffer) e os cabecalhos das apps sao pequenos.
+    tune.bufsize 8192
+    tune.maxrewrite 1024
 
 defaults
     mode http
