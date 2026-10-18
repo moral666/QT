@@ -37,7 +37,7 @@ Sim, de ponta a ponta em versão alpha. Não foi auditado de forma independente 
 ### Validado até 15 de outubro de 2026
 
 - Núcleo criptográfico (PQXDH + Double Ratchet + Sealed Sender), transporte, relay, armazenamento local e FFI implementados em Rust, com a suite de testes a passar (`cargo test --workspace`).
-- Relay a correr numa instância AWS EC2, atrás de TLS real (`wss://`, certificado Let's Encrypt via Caddy), com o Redis acessível apenas em `127.0.0.1` e protegido por ACL.
+- Relay a correr numa instância AWS EC2, atrás de TLS real (`wss://`, certificado Let's Encrypt via certbot e HAProxy), com o Redis acessível apenas em `127.0.0.1` e protegido por ACL.
 - App Android compilada em versão *release* assinada (esquemas V2/V3), bibliotecas nativas alinhadas a páginas de 16 KB, sem deteções no VirusTotal (0/68).
 - Mensagens trocadas entre dois telemóveis reais, através do relay na AWS.
 - App iPhone (SwiftUI) com o mesmo núcleo, a trocar mensagens com as apps Android.
@@ -104,7 +104,7 @@ O relay é pequeno de propósito: só passa mensagens cifradas, não guarda hist
 
 Com mensagens sempre a circular (50 pares de ligações a enviar o mais depressa possível), o relay entregou cerca de **16 900 mensagens de 200 B por segundo** e **6 000 de 4 KB**, com 95 % das mensagens a chegar ao destinatário em menos de 10 ms (200 B) e 26 ms (4 KB). Uma imagem de 25 MB foi enviada ao relay em 0,3 s e descarregada em 0,4 s.
 
-Medido numa máquina local de 2 vCPU, sem o TLS do Caddy e sem rede real pelo meio, por isso o servidor completo gasta mais do que isto. Como foi medido, como repetir e o que ficou de fora: [`docs/performance.md`](docs/performance.md).
+Medido numa máquina local de 2 vCPU, sem o TLS do proxy e sem rede real pelo meio, por isso o servidor completo gasta mais do que isto. Como foi medido, como repetir e o que ficou de fora: [`docs/performance.md`](docs/performance.md).
 
 ## Tempos reais, entre telemóveis
 
@@ -225,7 +225,7 @@ curl -fsSLO https://raw.githubusercontent.com/moral666/QT/security-hardening/dep
 sudo bash setup-ec2.sh
 ```
 
-Instala o Redis (só `127.0.0.1`, utilizador com ACL mínima), o relay como serviço systemd isolado e o Caddy com certificado TLS automático, e imprime o URL `wss://` e a chave de pinning para a app. As imagens cifradas ficam em `/var/lib/qt/anexos` (no máximo 2 GB no total e 24 horas cada, por omissão).
+Instala o Redis (só `127.0.0.1`, utilizador com ACL mínima), o relay como serviço systemd isolado e o HAProxy com certificado TLS (certbot, renovação automática), e imprime o URL `wss://` e a chave de pinning para a app. As imagens cifradas ficam em `/var/lib/qt/anexos` (no máximo 2 GB no total e 24 horas cada, por omissão).
 
 Para atualizar um relay já instalado, corre o mesmo script: vai buscar o código novo e recompila, mas mantém a chave Noise (o pin das apps não muda) e a password do Redis. A compilação é feita na própria instância e precisa de espaço: num disco de 8 GB ficou quase cheio, o relay atual usa 20 GB. Detalhes em [`docs/deploy-wss.md`](docs/deploy-wss.md).
 

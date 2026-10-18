@@ -190,8 +190,9 @@ cargo run --release -p qt_server --example conntest -- \
 
 ### O que ficou de fora (e muda os números reais)
 
-- **TLS:** em produção, o Caddy trata do TLS (`wss://`) antes do relay e gasta
-  memória e CPU próprios por ligação, que não entram nesta medição.
+- **TLS:** em produção, o proxy de TLS (`wss://`, hoje o HAProxy, antes o Caddy)
+  gasta memória e CPU próprios por ligação, que não entram nesta medição (ver
+  "Na AWS" abaixo).
 - **Rede real:** cliente e relay correram na mesma máquina. Com telemóveis em
   redes móveis, o sistema operativo guarda mais dados em memória por ligação.
 - **Máquina:** o CPU usado não é o da instância da AWS. Os valores de CPU são
@@ -207,4 +208,28 @@ Por omissão, o relay aceita até 4 096 ligações (`RELAY_MAX_CONNECTIONS`). O
 serviço `deploy/systemd/qt-relay.service` já sobe o limite de ficheiros abertos
 para 65 536 (`LimitNOFILE`); sem isso, o systemd limitava o relay a cerca de
 1 024 ligações. Para mais de 4 096 ligações em simultâneo, sobe
-`RELAY_MAX_CONNECTIONS` em `/etc/qt/relay.env`.
+`RELAY_MAX_CONNECTIONS` em `/etc/qt/relay.env` (o `setup-ec2.sh` já põe 16 000).
+
+### Na AWS (t3.small, 18/10/2026)
+
+Teste com `conntest` a partir de um PC em Portugal contra o relay em Estocolmo
+(`wss://`, com TLS real), cada ligação a pedir mensagens de 3 em 3 s. Memória
+medida no servidor com `ps` e `free`.
+
+| Ligações | Resultado |
+|---|---|
+| 4 000 (180 s) | 4 000 abertas, 0 falhas |
+| 6 000 (60 s) | 5 977 no pico, 0 falhas |
+| 10 000 (60 s) | 7 988 no pico, 24 falhas (fechos por tempo esgotado na abertura) |
+
+Com 4 000 ligações estáveis: o **Caddy** passou de 67 para ~616 MB
+(**~137 KB por ligação**) e o relay quase não mudou. Ou seja, quase toda a
+memória ia para o proxy de TLS, e os 2 GB acabavam perto das 8 000 ligações.
+O CPU ficou com folga com as ligações abertas; só sobe quando entram milhares
+no mesmo segundo (TLS + Noise + autenticação). A firewall da AWS não cortou
+nada (`conntrack_allowance_exceeded: 0`).
+
+Por isso o `setup-ec2.sh` passou a usar o **HAProxy** (com certbot) em vez do
+Caddy, e o travão `RELAY_MAX_CONNECTIONS` passou a 16 000 no servidor. Repetir
+o mesmo teste depois da troca para medir o novo valor por ligação.
+
