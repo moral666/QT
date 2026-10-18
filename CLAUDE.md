@@ -31,7 +31,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
 - O **site nunca menciona "sem auditoria externa"**.
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.9.1**, `versionCode` 8), em
+- Versões da app: série 0.x (agora **0.9.2**, `versionCode` 9), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
   0.9.3...) e o `versionCode` mais 1, no mesmo commit. Só se passa a **1.0.0** quando o Nuno disser.
 - Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
@@ -121,8 +121,12 @@ o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo
 
 ### Relay (AWS EC2, eu-north-1)
 
-- `wss://13-51-46-213.sslip.io`, pin `f018d46b67d2437571cefc86827dec0dc3b0fd586bd22c664d3839f6a1c67f1a`
-  (a build lê `qtRelayUrl` / `qtRelayPin` das propriedades do Gradle).
+- `wss://relay.sealer.pt` (desde a app 0.9.2, 19/10/2026), pin `f018d46b67d2437571cefc86827dec0dc3b0fd586bd22c664d3839f6a1c67f1a`
+  (a build lê `qtRelayUrl` / `qtRelayPin` das propriedades do Gradle). O nome é um registo A na
+  Cloudflare **só DNS (nuvem cinzenta, sem proxy, por privacidade)**, TTL 1 dia, a apontar para o IP
+  elástico 13.51.46.213. Antes de mudar de servidor, baixar o TTL um dia antes. As apps até à 0.9.1
+  usam `wss://13-51-46-213.sslip.io`: o servidor serve os dois nomes até todos terem a 0.9.2
+  (os nomes ficam em `/etc/qt/domains`; deixar de servir o sslip.io só com aprovação do Nuno).
 - Atualizar o servidor (no EC2):
   ```
   sudo git -C /opt/qt-src fetch --depth 1 origin site-sealer && sudo git -C /opt/qt-src reset --hard FETCH_HEAD && sudo QT_BRANCH=site-sealer bash /opt/qt-src/deploy/aws/setup-ec2.sh
