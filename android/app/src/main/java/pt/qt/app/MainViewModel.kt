@@ -126,8 +126,6 @@ data class CallUi(
     val answeredAt: Long = 0L,
     val muted: Boolean = false,
     val speaker: Boolean = false,
-    /** Linha tecnica pequena (ligacao e atraso), para os testes. */
-    val info: String = "",
     /** Porque acabou (no ecra durante uns segundos). */
     val endText: String = "",
 )
@@ -1707,6 +1705,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         CallNotify.clear(app)
     }
 
+    private var callStatsTick = 0
+
     private fun ensureCallTicker() {
         if (callTicker?.isActive == true) return
         callTicker = viewModelScope.launch(Dispatchers.IO) {
@@ -1721,8 +1721,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         val lost = if (st.lost > 0uL) " · ${st.lost} perdidos na rede (${st.dredFrames} recuperados)" else ""
                         val late = if (st.late > 0uL) " · ${st.late} atrasados" else ""
                         val loss = "$lost$late"
-                        val info = "$net$rtt$loss"
-                        _ui.update { u -> u.call?.let { c -> u.copy(call = c.copy(info = info)) } ?: u }
+                        // Os numeros da rede so vao para o registo (adb logcat), nunca para o ecra.
+                        if (++callStatsTick % 5 == 0) Log.d(TAG, "chamada: $net$rtt$loss")
                     }
                 } catch (e: CancellationException) {
                     throw e
