@@ -1431,7 +1431,7 @@ final class AppModel: ObservableObject {
         }
         var offset = start
         while offset < total {
-            let batch = Array(stride(from: offset, to: total, by: Int64(Self.chunk)).prefix(Self.window))
+            let batch = Array(stride(from: offset, to: total, by: Int(Self.chunk)).prefix(Self.window))
             let reqs = try await background { try batch.map { try client.blobPutRequest(contactId: cid, messageId: mid, offset: $0) } }
             let answers = try await l.requestMany(reqs)
             guard answers.allSatisfy({ if case .blobStatus = $0 { return true } else { return false } }) else {
@@ -1459,7 +1459,7 @@ final class AppModel: ObservableObject {
         var total: UInt64?
         while true {
             if let t = total, have >= t { break }
-            let offsets: [UInt64] = total.map { Array(stride(from: have, to: $0, by: Int64(Self.chunk)).prefix(Self.window)) } ?? [have]
+            let offsets: [UInt64] = total.map { Array(stride(from: have, to: $0, by: Int(Self.chunk)).prefix(Self.window)) } ?? [have]
             let reqs = try await background { try offsets.map { try client.blobGetRequest(contactId: cid, messageId: mid, offset: $0) } }
             for resp in try await l.requestMany(reqs) {
                 switch resp {
