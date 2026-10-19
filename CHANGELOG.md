@@ -6,6 +6,13 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: toque próprio da SEALER (app 0.9.8)
+
+- As chamadas a chegar tocam um som próprio da SEALER (`res/raw/sealer_toque.ogg`, original,
+  criado para a app) em vez do toque predefinido do telemóvel, com a app aberta ou fechada.
+- Canal de notificação novo `chamadas_toque_v2` (o Android não deixa mudar o som de um canal já
+  criado); o canal antigo `chamadas_toque` é apagado. As mensagens mantêm o som de aviso normal.
+
 ### 19 de outubro de 2026: ecrã da chamada sem dados técnicos (app 0.9.7)
 
 - O ecrã da chamada deixa de mostrar a linha técnica (UDP ou WebSocket, ms ao servidor, pacotes

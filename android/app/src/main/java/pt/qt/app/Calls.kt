@@ -18,8 +18,8 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
-import android.media.Ringtone
-import android.media.RingtoneManager
+import android.media.MediaPlayer
+import android.net.Uri
 import android.media.ToneGenerator
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
@@ -228,22 +228,26 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
 
 /** Toque de chamada a chegar (toque + vibracao) e o "tuu... tuu" de quem liga. */
 class CallSounds(private val ctx: Context) {
-    private var ringtone: Ringtone? = null
+    private var player: MediaPlayer? = null
     private var tone: ToneGenerator? = null
 
     fun ringIncoming() {
         stop()
         runCatching {
-            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-            ringtone = RingtoneManager.getRingtone(ctx, uri)?.apply {
-                audioAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-                if (Build.VERSION.SDK_INT >= 28) isLooping = true
-                play()
+            // Toque proprio da SEALER (res/raw/sealer_toque.ogg), nao o toque do telemovel.
+            player = MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build(),
+                )
+                setDataSource(ctx, CallNotify.ringUri(ctx))
+                isLooping = true
+                prepare()
+                start()
             }
-        }
+        }.onFailure { player?.release(); player = null }
         runCatching {
             val v = ContextCompat.getSystemService(ctx, Vibrator::class.java)
             val pattern = longArrayOf(0, 800, 800)
@@ -264,8 +268,8 @@ class CallSounds(private val ctx: Context) {
     }
 
     fun stop() {
-        ringtone?.let { runCatching { it.stop() } }
-        ringtone = null
+        player?.let { runCatching { it.stop() }; runCatching { it.release() } }
+        player = null
         tone?.let { runCatching { it.stopTone(); it.release() } }
         tone = null
         runCatching { ContextCompat.getSystemService(ctx, Vibrator::class.java)?.cancel() }
@@ -367,7 +371,11 @@ class CallService : Service() {
 object CallNotify {
     private const val ID = 8
     private const val MISSED_ID = 9
-    const val RING_CHANNEL = "chamadas_toque"
+    /** v2 (0.9.8): toque proprio. O Android nao deixa mudar o som de um canal ja criado. */
+    const val RING_CHANNEL = "chamadas_toque_v2"
+    private const val OLD_RING_CHANNEL = "chamadas_toque"
+
+    fun ringUri(ctx: Context): Uri = Uri.parse("android.resource://${ctx.packageName}/${R.raw.sealer_toque}")
     /** A Activity abre por cima do bloqueio do telemovel so com estas acoes. */
     const val ACTION_SHOW = "pt.qt.app.CHAMADA"
     const val ACTION_ANSWER = "pt.qt.app.ATENDER"
@@ -377,12 +385,13 @@ object CallNotify {
     private fun ensureRingChannel(ctx: Context) {
         if (Build.VERSION.SDK_INT < 26) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+        if (nm.getNotificationChannel(OLD_RING_CHANNEL) != null) nm.deleteNotificationChannel(OLD_RING_CHANNEL)
         if (nm.getNotificationChannel(RING_CHANNEL) != null) return
         nm.createNotificationChannel(
             NotificationChannel(RING_CHANNEL, "Chamadas a tocar", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Toque das chamadas de voz com a app fechada."
                 setSound(
-                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
+                    ringUri(ctx),
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
