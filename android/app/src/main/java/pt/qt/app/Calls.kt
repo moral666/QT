@@ -26,6 +26,7 @@ import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.IBinder
 import android.os.Process
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.Log
@@ -134,12 +135,22 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
         val silence = ByteArray(frame)
         while (running) {
             var off = 0
+            var err = 0
             while (off < frame && running) {
                 val n = rec.read(buf, off, frame - off)
-                if (n <= 0) break
+                if (n <= 0) { err = n; break }
                 off += n
             }
-            if (off < frame) continue
+            if (off < frame) {
+                // O microfone morreu (outra app ficou com ele, mudanca de saida): para de ler.
+                if (err == AudioRecord.ERROR_DEAD_OBJECT) {
+                    Log.w(TAG, "microfone: perdido")
+                    break
+                }
+                // Outro erro: espera um pouco em vez de repetir sem pausa (antes gastava 100% de um nucleo).
+                if (running) SystemClock.sleep(10)
+                continue
+            }
             try {
                 audio.pushCapture(if (muted) silence else buf)
             } catch (e: Exception) {

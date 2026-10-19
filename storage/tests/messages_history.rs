@@ -124,3 +124,42 @@ fn base_antiga_ganha_a_coluna_sender() {
     assert_eq!(conv.len(), 2);
     assert!(conv.iter().all(|s| s.unread == 1));
 }
+
+/// 0.9.12: a lista de conversas passou a percorrer os contactos aos saltos no indice.
+/// Tem de dar exatamente o mesmo que a consulta antiga (GROUP BY), com muitos contactos,
+/// conversas vazias apagadas, mensagens por ler e estados misturados.
+#[test]
+fn lista_de_conversas_igual_a_consulta_antiga() {
+    let path = db("conv-igual");
+    let c = open_database_with_key(&path, &KEY).unwrap();
+    let mut n: u32 = 0;
+    for round in 0..40u32 {
+        for k in 0..13u32 {
+            if (round * 7 + k) % 5 == 0 {
+                continue;
+            }
+            n += 1;
+            let id = [n.to_be_bytes().as_slice(), &[k as u8; 12]].concat();
+            let out = (n % 3) == 0;
+            let st = if out { ST_SENT } else if n % 4 == 0 { ST_READ_BY_ME } else { ST_RECEIVED };
+            insert_message(&c, &id, &format!("c{k:02}"), out, KIND_TEXT, &format!("m{n}"), n as i64, n as i64, st).unwrap();
+        }
+    }
+    hm::delete_conversation(&c, "c03").unwrap();
+    let antiga: Vec<(String, i64, i64)> = {
+        let mut s = c
+            .prepare(&format!(
+                "SELECT m.contact_id, m.seq, (SELECT COUNT(*) FROM messages u WHERE u.contact_id = m.contact_id AND u.outgoing = 0 AND u.status = {ST_RECEIVED})
+                 FROM messages m WHERE m.seq IN (SELECT MAX(seq) FROM messages GROUP BY contact_id) ORDER BY m.seq DESC"
+            ))
+            .unwrap();
+        s.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(|r| r.unwrap()).collect()
+    };
+    let nova: Vec<(String, i64, i64)> =
+        conversations(&c).unwrap().into_iter().map(|s| (s.contact_id, s.last.seq, s.unread)).collect();
+    assert_eq!(antiga.len(), 12);
+    assert_eq!(nova, antiga);
+    // Base sem mensagens: lista vazia.
+    let vazia = open_database_with_key(&db("conv-vazia"), &KEY).unwrap();
+    assert!(conversations(&vazia).unwrap().is_empty());
+}
