@@ -23,8 +23,9 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 
 ## Decisões que não se mudam sem ele pedir
 
-- **iOS fica de lado por agora** (tratar depois). A app iPhone está atrás da
-  Android (sem convites, reações, voz, grupos nem presença).
+- **App iPhone 0.9.3** compilada e testada num iPhone pelo Nuno (19/10/2026): mensagens, grupos,
+  voz, fotos, ficheiros e notificações push. O código Swift dessa versão está no Mac do Nuno
+  (confirmar que foi para o GitHub antes de mexer em `ios/`). Falta o bloqueio da app.
 - **Sem avisos de ligação na app** ("A ligar ao relay", "Sem ligação",
   barras de estado): se houver problemas, só no registo (`adb logcat -s SealerRelay`).
 - A build de release **não mostra opções de teste do relay** (URL, chave).
@@ -166,9 +167,8 @@ o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo
 
 ## Por decidir (perguntar quando fizer sentido)
 
-- O site ainda diz "versão 0.7" (topo e quadrado "O que é a versão 0.7"): passar a 0.9?
 - Código do ID mais curto: A) mesmo ID noutra escrita (~92 caracteres, só núcleo),
   B) código curto no servidor que expira (precisa de mudar o relay),
   C) ID com metade do tamanho (mudança grande, os IDs atuais deixam de servir).
   Sugestão dada: deixar como está.
-- Depois: atualizar a app iPhone (inclui notificações APNs), AAB e ficha da Play Store.
+- Depois: AAB e ficha da Play Store, bloqueio da app no iPhone.

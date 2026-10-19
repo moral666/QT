@@ -81,7 +81,7 @@ O `peer` só troca texto: uma imagem enviada pela app aparece lá só como `📷
 
 - **O meu ID**: o teu QT Public ID, em texto e em código QR.
 - **Notificações**: decide se a app avisa o outro lado de que leste as mensagens (o visto ✓✓ azul).
-  Ainda não há notificações push (ver Limitações).
+  As notificações push (avisos com a app fechada) ligam-se e desligam-se nas definições do telemóvel.
 - **Bloqueio da app** e **Bloquear agora** (este só com o bloqueio ativo).
 - **Relay (teste)**: só na build *debug*.
 - **Apagar todos os dados**: apaga a identidade, as conversas e as imagens deste telemóvel.
@@ -115,7 +115,7 @@ Chave do SQLCipher gerada aleatoriamente e protegida pelo Android Keystore (Stro
 bloqueio da app opcional (código próprio que cifra a chave do SQLCipher e a lista de contactos, com Argon2id no Rust, mais desbloqueio com impressão digital, rosto ou PIN do telemóvel através de uma chave do Keystore que só funciona depois de autenticar; ao bloquear, as imagens em memória são esquecidas); pinning da chave do relay (obrigatório na *release*); confirmação (`Ack`) só depois de processar; deduplicação feita pelo Rust.
 
 ## Limitações (ver `docs/known-limitations.md`, itens 30 a 36)
-Entrega imediata só com a app aberta (sem notificações push com a app fechada); enquanto o Android não
+Com a app fechada chega só um aviso genérico ("Tens mensagens novas"); a mensagem é decifrada quando abres a app. Enquanto o Android não
 fecha a app, a ligação de espera fica aberta em segundo plano (um pedido a cada 25 s); imagens: o relay vê o tamanho aproximado e quem envia
 e descarrega cada ficheiro, e um anexo não descarregado em 24 horas perde-se; **sem auditoria**.
 

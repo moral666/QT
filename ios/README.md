@@ -1,4 +1,4 @@
-# SEALER para iPhone (alpha)
+# SEALER para iPhone (0.9.3)
 
 O projeto Xcode continua a chamar-se `SealerMessenger` por dentro (pastas, alvo e ficheiro
 `.xcodeproj`); o nome que aparece no iPhone é **SEALER**.
@@ -80,7 +80,7 @@ não tiver 64 hex.
 * **O meu ID** mostra também o código QR; em **Novo contacto** (o botão com o logotipo) há
   *Ler código QR*. A câmara só é pedida nesse momento (`NSCameraUsageDescription` no `Info.plist`).
 * O interruptor **Notificações** no menu decide se a app avisa o outro lado de que leste as
-  mensagens (o visto azul). Ainda não há notificações push.
+  mensagens (o visto azul). As notificações push (avisos com a app fechada) já funcionam.
 
 ## Segurança (o que muda em relação ao Android)
 
@@ -96,14 +96,8 @@ não tiver 64 hex.
 
 ## Limitações desta versão
 
-* **Compilada e testada até ao teste de campo** de 15 de outubro de 2026 (commit `d3a48ef`, no iPhone
-  e no simulador do Mac). O que veio depois foi escrito sem acesso a um Mac e **ainda não foi
-  compilado no Xcode**: apagar conversa e contacto, a marca SEALER e o tema, o código QR, as imagens
-  e os GIFs, e o botão com o logotipo. O código Swift foi verificado contra os bindings gerados a
-  partir do Rust real (nomes e tipos). Se o build der erros, copia-os e eu corrijo.
+* **Versão 0.9.3 compilada no Xcode e testada num iPhone** (19 de outubro de 2026): mensagens, grupos,
+  voz, fotos, ficheiros e notificações push com a app fechada.
 * **Sem bloqueio da app** (código próprio e Face ID), que já existe no Android.
-* Como no Android, as mensagens só chegam com a app aberta (entrega imediata pela ligação de
-  espera; com um relay antigo, verificação a cada 3 s).
-  Notificações push no iPhone exigem a conta paga (APNs) e um serviço no relay; está na lista.
 * Exportação: a app usa criptografia. Ao enviar para TestFlight/App Store a Apple pergunta pela
   conformidade de exportação (responde que usa encriptação; ver a documentação da Apple).
