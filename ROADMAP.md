@@ -31,9 +31,14 @@ seguir.
 - **Bloqueio da app no Android** (código próprio e biometria).
 - **Teste de campo** com cinco aparelhos em três plataformas
   (`docs/field-tests.md`).
+- **Base das chamadas de voz** (19/10/2026): sinalização dentro do Double Ratchet,
+  relay das chamadas em produção (UDP 443, salas anónimas, reserva por WebSocket) e
+  motor de áudio (Opus 1.6 com DRED e PLC neural, jitter buffer adaptativo).
 
 ## A seguir: tornar isto usável no dia a dia
 
+- [ ] **Chamadas de voz na app Android** (fase 4): ecrã de chamada, aviso de chamada
+  com a app fechada e microfone com o cancelamento de eco do telemóvel. Depois, no iPhone.
 - [ ] **Bloqueio da app no iPhone**, igual ao do Android.
 - [ ] **Infraestrutura de produção:** backups e alertas do servidor.
 - [ ] **Distribuição:** Google Play e App Store (TestFlight).
