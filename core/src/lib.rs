@@ -13,6 +13,7 @@
 //! Ver docs/protocol-spec.md para o que ainda falta antes de producao real
 //! (transporte, sealed sender, armazenamento persistente).
 
+pub mod call;
 pub mod identity;
 pub mod pow;
 pub mod primitives;

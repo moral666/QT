@@ -10,6 +10,7 @@
 //!                    mensagem de quem inicia a conversa; nao aparece no historico.
 //!   tipo 5 = reacao: [16 msg_id da mensagem][emoji UTF-8; vazio = retirar]
 //!   tipos 6 a 8 = grupos (mensagem, info, saida): ver `groups.rs`
+//!   tipo 11 = chamada de voz (oferta, a tocar, resposta, desligar): ver `call.rs`
 //! Um plaintext que nao siga este formato (clientes antigos) e tratado como
 //! texto simples, com um msg_id derivado do envelope (deduplicacao estavel).
 //!
@@ -289,6 +290,8 @@ enum Payload {
     Presence { online: bool, sent_at: i64 },
     /// O contacto apagou-me e as chaves da sessao (tipo 10).
     SessionEnd,
+    /// Chamada de voz (tipo 11, ver `call.rs`): o corpo comeca pela operacao.
+    Call { body: Vec<u8>, sent_at: i64 },
     /// Mensagem de controlo invalida: ignora-se, sem aviso.
     Ignored,
 }
@@ -352,6 +355,10 @@ fn decode(plain: &[u8], legacy_id: &[u8]) -> Payload {
             _ => Payload::Ignored,
         },
         T_SESSION_END => Payload::SessionEnd,
+        crate::call::T_CALL => match plain.len() - HDR {
+            17..=128 => Payload::Call { body: plain[HDR..].to_vec(), sent_at },
+            _ => Payload::Ignored,
+        },
         T_INTRO => match std::str::from_utf8(&plain[HDR..]) {
             Ok(p) if p.len() <= 200 => Payload::Intro { public_id: p.to_string() },
             _ => Payload::Ignored,
@@ -648,6 +655,7 @@ impl QtClient {
                 Payload::GroupLeave { body } => crate::groups::on_group_leave(self, tx, contact_id, &body)?,
                 Payload::Presence { online, sent_at } => crate::presence::on_presence(self, tx, contact_id, online, sent_at)?,
                 Payload::SessionEnd => on_session_end(tx, contact_id)?,
+                Payload::Call { body, sent_at } => crate::call::on_call(self, tx, contact_id, &body, sent_at)?,
                 Payload::Ignored => ReceiveResult::NoChange { contact_id: contact_id.to_string() },
                 Payload::Unsupported { id, sent_at } => {
                     match hm::insert_message(tx, &id, contact_id, false, hm::KIND_TEXT, UNSUPPORTED_TEXT, sent_at, now, hm::ST_RECEIVED)? {

@@ -46,9 +46,10 @@ formato que já mudou outra vez.
 5. [Armazenamento local](#5-armazenamento-local-no-cliente-implementado-e-testado): SQLCipher
 6. [Bindings FFI](#6-bindings-ffi-androidiospython-implementado-e-testado): Kotlin/Swift/Python
 7. [Sealed sender](#7-sealed-sender-implementado-e-testado): esconder o remetente do servidor
-8. a 17. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v3,
+8. a 18. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v3,
    envelope v2, protocolo do relay, mensagem dentro do ratchet, sessões cruzadas e
-   eliminação, anexos (imagens, GIFs, voz e ficheiros), grupos, presença, notificações
+   eliminação, anexos (imagens, GIFs, voz e ficheiros), grupos, presença, notificações,
+   chamadas de voz
 
 *(Se preferires uma explicação sem jargão técnico, começa antes por
 o [`README.md`](../README.md). Este
@@ -707,6 +708,56 @@ quem o enviou. Um relay antigo ignora o campo (toca sempre); uma app antiga não
 novas", sem abrir a base de dados nem decifrar nada em segundo plano (funciona com o telemóvel
 bloqueado e com o bloqueio da app). As mensagens só são buscadas quando a app abre. Nos primeiros
 30 s em segundo plano a app ainda está ligada (o relay não toca): o aviso é então criado pela app.
+
+## 18. Chamadas de voz 1 a 1 (fase 1: sinalização e cifra dos pacotes)
+
+Desenho aprovado a 19/10/2026: só Android primeiro, sem ligação direta entre telemóveis (o áudio
+passa sempre pelo relay, o contacto nunca vê o IP). A fase 1 está no núcleo
+(`core/src/call.rs`, `ffi/src/call.rs`, testes em `ffi/tests/calls.rs`); o relay de UDP (fase 2),
+o áudio Opus (fase 3) e a app (fase 4) vêm depois.
+
+**Sinalização (tipo 11, dentro do Double Ratchet).** Vai como as outras mensagens (envelope v3
+com enchimento): o relay não sabe que é uma chamada. `msg_id` = `call_id` (16 bytes aleatórios),
+para uma versão antiga mostrar "atualiza a app" uma só vez por chamada. Corpo `[1 op][16 call_id]`:
+
+| op | nome | resto | campainha |
+|---|---|---|---|
+| 1 | oferta | `[32 offer_secret][2 pad BE]` | sim (como uma mensagem) |
+| 4 | a tocar | vazio | não (`silent`) |
+| 2 | resposta | `[32 answer_secret]` | não |
+| 3 | desligar | `[1 motivo]`: 1 desligou, 2 recusou, 3 ocupado, 4 sem resposta, 5 cancelou | não |
+
+* Uma chamada de cada vez. Uma oferta que chegue com mais de 45 s (`sent_at`, limitado à hora
+  local) não toca: fica "chegou tarde" (chamada perdida). Sem resposta em 45 s, quem liga envia
+  "sem resposta" e quem recebe deixa de tocar.
+* Oferta com outra chamada em curso: responde "ocupado" sozinha. Os dois a ligar um ao outro ao
+  mesmo tempo: fica a chamada com o `call_id` menor (os dois lados decidem igual).
+* Cancelar antes de a oferta sair do telemóvel: sai da outbox e não se envia nada.
+* Contactos bloqueados: a oferta é descartada como qualquer mensagem. Quem não está nos
+  contactos mas tem sessão pode ligar; é a app que decide se toca.
+* Tudo fica só em memória (nada em disco), como a presença.
+
+**Chaves da chamada.** `HKDF-SHA256(salt = call_id, ikm = offer_secret ‖ answer_secret)`:
+`room_id` (8 bytes, `"QT-CALL-v1 room"`), `relay_key` (32, `"QT-CALL-v1 relay"`) e uma chave
+ChaCha20-Poly1305 por sentido (`"QT-CALL-v1 caller->callee"`, `"QT-CALL-v1 callee->caller"`).
+Os dois lados contribuem com segredo. A autenticação e a proteção pós-quântica vêm do ratchet.
+
+**Pacote de áudio (estilo WireGuard, tamanho fixo).**
+`[1 0x10 | papel][8 room_id][8 contador BE][ChaCha20-Poly1305([2 tamanho][frame][zeros até pad]) + 16][8 etiqueta]`
+
+* Papel: 0 quem liga, 1 quem atende. Um pacote refletido de volta é recusado.
+* Cabeçalho (17 bytes) como dado adicional do AEAD; nonce `[4 zeros][8 contador LE]`.
+* Janela anti-repetição de 1024 pacotes (RFC 6479): aceita fora de ordem, recusa repetidos e
+  muito antigos. A janela só avança depois de o AEAD passar.
+* Todos os pacotes de uma chamada têm o mesmo tamanho (`pad`, 128 por agora: 169 bytes por
+  pacote), para o tamanho não revelar o que se diz. Frames vazios servem para abrir a sala.
+* Etiqueta = `HMAC-SHA256(relay_key, tudo o que vem antes)[..8]`: só serve para o relay aceitar
+  a mudança de IP (Wi-Fi para 4G) sem que outra pessoa desvie a sala. Não decifra nada.
+
+**API (`QtClient`).** `call_start`, `call_accept`, `call_hangup` (o motivo sai do estado),
+`call_events` (Incoming, Ringing, Answered, Ended; chamar depois de cada lote recebido e de
+segundo a segundo durante uma chamada), `call_current`, `call_seal` e `call_open`. As chaves
+nunca atravessam a FFI.
 
 ## Documentos relacionados
 

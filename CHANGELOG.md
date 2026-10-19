@@ -6,6 +6,17 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: chamadas de voz, fase 1 (núcleo Rust)
+
+- Sinalização das chamadas 1 a 1 dentro do Double Ratchet (tipo 11): oferta, a tocar, resposta e
+  desligar, com recusar, ocupado, sem resposta, cancelar, oferta atrasada e chamadas cruzadas
+  (`ffi/src/call.rs`).
+- Cifra dos pacotes de áudio no estilo WireGuard (`core/src/call.rs`): chaves por sentido
+  derivadas dos dois segredos da chamada, janela anti-repetição, tamanho fixo, código da sala e
+  etiqueta para o relay. Ver `docs/protocol-spec.md`, secção 18.
+- Testes entre dois clientes, com os pacotes por UDP local (`ffi/tests/calls.rs`). Ainda sem
+  relay de UDP, sem áudio e sem mudanças na app Android.
+
 ### 19 de outubro de 2026: documentação e site ao estado da 0.9.3
 
 - Site: "Em versão de testes (0.9.3)", quadrado "O que é a versão 0.9.3" e "O que vem a seguir"

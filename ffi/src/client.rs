@@ -199,6 +199,8 @@ pub struct QtClient {
     pub(crate) files_dir: std::path::PathBuf,
     /// Quem esta online (so em memoria, nunca em disco; ver presence.rs).
     pub(crate) presence: Mutex<crate::presence::Presence>,
+    /// Chamada de voz em curso e eventos por entregar (so em memoria; ver call.rs).
+    pub(crate) calls: Mutex<crate::call::Calls>,
 }
 
 pub(crate) fn parse_public_id(id: &str) -> Result<([u8; 32], [u8; 32]), QtError> {
@@ -252,6 +254,7 @@ impl QtClient {
             conn: Mutex::new(conn),
             files_dir: std::path::PathBuf::from(format!("{path}.anexos")),
             presence: Mutex::new(Default::default()),
+            calls: Mutex::new(Default::default()),
         }))
     }
 
