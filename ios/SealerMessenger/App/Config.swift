@@ -15,4 +15,17 @@ enum Config {
     static var relayPin: String { plist("QTRelayPin").lowercased() }
     static var relayEditable: Bool { plist("QTRelayEditable") == "YES" }
     static var allowCleartext: Bool { plist("QTAllowCleartext") == "YES" }
+    /// Versao instalada (MARKETING_VERSION), so informativa nas Definicoes.
+    static var version: String { plist("CFBundleShortVersionString") }
+
+    /// Notificacoes da Apple: "s" (sandbox, apps instaladas pelo Xcode) ou "p" (TestFlight e
+    /// App Store). Vem do perfil de assinatura embebido na app; sem ele (App Store), "p".
+    static let pushEnvironment: String = {
+        guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let raw = try? Data(contentsOf: url),
+              let text = String(data: raw, encoding: .isoLatin1),
+              let r = text.range(of: "<key>aps-environment</key>") else { return "p" }
+        let rest = text[r.upperBound...].prefix(80)
+        return rest.contains("development") ? "s" : "p"
+    }()
 }

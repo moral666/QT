@@ -1,128 +1,148 @@
-# SEALER para iPhone (0.9.3)
+# SEALER para iPhone (0.9.13)
 
 O projeto Xcode continua a chamar-se `SealerMessenger` por dentro (pastas, alvo e ficheiro
-`.xcodeproj`); o nome que aparece no iPhone é **SEALER**.
+`.xcodeproj`); o nome que aparece no iPhone é **SEALER**. Identificador: **`sealer.app`**, o mesmo da
+app Android.
 
-A mesma app que a versão Android: o **mesmo núcleo Rust** (PQXDH + ML-KEM-768, Double Ratchet,
-Sealed Sender, Noise com pinning, SQLCipher, histórico, recibos ✓/✓✓) e o **mesmo ecrã**
-(lista de conversas estilo WhatsApp, chat com bolhas, tema roxo com o logotipo a rodar, "O meu ID"
-com código QR, "Verificar segurança", imagens e GIFs). Só a interface é reescrita em SwiftUI. As duas
-apps falam entre si pelo mesmo relay.
+A mesma app que a versão Android 0.9.13, com o **mesmo núcleo Rust** (PQXDH + ML-KEM-768, Double
+Ratchet, Sealed Sender, Noise com pinning, SQLCipher, grupos, presença, fotos de perfil, chamadas com
+Opus) e o **mesmo ecrã** (design 0.9.11: cabeçalho com a curva, logo a rodar só no ecrã inicial,
+Definições, Novo contacto, letra Plus Jakarta Sans). Só a interface é escrita em SwiftUI. As duas apps
+falam entre si pelo mesmo relay.
 
-| Android (Kotlin)            | iPhone (Swift)                         |
-|-----------------------------|----------------------------------------|
-| `MainViewModel.kt`          | `Model/AppModel.swift`                 |
-| `MainActivity.kt`           | `Views/*.swift`                        |
-| `RelayLink.kt` (OkHttp)     | `Network/RelayLink.swift` (URLSession) |
-| `Attachments.kt`            | `Views/AttachmentViews.swift`          |
-| `Qr.kt` (ZXing)             | `Views/QrViews.swift` (câmara do sistema, sem bibliotecas extra) |
-| `Keystore.kt` (Keystore)    | `Security/SecureBox.swift` (Secure Enclave) |
-| `ContactStore.kt`           | `Security/ContactStore.swift`          |
-| `AppLock.kt`                | ainda não existe (ver Limitações)      |
-| `Theme.kt`                  | `App/Theme.swift`                      |
-| `BuildConfig` (gradle)      | `Configs/*.xcconfig` → `Info.plist` → `App/Config.swift` |
+| Android (Kotlin)              | iPhone (Swift)                                            |
+|-------------------------------|-----------------------------------------------------------|
+| `MainViewModel.kt` + `Core.kt` | `Model/AppModel.swift` (um só por processo, `AppModel.shared`) |
+| `MainActivity.kt`, `Design.kt` | `Views/*.swift` (`HomeScreen`, `SettingsScreen`, `ChatScreen`...) |
+| `Groups.kt`                   | `Views/GroupScreens.swift`                                 |
+| `Composer.kt`, `Voice.kt`, `Files.kt` | `Views/Composer.swift`, `Views/MediaSupport.swift`  |
+| `Attachments.kt`              | `Views/AttachmentViews.swift`                              |
+| `Calls.kt`, `CallScreen.kt`   | `Calls/CallKit.swift`, `Calls/CallAudioIO.swift`, `Views/CallScreen.swift` |
+| `Push.kt` (Firebase)          | `Calls/Push.swift` (Apple, **sem Firebase**)               |
+| `Keystore.kt`, `AppLock.kt`   | `Security/SecureBox.swift` (Secure Enclave, Face ID)       |
+| `ContactStore.kt`             | `Security/ContactStore.swift`                              |
+| `Profile.kt`                  | `Views/MediaSupport.swift` (`ProfilePhoto`) e `Views/CallScreen.swift` (`ProfilePhotoSheet`) |
+| `Lang.kt` + `res/values*/strings.xml` | `App/Lang.swift` + `Resources/*.lproj` (gerados)   |
+| `RelayLink.kt`                | `Network/RelayLink.swift`                                  |
+| `Qr.kt` (ZXing)               | `Views/QrViews.swift` (câmara do sistema, sem bibliotecas) |
+| `BuildConfig` (gradle)        | `Configs/*.xcconfig` → `Info.plist` → `App/Config.swift`   |
 
 ## O que precisas
 
 * Um **Mac** com **Xcode 15 ou mais recente** (o SDK do iOS só existe no macOS).
-* **Rust 1.88 ou mais recente**: `curl https://sh.rustup.rs -sSf | sh` (ou `rustup update`, se já tiveres).
-* **XcodeGen**: `brew install xcodegen` (gera o projeto Xcode a partir de `project.yml`).
+* **Rust 1.88+**, **XcodeGen** e **cmake** (o libopus das chamadas): o `compilar-iphone.sh` instala
+  o que faltar (o XcodeGen e o cmake pelo Homebrew).
 * Um iPhone com **iOS 17+** e o cabo.
 * Conta Apple:
   * **Grátis (Apple ID normal):** chega para instalar no TEU iPhone. A app deixa de abrir ao fim de
-    7 dias (voltas a carregar no ▶ no Xcode). Não dá para enviar a amigos.
-  * **Apple Developer Program (99 €/ano):** TestFlight (até 10 000 testadores por link) e App Store.
+    7 dias. **Sem notificações**: a Apple não deixa contas grátis usar "Push Notifications", por isso
+    as mensagens só chegam com a app aberta e as chamadas só tocam com ela aberta.
+  * **Apple Developer Program (99 €/ano):** notificações, chamadas com a app fechada, TestFlight e
+    App Store.
 
 ## Passos (no Mac)
 
-O código Swift da 0.9.3 (grupos, voz, ficheiros e notificações push) foi feito no Mac. Se ainda não
-estiver no GitHub, envia-o primeiro (ver "Enviar o código do Mac para o GitHub", mais abaixo), senão a
-app compilada a partir do GitHub fica mais antiga do que a que está no iPhone.
+O mais simples é o zip preparado no PC (`QT-sealer-iphone.zip`): duplo clique e
 
+```bash
+cd ~/Downloads/QT-sealer && bash compilar-iphone.sh
+```
+
+Ou a partir do GitHub:
 
 ```bash
 git clone https://github.com/moral666/QT.git && cd QT
 git checkout site-sealer
-
-./scripts/build-ios.sh          # compila o Rust para iPhone + simulador (demora na 1.ª vez)
-cd ios && xcodegen              # cria SealerMessenger.xcodeproj
-open SealerMessenger.xcodeproj
+bash compilar-iphone.sh       # Rust para iPhone + simulador, xcodegen e abre o Xcode
 ```
 
 No Xcode:
 
-1. Seleciona o alvo **SealerMessenger** → separador **Signing & Capabilities** → **Team**: o teu Apple ID
-   (Xcode → Settings → Accounts → "+" se ainda não estiver lá).
-   Se aparecer "bundle identifier não disponível", muda para algo teu, ex. `pt.nuno.sealermessenger`.
-   (Para não teres de repetir isto sempre que corres o `xcodegen`, cria `ios/Configs/Local.xcconfig`
-   com `DEVELOPMENT_TEAM = XXXXXXXXXX` e, se precisares, `PRODUCT_BUNDLE_IDENTIFIER = ...`.)
+1. Alvo **SealerMessenger** → **Signing & Capabilities** → **Team**: o teu Apple ID.
+   Se aparecer "bundle identifier não disponível", cria `ios/Configs/Local.xcconfig` com
+   `PRODUCT_BUNDLE_IDENTIFIER = pt.<teunome>.sealer` e corre o `xcodegen` outra vez.
 2. Liga o iPhone, escolhe-o no topo da janela e carrega **▶ Run**.
-3. Na 1.ª vez, no iPhone: **Definições → Geral → VPN e gestão de dispositivos** → confia no teu Apple ID.
-   No iOS 16+ também tens de ligar **Definições → Privacidade e segurança → Modo de programador**.
+3. Na 1.ª vez, no iPhone: **Definições → Geral → VPN e gestão de dispositivos** → confia no teu Apple ID,
+   e **Definições → Privacidade e segurança → Modo de programador**.
+
+`ios/Configs/Local.xcconfig` (não vai para o git) serve para não repetir isto sempre que corres o
+`xcodegen`:
+
+```
+DEVELOPMENT_TEAM = XXXXXXXXXX
+// So com a conta paga: notificacoes e chamadas com a app fechada.
+QT_ENTITLEMENTS = SealerMessenger/SealerMessenger.entitlements
+```
 
 ### Debug vs Release (igual ao Android)
 
 | | Debug (▶ normal) | Release (Product → Archive) |
 |---|---|---|
-| Relay | editável em "Opções de teste"; por omissão `ws://127.0.0.1:9443` (relay no Mac, para o simulador) | **fixo**: `Configs/Relay.xcconfig` (o mesmo AWS da app Android) |
+| Relay | editável em "Opções de teste"; por omissão `ws://127.0.0.1:9443` | **fixo**: `Configs/Relay.xcconfig` |
 | `ws://` sem TLS | permitido | recusado (no código e no ATS) |
 | Botão "Relay (teste)" | visível | escondido |
 
-Para testar no iPhone com o relay da AWS em Debug: "Opções de teste" → URL
-`wss://relay.sealer.pt` e a chave do relay. Ou usa o esquema **Release**
-(Product → Scheme → Edit Scheme → Run → Build Configuration → Release).
+Para testar no iPhone com o relay da AWS em Debug: "Opções de teste" → `wss://relay.sealer.pt` e a
+chave do relay. Ou usa o esquema **Release** (Product → Scheme → Edit Scheme → Run → Release).
 
-O build Release falha de propósito se `QT_RELAY_URL` não for `wss://` ou se `QT_RELAY_PIN`
-não tiver 64 hex.
+## Notificações e chamadas (sem Firebase)
 
-## Imagens, GIFs e código QR
-
-* No chat, o botão **+** abre um menu: **Galeria** (escolher fotos, sem pedir acesso a todas as
-  fotos) ou **Colar imagem ou GIF**. Os GIFs do teclado (por exemplo o do Gboard) entram copiando-os
-  primeiro no teclado e depois escolhendo *Colar imagem ou GIF*.
-* Antes de enviar há uma pré-visualização com a opção **Qualidade original**. Máximo 25 MB. O resto
-  (cifra, blocos de 40 KB, 24 horas no relay) é igual ao Android: ver `android/README.md`.
-* **O meu ID** mostra também o código QR; em **Novo contacto** (o botão com o logotipo) há
-  *Ler código QR*. A câmara só é pedida nesse momento (`NSCameraUsageDescription` no `Info.plist`).
-* O interruptor **Notificações** no menu decide se a app avisa o outro lado de que leste as
-  mensagens (o visto azul). As notificações push (avisos com a app fechada) já funcionam.
+* O iPhone **não leva o SDK da Google**. O relay fala diretamente com a Apple (`server/src/apns.rs`).
+* Mensagens: a Apple entrega um aviso com o texto **da própria app** (chave `push_new`, "Tens
+  mensagens novas"), sem remetente nem conteúdo, como no Android.
+* Chamadas: um push VoIP vazio (PushKit) acorda a app e o **CallKit** mostra a chamada, também com o
+  iPhone bloqueado. Sem o bloqueio da app aparece o nome do contacto; com ele, "Chamada SEALER" e o
+  código é pedido ao abrir a app (atender no ecrã do iPhone fica à espera do código).
+* As chamadas **não ficam no histórico do telefone** (`includesCallsInRecents = false`), que o iOS
+  sincroniza com o iCloud.
+* O token enviado ao relay é `apns:<p|s>:<alertas>:<voip>` (`p` App Store/TestFlight, `s` apps
+  instaladas pelo Xcode).
+* No relay: `/etc/qt/apns.json` com `team_id`, `key_id`, `topic` (`sealer.app`) e a chave `.p8`
+  (developer.apple.com → Keys → "Apple Push Notifications service"). O `setup-ec2.sh` liga-as se o
+  ficheiro existir. Nunca no git nem na conversa.
 
 ## Segurança (o que muda em relação ao Android)
 
 * **Chave do SQLCipher**: 32 bytes aleatórios, cifrados por uma chave P-256 **dentro do Secure
-  Enclave** (não exportável), só utilizável com o iPhone desbloqueado e nunca copiada para backups
-  (`WhenUnlockedThisDeviceOnly`). Nunca é criada uma chave nova por cima de uma base de dados
-  existente (seria perda de dados silenciosa).
-* Ficheiros em `Application Support/QT/` com **Data Protection "Complete"** e **excluídos do backup**.
-* Lista de contactos cifrada pelo Secure Enclave (os metadados "quem fala com quem").
-* Ao sair da app, o conteúdo é tapado (o iOS tira uma fotografia do ecrã para a lista de apps
-  recentes). As capturas de ecrã são permitidas, tal como na app Android.
+  Enclave** (não exportável), nunca copiada para backups. Como no Android desde a 0.9.6 ("1B"),
+  funciona com o iPhone bloqueado depois do primeiro desbloqueio (`AfterFirstUnlockThisDeviceOnly`,
+  ficheiro "QTK3"), para tocar uma chamada com a app fechada. Os ficheiros da 0.9.3 ("QTK2", só com o
+  iPhone desbloqueado) passam ao formato novo sozinhos.
+* **Bloqueio da app**: o código (Argon2id, no Rust) cifra a chave da base de dados ("QTL1"); sem ele
+  nada abre. Face ID / Touch ID / código do iPhone guardam uma segunda cópia no Keychain, que o iOS
+  invalida se mudar o rosto ou o dedo registado.
+* Lista de contactos com duas camadas (Secure Enclave + AES-256-GCM com a chave derivada da do
+  armazenamento): com o bloqueio ativo, também só abre com o código.
+* Ficheiros em `Application Support/QT/`, **excluídos do backup**. Ficheiros abertos para ver
+  (Quick Look) e envios a meio ficam na pasta temporária com a proteção máxima e são apagados ao
+  fechar, ao bloquear e ao abrir a app.
+* Fotos de perfil em JPEG (o iPhone não grava WebP; o Rust e o Android aceitam os dois), sem
+  metadados nem localização.
+* Ao sair da app, o conteúdo é tapado (lista de apps recentes).
 * `PrivacyInfo.xcprivacy`: sem rastreio, sem recolha de dados.
 
-## Limitações desta versão
+## Idiomas
 
-* **Versão 0.9.3 compilada no Xcode e testada num iPhone** (19 de outubro de 2026): mensagens, grupos,
-  voz, fotos, ficheiros e notificações push com a app fechada.
-* **Sem bloqueio da app** (código próprio e Face ID), que já existe no Android.
-* Exportação: a app usa criptografia. Ao enviar para TestFlight/App Store a Apple pergunta pela
-  conformidade de exportação (responde que usa encriptação; ver a documentação da Apple).
+PT, EN, FR, ES, DE e IT, **os mesmos textos da app Android**: `python3 scripts/strings-ios.py` gera
+`Resources/<língua>.lproj/Localizable.strings` e `InfoPlist.strings` a partir de
+`android/app/src/main/res/values*/strings.xml` (mais os poucos textos só do iPhone, no próprio
+script). Correr sempre que mudar um texto no Android. A língua segue a do iPhone; a escolha manual
+está em **Definições do iPhone → SEALER → Idioma** (o botão "Idioma" da app abre lá).
 
-## Enviar o código do Mac para o GitHub
+## Diferenças em relação ao Android
 
-Na pasta do QT no Mac. O `GoogleService-Info.plist` (Firebase) e as chaves da Apple (`.p8`, `.p12`,
-perfis) ficam fora do git pelo `.gitignore`: confirma na lista do `git status` que não aparecem.
+* Recibos "entregue" com a app fechada: no Android a app decifra em segundo plano; no iPhone só
+  quando a abres (fazê-lo exigia uma segunda app dentro da app, a extensão de notificações, a abrir a
+  mesma base de dados).
+* Com o bloqueio da app ativo, se quem liga desistir, o iPhone toca até ao fim (45 s): o iOS não
+  deixa um push VoIP que não mostre uma chamada nova.
+* CallKit: a Apple não aceita apps com CallKit na App Store da China continental (escolher os países
+  na App Store Connect).
 
-```bash
-git fetch origin
-git status --short                       # o que mudou no Mac
-git checkout -b iphone-mac               # um ramo só para isto (as mudanças vêm atrás)
-git checkout origin/site-sealer -- .gitignore   # .gitignore novo, que esconde os segredos
-git add ios scripts .gitignore
-git status --short                       # NÃO pode aparecer GoogleService-Info.plist nem .p8
-git commit -m "iPhone 0.9.3: codigo do Mac (grupos, voz, ficheiros, notificacoes)"
-git rebase origin/site-sealer            # põe-no por cima do núcleo atual
-git push origin iphone-mac
-```
+## App Store
 
-Depois de rever o ramo `iphone-mac`, junta-se à `site-sealer` (`git checkout site-sealer && git merge
---ff-only iphone-mac && git push origin site-sealer`).
+* Exportação: `ITSAppUsesNonExemptEncryption = YES`. Na App Store Connect: usa criptografia
+  normalizada, código aberto e público, mercado de massas (ver `docs/export-compliance.md`).
+* Background Modes: `audio` e `voip` (só para as chamadas).
+* Termos de utilização, bloquear contactos e apagar a conta dentro da app (exigidos para apps com
+  conversas entre utilizadores).

@@ -98,7 +98,8 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     tentativa custa cerca de 0,5 a 1 s (Argon2id, 64 MiB), por isso um código de 6 dígitos aguenta
     dias, não anos. Códigos mais longos protegem mais. A espera crescente depois de 5 erros só trava
     tentativas pela interface. Com o desbloqueio por impressão digital ativo, quem souber o PIN do
-    telemóvel também abre a app (é uma escolha do utilizador). Ainda não existe na app iPhone.
+    telemóvel também abre a app (é uma escolha do utilizador). No iPhone (desde a 0.9.13) é igual,
+    com o Secure Enclave no lugar do Keystore e o Face ID / Touch ID / código do iPhone.
 36. **Imagens e GIFs (anexos).** O conteúdo e a chave são cifrados ponta a ponta, mas o relay vê:
     o tamanho arredondado (Padme, revela cerca de metade dos bits do tamanho), a hora do envio e
     da descarga e, enquanto a ligação está aberta, que utilizador enviou e que utilizador
@@ -117,8 +118,11 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     depois). Cada mensagem sai uma vez por membro (até 9 envelopes), por isso gasta mais
     dados do que uma conversa a dois. Os membros veem os Public IDs uns dos outros (estão na
     info do grupo, cifrada).
-38. ~~**App iPhone desatualizada**~~ (resolvido na 0.9.3, 19/10/2026): mensagens, grupos, voz, fotos,
-    ficheiros e notificações push testados num iPhone. Falta o bloqueio da app (35).
+38. **App iPhone (0.9.13, 19/10/2026, ainda por testar no iPhone):** as mesmas funcionalidades da
+    Android. Diferenças: com a app fechada não envia os recibos de entregue (só ao abrir); com o
+    bloqueio da app ativo, uma chamada cancelada continua a tocar até 45 s (o iOS não deixa um push
+    VoIP sem chamada nova); sem a conta paga da Apple não há notificações nem chamadas com a app
+    fechada; o CallKit não é aceite na App Store da China continental.
 39. **Online / offline.** Só com a app aberta (a app fechada não diz nada).
     Se a app morrer ou o telemóvel ficar sem rede, os contactos continuam a ver "online" até 5
     min. Bloquear a app (código) não manda "offline": passa a offline ao fim desses 5 min. O

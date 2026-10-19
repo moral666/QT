@@ -20,8 +20,31 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- Textos dos pedidos de permissao: traduzidos em Resources/<lingua>.lproj/InfoPlist.strings -->
 	<key>NSCameraUsageDescription</key>
 	<string>Para ler o código QR de outra pessoa e adicioná-la aos contactos.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Para as chamadas de voz e as mensagens de voz.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Para desbloquear a SEALER sem escrever o código.</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>pt-PT</string>
+		<string>en</string>
+		<string>fr</string>
+		<string>es</string>
+		<string>de</string>
+		<string>it</string>
+	</array>
+	<!-- Chamadas de voz: tocar com a app fechada (PushKit + CallKit) e continuar em segundo plano. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>voip</string>
+	</array>
+	<!-- Cifra ponta a ponta (algoritmos normalizados, codigo aberto): ver docs/export-compliance.md. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<true/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
@@ -59,10 +82,15 @@
 	<string>$(QT_RELAY_EDITABLE)</string>
 	<key>QTAllowCleartext</key>
 	<string>$(QT_ALLOW_CLEARTEXT)</string>
-	<!-- Fonte da marca (barra de topo) -->
+	<!-- Letras: Manrope (marca) e Plus Jakarta Sans (texto), as mesmas do Android -->
 	<key>UIAppFonts</key>
 	<array>
 		<string>Manrope-Bold.ttf</string>
+		<string>PlusJakartaSans-Regular.ttf</string>
+		<string>PlusJakartaSans-Medium.ttf</string>
+		<string>PlusJakartaSans-SemiBold.ttf</string>
+		<string>PlusJakartaSans-Bold.ttf</string>
+		<string>PlusJakartaSans-ExtraBold.ttf</string>
 	</array>
 </dict>
 </plist>

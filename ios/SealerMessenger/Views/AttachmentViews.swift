@@ -221,7 +221,7 @@ struct AttachmentContent: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
         .onTapGesture { if image != nil { onOpen() } }
-        .accessibilityLabel(att.mime == "image/gif" ? "GIF" : "Imagem")
+        .accessibilityLabel(att.mime == "image/gif" ? "GIF" : s("t_imagem"))
         .task(id: "\(m.messageId)-\(ready)") {
             guard ready, image == nil, let d = await load(m) else { return }
             image = await ImageDecode.decode(d, maxPixel: 720)
@@ -230,8 +230,8 @@ struct AttachmentContent: View {
 
     private var problem: String? {
         switch att.state {
-        case .expired: return "A imagem já não está disponível (passaram mais de 24 horas)."
-        case .failed: return m.outgoing ? "Não foi possível enviar." : "Não foi possível receber a imagem."
+        case .expired: return s("t_a_imagem_ja_nao_esta_disponivel")
+        case .failed: return m.outgoing ? s("t_nao_foi_possivel_enviar") : s("t_nao_foi_possivel_receber_a_imagem")
         default: return nil
         }
     }
@@ -283,7 +283,7 @@ struct SendImageSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(isGif ? "Enviar GIF" : "Enviar imagem").font(.title2.bold())
+            Text(isGif ? s("t_enviar_gif") : s("t_enviar_imagem")).font(Jakarta.font(22, .bold))
             Group {
                 if let preview {
                     AnimatedImageView(image: preview, contentMode: .scaleAspectFit)
@@ -296,29 +296,184 @@ struct SendImageSheet: View {
             if !isGif {
                 Toggle(isOn: $original) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Qualidade original")
-                        Text(original ? "Mais nítida, mas gasta mais dados." : "Comprimida: envia mais depressa e gasta menos dados.")
-                            .font(.footnote).foregroundStyle(c.onSurfaceVariant)
+                        Text(s("t_qualidade_original"))
+                        Text(original ? s("t_mais_nitida_mas_gasta_mais_dados") : s("t_comprimida_envia_mais_depressa_e_gasta"))
+                            .font(.sBodySmall).foregroundStyle(c.onSurfaceVariant)
                     }
                 }
                 .tint(c.primary)
             }
-            Text("Cifrada no teu telemóvel antes de sair. A localização da foto é removida.")
+            Text(s("t_cifrada_no_teu_telemovel_antes_de"))
                 .font(.footnote).foregroundStyle(c.onSurfaceVariant)
             HStack {
                 Spacer()
-                Button("Cancelar") { dismiss() }
-                Button("Enviar") {
+                Button(s("t_cancelar")) { dismiss() }
+                Button(s("t_enviar")) {
                     onSend(original)
                     dismiss()
                 }
                 .padding(.leading, 16)
             }
-            .font(.body.weight(.medium))
+            .font(Jakarta.font(15, .semibold))
         }
         .padding(24)
         .presentationDetents([.large])
         .presentationBackground(c.surface)
         .task { preview = await ImageDecode.decode(picked.data, maxPixel: 1200) }
+    }
+}
+
+
+// ========================================================================= ficheiros
+
+/// Bolha de um ficheiro: icone com a extensao, nome, tamanho e estado. Tocar abre as opcoes.
+struct FileContent: View {
+    let m: ChatMessage
+    let att: AttachmentInfo
+    let progress: Double?
+    let onOpen: () -> Void
+    @Environment(\.chat) private var c
+
+    var body: some View {
+        let name = att.fileName ?? "ficheiro"
+        let ready = m.outgoing || att.state == .ready
+        let busy = att.state == .uploading || att.state == .downloading
+        let ext = fileExtension(name)
+        let size = formatSize(Int64(att.size))
+        let subtitle: String = {
+            switch att.state {
+            case .expired: return s("t_ja_nao_esta_disponivel_passaram_mais")
+            case .failed: return m.outgoing ? s("t_nao_foi_possivel_enviar") : s("t_nao_foi_possivel_receber")
+            case .uploading, .downloading: return "… " + size
+            default: return ext.isEmpty ? size : "\(size) · \(ext)"
+            }
+        }()
+        Button { if ready { onOpen() } } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10).fill(c.primary.opacity(0.15))
+                    if busy {
+                        if let progress, progress > 0 {
+                            ProgressView(value: progress).progressViewStyle(.circular).tint(c.primary)
+                        } else {
+                            ProgressView().tint(c.primary)
+                        }
+                    } else {
+                        Text(ext.isEmpty ? "📄" : ext).font(Jakarta.font(ext.isEmpty ? 20 : 11, .bold)).foregroundStyle(c.primary).lineLimit(1)
+                    }
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(.sBodyMedium).foregroundStyle(c.bubbleText).lineLimit(2).multilineTextAlignment(.leading)
+                    Text(subtitle).font(.system(size: 12)).foregroundStyle(c.bubbleMeta).lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(10)
+            .frame(width: 250)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.06)))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Opcoes de um ficheiro: ver dentro da app (Quick Look) ou guardar onde o utilizador escolher.
+struct FileActionsView: View {
+    let m: ChatMessage
+    let load: (ChatMessage) async -> Data?
+    @State private var url: URL?
+    @State private var failed = false
+    @State private var exporting = false
+    @State private var saved: Bool?
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.chat) private var c
+
+    var body: some View {
+        let name = m.attachment?.fileName ?? "ficheiro"
+        NavigationStack {
+            Group {
+                if let url {
+                    QuickLookView(url: url).ignoresSafeArea(edges: .bottom)
+                } else if failed {
+                    Text(s("t_nao_foi_possivel_abrir_o_ficheiro")).font(.sBodyMedium).padding()
+                } else {
+                    ProgressView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle(name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(s("t_fechar")) { dismiss() } }
+                ToolbarItem(placement: .primaryAction) { Button(s("t_guardar")) { exporting = true }.disabled(url == nil) }
+            }
+        }
+        .sheet(isPresented: $exporting) {
+            if let url { ExportPicker(url: url) { ok in exporting = false; saved = ok ? true : nil }.ignoresSafeArea() }
+        }
+        .alert(s("t_ficheiro_guardado"), isPresented: Binding(get: { saved == true }, set: { if !$0 { saved = nil } })) {
+            Button("OK", role: .cancel) {}
+        }
+        .task {
+            guard url == nil, let data = await load(m) else { failed = url == nil; return }
+            do { url = try FilePreview.write(data, name: name) } catch { failed = true }
+        }
+        .onDisappear { if let u = url { FilePreview.remove(u) } }
+    }
+}
+
+// ============================================================================== voz
+
+/// Mensagem de voz na conversa: tocar / pausar, progresso e duracao.
+struct VoiceContent: View {
+    let m: ChatMessage
+    let att: AttachmentInfo
+    let progress: Double?
+    let load: (ChatMessage) async -> Data?
+    @StateObject private var player = VoicePlayer()
+    @State private var data: Data?
+    @Environment(\.chat) private var c
+
+    var body: some View {
+        let ready = m.outgoing || att.state == .ready
+        let total = Int64(att.width)   // duracao em ms (ver o Rust)
+        let busy = att.state == .uploading || att.state == .downloading
+        let problem: String? = {
+            switch att.state {
+            case .expired: return s("t_ja_nao_esta_disponivel_passaram_mais")
+            case .failed: return m.outgoing ? s("t_nao_foi_possivel_enviar") : s("t_nao_foi_possivel_receber")
+            default: return nil
+            }
+        }()
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                Button { if let data { player.toggle(data) } } label: {
+                    ZStack {
+                        Circle().fill(c.primary)
+                        if busy && data == nil {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: player.playing ? "pause.fill" : "play.fill").foregroundStyle(.white)
+                        }
+                    }
+                    .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(s("t_ouvir"))
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView(value: total > 0 ? min(1, Double(player.positionMs) / Double(total)) : 0).tint(c.primary)
+                    Text(player.playing || player.positionMs > 0 ? formatVoice(player.positionMs) : formatVoice(total))
+                        .font(.sLabelSmall).foregroundStyle(c.bubbleMeta)
+                }
+            }
+            if let problem { Text(problem).font(.sLabelSmall).foregroundStyle(c.error) }
+        }
+        .padding(6)
+        .frame(width: 230)
+        .task(id: "\(m.messageId)-\(ready)") {
+            guard ready, data == nil else { return }
+            data = await load(m)
+        }
+        .onDisappear { player.stop() }
     }
 }

@@ -23,18 +23,16 @@ bindgen() { # $1=features $2=language $3=outdir
 }
 
 # ---------- 1) Perfil de producao: Kotlin + Swift ----------
-# Android: com o audio das chamadas (feature `calls`, precisa do cmake). iOS: sem ele, por
-# agora (os bindings Swift a serio sao gerados pelo scripts/build-ios.sh).
+# Android e iOS: com o audio das chamadas (feature `calls`, precisa do cmake). Os bindings
+# Swift a serio sao gerados pelo scripts/build-ios.sh (no Mac).
 echo ">>> [producao] a compilar qt_ffi --features pq,calls ..."
 cargo build -p qt_ffi --features pq,calls
 rm -rf ffi/bindings/kotlin ffi/bindings/swift
 mkdir -p ffi/bindings
 echo ">>> A gerar bindings Kotlin (Android)..."
 bindgen pq,calls kotlin ffi/bindings/kotlin
-echo ">>> [producao] a compilar qt_ffi --features pq (iOS) ..."
-cargo build -p qt_ffi --features pq
 echo ">>> A gerar bindings Swift (iOS)..."
-bindgen pq swift ffi/bindings/swift
+bindgen pq,calls swift ffi/bindings/swift
 
 KT=ffi/bindings/kotlin/uniffi/qt_ffi/qt_ffi.kt
 grep -q "class QtClient" "$KT" \

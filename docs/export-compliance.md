@@ -73,6 +73,14 @@ utilização). No Anexo I, Categoria 5, Parte 2, a app fica fora de controlo por
 a **Nota de Criptografia** (Nota 3: produtos de mercado de massas, vendidos ao público sem
 restrições) e a **Nota Geral sobre Software** (software do domínio público).
 
+### App Store (iPhone)
+
+O `Info.plist` declara `ITSAppUsesNonExemptEncryption = YES`. Na App Store Connect, as respostas
+são as de baixo: criptografia normalizada (a mesma tabela; no iPhone a chave da base de dados é
+protegida pelo Secure Enclave com ECIES P-256 e AES-GCM), código aberto e público, mercado de massas.
+A Apple pode pedir a autoclassificação (ECCN 5D992.c) ou a declaração de França (ANSSI) para a
+distribuição em França.
+
 ### Respostas curtas
 
 - Usa criptografia? **Sim**, para proteger mensagens pessoais.

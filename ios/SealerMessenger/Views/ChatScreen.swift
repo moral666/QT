@@ -22,34 +22,30 @@ private enum ChatRow: Identifiable {
     }
 }
 
+/// Conversa a dois (`group == nil`) ou de grupo. Mesmo comportamento que o ChatScreen e o
+/// GroupChatScreen do Android: bloquear, convite, reacoes, fotos, GIFs, ficheiros e voz.
 struct ChatScreen: View {
+    @ObservedObject var model: AppModel
     let ui: UiState
-    let contactId: String
-    let contact: Contact?
-    let onSend: (Contact, String) -> Void
-    let onBack: () -> Void
-    let onAdd: (String, String) -> Void
-    let onSafety: (Contact) -> Void
-    let onLoadOlder: () -> Void
-    let onDeleteConversation: (String) -> Void
-    let onDeleteContact: (String) -> Void
-    let onSendImage: (Contact, Data, Bool, Bool) -> Void
-    let loadAttachment: (ChatMessage) async -> Data?
+    let conversationId: String
+    let group: GroupInfo?
+    let onInfo: () -> Void
+    let onCall: (Contact) -> Void
 
     @State private var deleteTarget: DeleteTarget?
-    @State private var showPicker = false
-    @State private var pickerItem: PhotosPickerItem?
-    @State private var picked: PickedImage?
     @State private var viewing: ChatMessage?
-    @State private var noImageToPaste = false
-    @State private var text = ""
+    @State private var reactingTo: ChatMessage?
     @State private var showAdd = false
-    @FocusState private var inputFocused: Bool
+    @State private var confirmBlock = false
     @Environment(\.chat) private var c
 
-    /// Mesma ordem que o Android: da MAIS RECENTE para a mais antiga, com separadores de dia
-    /// e o aviso de cifragem (ou "a carregar") no fim. A lista e desenhada "de pernas para o ar"
-    /// (como o reverseLayout do Compose): fica colada ao fundo e "subir" percorre o passado.
+    private var contact: Contact? { group == nil ? ui.contact(conversationId) : nil }
+    private var blocked: Bool { group == nil && ui.blocked.contains(conversationId) }
+    private var invite: Bool { group == nil && contact == nil && ui.invites.contains(conversationId) }
+
+    /// Da MAIS RECENTE para a mais antiga, com separadores de dia e o aviso de cifragem (ou "a
+    /// carregar") no fim. A lista e desenhada "de pernas para o ar" (como o reverseLayout do
+    /// Compose): fica colada ao fundo e "subir" percorre o passado.
     private var rows: [ChatRow] {
         let msgs = ui.chatMessages
         var out: [ChatRow] = []
@@ -65,7 +61,6 @@ struct ChatScreen: View {
         return out
     }
 
-    /// Ao aparecer uma das 10 mensagens mais antigas carregadas, carrega a pagina seguinte.
     private var loadTriggerSeq: Int64 {
         let msgs = ui.chatMessages
         guard !msgs.isEmpty else { return Int64.min }
@@ -73,167 +68,242 @@ struct ChatScreen: View {
     }
 
     var body: some View {
-        let name = contact?.nickname ?? "Desconhecido"
+        let name = group?.name ?? contact?.nickname ?? s("t_desconhecido")
         VStack(spacing: 0) {
-            SealerTopBar(onBack: onBack, title: {
+            topBar(name)
+            messages
+            bottom(name)
+        }
+        .background(c.chatBackground.ignoresSafeArea(edges: .bottom))
+        .gesture(   // deslizar a partir da margem esquerda = voltar (gesto normal no iPhone)
+            DragGesture(minimumDistance: 20).onEnded { g in
+                if g.startLocation.x < 30 && g.translation.width > 80 && abs(g.translation.height) < 60 { model.closeChat() }
+            }
+        )
+        .fullScreenCover(item: $viewing) { m in
+            if m.attachment?.fileName != nil {
+                FileActionsView(m: m, load: model.attachmentBytes)
+            } else {
+                AttachmentViewer(m: m, load: model.attachmentBytes)
+            }
+        }
+        .sheet(item: $reactingTo) { m in
+            ReactionPicker(current: m.reactions.first(where: \.mine)?.emoji) { e in
+                model.react(conversationId, m.messageId, e)
+                reactingTo = nil
+            }
+        }
+        .sheet(isPresented: $showAdd) {
+            AddContactSheet { n, p in model.addContact(nickname: n, publicId: p) }
+        }
+        .alert(s("t_bloquear_2", name), isPresented: $confirmBlock) {
+            Button(s("t_bloquear"), role: .destructive) { model.blockContact(conversationId) }
+            Button(s("t_cancelar"), role: .cancel) {}
+        } message: { Text(s("t_as_mensagens_desta_pessoa_deixam_de")) }
+        .deleteConfirmation($deleteTarget, onDeleteConversation: model.deleteConversation, onDeleteContact: model.deleteContact)
+    }
+
+    @ViewBuilder
+    private func topBar(_ name: String) -> some View {
+        if let g = group {
+            SealerTopBar(onBack: model.closeChat, title: {
+                Button(action: onInfo) {
+                    HStack(spacing: 10) {
+                        Avatar(name: g.name, seed: g.groupId, size: 38)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(g.name).font(.sTitleMedium).lineLimit(1)
+                            Text(s("t_pessoas_cifrado_ponta_a_ponta", g.members.count)).font(.sLabelSmall).opacity(0.8)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }, actions: {
+                TopBarIcon(systemName: "info.circle", label: s("t_informacao_do_grupo"), action: onInfo)
+            })
+        } else {
+            let isOnline = contact != nil && ui.online.contains(conversationId)
+            SealerTopBar(onBack: model.closeChat, title: {
                 HStack(spacing: 10) {
-                    Avatar(name: name, seed: contactId, size: 38)
+                    Avatar(name: name, seed: conversationId, size: 38, online: isOnline)
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(name).font(.headline).lineLimit(1)
-                        Text("cifrada ponta a ponta").font(.caption2).opacity(0.8)
+                        Text(name).font(.sTitleMedium).lineLimit(1)
+                        Text(isOnline ? s("t_online") : s("t_cifrada_ponta_a_ponta_2")).font(.sLabelSmall).opacity(0.8)
                     }
                 }
             }, actions: {
+                if let contact, !blocked, !invite {
+                    TopBarIcon(systemName: "phone.fill", label: s("t_ligar")) { onCall(contact) }
+                }
                 if let contact {
-                    TopBarIcon(systemName: "lock.fill", label: "Verificar segurança") { onSafety(contact) }
+                    TopBarIcon(systemName: "lock.fill", label: s("t_verificar_seguranca")) { model.showSafetyNumber(contact) }
                 }
                 Menu {
-                    Button("Eliminar conversa", systemImage: "trash") {
-                        deleteTarget = .conversation(id: contactId, name: name)
+                    if blocked {
+                        Button(s("t_desbloquear_2"), systemImage: "checkmark") { model.unblockContact(conversationId) }
+                    } else {
+                        Button(s("t_bloquear"), systemImage: "hand.raised") { confirmBlock = true }
                     }
-                    .disabled(ui.chatMessages.isEmpty)
-                    Button("Apagar contacto", systemImage: "person.crop.circle.badge.minus", role: .destructive) {
-                        deleteTarget = .contact(id: contactId, name: name)
+                    Button(s("t_eliminar_conversa_ou_contacto"), systemImage: "trash") {
+                        deleteTarget = .choose(id: conversationId, name: name, hasHistory: !ui.chatMessages.isEmpty)
                     }
                 } label: {
                     Image(systemName: "ellipsis").rotationEffect(.degrees(90))
                         .font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44)
                 }
-                .accessibilityLabel("Mais opções")
+                .accessibilityLabel(s("t_mais_opcoes"))
             })
+        }
+    }
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 3) {
-                        ForEach(rows) { row in
-                            rowView(row)
-                                .scaleEffect(x: 1, y: -1)   // desfaz a inversao da lista
-                                .id(row.id)
-                        }
+    private var messages: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 3) {
+                    ForEach(rows) { row in
+                        rowView(row)
+                            .scaleEffect(x: 1, y: -1)   // desfaz a inversao da lista
+                            .id(row.id)
                     }
-                    .padding(.horizontal, 10).padding(.vertical, 8)
                 }
-                .scaleEffect(x: 1, y: -1)                   // lista invertida = reverseLayout
-                .scrollIndicators(.hidden)
-                .scrollDismissesKeyboard(.interactively)
-                .background(c.chatBackground)
-                .onChange(of: ui.chatMessages.first?.seq) { _, newest in
-                    guard let newest else { return }
-                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("m\(newest)", anchor: .top) }
-                }
+                .padding(.horizontal, 10).padding(.vertical, 8)
             }
-
-            if let contact {
-                inputBar(contact)
-            } else {
-                VStack(spacing: 8) {
-                    Text("Esta pessoa não está nos teus contactos.").font(.subheadline)
-                    PrimaryButton(title: "Adicionar para responder", height: 44) { showAdd = true }
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity)
-                .background(c.surface)
+            .scaleEffect(x: 1, y: -1)                   // lista invertida = reverseLayout
+            .scrollIndicators(.hidden)
+            .scrollDismissesKeyboard(.interactively)
+            .background(c.chatBackground)
+            .onChange(of: ui.chatMessages.first?.seq) { _, newest in
+                guard let newest else { return }
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("m\(newest)", anchor: .top) }
             }
         }
-        .background(c.chatBackground.ignoresSafeArea(edges: .bottom))
-        .gesture(   // deslizar a partir da margem esquerda = voltar (gesto normal no iPhone)
-            DragGesture(minimumDistance: 20).onEnded { g in
-                if g.startLocation.x < 30 && g.translation.width > 80 && abs(g.translation.height) < 60 { onBack() }
-            }
-        )
-        .sheet(isPresented: $showAdd) { AddContactSheet(onAdd: onAdd) }
-        .photosPicker(isPresented: $showPicker, selection: $pickerItem, matching: .images)
-        .onChange(of: pickerItem) { _, item in
-            guard let item else { return }
-            pickerItem = nil
-            Task { @MainActor in
-                // Os bytes originais (um GIF continua animado; a foto e reduzida depois).
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    picked = PickedImage(data: data, pasted: false)
-                }
-            }
-        }
-        .sheet(item: $picked) { p in
-            SendImageSheet(picked: p) { original in
-                if let contact { onSendImage(contact, p.data, original, p.pasted) }
-            }
-        }
-        .fullScreenCover(item: $viewing) { m in AttachmentViewer(m: m, load: loadAttachment) }
-        .alert("Não há nenhuma imagem copiada.", isPresented: $noImageToPaste) { Button("OK", role: .cancel) {} } message: {
-            Text("No teclado de GIFs, toca no GIF para o copiar e depois escolhe Colar imagem ou GIF.")
-        }
-        .deleteConfirmation($deleteTarget, onDeleteConversation: onDeleteConversation, onDeleteContact: onDeleteContact)
     }
 
     @ViewBuilder
     private func rowView(_ row: ChatRow) -> some View {
         switch row {
         case .message(let m):
-            MessageBubble(m: m, progress: ui.transfers[m.messageId], load: loadAttachment, onOpen: { viewing = m })
-                .onAppear {
-                    // Perto da mensagem mais antiga carregada: pede mais uma pagina (como no Android).
-                    if ui.chatHasMore, m.seq <= loadTriggerSeq { onLoadOlder() }
-                }
+            let canReact = group?.active ?? !blocked
+            MessageBubble(
+                m: m, progress: ui.transfers[m.messageId], load: model.attachmentBytes,
+                senderName: group != nil && !m.outgoing ? ui.memberName(m.sender) : nil,
+                onOpen: { viewing = m },
+                onLongPress: { if canReact { reactingTo = m } }
+            )
+            .onAppear { if ui.chatHasMore, m.seq <= loadTriggerSeq { model.loadOlder() } }
         case .day(_, let ms):
             DaySeparator(ms: ms)
         case .loadingMore:
-            Text("A carregar mensagens anteriores…")
-                .font(.caption2).frame(maxWidth: .infinity).padding(8)
-                .onAppear(perform: onLoadOlder)
+            Text(s("t_a_carregar_mensagens_anteriores"))
+                .font(.sLabelSmall).frame(maxWidth: .infinity).padding(8)
+                .onAppear(perform: model.loadOlder)
         case .encryption:
             EncryptionNotice()
         }
     }
 
-    /// GIF/imagem copiada (teclados de GIFs no iPhone copiam para a area de transferencia).
-    private func pasteImage() {
-        let pb = UIPasteboard.general
-        for t in [UTType.gif, .png, .webP, .jpeg, .heic] {
-            if let d = pb.data(forPasteboardType: t.identifier) {
-                picked = PickedImage(data: d, pasted: true)
-                return
+    @ViewBuilder
+    private func bottom(_ name: String) -> some View {
+        if let g = group {
+            if !g.active {
+                Text(s("t_ja_nao_fazes_parte_deste_grupo")).font(.sBodyMedium).multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity).padding(16).background(c.surface)
+            } else {
+                composer
             }
+        } else if blocked {
+            VStack(spacing: 8) {
+                Text(s("t_bloqueaste_esta_pessoa_as_mensagens_dela")).font(.sBodyMedium).multilineTextAlignment(.center)
+                Button(s("t_desbloquear_2")) { model.unblockContact(conversationId) }.font(.sLabelLarge)
+            }
+            .frame(maxWidth: .infinity).padding(16).background(c.surface)
+        } else if invite {
+            InviteCard(onAccept: { nick in model.acceptInvite(conversationId, nickname: nick) },
+                       onDecline: { model.declineInvite(conversationId) },
+                       onBlock: { confirmBlock = true })
+        } else if contact == nil {
+            VStack(spacing: 8) {
+                Text(s("t_esta_pessoa_nao_esta_nos_teus")).font(.sBodyMedium)
+                PrimaryButton(title: s("t_adicionar_para_responder"), height: 44) { showAdd = true }
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .frame(maxWidth: .infinity).padding(16).background(c.surface)
+        } else {
+            composer
         }
-        if let img = pb.image, let d = img.pngData() {
-            picked = PickedImage(data: d, pasted: true)
-            return
-        }
-        noImageToPaste = true
     }
 
-    private func inputBar(_ contact: Contact) -> some View {
-        HStack(alignment: .bottom, spacing: 6) {
-            Menu {
-                Button("Galeria", systemImage: "photo.on.rectangle") { showPicker = true }
-                Button("Colar imagem ou GIF", systemImage: "doc.on.clipboard") { pasteImage() }
-            } label: {
-                Image(systemName: "plus").font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(c.primary)
-                    .frame(width: 44, height: 52)
+    private var composer: some View {
+        ChatComposer(
+            onSendText: { t in
+                if let g = group { model.sendGroup(g.groupId, t) } else if let ct = contact { model.send(ct, t) }
+            },
+            onSendImage: { data, original, pasted in model.sendImage(to: conversationId, data: data, original: original, pasted: pasted) },
+            onSendFile: { url in model.sendFile(to: conversationId, url: url) },
+            onSendVoice: { url, ms in model.sendVoice(to: conversationId, file: url, durationMs: ms) }
+        )
+    }
+}
+
+/// Novo contacto (nome e ID, ou ler o QR), a partir de uma conversa com quem nao esta nos contactos.
+struct AddContactSheet: View {
+    let onAdd: (String, String) -> Void
+    @State private var nick = ""
+    @State private var pid = ""
+    @State private var scanning = false
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.chat) private var c
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(s("t_novo_contacto")).font(Jakarta.font(22, .bold))
+            OutlinedField(label: s("t_nome"), text: $nick, singleLine: true)
+            OutlinedField(label: s("t_id_qt1"), text: $pid, monospaced: true)
+            OutlineButton(title: s("t_ler_codigo_qr"), systemImage: "qrcode.viewfinder", height: 46) { scanning = true }
+            Text(s("t_recebe_o_id_diretamente_da_pessoa")).font(.sBodySmall).foregroundStyle(c.onSurfaceVariant)
+            HStack {
+                Spacer()
+                Button(s("t_cancelar")) { dismiss() }
+                Button(s("t_adicionar")) { onAdd(nick, pid); dismiss() }
+                    .disabled(pid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .padding(.leading, 16)
             }
-            .accessibilityLabel("Enviar imagem ou GIF")
-            TextField("Mensagem", text: $text, axis: .vertical)
-                .lineLimit(1...5)
-                .focused($inputFocused)
-                .padding(.horizontal, 16).padding(.vertical, 14)
-                .background(RoundedRectangle(cornerRadius: 24).fill(c.surface))
-            Button {
-                let t = text
-                if !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    onSend(contact, t)
-                    text = ""
-                }
-            } label: {
-                Image(systemName: "paperplane.fill").font(.system(size: 20))
-                    .foregroundStyle(c.onPrimary)
-                    .frame(width: 52, height: 52)
-                    .background(Circle().fill(c.primary))
-            }
-            .accessibilityLabel("Enviar")
+            .font(Jakarta.font(15, .semibold))
         }
-        .padding(.horizontal, 8).padding(.vertical, 6)
-        .background(c.chatBackground)
+        .padding(24)
+        .presentationDetents([.medium, .large])
+        .presentationBackground(c.surface)
+        .fullScreenCover(isPresented: $scanning) { QRScannerSheet { pid = $0 } }
+    }
+}
+
+/// Alguem que nao esta nos contactos escreveu-me e mandou o seu ID (convite): aceitar (sem
+/// escrever o ID), recusar (apaga a conversa) ou bloquear.
+struct InviteCard: View {
+    let onAccept: (String) -> Void
+    let onDecline: () -> Void
+    let onBlock: () -> Void
+    @State private var nick = ""
+    @Environment(\.chat) private var c
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(s("t_esta_pessoa_quer_falar_contigo")).font(Jakarta.font(14, .semibold))
+            Text(s("t_ainda_nao_esta_nos_teus_contactos")).font(.sBodySmall).foregroundStyle(c.onSurfaceVariant)
+            OutlinedField(label: s("t_nome_opcional"), text: Binding(get: { nick }, set: { nick = String($0.prefix(40)) }), singleLine: true)
+            HStack(spacing: 8) {
+                Button(s("t_aceitar")) { onAccept(nick) }
+                    .font(Jakarta.font(14, .semibold)).foregroundStyle(c.onPrimary)
+                    .padding(.horizontal, 18).padding(.vertical, 10).background(Capsule().fill(c.primary))
+                Button(s("t_recusar"), action: onDecline)
+                    .font(Jakarta.font(14, .semibold))
+                    .padding(.horizontal, 18).padding(.vertical, 10).overlay(Capsule().stroke(c.outlineVariant))
+                Spacer()
+                Button(s("t_bloquear"), action: onBlock).font(Jakarta.font(14, .semibold)).foregroundStyle(c.error)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(16)
+        .background(c.surface)
     }
 }
 
@@ -242,8 +312,7 @@ struct EncryptionNotice: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "lock.fill").font(.system(size: 11))
-            Text("As mensagens são cifradas ponta a ponta. Nem o servidor as consegue ler.")
-                .font(.caption2).multilineTextAlignment(.center)
+            Text(s("t_as_mensagens_sao_cifradas_ponta_a")).font(.sLabelSmall).multilineTextAlignment(.center)
         }
         .foregroundStyle(c.onSecondaryContainer)
         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -258,7 +327,7 @@ struct DaySeparator: View {
     @Environment(\.chat) private var c
     var body: some View {
         Text(dayLabel(ms))
-            .font(.caption2).foregroundStyle(c.onSurfaceVariant)
+            .font(.sLabelSmall).foregroundStyle(c.onSurfaceVariant)
             .padding(.horizontal, 10).padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 8).fill(c.surface))
             .frame(maxWidth: .infinity)
@@ -270,7 +339,10 @@ struct MessageBubble: View {
     let m: ChatMessage
     var progress: Double? = nil
     var load: (ChatMessage) async -> Data? = { _ in nil }
+    /// Nos grupos: quem escreveu (so nas recebidas).
+    var senderName: String? = nil
     var onOpen: () -> Void = {}
+    var onLongPress: () -> Void = {}
     @Environment(\.chat) private var c
 
     var body: some View {
@@ -282,27 +354,97 @@ struct MessageBubble: View {
         )
         HStack {
             if m.outgoing { Spacer(minLength: 48) }
-            VStack(alignment: .trailing, spacing: 2) {
-                if let att = m.attachment {
-                    AttachmentContent(m: m, att: att, progress: progress, load: load, onOpen: onOpen)
-                } else {
-                    Text(m.text).font(.body).foregroundStyle(c.bubbleText)
-                        .multilineTextAlignment(.leading)
-                        .textSelection(.enabled)
-                }
-                HStack(spacing: 4) {
-                    Text(timeOf(m.localAtMs)).font(.system(size: 11)).foregroundStyle(c.bubbleMeta)
-                    if m.outgoing {
-                        Text(statusGlyph(m.status)).font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(m.status == .read ? c.readTick : c.bubbleMeta)
+            VStack(alignment: m.outgoing ? .trailing : .leading, spacing: 0) {
+                VStack(alignment: .trailing, spacing: 2) {
+                    if let senderName {
+                        Text(senderName).font(Jakarta.font(12, .semibold)).foregroundStyle(c.primary).lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.leading, m.attachment != nil ? 6 : 0)
+                    }
+                    content
+                    HStack(spacing: 4) {
+                        Text(timeOf(m.localAtMs)).font(.system(size: 11)).foregroundStyle(c.bubbleMeta)
+                        if m.outgoing {
+                            Text(statusGlyph(m.status)).font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(m.status == .read ? c.readTick : c.bubbleMeta)
+                        }
                     }
                 }
+                .padding(.leading, m.attachment == nil ? 10 : 4).padding(.trailing, m.attachment == nil ? 8 : 4)
+                .padding(.top, m.attachment == nil ? 6 : 4).padding(.bottom, 4)
+                .background(shape.fill(m.outgoing ? c.outgoingBubble : c.incomingBubble))
+                .contentShape(shape)
+                .onLongPressGesture(minimumDuration: 0.4, perform: onLongPress)
+                // Reacoes por baixo da bolha (tocar abre o seletor, como o toque longo).
+                if !m.reactions.isEmpty {
+                    Button(action: onLongPress) {
+                        HStack(spacing: 2) { ForEach(Array(m.reactions.enumerated()), id: \.offset) { _, r in Text(r.emoji).font(.system(size: 15)) } }
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(c.surface))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 6)
+                    .offset(y: -4)
+                    .accessibilityLabel(s("t_reagir"))
+                }
             }
-            .padding(.leading, m.attachment == nil ? 10 : 4).padding(.trailing, m.attachment == nil ? 8 : 4)
-            .padding(.top, m.attachment == nil ? 6 : 4).padding(.bottom, 4)
-            .background(shape.fill(m.outgoing ? c.outgoingBubble : c.incomingBubble))
             .frame(maxWidth: 300, alignment: m.outgoing ? .trailing : .leading)
             if !m.outgoing { Spacer(minLength: 48) }
         }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let att = m.attachment {
+            if att.fileName != nil {
+                FileContent(m: m, att: att, progress: progress, onOpen: onOpen)
+            } else if att.mime == Voice.mime {
+                VoiceContent(m: m, att: att, progress: progress, load: load)
+            } else {
+                AttachmentContent(m: m, att: att, progress: progress, load: load, onOpen: onOpen)
+            }
+        } else {
+            Text(coreText(m.text)).font(.sBodyLarge).foregroundStyle(c.bubbleText)
+                .multilineTextAlignment(.leading)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// Emojis do seletor de reacoes (os mesmos do Android).
+private let quickReactions = ["👍", "❤️", "😂", "😮", "😢", "🙏"]
+
+/// Escolher a reacao a uma mensagem (ou retirar a minha).
+struct ReactionPicker: View {
+    let current: String?
+    let onPick: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.chat) private var c
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text(s("t_reagir")).font(Jakarta.font(20, .bold))
+            HStack {
+                ForEach(quickReactions, id: \.self) { e in
+                    Button { onPick(e) } label: {
+                        Text(e).font(.system(size: 28)).frame(width: 48, height: 48)
+                            .background(Circle().fill(e == current ? c.secondaryContainer : .clear))
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            HStack {
+                if current != nil { Button(s("t_retirar_a_minha")) { onPick("") } }
+                Spacer()
+                Button(s("t_cancelar")) { dismiss() }
+            }
+            .font(Jakarta.font(15, .semibold))
+        }
+        .padding(24)
+        .presentationDetents([.height(220)])
+        .presentationBackground(c.surface)
     }
 }

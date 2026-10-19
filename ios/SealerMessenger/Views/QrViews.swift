@@ -134,7 +134,7 @@ struct QRScannerView: UIViewControllerRepresentable {
 struct QRScannerSheet: View {
     let onFound: (String) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var message = "Aponta para o código QR da outra pessoa"
+    @State private var message = s("t_aponta_para_o_codigo_qr_da")
     @State private var problem = false
 
     var body: some View {
@@ -146,12 +146,12 @@ struct QRScannerSheet: View {
                         dismiss()
                         return true
                     }
-                    message = "Este código QR não é um ID SEALER."
+                    message = s("t_este_codigo_qr_nao_e_um")
                     problem = true
                     return false
                 },
                 onUnavailable: {
-                    message = "Sem acesso à câmara. Ativa-o em Definições > SEALER > Câmara, ou escreve o ID à mão."
+                    message = s("t_sem_acesso_a_camara_para_ler")
                     problem = true
                 }
             )
@@ -168,7 +168,7 @@ struct QRScannerSheet: View {
                     .font(.callout.weight(.medium))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(problem ? Color.yellow : Color.white)
-                Button("Cancelar") { dismiss() }
+                Button(s("t_cancelar")) { dismiss() }
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.white)
             }

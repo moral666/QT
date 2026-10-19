@@ -10,10 +10,12 @@ if ! command -v cargo >/dev/null; then
     echo ">>> a instalar o Rust"; curl -sSf https://sh.rustup.rs | sh -s -- -y; export PATH="$HOME/.cargo/bin:$PATH"; }
 fi
 echo ">>> Rust atualizado"; rustup update stable
-if ! command -v xcodegen >/dev/null; then
-  command -v brew >/dev/null || { echo "Falta o Homebrew (https://brew.sh) para instalar o xcodegen."; exit 1; }
-  echo ">>> a instalar o xcodegen"; brew install xcodegen
-fi
+for tool in xcodegen cmake; do
+  if ! command -v "$tool" >/dev/null; then
+    command -v brew >/dev/null || { echo "Falta o Homebrew (https://brew.sh) para instalar o $tool."; exit 1; }
+    echo ">>> a instalar o $tool"; brew install "$tool"
+  fi
+done
 
 ./scripts/build-ios.sh
 cd ios && xcodegen && open SealerMessenger.xcodeproj

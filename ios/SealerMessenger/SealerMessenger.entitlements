@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Notificacoes (alertas e VoIP das chamadas), direto pela Apple. So com a conta paga
+	     da Apple: ativar com QT_ENTITLEMENTS no ios/Configs/Local.xcconfig. O Xcode passa a
+	     "production" sozinho ao exportar para o TestFlight / App Store. -->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>

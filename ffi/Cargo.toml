@@ -15,12 +15,13 @@ pq = ["qt_core/pq", "qt_storage/pq"]
 # So para testes/ferramentas; a build Android NAO a deve ativar.
 legacy-api = []
 # Audio das chamadas de voz (motor qt_call: Opus 1.6 com DRED, jitter buffer, relay das
-# chamadas). Precisa do cmake para compilar o libopus. So na app Android, por agora.
+# chamadas). Precisa do cmake para compilar o libopus. Android e iPhone (desde a 0.9.13 do iPhone).
 calls = ["pq", "dep:qt_call"]
 # Build Android: SQLCipher+OpenSSL embebidos (sem dependencias do sistema).
 android = ["pq", "calls", "qt_storage/bundled-sqlcipher"]
-# Build iOS: igual ao Android (SQLCipher+OpenSSL embebidos, sem dependencias do sistema).
-ios = ["pq", "qt_storage/bundled-sqlcipher"]
+# Build iOS: igual ao Android (SQLCipher+OpenSSL embebidos, sem dependencias do sistema),
+# com as chamadas de voz.
+ios = ["pq", "calls", "qt_storage/bundled-sqlcipher"]
 
 [lib]
 name = "qt_ffi"

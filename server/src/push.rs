@@ -1,4 +1,5 @@
-//! Notificacoes com a app fechada, pelo Firebase Cloud Messaging (FCM).
+//! Notificacoes com a app fechada, pelo Firebase Cloud Messaging (FCM) no Android e
+//! direto pela Apple (APNs, `apns.rs`) no iPhone. Os limites de frequencia sao os mesmos.
 //!
 //! O relay so toca a campainha: quando chega uma mensagem para alguem que nao tem
 //! nenhuma ligacao a espera (`WaitMessages`, ou seja, a app esta fechada ou em
@@ -59,10 +60,21 @@ struct Pusher {
     fcm_base: String,
     /// Token de acesso OAuth da Google (valido 1 h; renovado aos 50 min).
     access: tokio::sync::Mutex<Option<(String, Instant)>>,
+}
+
+/// Limites de frequencia, iguais para o Android (FCM) e o iPhone (APNs, ver `apns.rs`).
+#[derive(Default)]
+struct Limits {
     /// Ultima campainha por utilizador (limite de frequencia).
     last: Mutex<HashMap<String, Instant>>,
     /// Ultima campainha de chamada por utilizador (limite proprio e "parar de tocar").
     calls: Mutex<HashMap<String, Instant>>,
+}
+
+static LIMITS: OnceLock<Limits> = OnceLock::new();
+
+fn limits() -> &'static Limits {
+    LIMITS.get_or_init(Limits::default)
 }
 
 static PUSHER: OnceLock<Option<Pusher>> = OnceLock::new();
@@ -92,24 +104,28 @@ fn from_json(json: &str) -> Result<Pusher, String> {
         .build()
         .map_err(|_| "cliente HTTPS".to_string())?;
     let fcm_base = std::env::var("QT_FCM_BASE_URL").ok().filter(|u| !u.is_empty()).unwrap_or_else(|| "https://fcm.googleapis.com".to_string());
-    Ok(Pusher { sa, key, http, fcm_base, access: tokio::sync::Mutex::new(None), last: Mutex::new(HashMap::new()), calls: Mutex::new(HashMap::new()) })
+    Ok(Pusher { sa, key, http, fcm_base, access: tokio::sync::Mutex::new(None) })
 }
 
+/// Ha alguma campainha ligada (Google para o Android ou Apple para o iPhone)?
 pub fn enabled() -> bool {
-    pusher().is_some()
+    pusher().is_some() || crate::apns::enabled()
 }
 
 /// Chegou uma mensagem para `user_id`. Se as notificacoes estiverem ativas, ninguem
 /// desse utilizador estiver a espera e nao tiver havido campainha ha menos de
 /// `MIN_INTERVAL`, toca (em segundo plano: nao atrasa a resposta a quem enviou).
 pub async fn after_enqueue(store: &Store, user_id: &str, wake: Option<WakeKind>) {
-    let Some(p) = pusher() else { return };
+    if !enabled() {
+        return;
+    }
     if crate::waiters::is_waiting(user_id) {
         return;
     }
+    let l = limits();
     let allowed = match wake {
-        None => p.allow(user_id),
-        Some(k) => p.allow_call(user_id, k),
+        None => l.allow(user_id),
+        Some(k) => l.allow_call(user_id, k),
     };
     if !allowed {
         return;
@@ -120,7 +136,19 @@ pub async fn after_enqueue(store: &Store, user_id: &str, wake: Option<WakeKind>)
     tokio::spawn(async move {
         let token: Option<String> = redis::AsyncCommands::get(&mut conn, &key).await.unwrap_or(None);
         let Some(token) = token else { return };
-        match p.send(&token, wake).await {
+        // iPhone (APNs, direto pela Apple) ou Android (FCM).
+        let result = if token.starts_with(crate::apns::TOKEN_PREFIX) {
+            match crate::apns::send(&token, wake).await {
+                Ok(true) => Ok(()),
+                Ok(false) => return,   // nada a enviar (ex.: "parar de tocar" ao iPhone)
+                Err(crate::apns::SendError::Unregistered) => Err(SendError::Unregistered),
+                Err(crate::apns::SendError::Other) => Err(SendError::Other),
+            }
+        } else {
+            let Some(p) = pusher() else { return };
+            p.send(&token, wake).await
+        };
+        match result {
             Ok(()) => crate::stats::inc(&crate::stats::STATS.pushes),
             Err(SendError::Unregistered) => {
                 crate::stats::inc(&crate::stats::STATS.push_failed);
@@ -137,7 +165,7 @@ enum SendError {
     Other,
 }
 
-impl Pusher {
+impl Limits {
     fn allow(&self, user_id: &str) -> bool {
         let now = Instant::now();
         let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
@@ -179,7 +207,9 @@ impl Pusher {
             }
         }
     }
+}
 
+impl Pusher {
     async fn access_token(&self) -> Option<String> {
         let mut cached = self.access.lock().await;
         if let Some((t, at)) = cached.as_ref() {
@@ -276,7 +306,7 @@ mod tests {
 
     #[test]
     fn limites_das_chamadas() {
-        let p = test_pusher();
+        let p = Limits::default();
         assert!(!p.allow_call("a", WakeKind::CallEnd), "parar sem chamada: nao");
         assert!(p.allow_call("a", WakeKind::Call));
         assert!(!p.allow_call("a", WakeKind::Call), "segunda chamada logo a seguir: nao");
@@ -287,21 +317,9 @@ mod tests {
         assert!(p.allow_call("b", WakeKind::Call), "outro utilizador: sim");
     }
 
-    fn test_pusher() -> Pusher {
-        Pusher {
-            sa: ServiceAccount { project_id: "p".into(), client_email: "e".into(), private_key: String::new(), token_uri: default_token_uri() },
-            key: jsonwebtoken::EncodingKey::from_secret(b"x"),
-            http: reqwest::Client::new(),
-            fcm_base: String::new(),
-            access: tokio::sync::Mutex::new(None),
-            last: Mutex::new(HashMap::new()),
-            calls: Mutex::new(HashMap::new()),
-        }
-    }
-
     #[test]
     fn limite_de_frequencia_por_utilizador() {
-        let p = test_pusher();
+        let p = Limits::default();
         assert!(p.allow("a"));
         assert!(!p.allow("a"), "segunda campainha logo a seguir: nao");
         assert!(p.allow("b"), "outro utilizador: sim");

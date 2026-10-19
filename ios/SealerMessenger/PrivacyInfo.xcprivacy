@@ -11,13 +11,24 @@
 	<array/>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
-		<!-- UserDefaults: so o URL/chave publica do relay e a opcao "recibos de leitura" desta app. -->
+		<!-- UserDefaults: so opcoes desta app (relay de teste, recibos de leitura, notificacoes,
+		     presenca, tempo do bloqueio). Nada de conteudo, contactos ou chaves. -->
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
 				<string>CA92.1</string>
+			</array>
+		</dict>
+		<!-- Relogio desde o arranque: so para medir tempos dentro da app (bloqueio automatico,
+		     duracao da chamada). Nunca sai do iPhone. -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>35F9.1</string>
 			</array>
 		</dict>
 	</array>

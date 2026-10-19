@@ -171,6 +171,12 @@ async fn main() {
         Ok(false) => println!("Notificacoes (FCM): desligadas (falta QT_FCM_CREDENTIALS)"),
         Err(e) => fatal(&format!("notificacoes: {e}")),
     }
+    // Notificacoes do iPhone (Apple, sem Firebase). Sem QT_APNS_CREDENTIALS ficam desligadas.
+    match qt_server::apns::init_from_env() {
+        Ok(true) => println!("Notificacoes do iPhone (APNs): ativas"),
+        Ok(false) => println!("Notificacoes do iPhone (APNs): desligadas (falta QT_APNS_CREDENTIALS)"),
+        Err(e) => fatal(&format!("notificacoes do iPhone: {e}")),
+    }
     let store = Arc::new(store);
     if store.blobs_enabled() {
         // Limpeza dos anexos: ao arrancar e de 10 em 10 minutos (expirados e orfaos).

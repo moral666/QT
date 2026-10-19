@@ -25,6 +25,7 @@ targets:
       - path: SealerMessenger
         excludes:
           - Info.plist
+          - SealerMessenger.entitlements
       - path: Generated
         optional: true        # criado pelo scripts/build-ios.sh
     dependencies:
@@ -32,6 +33,10 @@ targets:
         embed: false          # biblioteca estatica: fica dentro do executavel
       - sdk: Security.framework
       - sdk: SystemConfiguration.framework
+      - sdk: CallKit.framework
+      - sdk: PushKit.framework
+      - sdk: AVFAudio.framework
+      - sdk: LocalAuthentication.framework
     preBuildScripts:
       - name: Verificar nucleo Rust e relay
         basedOnDependencyAnalysis: false
