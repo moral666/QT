@@ -16,15 +16,26 @@
 //! Limites: no maximo uma campainha por utilizador a cada `MIN_INTERVAL` (a app,
 //! acordada, vai buscar tudo o que estiver na fila). Um token que a Google diga
 //! que ja nao existe (app desinstalada) e apagado do Redis.
+//!
+//! Chamadas de voz (desde a app 0.9.6, aprovado pelo Nuno a 19/10/2026): a oferta e o
+//! cancelamento antes de atender vem marcados (`WakeKind`) e a campainha leva essa marca
+//! (`"qt": "call"` / `"call_end"`), com prazo de 60 s. Assim uma app com o bloqueio ativo,
+//! que nao consegue decifrar nada, sabe que deve tocar ou parar. A Google fica a saber o
+//! momento de uma chamada (nao quem liga nem nada da chamada). Limites proprios: uma
+//! campainha de chamada por utilizador a cada `MIN_INTERVAL`, e o "parar" so depois de
+//! uma campainha de chamada ha menos de `CALL_END_WINDOW` (uma vez por chamada).
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::protocol::WakeKind;
 use crate::store::Store;
 
 /// Intervalo minimo entre duas campainhas para o mesmo utilizador.
 pub const MIN_INTERVAL: Duration = Duration::from_secs(10);
+/// O "parar de tocar" so vale ate este tempo depois da campainha da chamada.
+pub const CALL_END_WINDOW: Duration = Duration::from_secs(60);
 const SCOPE: &str = "https://www.googleapis.com/auth/firebase.messaging";
 
 #[derive(serde::Deserialize)]
@@ -50,6 +61,8 @@ struct Pusher {
     access: tokio::sync::Mutex<Option<(String, Instant)>>,
     /// Ultima campainha por utilizador (limite de frequencia).
     last: Mutex<HashMap<String, Instant>>,
+    /// Ultima campainha de chamada por utilizador (limite proprio e "parar de tocar").
+    calls: Mutex<HashMap<String, Instant>>,
 }
 
 static PUSHER: OnceLock<Option<Pusher>> = OnceLock::new();
@@ -79,7 +92,7 @@ fn from_json(json: &str) -> Result<Pusher, String> {
         .build()
         .map_err(|_| "cliente HTTPS".to_string())?;
     let fcm_base = std::env::var("QT_FCM_BASE_URL").ok().filter(|u| !u.is_empty()).unwrap_or_else(|| "https://fcm.googleapis.com".to_string());
-    Ok(Pusher { sa, key, http, fcm_base, access: tokio::sync::Mutex::new(None), last: Mutex::new(HashMap::new()) })
+    Ok(Pusher { sa, key, http, fcm_base, access: tokio::sync::Mutex::new(None), last: Mutex::new(HashMap::new()), calls: Mutex::new(HashMap::new()) })
 }
 
 pub fn enabled() -> bool {
@@ -89,9 +102,16 @@ pub fn enabled() -> bool {
 /// Chegou uma mensagem para `user_id`. Se as notificacoes estiverem ativas, ninguem
 /// desse utilizador estiver a espera e nao tiver havido campainha ha menos de
 /// `MIN_INTERVAL`, toca (em segundo plano: nao atrasa a resposta a quem enviou).
-pub async fn after_enqueue(store: &Store, user_id: &str) {
+pub async fn after_enqueue(store: &Store, user_id: &str, wake: Option<WakeKind>) {
     let Some(p) = pusher() else { return };
-    if crate::waiters::is_waiting(user_id) || !p.allow(user_id) {
+    if crate::waiters::is_waiting(user_id) {
+        return;
+    }
+    let allowed = match wake {
+        None => p.allow(user_id),
+        Some(k) => p.allow_call(user_id, k),
+    };
+    if !allowed {
         return;
     }
     // A ligacao ao Redis ja existe (partilhada): isto e imediato.
@@ -100,7 +120,7 @@ pub async fn after_enqueue(store: &Store, user_id: &str) {
     tokio::spawn(async move {
         let token: Option<String> = redis::AsyncCommands::get(&mut conn, &key).await.unwrap_or(None);
         let Some(token) = token else { return };
-        match p.send(&token).await {
+        match p.send(&token, wake).await {
             Ok(()) => crate::stats::inc(&crate::stats::STATS.pushes),
             Err(SendError::Unregistered) => {
                 crate::stats::inc(&crate::stats::STATS.push_failed);
@@ -130,6 +150,34 @@ impl Pusher {
         }
         last.insert(user_id.to_string(), now);
         true
+    }
+
+    /// Chamadas: uma campainha a cada `MIN_INTERVAL`; o "parar" so com uma campainha de
+    /// chamada ha menos de `CALL_END_WINDOW`, e so uma vez.
+    fn allow_call(&self, user_id: &str, kind: WakeKind) -> bool {
+        let now = Instant::now();
+        let mut calls = self.calls.lock().unwrap_or_else(|e| e.into_inner());
+        if calls.len() > 10_000 {
+            calls.retain(|_, t| now.duration_since(*t) < CALL_END_WINDOW);
+        }
+        let recent = calls.get(user_id).map(|t| now.duration_since(*t));
+        match kind {
+            WakeKind::Call => {
+                if recent.is_some_and(|d| d < MIN_INTERVAL) {
+                    return false;
+                }
+                calls.insert(user_id.to_string(), now);
+                true
+            }
+            WakeKind::CallEnd => {
+                if recent.is_some_and(|d| d < CALL_END_WINDOW) {
+                    calls.remove(user_id);
+                    true
+                } else {
+                    false
+                }
+            }
+        }
     }
 
     async fn access_token(&self) -> Option<String> {
@@ -165,14 +213,14 @@ impl Pusher {
         Some(token)
     }
 
-    async fn send(&self, device_token: &str) -> Result<(), SendError> {
+    async fn send(&self, device_token: &str, wake: Option<WakeKind>) -> Result<(), SendError> {
         let access = self.access_token().await.ok_or(SendError::Other)?;
         let url = format!("{}/v1/projects/{}/messages:send", self.fcm_base, self.sa.project_id);
         let resp = self
             .http
             .post(url)
             .bearer_auth(access)
-            .json(&wake_message(device_token))
+            .json(&wake_message(device_token, wake))
             .send()
             .await
             .map_err(|_| SendError::Other)?;
@@ -190,13 +238,19 @@ impl Pusher {
 }
 
 /// A mensagem que vai para a Google: so o token do telemovel, prioridade alta (para
-/// acordar mesmo em poupanca de bateria) e um campo fixo, igual para todos.
-pub fn wake_message(device_token: &str) -> serde_json::Value {
+/// acordar mesmo em poupanca de bateria) e um campo fixo: "1" para mensagens, "call" e
+/// "call_end" para chamadas (com prazo de 60 s: uma chamada atrasada ja nao serve).
+pub fn wake_message(device_token: &str, wake: Option<WakeKind>) -> serde_json::Value {
+    let (qt, ttl, collapse) = match wake {
+        None => ("1", "3600s", "qt"),
+        Some(WakeKind::Call) => ("call", "60s", "qt-call"),
+        Some(WakeKind::CallEnd) => ("call_end", "60s", "qt-call"),
+    };
     serde_json::json!({
         "message": {
             "token": device_token,
-            "android": { "priority": "HIGH", "ttl": "3600s", "collapse_key": "qt" },
-            "data": { "qt": "1" }
+            "android": { "priority": "HIGH", "ttl": ttl, "collapse_key": collapse },
+            "data": { "qt": qt }
         }
     })
 }
@@ -207,23 +261,47 @@ mod tests {
 
     #[test]
     fn a_mensagem_para_a_google_nao_leva_nada_da_mensagem() {
-        let m = wake_message("tok_123");
+        let m = wake_message("tok_123", None);
         let s = m.to_string();
         assert!(s.contains("tok_123"));
         assert_eq!(m["message"]["data"], serde_json::json!({ "qt": "1" }));
         assert!(m["message"].get("notification").is_none(), "sem texto visivel enviado pela Google");
+        let c = wake_message("tok_123", Some(WakeKind::Call));
+        assert_eq!(c["message"]["data"], serde_json::json!({ "qt": "call" }));
+        assert_eq!(c["message"]["android"]["ttl"], "60s");
+        assert!(c["message"].get("notification").is_none());
+        let e = wake_message("tok_123", Some(WakeKind::CallEnd));
+        assert_eq!(e["message"]["data"], serde_json::json!({ "qt": "call_end" }));
     }
 
     #[test]
-    fn limite_de_frequencia_por_utilizador() {
-        let p = Pusher {
+    fn limites_das_chamadas() {
+        let p = test_pusher();
+        assert!(!p.allow_call("a", WakeKind::CallEnd), "parar sem chamada: nao");
+        assert!(p.allow_call("a", WakeKind::Call));
+        assert!(!p.allow_call("a", WakeKind::Call), "segunda chamada logo a seguir: nao");
+        assert!(p.allow("a"), "o limite das mensagens e outro");
+        assert!(p.allow_call("a", WakeKind::CallEnd), "parar a chamada que tocou");
+        assert!(!p.allow_call("a", WakeKind::CallEnd), "so uma vez");
+        assert!(p.allow_call("a", WakeKind::Call), "depois de parar pode voltar a ligar");
+        assert!(p.allow_call("b", WakeKind::Call), "outro utilizador: sim");
+    }
+
+    fn test_pusher() -> Pusher {
+        Pusher {
             sa: ServiceAccount { project_id: "p".into(), client_email: "e".into(), private_key: String::new(), token_uri: default_token_uri() },
             key: jsonwebtoken::EncodingKey::from_secret(b"x"),
             http: reqwest::Client::new(),
             fcm_base: String::new(),
             access: tokio::sync::Mutex::new(None),
             last: Mutex::new(HashMap::new()),
-        };
+            calls: Mutex::new(HashMap::new()),
+        }
+    }
+
+    #[test]
+    fn limite_de_frequencia_por_utilizador() {
+        let p = test_pusher();
         assert!(p.allow("a"));
         assert!(!p.allow("a"), "segunda campainha logo a seguir: nao");
         assert!(p.allow("b"), "outro utilizador: sim");

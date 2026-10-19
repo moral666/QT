@@ -33,6 +33,11 @@ pub const OUTBOX_RECEIPT: i64 = 2;
 /// Envelope de uma mensagem de grupo para um membro (a mensagem fica "Enviada"
 /// quando o relay confirmar os de todos os membros; ver qt_ffi::groups).
 pub const OUTBOX_GROUP: i64 = 3;
+/// Oferta de chamada de voz: toca a campainha marcada como chamada (uma app com o
+/// bloqueio ativo nao a consegue decifrar, mas sabe que deve tocar).
+pub const OUTBOX_CALL: i64 = 4;
+/// Chamada cancelada antes de atender: a campainha marcada faz parar o toque.
+pub const OUTBOX_CALL_END: i64 = 5;
 
 pub(crate) const SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS messages (

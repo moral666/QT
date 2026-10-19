@@ -34,10 +34,20 @@ class KeystoreUnavailableException(message: String, cause: Throwable? = null) : 
  * foi descontinuada pela Google; por baixo fazia exatamente isto (AES-256-GCM no
  * AndroidKeyStore), por isso usamos a API da plataforma diretamente, sem dependencias.
  */
-class KeystoreBox(private val alias: String = DEFAULT_ALIAS) {
+class KeystoreBox(
+    private val alias: String = DEFAULT_ALIAS,
+    /**
+     * `true` (antiga): a chave so funciona com o ecra desbloqueado. `false`: funciona tambem
+     * com o telemovel bloqueado (depois do primeiro desbloqueio desde que ligou), para a app
+     * receber chamadas e mensagens em segundo plano (fase 4b das chamadas, ver nota no fim).
+     */
+    private val unlockedDeviceRequired: Boolean = true,
+) {
 
     companion object {
         const val DEFAULT_ALIAS = "qt_wrap_key_v1"
+        /** Chave para o segundo plano (sem `setUnlockedDeviceRequired`), desde a app 0.9.6. */
+        const val BACKGROUND_ALIAS = "qt_wrap_key_bg_v1"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val IV_LEN = 12
@@ -74,7 +84,7 @@ class KeystoreBox(private val alias: String = DEFAULT_ALIAS) {
             .apply {
                 if (Build.VERSION.SDK_INT >= 28) {
                     // So utilizavel com o ecra desbloqueado (ver nota no fim do ficheiro).
-                    setUnlockedDeviceRequired(true)
+                    if (unlockedDeviceRequired) setUnlockedDeviceRequired(true)
                     if (strongBox) setIsStrongBoxBacked(true)
                 }
             }
@@ -136,8 +146,11 @@ class AppLockedException : Exception("a app esta bloqueada")
  * logs, Intents, SharedPreferences ou no codigo-fonte. O ficheiro sozinho e inutil: so o
  * Keystore deste aparelho o abre.
  *
- * Formato v2: "QTK2" || IV(12) || ct || tag, com AAD = proposito + nome da base de dados.
- * Ficheiros v1 (sem cabecalho, sem AAD) sao migrados automaticamente.
+ * Formato v3 (desde a 0.9.6): "QTK3" || IV(12) || ct || tag, cifrado por `bgBox` (chave do
+ * Keystore que funciona com o telemovel bloqueado, para tocar chamadas com a app fechada).
+ * Com o bloqueio da app ativo ("QTL1"), a chave continua a precisar do codigo.
+ * Formato v2: "QTK2", cifrado por `box` (so com o ecra desbloqueado): passa a v3 da primeira
+ * vez que abre. Ficheiros v1 (sem cabecalho, sem AAD) tambem sao migrados.
  *
  * @param dbFile ficheiro SQLCipher protegido por esta chave. Se ele existir e a chave nao,
  *               falha em vez de criar uma chave nova (o que esconderia uma perda de dados).
@@ -145,10 +158,12 @@ class AppLockedException : Exception("a app esta bloqueada")
 class StorageKeyProvider(
     ctx: Context,
     private val box: KeystoreBox,
+    private val bgBox: KeystoreBox,
     private val dbFile: File? = null,
 ) {
     private companion object {
         val MAGIC = byteArrayOf('Q'.code.toByte(), 'T'.code.toByte(), 'K'.code.toByte(), '2'.code.toByte())
+        val MAGIC3 = byteArrayOf('Q'.code.toByte(), 'T'.code.toByte(), 'K'.code.toByte(), '3'.code.toByte())
         /** Bloqueio ativo: "QTL1" || Keystore( Rust app_lock_wrap(codigo, chave) ). */
         val MAGIC_LOCKED = byteArrayOf('Q'.code.toByte(), 'T'.code.toByte(), 'L'.code.toByte(), '1'.code.toByte())
         const val KEY_LEN = 32
@@ -274,11 +289,14 @@ class StorageKeyProvider(
         val blob = readBlob()
         if (startsWith(blob, MAGIC_LOCKED)) throw AppLockedException()
         try {
-            if (blob.size > MAGIC.size && blob.copyOfRange(0, MAGIC.size).contentEquals(MAGIC)) {
-                box.open(blob.copyOfRange(MAGIC.size, blob.size), aad).also { checkLen(it) }
+            if (startsWith(blob, MAGIC3)) {
+                bgBox.open(blob.copyOfRange(MAGIC3.size, blob.size), aad).also { checkLen(it) }
+            } else if (startsWith(blob, MAGIC)) {
+                // v2 (so com o ecra desbloqueado): passa a v3 e confirma antes de dar por feito.
+                box.open(blob.copyOfRange(MAGIC.size, blob.size), aad).also { checkLen(it); migrateToV3(it) }
             } else {
                 // Formato v1 (KeystoreBox antigo, sem AAD): abrir e regravar em v2.
-                box.open(blob).also { checkLen(it); runCatching { write(it) } }
+                box.open(blob).also { checkLen(it); migrateToV3(it) }
             }
         } catch (e: StorageKeyUnavailableException) {
             throw e
@@ -300,7 +318,7 @@ class StorageKeyProvider(
         val raw = ByteArray(KEY_LEN).also { SecureRandom().nextBytes(it) }
         write(raw)
         // Confirma que o que ficou em disco abre e da a mesma chave antes de a usar.
-        val back = box.open(file.readFully().let { it.copyOfRange(MAGIC.size, it.size) }, aad)
+        val back = bgBox.open(file.readFully().let { it.copyOfRange(MAGIC3.size, it.size) }, aad)
         val same = MessageDigest.isEqual(back, raw)
         back.fill(0)
         if (!same) {
@@ -310,12 +328,32 @@ class StorageKeyProvider(
         return raw
     }
 
+    /**
+     * v2 -> v3. Se algo falhar, o ficheiro fica em v2 (que continua a abrir com o ecra
+     * desbloqueado): nunca se arrisca perder a chave.
+     */
+    private fun migrateToV3(key: ByteArray) {
+        val old = file.readFully()
+        try {
+            write(key)
+            val back = bgBox.open(file.readFully().let { it.copyOfRange(MAGIC3.size, it.size) }, aad)
+            val same = MessageDigest.isEqual(back, key)
+            back.fill(0)
+            if (!same) throw IllegalStateException("verificacao falhou")
+        } catch (e: Exception) {
+            runCatching {
+                val out = file.startWrite()
+                try { out.write(old); file.finishWrite(out) } catch (e2: Exception) { file.failWrite(out); throw e2 }
+            }
+        }
+    }
+
     /** Escrita atomica (ficheiro temporario + fsync + rename): nunca fica meio-escrita. */
     private fun write(raw: ByteArray) {
         val out = file.startWrite()
         try {
-            out.write(MAGIC)
-            out.write(box.seal(raw, aad))
+            out.write(MAGIC3)
+            out.write(bgBox.seal(raw, aad))
             file.finishWrite(out)
         } catch (e: Exception) {
             file.failWrite(out)
@@ -333,8 +371,13 @@ class StorageKeyProvider(
 
 /*
  * NOTA sobre setUnlockedDeviceRequired(true): com o ecra bloqueado a chave nao pode ser
- * usada, logo a base de dados nao abre em background com o aparelho bloqueado (ex.: um
- * WorkManager a receber mensagens). E o compromisso mais seguro; se precisares de rececao
- * em background com ecra bloqueado, remove essa linha APENAS para uma chave dedicada a
- * isso e documenta-o no threat model.
+ * usada, logo a base de dados nao abre em segundo plano com o aparelho bloqueado.
+ *
+ * Desde a 0.9.6 (chamadas com a app fechada, aprovado pelo Nuno a 19/10/2026, "1B") a chave
+ * do SQLCipher e a camada exterior da lista de contactos usam uma chave DEDICADA
+ * (`BACKGROUND_ALIAS`) sem essa restricao: funciona com o telemovel bloqueado, mas so depois
+ * do primeiro desbloqueio desde que ligou (antes disso os ficheiros da app nem estao
+ * acessiveis). Continua presa ao hardware do telemovel e nunca sai dele. Quem quiser a
+ * protecao antiga usa o bloqueio da app (codigo): com ele ativo nada abre sem o codigo.
+ * O ficheiro do bloqueio ("QTL1") continua com a chave antiga.
  */

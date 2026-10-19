@@ -40,7 +40,7 @@ Sim, de ponta a ponta, em versão de testes (**app Android 0.9.4 e app iPhone 0.
 
 - **Conversas a dois e em grupo** (até 10 pessoas, 3 administradores), entre Android e iPhone, com histórico cifrado no telemóvel e avisos de *Enviado / Entregue / Visto*.
 - **Fotos, GIFs, mensagens de voz e ficheiros até 25 MB** (PDF, documentos...), a dois e nos grupos. Cada ficheiro é cifrado no telemóvel com uma chave própria e apagado do relay quando é descarregado, ou ao fim de 24 horas.
-- **Notificações push com a app fechada:** um aviso genérico ("Tens mensagens novas"), sem o nome de quem envia nem o texto. A mensagem só é decifrada quando abres a app.
+- **Notificações push com a app fechada:** um aviso genérico ("Tens mensagens novas"), sem o nome de quem envia nem o texto. Desde a Android 0.9.6 a app decifra em segundo plano, no telemóvel, para as chamadas tocarem com a app fechada; com o bloqueio da app ativo nada é decifrado sem o código.
 - **Convites por código QR**, reações, bloquear contactos, online / offline só para os contactos (cifrado) e bloqueio da app com código próprio, impressão digital ou rosto (por agora só no Android).
 - **Apagar a conta** no telemóvel e no servidor, com um toque.
 - **Segurança do protocolo (0.9.3):** PQXDH v2 (X25519 + ML-KEM-768), chaves que rodam a cada 7 dias e chaves de uso único servidas pelo relay, enchimento das mensagens (o relay não distingue mensagens curtas de recibos), prova de trabalho para contas novas e limites por conta no relay. As apps 0.9.3 não falam com versões anteriores.

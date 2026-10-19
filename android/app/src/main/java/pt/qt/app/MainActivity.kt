@@ -1,6 +1,8 @@
 package pt.qt.app
 
+import android.app.KeyguardManager
 import android.content.Intent
+import android.view.WindowManager
 import android.graphics.Color as AndroidColor
 import android.os.Build
 import android.os.Bundle
@@ -144,6 +146,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.google.zxing.client.android.Intents
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.cos
@@ -156,6 +159,12 @@ import uniffi.qt_ffi.MessageStatus
 class MainActivity : FragmentActivity() {
     private val vm: MainViewModel by viewModels()
     private lateinit var bioPrompt: BiometricPrompt
+    /**
+     * Aberta por uma chamada com o telemovel bloqueado (notificacao de ecra inteiro): mostra-se
+     * por cima do bloqueio, mas so com o ecra da chamada (ou o codigo da app). Quando a
+     * chamada acaba, fecha; se o telemovel for desbloqueado, volta a app normal.
+     */
+    private val overLock = mutableStateOf(false)
 
     private val bioCallback = object : BiometricPrompt.AuthenticationCallback() {
         override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
@@ -193,13 +202,81 @@ class MainActivity : FragmentActivity() {
         // percorre as apps abertas.
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         bioPrompt = BiometricPrompt(this, ContextCompat.getMainExecutor(this), bioCallback)
-        setContent { SealerTheme { Surface(Modifier.fillMaxSize()) { AppRoot(vm) } } }
+        setContent {
+            SealerTheme {
+                Surface(Modifier.fillMaxSize()) {
+                    AppRoot(
+                        vm,
+                        overLock = overLock.value,
+                        keyguardLocked = ::keyguardLocked,
+                        onLeaveLock = ::leaveLock,
+                        onDone = ::finishOverLock,
+                    )
+                }
+            }
+        }
+        if (savedInstanceState == null) {
+            handleCallIntent(intent)
+        } else if (savedInstanceState.getBoolean(STATE_OVER_LOCK) && keyguardLocked()) {
+            showOverLock(true)
+            overLock.value = true
+        }
         // Pedidos de autenticacao do ViewModel (desbloquear / ativar a biometria).
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 vm.bioRequests.collect { showBioPrompt(it) }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleCallIntent(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_OVER_LOCK, overLock.value)
+    }
+
+    /** Notificacao da chamada (tocar no aviso ou em "Atender"). */
+    private fun handleCallIntent(i: Intent?) {
+        val action = i?.action
+        if (action != CallNotify.ACTION_SHOW && action != CallNotify.ACTION_ANSWER) return
+        // So as notificacoes desta app (nao outra app, nem reabrir pelos recentes).
+        if (i.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        if (i.getStringExtra(CallNotify.EXTRA_TOKEN) != SealerCore.intentToken) return
+        if (keyguardLocked()) {
+            showOverLock(true)
+            overLock.value = true
+        }
+        if (action == CallNotify.ACTION_ANSWER) vm.answerFromNotification()
+    }
+
+    private fun keyguardLocked(): Boolean =
+        (getSystemService(KEYGUARD_SERVICE) as? KeyguardManager)?.isKeyguardLocked == true
+
+    private fun showOverLock(on: Boolean) {
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(on)
+            setTurnScreenOn(on)
+        } else {
+            @Suppress("DEPRECATION")
+            val flags = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            if (on) window.addFlags(flags) else window.clearFlags(flags)
+        }
+    }
+
+    /** O telemovel foi desbloqueado: a app volta ao normal (e deixa de aparecer por cima do bloqueio). */
+    private fun leaveLock() {
+        overLock.value = false
+        showOverLock(false)
+    }
+
+    /** A chamada acabou com o telemovel ainda bloqueado: fecha a app. */
+    private fun finishOverLock() {
+        leaveLock()
+        finish()
     }
 
     override fun onStart() {
@@ -210,6 +287,10 @@ class MainActivity : FragmentActivity() {
     override fun onStop() {
         super.onStop()
         if (!isChangingConfigurations) vm.onAppHidden()
+    }
+
+    private companion object {
+        const val STATE_OVER_LOCK = "por_cima_do_bloqueio"
     }
 
     private fun showBioPrompt(req: BioRequest) {
@@ -264,7 +345,13 @@ internal fun FollowNewest(listState: LazyListState, newestKey: Long?, newestIsMi
 // ============================================================================ raiz
 
 @Composable
-fun AppRoot(vm: MainViewModel) {
+fun AppRoot(
+    vm: MainViewModel,
+    overLock: Boolean = false,
+    keyguardLocked: () -> Boolean = { false },
+    onLeaveLock: () -> Unit = {},
+    onDone: () -> Unit = {},
+) {
     val ui by vm.ui.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
     var showMyId by remember { mutableStateOf(false) }
@@ -308,8 +395,17 @@ fun AppRoot(vm: MainViewModel) {
         }
     }
 
+    // "Atender" na notificacao: atende, pedindo o microfone se ainda nao houver permissao.
+    LaunchedEffect(ui.answerNow, ui.call?.callId, ui.call?.phase) {
+        if (ui.answerNow != null && ui.answerNow == ui.call?.callId && ui.call?.phase == CallPhase.INCOMING) {
+            vm.answerConsumed()
+            withMic { vm.acceptCall() }
+        }
+    }
+
     val call = ui.call
     when {
+        overLock -> CallOverLock(ui, vm, withMic, keyguardLocked, onLeaveLock, onDone)
         ui.loading -> LoadingScreen()
         call != null && !ui.locked -> {
             BackHandler { }   // a chamada nao se fecha com o "voltar": desliga-se no botao
@@ -398,6 +494,8 @@ fun AppRoot(vm: MainViewModel) {
             },
         )
     }
+    // Por cima do bloqueio do telemovel: nenhum dialogo (so a chamada).
+    if (overLock) return
     if (showMyId && !ui.locked) MyIdDialog(ui.publicId, onDismiss = { showMyId = false })
     ui.wipeServerFailed?.let { reason ->
         WipeServerFailedDialog(
@@ -433,6 +531,54 @@ fun AppRoot(vm: MainViewModel) {
             confirmButton = { TextButton(onClick = vm::dismissError) { Text("OK") } },
             text = { Text(msg) },
         )
+    }
+}
+
+/**
+ * Por cima do bloqueio do telemovel (a app abriu por uma chamada): so a chamada, ou o codigo
+ * da app se o bloqueio estiver ativo. Nada das conversas. Sem chamada (acabou ou nunca
+ * chegou), fecha; com o telemovel desbloqueado, volta a app normal.
+ */
+@Composable
+private fun CallOverLock(
+    ui: UiState,
+    vm: MainViewModel,
+    withMic: (() -> Unit) -> Unit,
+    keyguardLocked: () -> Boolean,
+    onLeaveLock: () -> Unit,
+    onDone: () -> Unit,
+) {
+    val call = ui.call
+    var hadCall by remember { mutableStateOf(false) }
+    LaunchedEffect(call != null) { if (call != null) hadCall = true }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000L)
+            if (!keyguardLocked()) {
+                onLeaveLock()
+                break
+            }
+        }
+    }
+    LaunchedEffect(call == null, ui.locked, ui.loading, hadCall) {
+        if (call == null && !ui.locked && !ui.loading) {
+            // Acabou: fecha logo. Nunca chegou (ex.: codigo da app a meio): da tempo a oferta.
+            delay(if (hadCall) 300L else 15_000L)
+            onDone()
+        }
+    }
+    BackHandler { }
+    when {
+        call != null && !ui.locked -> CallScreen(
+            call,
+            onAccept = { withMic { vm.acceptCall() } },
+            onHangup = vm::hangupCall,
+            onMute = vm::toggleMute,
+            onSpeaker = vm::toggleSpeaker,
+        )
+        // Sem "apagar os dados" aqui: o telemovel ainda esta bloqueado.
+        ui.locked -> LockScreen(ui, onCode = vm::unlockWithCode, onBio = vm::requestBioUnlock, onWipe = {})
+        else -> LoadingScreen()
     }
 }
 

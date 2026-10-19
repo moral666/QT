@@ -88,6 +88,10 @@ fn ligar_tocar_atender_falar_desligar() {
     let history_before = b.c.messages_page(a.cid(), None, 50).unwrap().len();
     let start = a.c.call_start(b.cid()).unwrap();
     assert!(!start.item.silent, "a oferta toca a campainha, como uma mensagem");
+    assert_eq!(start.item.wake, Some(CallWake::Call), "campainha marcada como chamada");
+    // Tambem quando sai da outbox (enviada mais tarde).
+    let queued = a.c.outbox().unwrap();
+    assert_eq!(queued.iter().find(|i| i.outbox_id == start.item.outbox_id).and_then(|i| i.wake), Some(CallWake::Call));
     assert_eq!(a.c.call_current().unwrap(), Some(start.call_id.clone()));
     // Antes de atender nao ha chaves de audio.
     assert!(a.c.call_seal(start.call_id.clone(), vec![1]).is_err());
@@ -104,6 +108,7 @@ fn ligar_tocar_atender_falar_desligar() {
 
     let answer = b.c.call_accept(start.call_id.clone()).unwrap();
     assert!(answer.silent);
+    assert_eq!(answer.wake, None);
     assert_eq!(b.events(), vec![CallEvent::Answered { call_id: start.call_id.clone() }]);
     relay(&b, &a);
     assert_eq!(a.events(), vec![CallEvent::Answered { call_id: start.call_id.clone() }]);
@@ -141,8 +146,9 @@ fn ligar_tocar_atender_falar_desligar() {
     t[30] ^= 1;
     assert!(b.c.call_open(start.call_id.clone(), t).unwrap().is_none());
 
-    // Desligar: o Bob fica a saber, as chaves desaparecem dos dois lados.
-    assert!(a.c.call_hangup(start.call_id.clone()).unwrap().is_some());
+    // Desligar: o Bob fica a saber, as chaves desaparecem dos dois lados (sem campainha).
+    let bye = a.c.call_hangup(start.call_id.clone()).unwrap().unwrap();
+    assert!(bye.silent && bye.wake.is_none());
     assert_eq!(
         a.events(),
         vec![CallEvent::Ended { call_id: start.call_id.clone(), contact_id: b.cid(), reason: CallEndReason::Hangup }]
@@ -163,7 +169,8 @@ fn recusar() {
     let start = a.c.call_start(b.cid()).unwrap();
     relay(&a, &b);
     b.events();
-    b.c.call_hangup(start.call_id.clone()).unwrap();
+    let no = b.c.call_hangup(start.call_id.clone()).unwrap().unwrap();
+    assert!(no.silent && no.wake.is_none(), "recusar: quem ligou tem a app aberta");
     relay(&b, &a);
     let ev = a.events();
     assert_eq!(
@@ -190,7 +197,9 @@ fn cancelar_depois_de_tocar_e_chamada_perdida() {
     let start = a.c.call_start(b.cid()).unwrap();
     relay(&a, &b);
     b.events();
-    assert!(a.c.call_hangup(start.call_id.clone()).unwrap().is_some());
+    // Cancelar antes de atender: a campainha marcada faz parar o toque do outro lado.
+    let end = a.c.call_hangup(start.call_id.clone()).unwrap().unwrap();
+    assert_eq!((end.silent, end.wake), (false, Some(CallWake::CallEnd)));
     relay(&a, &b);
     assert_eq!(
         b.events(),

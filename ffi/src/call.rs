@@ -3,7 +3,10 @@
 //! DESENHO (aprovado pelo Nuno a 19/10/2026, ver docs/protocol-spec.md, seccao 18):
 //!   * A oferta, o "a tocar", a resposta e o desligar vao como mensagens cifradas
 //!     iguais as outras (envelope v3 com enchimento): o relay nao sabe que e uma
-//!     chamada. A oferta toca a campainha como uma mensagem; o resto vai `silent`.
+//!     chamada pelo conteudo. A oferta e o cancelamento antes de atender tocam a
+//!     campainha marcada como chamada (`CallWake`): assim uma app fechada com o
+//!     bloqueio ativo toca ou para sem decifrar nada (aprovado a 19/10/2026; o relay e a
+//!     Google ficam a saber o momento de uma chamada). O resto vai `silent`.
 //!   * Cada lado contribui 32 bytes aleatorios (oferta e resposta). As chaves do
 //!     audio, o codigo da sala e a chave do relay saem dai (`qt_core::call`).
 //!   * Tudo fica SO em memoria (nada em disco). Uma chamada de cada vez.
@@ -29,7 +32,7 @@ use qt_storage::messages as hm;
 use zeroize::Zeroizing;
 
 use crate::client::{bad, hex, unhex, QtClient, QtError};
-use crate::history::{is_blocked_in, now_ms, OutboxItem, ReceiveResult, HDR, PAYLOAD_V1};
+use crate::history::{is_blocked_in, now_ms, CallWake, OutboxItem, ReceiveResult, HDR, PAYLOAD_V1};
 
 pub(crate) const T_CALL: u8 = 11;
 const OP_OFFER: u8 = 1;
@@ -216,13 +219,18 @@ pub(crate) fn offer_fresh(sent_at: i64, now: i64) -> bool {
     sent_at.min(now) + OFFER_TTL_MS > now
 }
 
-/// Cifra uma mensagem de chamada para `cid` e poe-na na outbox.
-fn queue(client: &QtClient, c: &st::rusqlite::Connection, cid: &str, plain: &[u8], ring: bool) -> Result<OutboxItem, QtError> {
+/// Cifra uma mensagem de chamada para `cid` e poe-na na outbox. `wake`: a oferta e o
+/// cancelamento antes de atender tocam a campainha marcada; o resto vai `silent`.
+fn queue(client: &QtClient, c: &st::rusqlite::Connection, cid: &str, plain: &[u8], wake: Option<CallWake>) -> Result<OutboxItem, QtError> {
     let id = random::<16>()?;
     let blob = client.seal_with(c, cid, plain)?;
-    let kind = if ring { hm::OUTBOX_MESSAGE } else { hm::OUTBOX_RECEIPT };
+    let kind = match wake {
+        Some(CallWake::Call) => hm::OUTBOX_CALL,
+        Some(CallWake::CallEnd) => hm::OUTBOX_CALL_END,
+        None => hm::OUTBOX_RECEIPT,
+    };
     hm::outbox_put(c, &id, cid, kind, &blob)?;
-    Ok(OutboxItem { outbox_id: hex(&id), contact_id: cid.to_string(), blob, silent: !ring, relay_id: None })
+    Ok(OutboxItem { outbox_id: hex(&id), contact_id: cid.to_string(), blob, silent: wake.is_none(), relay_id: None, wake })
 }
 
 fn derive_media(call: &Call, answer_secret: &[u8; 32]) -> Result<MediaSession, QtError> {
@@ -292,7 +300,7 @@ pub(crate) fn on_call(
             } else if calls.cur.is_some() {
                 // Ja estou noutra chamada: "ocupado" e, do meu lado, chamada perdida.
                 calls.remember_ended(call_id);
-                queue(client, c, cid, &encode(OP_HANGUP, &call_id, &[CallEndReason::Busy.to_byte()]), false)?;
+                queue(client, c, cid, &encode(OP_HANGUP, &call_id, &[CallEndReason::Busy.to_byte()]), None)?;
                 calls.push(CallEvent::Ended { call_id: id_hex, contact_id: cid.to_string(), reason: CallEndReason::Busy });
                 return Ok(no_change);
             }
@@ -310,7 +318,7 @@ pub(crate) fn on_call(
                 #[cfg(feature = "calls")]
                 audio: None,
             });
-            queue(client, c, cid, &encode(OP_RINGING, &call_id, &[]), false)?;
+            queue(client, c, cid, &encode(OP_RINGING, &call_id, &[]), None)?;
             calls.push(CallEvent::Incoming { call_id: id_hex, contact_id: cid.to_string() });
         }
         OP_RINGING if is_current && rest.is_empty() => {
@@ -387,7 +395,7 @@ impl QtClient {
         extra.extend_from_slice(&DEFAULT_PAD.to_be_bytes());
         let plain = Zeroizing::new(encode(OP_OFFER, &id, &extra));
         let tx = c.unchecked_transaction()?;
-        let item = queue(self, &tx, &contact_id, &plain, true)?;
+        let item = queue(self, &tx, &contact_id, &plain, Some(CallWake::Call))?;
         tx.commit()?;
         let outbox_id = parse_call_id(&item.outbox_id)?;
         calls.cur = Some(Call {
@@ -422,7 +430,7 @@ impl QtClient {
         let media = derive_media(call, &answer)?;
         let plain = Zeroizing::new(encode(OP_ANSWER, &id, &answer[..]));
         let tx = c.unchecked_transaction()?;
-        let item = queue(self, &tx, &call.contact.clone(), &plain, false)?;
+        let item = queue(self, &tx, &call.contact.clone(), &plain, None)?;
         tx.commit()?;
         call.set_media(media);
         call.state = State::Active;
@@ -455,7 +463,9 @@ impl QtClient {
         let item = if not_sent || is_blocked_in(&tx, &contact)? {
             None
         } else {
-            Some(queue(self, &tx, &contact, &encode(OP_HANGUP, &id, &[reason.to_byte()]), false)?)
+            // Cancelar antes de atender: a campainha marcada faz parar o toque do outro lado.
+            let wake = (state == State::Outgoing).then_some(CallWake::CallEnd);
+            Some(queue(self, &tx, &contact, &encode(OP_HANGUP, &id, &[reason.to_byte()]), wake)?)
         };
         tx.commit()?;
         calls.end_current(reason);
@@ -548,7 +558,7 @@ fn expire(client: &QtClient, c: &st::rusqlite::Connection, calls: &mut Calls) ->
     let (id, contact, state) = (call.id, call.contact.clone(), call.state);
     if state == State::Outgoing && !is_blocked_in(c, &contact)? {
         let tx = c.unchecked_transaction()?;
-        queue(client, &tx, &contact, &encode(OP_HANGUP, &id, &[CallEndReason::NoAnswer.to_byte()]), false)?;
+        queue(client, &tx, &contact, &encode(OP_HANGUP, &id, &[CallEndReason::NoAnswer.to_byte()]), Some(CallWake::CallEnd))?;
         tx.commit()?;
     }
     let reason = if state == State::Outgoing { CallEndReason::NoAnswer } else { CallEndReason::Cancelled };

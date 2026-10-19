@@ -25,10 +25,14 @@ import kotlin.coroutines.resume
  * Notificacoes com a app fechada (Firebase Cloud Messaging), "opcao 1":
  *
  *  - O relay so toca a campainha: pede a Google para acordar este telemovel, com uma
- *    mensagem VAZIA (sem remetente, sem conteudo). Ver server/src/push.rs.
- *  - A app mostra sempre a mesma notificacao generica, "Tens mensagens novas", sem
- *    abrir a base de dados nem decifrar nada em segundo plano. Funciona com o
- *    telemovel bloqueado e com o bloqueio da app ativo. Ao tocar, abre a app.
+ *    mensagem VAZIA (sem remetente, sem conteudo). Ver server/src/push.rs. Desde a 0.9.6
+ *    as chamadas vem marcadas ("call" / "call_end"), para tocarem mesmo com o bloqueio
+ *    da app ativo: a Google fica a saber o momento de uma chamada, nada mais.
+ *  - A mensagem continua a ser sempre a mesma notificacao generica, "Tens mensagens
+ *    novas", sem nome nem texto. Desde a 0.9.6 (chamadas com a app fechada) a app abre a
+ *    base de dados em segundo plano, vai buscar o que chegou e, se for uma chamada de um
+ *    contacto, toca com o nome ([SealerCore]). Com o bloqueio da app ativo nada se
+ *    decifra: so o aviso generico, ou "Chamada SEALER" sem nome.
  *  - O "endereco de campainha" (token FCM) e enviado ao relay sempre que a app se liga
  *    (`MainViewModel.registerPush`). Desligar o interruptor envia um token vazio.
  *
@@ -144,10 +148,10 @@ object Push {
     }
 }
 
-/** Recebe a campainha da Google. Nunca abre a base de dados: so mostra o aviso generico. */
+/** Recebe a campainha da Google e passa-a ao nucleo (mensagens e chamadas, ver [SealerCore]). */
 class SealerPushService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
-        Push.showGeneric(applicationContext)
+        SealerCore.onPush(applicationContext, message.data["qt"])
     }
 
     /** Token novo (raro): a app envia-o ao relay da proxima vez que se ligar. */

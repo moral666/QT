@@ -146,6 +146,17 @@ pub struct OutboxItem {
     /// So no aviso "sessao terminada" a quem ja nao esta nos contactos: o endereco no
     /// relay (nos outros casos, `None`: a app usa o do contacto).
     pub relay_id: Option<String>,
+    /// Chamadas de voz: a campainha vai marcada (oferta ou cancelada antes de atender),
+    /// para uma app fechada com o bloqueio ativo tocar ou parar sem decifrar nada.
+    /// O relay e a Google ficam a saber que e uma chamada (aprovado pelo Nuno, 19/10/2026).
+    pub wake: Option<CallWake>,
+}
+
+/// Marca da campainha de uma chamada de voz (ver `OutboxItem::wake`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum CallWake {
+    Call,
+    CallEnd,
 }
 
 #[derive(Debug, Clone, uniffi::Enum)]
@@ -504,7 +515,7 @@ impl QtClient {
         hm::insert_message(&tx, &id, &contact_id, true, hm::KIND_TEXT, &text, now, now, hm::ST_PENDING)?;
         hm::outbox_put(&tx, &id, &contact_id, hm::OUTBOX_MESSAGE, &blob)?;
         tx.commit()?;
-        Ok(OutboxItem { outbox_id: hex(&id), contact_id, blob, silent: false, relay_id: None })
+        Ok(OutboxItem { outbox_id: hex(&id), contact_id, blob, silent: false, relay_id: None, wake: None })
     }
 
     /// REAGIR a uma mensagem desta conversa (minha ou do contacto) com um emoji;
@@ -548,8 +559,13 @@ impl QtClient {
                     hm::OUTBOX_GROUP => crate::groups::is_silent_envelope(&c, &e.outbox_id)?,
                     _ => false,
                 };
+                let wake = match e.kind {
+                    hm::OUTBOX_CALL => Some(CallWake::Call),
+                    hm::OUTBOX_CALL_END => Some(CallWake::CallEnd),
+                    _ => None,
+                };
                 let relay_id = st::kv_get(&c, &format!("{KV_OUT_RELAY}{}", hex(&e.outbox_id)))?.and_then(|v| String::from_utf8(v).ok());
-                Ok(OutboxItem { outbox_id: hex(&e.outbox_id), contact_id: e.contact_id, silent, relay_id, blob: e.blob })
+                Ok(OutboxItem { outbox_id: hex(&e.outbox_id), contact_id: e.contact_id, silent, relay_id, blob: e.blob, wake })
             })
             .collect()
     }

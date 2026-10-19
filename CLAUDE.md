@@ -32,7 +32,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
 - O **site nunca menciona "sem auditoria externa"**.
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.9.5**, `versionCode` 12), em
+- Versões da app: série 0.x (agora **0.9.6**, `versionCode` 13), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
   0.9.3...) e o `versionCode` mais 1, no mesmo commit. Só se passa a **1.0.0** quando o Nuno disser.
 - Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
@@ -40,7 +40,13 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - **Identificador da app: `sealer.app`** (desde a 0.9.0; antes `pt.qt.app`). Nunca mudar depois de
   publicar. O `namespace` e o pacote Kotlin continuam `pt.qt.app`.
 - **Notificações: FCM, opção 1** (17/10/2026): campainha vazia e aviso genérico "Tens mensagens
-  novas", sem decifrar nada em segundo plano. Nome/texto na notificação (opção 2) fica para depois.
+  novas". Nome/texto na notificação (opção 2) fica para depois. **Desde a 0.9.6 (chamadas 4b,
+  19/10/2026)** a app decifra em segundo plano (`SealerCore` em `Core.kt`, um só `QtClient` por
+  processo) e a chave da base de dados funciona com o telemóvel bloqueado (Keystore
+  `qt_wrap_key_bg_v1`, formato "QTK3"); a notificação das mensagens continua genérica. As chamadas
+  levam a campainha marcada (`wake`, `{"qt":"call"}` / `"call_end"`): o Nuno aceitou que o relay e
+  a Google saibam o momento de uma chamada, para tocar "Chamada SEALER" sem nome com o bloqueio
+  da app ativo.
   App: `Push.kt` lê `android/app/google-services.json` (fora do git). Relay: `/etc/qt/fcm.json`
   (conta de serviço, fora do git) e o `setup-ec2.sh` liga as notificações se o ficheiro existir.
   Só tocam para mensagens: recibos, reações, convites e presença vão com `silent: true` (18/10/2026).
@@ -97,11 +103,16 @@ anónimas e reserva por WebSocket sem conta (**feita**, processo à parte `qt-ca
 produção a partir de casa do Nuno: ida e volta PC-relay-PC-relay-PC de 128 ms); 3) motor de áudio
 (**feita**, crate `call/` = `qt_call`: libopus 1.6.1 com DRED e PLC neural pelo `opusic-sys`, jitter
 buffer adaptativo, rede com reserva WebSocket; ferramenta `tools/call-demo`); 4) Android, decidido a 19/10/2026: 1B (a chave da
-base de dados passa a funcionar com o telemóvel bloqueado, para tocar com a app fechada; ainda NÃO
-feito), 2A (reserva WebSocket no Rust, com rustls), 3A (ConnectionService), só tocam contactos
-guardados, e em duas partes: **4a feita** (app 0.9.4: chamadas com a app aberta, `Calls.kt`,
-`CallScreen.kt`, `CallAudio` no `ffi/src/call_audio.rs`, feature `calls`; serviço em primeiro plano
-do tipo microphone) e 4b por fazer (tocar com a app fechada/bloqueada, ConnectionService, chave 1B).
+base de dados passa a funcionar com o telemóvel bloqueado), 2A (reserva WebSocket no Rust, com
+rustls), só tocam contactos guardados, e em duas partes: **4a feita** (app 0.9.4: chamadas com a
+app aberta, `Calls.kt`, `CallScreen.kt`, `CallAudio` no `ffi/src/call_audio.rs`, feature `calls`;
+serviço em primeiro plano do tipo microphone) e **4b feita, a testar** (app 0.9.6: notificação de
+ecrã inteiro com Atender/Recusar, ecrã da chamada por cima do bloqueio do telemóvel, `Core.kt`,
+`CallNotify`, `CallActionReceiver`; com o bloqueio da app toca "Chamada SEALER" e pede o código).
+**ConnectionService (3A) adiado** pelo Nuno a 19/10/2026: o Telecom passa a gerir o modo de áudio, o
+foco e o altifalante, e isso choca com o áudio atual; fazer à parte, com testes dele. 0.9.5: jitter
+buffer espera até 200 ms por tempo e recomeça depois de uma paragem do outro lado (antes ficava
+mudo); modo de chamada pedido antes de criar o microfone.
 Ver `docs/protocol-spec.md`, secção 18.
 
 ### Funcionalidades da 0.9.0

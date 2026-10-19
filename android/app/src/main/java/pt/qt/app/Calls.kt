@@ -6,6 +6,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -30,9 +31,11 @@ import android.os.Vibrator
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.Person
 import androidx.core.content.ContextCompat
 import uniffi.qt_ffi.CallAudio
 import uniffi.qt_ffi.callFrameBytes
+import kotlinx.coroutines.launch
 
 /**
  * Chamadas de voz (fase 4a: com a app aberta). Aqui so ha o que e do Android:
@@ -73,10 +76,16 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
         val minRec = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         // 200 ms de folga: se a thread do microfone se atrasar, as amostras ficam a espera
         // em vez de se perderem (nao acrescenta atraso, le-se assim que ha 20 ms).
-        val rec = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE,
-            AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minRec, frame * 10),
-        )
+        val rec = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE,
+                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minRec, frame * 10),
+            )
+        } catch (e: Exception) {
+            am.mode = AudioManager.MODE_NORMAL
+            abandonFocus()
+            throw e
+        }
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release()
             am.mode = AudioManager.MODE_NORMAL
@@ -307,7 +316,7 @@ class CallService : Service() {
             if (nm.getNotificationChannel(CHANNEL) != null) return
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL, "Chamadas", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Chamadas de voz a chegar e em curso (sem o nome de quem liga)."
+                    description = "Chamadas de voz em curso e a chegar com a app aberta."
                     setSound(null, null)
                 },
             )
@@ -344,30 +353,148 @@ class CallService : Service() {
     }
 }
 
-/** Aviso "Chamada a chegar" quando a app esta aberta mas fora do ecra (sem o nome). */
+/**
+ * Notificacoes das chamadas a chegar (fase 4b): ecra inteiro por cima do bloqueio do
+ * telemovel, com "Atender" e "Recusar" (estilo de chamada do Android).
+ *
+ *  - Com a app fechada ou em segundo plano ([SealerCore]): toca pelo canal "chamadas_toque"
+ *    (toque do telemovel, repetido ate atender, recusar ou passarem 45 s).
+ *  - Com a app aberta mas fora do ecra (o ecra ja toca com [CallSounds]): canal sem som.
+ *
+ * O nome so aparece se a app o souber (sem o bloqueio da app). Com o bloqueio ativo toca
+ * "Chamada SEALER" e o codigo e pedido ao atender.
+ */
 object CallNotify {
     private const val ID = 8
+    private const val MISSED_ID = 9
+    const val RING_CHANNEL = "chamadas_toque"
+    /** A Activity abre por cima do bloqueio do telemovel so com estas acoes. */
+    const val ACTION_SHOW = "pt.qt.app.CHAMADA"
+    const val ACTION_ANSWER = "pt.qt.app.ATENDER"
+    const val ACTION_DECLINE = "pt.qt.app.RECUSAR"
+    const val EXTRA_TOKEN = "pt.qt.app.CHAVE"
 
+    private fun ensureRingChannel(ctx: Context) {
+        if (Build.VERSION.SDK_INT < 26) return
+        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+        if (nm.getNotificationChannel(RING_CHANNEL) != null) return
+        nm.createNotificationChannel(
+            NotificationChannel(RING_CHANNEL, "Chamadas a tocar", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Toque das chamadas de voz com a app fechada."
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build(),
+                )
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 800, 800)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            },
+        )
+    }
+
+    private fun activityIntent(ctx: Context, action: String, code: Int): PendingIntent {
+        val i = Intent(ctx, MainActivity::class.java)
+            .setAction(action)
+            .putExtra(EXTRA_TOKEN, SealerCore.intentToken)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        return PendingIntent.getActivity(ctx, code, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
+
+    /** Chamada a chegar: ecra inteiro (telemovel bloqueado) ou aviso no topo. `sound`: toca pelo canal. */
     @SuppressLint("MissingPermission")   // verificada em Push.permissionGranted
-    fun incoming(ctx: Context) {
+    fun ringing(ctx: Context, name: String?, sound: Boolean) {
         if (!Push.permissionGranted(ctx)) return
-        CallService.ensureChannel(ctx)
-        val open = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        val pi = PendingIntent.getActivity(ctx, 3, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val n = NotificationCompat.Builder(ctx, CallService.CHANNEL)
+        if (sound) ensureRingChannel(ctx) else CallService.ensureChannel(ctx)
+        val show = activityIntent(ctx, ACTION_SHOW, 4)
+        val answer = activityIntent(ctx, ACTION_ANSWER, 5)
+        val decline = PendingIntent.getBroadcast(
+            ctx, 6, Intent(ctx, CallActionReceiver::class.java).setAction(ACTION_DECLINE),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val title = name?.takeIf { it.isNotBlank() } ?: "Chamada SEALER"
+        val channel = if (sound) RING_CHANNEL else CallService.CHANNEL
+        fun base() = NotificationCompat.Builder(ctx, channel)
             .setSmallIcon(R.drawable.ic_stat_sealer)
-            .setContentTitle("SEALER")
-            .setContentText("Chamada de voz a chegar")
+            .setContentTitle(title)
+            .setContentText("Chamada de voz SEALER")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOngoing(true)
+            .setContentIntent(show)
+            .setFullScreenIntent(show, true)
+            .setTimeoutAfter(SealerCore.RING_MS)
+        val n = runCatching {
+            val person = Person.Builder().setName(title).setImportant(true).build()
+            base().setStyle(NotificationCompat.CallStyle.forIncomingCall(person, decline, answer)).build()
+        }.getOrElse {
+            // Sem o estilo de chamada: botoes normais.
+            base().addAction(0, "Recusar", decline).addAction(0, "Atender", answer).build()
+        }
+        if (sound) n.flags = n.flags or Notification.FLAG_INSISTENT
+        try {
+            NotificationManagerCompat.from(ctx).notify(ID, n)
+        } catch (e: Exception) {
+            Log.w(TAG, "notificacao da chamada: ${e.javaClass.simpleName}")
+        }
+    }
+
+    /** Chamada perdida (so com a app fechada). No ecra bloqueado aparece sem o nome. */
+    @SuppressLint("MissingPermission")   // verificada em Push.permissionGranted
+    fun missed(ctx: Context, name: String?) {
+        if (!Push.permissionGranted(ctx) || !Push.isOn(ctx)) return
+        CallService.ensureChannel(ctx)
+        val open = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val pi = PendingIntent.getActivity(ctx, 7, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        fun base() = NotificationCompat.Builder(ctx, CallService.CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_sealer)
+            .setContentTitle("SEALER")
+            .setCategory("missed_call")   // Notification.CATEGORY_MISSED_CALL (Android 11+)
             .setContentIntent(pi)
             .setAutoCancel(true)
+        val hidden = base().setContentText("Chamada perdida").build()
+        val n = base()
+            .setContentText(if (name.isNullOrBlank()) "Chamada perdida" else "Chamada perdida de $name")
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(hidden)
             .build()
-        NotificationManagerCompat.from(ctx).notify(ID, n)
+        try {
+            NotificationManagerCompat.from(ctx).notify(MISSED_ID, n)
+        } catch (e: Exception) {
+            // Permissao retirada entretanto.
+        }
     }
 
     fun clear(ctx: Context) {
         NotificationManagerCompat.from(ctx).cancel(ID)
+    }
+
+    fun clearMissed(ctx: Context) {
+        NotificationManagerCompat.from(ctx).cancel(MISSED_ID)
+    }
+}
+
+/** "Recusar" na notificacao da chamada a chegar. */
+class CallActionReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != CallNotify.ACTION_DECLINE) return
+        val ctx = context.applicationContext
+        // O ecra tem a chamada (app aberta fora do ecra): recusa por la.
+        if (SealerCore.ringing == null) {
+            CallControl.hangup?.invoke()
+            CallNotify.clear(ctx)
+            return
+        }
+        val pending = goAsync()
+        SealerCore.scope.launch {
+            try {
+                SealerCore.declineRinging(ctx)
+            } finally {
+                pending.finish()
+            }
+        }
     }
 }

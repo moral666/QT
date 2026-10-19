@@ -468,10 +468,12 @@ Um pedido ↔ uma resposta, sequenciais.
 3. `FetchPreKeyBundle{user_id}`: qualquer utilizador autenticado. A resposta
    `PreKeyBundle{bundle_bytes, one_time_pre_key?}` leva uma one-time prekey do dono (já
    apagada do relay), se ainda houver. Limite: 60 pedidos seguidos e 60 por minuto por conta.
-4. `SendMessage{to, sealed_from, ciphertext, silent}`: `to` = 64 hex minúsculos;
+4. `SendMessage{to, sealed_from, ciphertext, silent, wake}`: `to` = 64 hex minúsculos;
    `ciphertext` 1…14 000 bytes; `sealed_from` ≤ 1024 (vazio no modo `QtClient`,
    que envia o blob selado inteiro em `ciphertext`); fila ≤ 1000 mensagens.
    `silent` (opcional, `false` se faltar): entregue igual, mas sem campainha (secção 17).
+   `wake` (opcional, desde a app 0.9.6): `"Call"` ou `"CallEnd"`, campainha marcada de uma
+   chamada de voz (secção 17).
    Limite: 300 envelopes seguidos e 300 por minuto por conta (`Error{"demasiados pedidos…"}`;
    as apps deixam o envelope na outbox e voltam a tentar).
 5. `FetchMessages{user_id}`: só a própria fila; **não apaga**; devolve uma
@@ -704,30 +706,50 @@ alguém abrir a app (presença a todos os contactos) ou ler uma mensagem acordav
 "Tens mensagens novas". O relay fica a saber que um envio é "silencioso", não o conteúdo nem
 quem o enviou. Um relay antigo ignora o campo (toca sempre); uma app antiga não o envia.
 
-**Na app.** Ao receber a campainha, a app mostra sempre a mesma notificação, "Tens mensagens
-novas", sem abrir a base de dados nem decifrar nada em segundo plano (funciona com o telemóvel
-bloqueado e com o bloqueio da app). As mensagens só são buscadas quando a app abre. Nos primeiros
-30 s em segundo plano a app ainda está ligada (o relay não toca): o aviso é então criado pela app.
+**Chamadas (desde a app 0.9.6, aprovado a 19/10/2026).** A oferta (`OUTBOX_CALL`) e o cancelamento
+antes de atender (`OUTBOX_CALL_END`) vão com `wake: "Call"` / `"CallEnd"` (`OutboxItem.wake`). O
+relay toca com `{"qt": "call"}` / `{"qt": "call_end"}`, `ttl: 60s` e `collapse_key: qt-call`, com
+limites próprios: uma campainha de chamada por destinatário a cada 10 s, e o "parar" só até 60 s
+depois dessa campainha e uma vez. Serve para uma app com o bloqueio ativo (que não decifra nada)
+tocar "Chamada SEALER" sem nome ou parar. Custo aceite: o relay e a Google ficam a saber o momento
+de uma chamada (não quem liga nem nada da chamada). Um relay antigo ignora `wake` e toca como numa
+mensagem.
 
-## 18. Chamadas de voz 1 a 1 (fases 1 a 3: sinalização, cifra, relay e áudio)
+**Na app (até à 0.9.5).** Ao receber a campainha, a app mostrava sempre a mesma notificação, "Tens
+mensagens novas", sem abrir a base de dados nem decifrar nada em segundo plano.
+
+**Na app (desde a 0.9.6).** A campainha abre a base de dados em segundo plano (a chave do SQLCipher
+passou para uma chave do Keystore que funciona com o telemóvel bloqueado, depois do primeiro
+desbloqueio; ver `Keystore.kt`), vai buscar o que chegou, decifra, confirma, envia os recibos e a
+outbox, e trata as chamadas (`SealerCore` em `android/.../Core.kt`, um só `QtClient` por processo,
+partilhado com o ecrã). A notificação das mensagens continua genérica, "Tens mensagens novas", sem
+nome nem texto. Uma chamada de um contacto guardado toca com o nome, com a notificação de ecrã
+inteiro do Android (por cima do bloqueio do telemóvel, com Atender e Recusar). Com o bloqueio da app
+ativo nada se decifra: mensagens com o aviso genérico; `call` toca "Chamada SEALER" sem nome e o
+código é pedido ao atender; `call_end` para o toque. Nos primeiros 30 s em segundo plano a app
+ainda está ligada (o relay não toca) e trata tudo ela própria.
+
+## 18. Chamadas de voz 1 a 1 (sinalização, cifra, relay, áudio e app Android)
 
 Desenho aprovado a 19/10/2026: só Android primeiro, sem ligação direta entre telemóveis (o áudio
 passa sempre pelo relay, o contacto nunca vê o IP). Fase 1 no núcleo (`core/src/call.rs`,
 `ffi/src/call.rs`, testes em `ffi/tests/calls.rs`); fase 2 no relay das chamadas
 (`server/src/call_relay.rs`, `server/src/bin/call_relay.rs`, testes em
 `server/tests/call_relay_e2e.rs`); fase 3 no motor de áudio (`call/`, crate `qt_call`, testes em
-`call/tests/engine_e2e.rs`). A app Android (fase 4) vem depois.
+`call/tests/engine_e2e.rs`). App Android: fase 4a (0.9.4, com a app aberta) e 4b (0.9.6, a tocar
+com a app fechada ou o telemóvel bloqueado, ver secção 17).
 
 **Sinalização (tipo 11, dentro do Double Ratchet).** Vai como as outras mensagens (envelope v3
-com enchimento): o relay não sabe que é uma chamada. `msg_id` = `call_id` (16 bytes aleatórios),
+com enchimento): o relay não sabe pelo conteúdo que é uma chamada (desde a 0.9.6 a oferta e o
+cancelamento levam a campainha marcada, secção 17). `msg_id` = `call_id` (16 bytes aleatórios),
 para uma versão antiga mostrar "atualiza a app" uma só vez por chamada. Corpo `[1 op][16 call_id]`:
 
 | op | nome | resto | campainha |
 |---|---|---|---|
-| 1 | oferta | `[32 offer_secret][2 pad BE]` | sim (como uma mensagem) |
+| 1 | oferta | `[32 offer_secret][2 pad BE]` | sim, marcada `Call` (desde a 0.9.6) |
 | 4 | a tocar | vazio | não (`silent`) |
 | 2 | resposta | `[32 answer_secret]` | não |
-| 3 | desligar | `[1 motivo]`: 1 desligou, 2 recusou, 3 ocupado, 4 sem resposta, 5 cancelou | não |
+| 3 | desligar | `[1 motivo]`: 1 desligou, 2 recusou, 3 ocupado, 4 sem resposta, 5 cancelou | só "cancelou" e "sem resposta" de quem liga, marcada `CallEnd` (desde a 0.9.6) |
 
 * Uma chamada de cada vez. Uma oferta que chegue com mais de 45 s (`sent_at`, limitado à hora
   local) não toca: fica "chegou tarde" (chamada perdida). Sem resposta em 45 s, quem liga envia
