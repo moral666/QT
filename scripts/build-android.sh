@@ -8,6 +8,7 @@
 #   * Rust >= 1.81 via rustup           https://rustup.rs
 #   * Android NDK r27+ (ex.: Android Studio > SDK Manager > NDK); ver a nota sobre o r26d abaixo
 #   * perl, make (para compilar SQLCipher + OpenSSL a partir do codigo-fonte)
+#   * cmake (para compilar o Opus das chamadas de voz: sudo apt install cmake)
 #   * cargo install cargo-ndk --locked
 #
 # Uso:
@@ -29,6 +30,7 @@ ABIS="${ABIS:-arm64-v8a armeabi-v7a x86_64}"
 API_LEVEL="${ANDROID_API_LEVEL:-24}"
 : "${ANDROID_NDK_HOME:?Define ANDROID_NDK_HOME (pasta do NDK, ex.: \$HOME/Android/Sdk/ndk/<versao>)}"
 command -v cargo-ndk >/dev/null || { echo "Falta cargo-ndk: cargo install cargo-ndk --locked"; exit 1; }
+command -v cmake >/dev/null || { echo "Falta o cmake (Opus das chamadas): sudo apt install cmake"; exit 1; }
 
 echo ">>> targets Rust para Android"
 rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
@@ -43,7 +45,8 @@ export PATH="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$HOST_TAG/bin:$PATH"
 export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
 
 echo ">>> cargo ndk build (release) -> $OUT/jniLibs/<abi>/libqt_ffi.so"
-# `android` = pq + SQLCipher/OpenSSL embebidos. SEM `legacy-api` (nao expoe chaves privadas).
+# `android` = pq + chamadas de voz (Opus) + SQLCipher/OpenSSL embebidos. SEM `legacy-api`
+# (nao expoe chaves privadas).
 TARGETS=""
 for a in $ABIS; do TARGETS="$TARGETS -t $a"; done
 cargo ndk \

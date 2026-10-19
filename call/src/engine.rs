@@ -101,7 +101,8 @@ struct Playback {
 }
 
 struct Shared {
-    media: Mutex<MediaSession>,
+    /// Chaves do audio: so existem depois de atender (antes disso ja se entra na sala).
+    media: Mutex<Option<MediaSession>>,
     encoder: Mutex<Encoder>,
     playback: Mutex<Playback>,
     stats: Mutex<EngineStats>,
@@ -126,11 +127,20 @@ pub fn join_packet(relay_public_key: &[u8], role: Role, room: &RoomKeys) -> Resu
 }
 
 impl CallEngine {
-    /// Arranca a chamada: entra na sala e fica pronto para `push_capture` / `pull_playback`.
+    /// Arranca a chamada ja atendida: entra na sala e fica pronto para `push_capture` /
+    /// `pull_playback`.
     pub fn start(cfg: EngineConfig, media: MediaSession, join: Vec<u8>) -> Result<Self, EngineError> {
         let room = RoomKeys { room_id: media.room_id(), relay_key: media.relay_key() };
+        let e = Self::start_pending(cfg, room, join)?;
+        e.attach_media(media);
+        Ok(e)
+    }
+
+    /// Entra ja na sala (pre-aquecimento: enquanto o telemovel toca), sem as chaves do
+    /// audio. O audio comeca quando chegarem (`attach_media`, ao atender).
+    pub fn start_pending(cfg: EngineConfig, room: RoomKeys, join: Vec<u8>) -> Result<Self, EngineError> {
         let shared = Arc::new(Shared {
-            media: Mutex::new(media),
+            media: Mutex::new(None),
             encoder: Mutex::new(Encoder::new(cfg.encoder)?),
             playback: Mutex::new(Playback { jitter: JitterBuffer::new(), decoder: Decoder::new()?, dred_from: None }),
             stats: Mutex::new(EngineStats::default()),
@@ -150,11 +160,29 @@ impl CallEngine {
         Ok(CallEngine { shared, outbox, stop: Some(stop), thread: Some(thread) })
     }
 
+    /// As chaves do audio (a chamada foi atendida).
+    pub fn attach_media(&self, media: MediaSession) {
+        if let Ok(mut m) = self.shared.media.lock() {
+            *m = Some(media);
+        }
+    }
+
+    /// Ja ha chaves do audio (a chamada foi atendida)?
+    pub fn has_media(&self) -> bool {
+        self.shared.media.lock().map(|m| m.is_some()).unwrap_or(false)
+    }
+
     /// 20 ms do microfone (960 amostras, 48 kHz, mono). Codifica, cifra e envia.
     pub fn push_capture(&self, pcm: &[i16]) -> Result<(), EngineError> {
+        if !self.has_media() {
+            return Ok(());
+        }
         let mut buf = [0u8; MAX_OPUS_BYTES];
         let n = self.shared.encoder.lock().map_err(|_| EngineError::Seal)?.encode(pcm, &mut buf)?;
-        let packet = self.shared.media.lock().map_err(|_| EngineError::Seal)?.seal(&buf[..n]).map_err(|_| EngineError::Seal)?;
+        let packet = match self.shared.media.lock().map_err(|_| EngineError::Seal)?.as_mut() {
+            Some(m) => m.seal(&buf[..n]).map_err(|_| EngineError::Seal)?,
+            None => return Ok(()),
+        };
         // Fila cheia (rede parada): o frame perde-se, como na rede.
         let _ = self.outbox.try_send(packet);
         if let (Ok(mut st), Ok(mut bytes)) = (self.shared.stats.lock(), self.shared.opus_bytes.lock()) {
@@ -401,7 +429,7 @@ mod net {
             set_stats(shared, |s| s.simulated_drops += 1);
             return;
         }
-        let opened = shared.media.lock().ok().and_then(|mut m| m.open(data).ok());
+        let opened = shared.media.lock().ok().and_then(|mut m| m.as_mut().and_then(|m| m.open(data).ok()));
         match opened {
             Some((counter, frame)) => {
                 if let Ok(mut pb) = shared.playback.lock() {

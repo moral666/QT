@@ -75,6 +75,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -278,6 +279,26 @@ fun AppRoot(vm: MainViewModel) {
             android.widget.Toast.makeText(ctx, "Sem permissão, a app não consegue avisar de mensagens novas. Podes ativá-la nas definições do Android.", android.widget.Toast.LENGTH_LONG).show()
         }
     }
+    // Chamadas: o microfone e pedido so ao ligar ou atender (uma vez).
+    var afterMic by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val then = afterMic
+        afterMic = null
+        if (granted) {
+            then?.invoke()
+        } else {
+            android.widget.Toast.makeText(ctx, "Sem acesso ao microfone não é possível fazer chamadas. Podes ativá-lo nas definições do Android.", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    val withMic: (() -> Unit) -> Unit = { action ->
+        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            action()
+        } else {
+            afterMic = action
+            AutoLockPause.active = true   // o pedido de permissao nao conta como sair da app
+            askMic.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
     LaunchedEffect(ui.hasIdentity, ui.locked, ui.termsAccepted, ui.loading) {
         val ready = !ui.loading && ui.hasIdentity && !ui.locked && ui.termsAccepted
         if (ready && Push.available && ui.pushOn && !ui.pushAsked && Build.VERSION.SDK_INT >= 33 && !Push.permissionGranted(ctx)) {
@@ -287,8 +308,19 @@ fun AppRoot(vm: MainViewModel) {
         }
     }
 
+    val call = ui.call
     when {
         ui.loading -> LoadingScreen()
+        call != null && !ui.locked -> {
+            BackHandler { }   // a chamada nao se fecha com o "voltar": desliga-se no botao
+            CallScreen(
+                call,
+                onAccept = { withMic { vm.acceptCall() } },
+                onHangup = vm::hangupCall,
+                onMute = vm::toggleMute,
+                onSpeaker = vm::toggleSpeaker,
+            )
+        }
         ui.locked -> LockScreen(ui, onCode = vm::unlockWithCode, onBio = vm::requestBioUnlock, onWipe = vm::wipeLockedData)
         !ui.termsAccepted -> TermsScreen(onAccept = vm::acceptTerms)
         !ui.hasIdentity -> SetupScreen(ui, onCreate = vm::createIdentity)
@@ -332,6 +364,7 @@ fun AppRoot(vm: MainViewModel) {
                 blocked = chatId in ui.blocked, onBlock = vm::blockContact, onUnblock = vm::unblockContact,
                 invite = chatId in ui.invites, onAcceptInvite = vm::acceptInvite, onDeclineInvite = vm::declineInvite,
                 onReact = vm::react, onSendVoice = vm::sendVoice, onSendFile = vm::sendFile,
+                onCall = { c -> withMic { vm.startCall(c) } },
             )
         }
         showLockSettings -> {
@@ -1016,6 +1049,7 @@ fun ChatScreen(
     onReact: (String, String, String) -> Unit = { _, _, _ -> },
     onSendVoice: (Contact, File, Long) -> Unit = { _, _, _ -> },
     onSendFile: (Contact, Uri) -> Unit = { _, _ -> },
+    onCall: (Contact) -> Unit = {},
 ) {
     val colors = LocalChatColors.current
     var viewing by remember { mutableStateOf<ChatMessage?>(null) }
@@ -1060,6 +1094,9 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    if (contact != null && !blocked && !invite) {
+                        IconButton(onClick = { onCall(contact) }) { Icon(Icons.Filled.Call, contentDescription = "Ligar") }
+                    }
                     if (contact != null) {
                         IconButton(onClick = { onSafety(contact) }) { Icon(Icons.Filled.Lock, contentDescription = "Verificar segurança") }
                     }

@@ -160,6 +160,36 @@ async fn reserva_websocket() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn entra_na_sala_antes_de_atender() {
+    let r = relay().await;
+    let (ma, mb, room) = sessions();
+    // Os dois entram enquanto toca, sem as chaves do audio.
+    let mk = |role| {
+        let c = EngineConfig::new(r.target.clone());
+        CallEngine::start_pending(c, room.clone(), join_packet(&r.public, role, &room).unwrap()).unwrap()
+    };
+    let (a, b) = (mk(Role::Caller), mk(Role::Callee));
+    let b = tokio::task::spawn_blocking(move || {
+        wait_joined(&a);
+        wait_joined(&b);
+        assert!(a.stats().peer_present && b.stats().peer_present);
+        // Antes de atender, o microfone nao sai.
+        a.push_capture(&speech_like(0)).unwrap();
+        assert_eq!(a.stats().sent, 0);
+        // Atendem: o audio passa logo.
+        a.attach_media(ma);
+        b.attach_media(mb);
+        let heard = talk(&a, &b, 60);
+        let audible = heard[20..].iter().filter(|e| **e > 1e4).count();
+        assert!(audible >= 30, "so {audible} de 40 frames com som; {:?}", b.stats());
+        b
+    })
+    .await
+    .unwrap();
+    assert!(b.stats().received >= 55);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn udp_bloqueado_passa_para_a_reserva() {
     let r = relay().await;
     let (_, mb, room) = sessions();
