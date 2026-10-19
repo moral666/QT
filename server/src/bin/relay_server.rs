@@ -195,7 +195,7 @@ async fn main() {
 
     // Estatisticas anonimas (so contagens), uma linha por minuto. No mesmo ciclo,
     // a media do tempo de entrega (latency.rs) e, se RELAY_STATUS_FILE estiver
-    // definido, o JSON de estado que o Caddy publica em /estado.json.
+    // definido, o JSON de estado que o HAProxy publica em /estado.json.
     let status_file = std::env::var("RELAY_STATUS_FILE").ok().filter(|p| !p.is_empty());
     // Ultima media conhecida: recuperada do ficheiro de estado, para nao se perder ao reiniciar.
     let previous = status_file.as_deref().and_then(|p| std::fs::read_to_string(p).ok());

@@ -64,7 +64,7 @@ No Xcode:
 | Botão "Relay (teste)" | visível | escondido |
 
 Para testar no iPhone com o relay da AWS em Debug: "Opções de teste" → URL
-`wss://13-51-46-213.sslip.io` e a chave do relay. Ou usa o esquema **Release**
+`wss://relay.sealer.pt` e a chave do relay. Ou usa o esquema **Release**
 (Product → Scheme → Edit Scheme → Run → Build Configuration → Release).
 
 O build Release falha de propósito se `QT_RELAY_URL` não for `wss://` ou se `QT_RELAY_PIN`

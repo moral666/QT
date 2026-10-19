@@ -208,7 +208,7 @@ Por omissão, o relay aceita até 4 096 ligações (`RELAY_MAX_CONNECTIONS`). O
 serviço `deploy/systemd/qt-relay.service` já sobe o limite de ficheiros abertos
 para 65 536 (`LimitNOFILE`); sem isso, o systemd limitava o relay a cerca de
 1 024 ligações. Para mais de 4 096 ligações em simultâneo, sobe
-`RELAY_MAX_CONNECTIONS` em `/etc/qt/relay.env` (o `setup-ec2.sh` já põe 16 000).
+`RELAY_MAX_CONNECTIONS` em `/etc/qt/relay.env` (o `setup-ec2.sh` põe 10 000 desde 18/10/2026).
 
 ### Na AWS (t3.small, 18/10/2026)
 
@@ -230,6 +230,14 @@ no mesmo segundo (TLS + Noise + autenticação). A firewall da AWS não cortou
 nada (`conntrack_allowance_exceeded: 0`).
 
 Por isso o `setup-ec2.sh` passou a usar o **HAProxy** (com certbot) em vez do
-Caddy, e o travão `RELAY_MAX_CONNECTIONS` passou a 16 000 no servidor. Repetir
-o mesmo teste depois da troca para medir o novo valor por ligação.
+Caddy.
+
+Repetido com o HAProxy (mesmo teste, a partir do mesmo PC): **~40 KB por ligação**
+no total da máquina (HAProxy, relay e sistema), **8 000 ligações sem falhas** e
+cerca de 12 000 a funcionar quando o router de casa deixou de aguentar (o limite
+foi o router, não o servidor). O travão `RELAY_MAX_CONNECTIONS` ficou em
+**10 000** até haver um teste maior feito a partir da própria AWS. Depois disso,
+o `setup-ec2.sh` passou também a desligar serviços que não fazem falta, a afinar
+o TCP (buffers mais pequenos, mais portas locais) e a usar buffers de 8 KB no
+HAProxy; estes valores ainda não foram medidos.
 

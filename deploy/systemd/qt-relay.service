@@ -1,4 +1,4 @@
-# Relay QT na EC2, atras de Caddy/nginx (TLS) e com Redis local.
+# Relay QT na EC2, atras do HAProxy (TLS) e com Redis local.
 #
 #   sudo useradd --system --home /var/lib/qt --shell /usr/sbin/nologin qt
 #   sudo install -d -o qt -g qt -m 700 /var/lib/qt
@@ -41,7 +41,7 @@ PrivateDevices=yes
 ProtectSystem=strict
 ProtectHome=yes
 # /var/lib/qt-estado: so o estado.json publico (tempo medio de entrega), que o
-# Caddy serve em /estado.json. O "-" deixa o relay arrancar mesmo sem a pasta.
+# HAProxy serve em /estado.json. O "-" deixa o relay arrancar mesmo sem a pasta.
 ReadWritePaths=/var/lib/qt -/var/lib/qt-estado
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

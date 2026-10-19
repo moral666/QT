@@ -27,7 +27,7 @@ a versão final, quando o protocolo estiver congelado.
 
 ## 2. Estado do projeto
 
-- Versão da app Android: 0.9.1 (alpha), testada em 3 telemóveis. A app iPhone está atrasada
+- Versão da app Android: 0.9.2 (alpha), testada em 3 telemóveis. A app iPhone está atrasada
   e fora do âmbito desta revisão.
 - Um relay em produção (AWS eu-north-1, t3.small), usado só por testadores.
 - Código aberto (AGPL, com licença comercial dupla), repositório `moral666/QT`, ramo
@@ -40,9 +40,9 @@ a versão final, quando o protocolo estiver congelado.
 App (Kotlin / Swift: só interface, nenhuma criptografia)
   └─ núcleo Rust por UniFFI: core (PQXDH, Double Ratchet, Sealed Sender),
      storage (SQLCipher, chave no Android Keystore / Secure Enclave), ffi
-        │  wss:// (TLS 1.2+, certificado Let's Encrypt)
+        │  wss://relay.sealer.pt (TLS 1.2+, certificado Let's Encrypt; DNS sem proxy)
         ▼
-HAProxy (termina o TLS, sem registos)  ──►  relay Rust em 127.0.0.1:9443
+HAProxy (TLS, sem registos, limites por IP)  ──►  relay Rust em 127.0.0.1:9443
                                              Noise XX dentro do WebSocket, chave do relay
                                              fixa (pinning) na app
                                                ├─ Redis em 127.0.0.1 (filas, bundles; ACL mínima)
@@ -57,8 +57,10 @@ HAProxy (termina o TLS, sem registos)  ──►  relay Rust em 127.0.0.1:9443
 - Deploy: o servidor descarrega o código do GitHub e compila-o no próprio servidor
   (`deploy/aws/setup-ec2.sh`).
 
-O diagrama `docs/arquitetura.svg` é de 16/10/2026 e ainda mostra o Caddy (hoje é o
-HAProxy) e não mostra as notificações. Vale o texto acima.
+- Limites contra abusos (desde 19/10/2026): 100 ligações abertas e 100 novas a cada 10 s
+  por IP no HAProxy; no relay, 2 000 ligações por autenticar e 8 por conta.
+
+O diagrama `docs/arquitetura.svg` ainda não mostra as notificações (FCM). Vale o texto acima.
 
 ## 4. O que ler, por esta ordem
 
@@ -78,16 +80,16 @@ Ordenadas por custo de mudar mais tarde. Cada uma tem a pergunta concreta.
 
 | # | Tema | Pergunta |
 |---|---|---|
-| 1 | Endereço do relay fixo nas apps (`13-51-46-213.sslip.io`, depende do serviço sslip.io) | Devemos passar a um domínio próprio, com proteção contra DDoS à frente, antes de publicar na Play Store? |
-| 2 | Uma só chave do relay fixa na app, sem forma de a trocar | Que mecanismo de rotação recomendam (por exemplo, a app aceitar a chave atual e uma de reserva)? |
+| 1 | Endereço do relay: desde a app 0.9.2 é `relay.sealer.pt`, um registo DNS sem proxy (de propósito, para nenhum intermediário ver os IPs dos utilizadores). Sem proteção contra DDoS além da básica da AWS | Este compromisso (privacidade em vez de proteção contra DDoS) é aceitável? Há alternativas que não exponham os IPs a terceiros? |
+| 2 | Uma só chave do relay fixa na app, sem forma de a trocar (já há cópia de segurança fora do servidor) | Que mecanismo de rotação recomendam (por exemplo, a app aceitar a chave atual e uma de reserva)? |
 | 3 | HKDF do PQXDH sem *transcript binding* e com salt vazio | Vale a pena mudar já, enquanto só há testadores (as sessões atuais deixam de servir)? Que formato recomendam? |
 | 4 | Sem one-time prekeys servidas pelo relay; signed pre-key e prekey ML-KEM sem rotação nem validade | É prioritário antes da versão 1.0? Que período de rotação? |
 | 5 | Duas ligações por app, protocolo sequencial | Multiplexar pedidos numa só ligação (pedidos com identificador) traz algum risco de segurança que devamos considerar no desenho? |
-| 6 | Sem limites por IP nem por utilizador; criar uma conta é gerar uma chave, sem custo | Que defesa contra abusos recomendam ao nível do desenho (limites no proxy, prova de trabalho no registo, consentimento de contacto)? |
+| 6 | Já há limites de ligações por IP e por conta (secção 3), mas criar uma conta é gerar uma chave, sem custo, e não há limite de mensagens | Que defesa contra spam recomendam ao nível do desenho (prova de trabalho no registo, limite de mensagens, consentimento de contacto)? |
 | 7 | Anexos: o relay vê que utilizador enviou e que utilizador descarregou cada ficheiro | Faz sentido descarregar os anexos por uma ligação sem autenticação, para não ligar quem fala com quem? |
 | 8 | Tamanho das mensagens de texto sem enchimento; o campo `silent` diz ao relay que um envio não é uma mensagem | Quanto pesa esta fuga de metadados e que enchimento recomendam? |
 | 9 | Deploy: o servidor compila código vindo do GitHub, como root | Devemos passar a compilar no CI e instalar só binários assinados? |
-| 10 | Um só servidor, Redis sem réplica, chave do relay sem cópia de segurança | Qual é o mínimo aceitável para uma versão pública (backups, segunda máquina)? |
+| 10 | Um só servidor e Redis sem réplica (sem segunda máquina, por custo) | Qual é o mínimo aceitável para uma versão pública sem aumentar o custo mensal? |
 
 ## 6. O que esperamos receber
 
