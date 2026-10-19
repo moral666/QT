@@ -66,37 +66,50 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
     fun start() {
         if (running) return
         val frame = callFrameBytes().toInt()
+        // Modo de chamada e foco ANTES de criar o microfone e o altifalante: mudar o modo
+        // depois reencaminha o audio a meio e em muitos telemoveis o microfone para ~0,5 s.
+        am.mode = AudioManager.MODE_IN_COMMUNICATION
+        requestFocus()
         val minRec = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        // 200 ms de folga: se a thread do microfone se atrasar, as amostras ficam a espera
+        // em vez de se perderem (nao acrescenta atraso, le-se assim que ha 20 ms).
         val rec = AudioRecord(
             MediaRecorder.AudioSource.VOICE_COMMUNICATION, RATE,
-            AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minRec, frame * 4),
+            AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minRec, frame * 10),
         )
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release()
+            am.mode = AudioManager.MODE_NORMAL
+            abandonFocus()
             throw IllegalStateException("microfone indisponivel")
         }
         val minTrack = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        val tr = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build(),
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setSampleRate(RATE)
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build(),
-            )
-            .setBufferSizeInBytes(maxOf(minTrack, frame * 3))
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .build()
+        val tr = try {
+            AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build(),
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setSampleRate(RATE)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build(),
+                )
+                .setBufferSizeInBytes(maxOf(minTrack, frame * 3))
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
+        } catch (e: Exception) {
+            rec.release()
+            am.mode = AudioManager.MODE_NORMAL
+            abandonFocus()
+            throw e
+        }
         if (AcousticEchoCanceler.isAvailable()) aec = AcousticEchoCanceler.create(rec.audioSessionId)?.apply { setEnabled(true) }
         if (NoiseSuppressor.isAvailable()) ns = NoiseSuppressor.create(rec.audioSessionId)?.apply { setEnabled(true) }
-        am.mode = AudioManager.MODE_IN_COMMUNICATION
-        requestFocus()
         record = rec
         track = tr
         running = true
@@ -185,6 +198,11 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
         ns?.release()
         ns = null
         runCatching { setSpeaker(false) }
+        abandonFocus()
+        am.mode = AudioManager.MODE_NORMAL
+    }
+
+    private fun abandonFocus() {
         if (Build.VERSION.SDK_INT >= 26) {
             focus?.let { am.abandonAudioFocusRequest(it) }
         } else {
@@ -192,7 +210,6 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
             am.abandonAudioFocus(null)
         }
         focus = null
-        am.mode = AudioManager.MODE_NORMAL
     }
 
     companion object {

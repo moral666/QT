@@ -13,7 +13,15 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   o início da chamada.
 - Estatísticas separadas: perdidos na rede (reconstruídos pelo DRED) e atrasados (não chegaram a
   tempo). A linha técnica da chamada mostra os dois.
-- Testes novos: microfone lento no arranque e espera contada no relógio.
+- Corrigido: se o microfone do outro telemóvel parasse mais de ~120 ms e perdesse essas
+  amostras, todos os pacotes seguintes chegavam "atrasados" e esse lado ficava mudo até ao fim da
+  chamada. Agora o jitter buffer recomeça no primeiro pacote que volta e corta o excesso de atraso
+  de uma vez.
+- App: o modo de chamada e o foco de áudio passam a ser pedidos antes de criar o microfone e o
+  altifalante (mudar o modo depois reencaminhava o áudio a meio e o microfone parava cerca de meio
+  segundo no início da chamada); o microfone tem 200 ms de folga em vez de 80.
+- Testes novos: microfone lento no arranque, espera contada no relógio, microfone parado sem
+  acumular (100 ms a 2 s) e rajada retida.
 
 ### 19 de outubro de 2026: chamadas de voz na app Android, fase 4a (app 0.9.4)
 

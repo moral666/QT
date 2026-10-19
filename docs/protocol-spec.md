@@ -790,7 +790,9 @@ CMake), com o DRED e o PLC neural (os modelos vêm no pacote).
   das chegadas dos últimos 3 s. Frame em falta com um pacote mais à frente: perdido, reconstruído
   com o DRED desse pacote. Sem nada à frente: espera até 200 ms, contados no relógio e não em
   pedidos do altifalante (PLC sem avançar, o atraso cresce 20 ms de cada vez) e depois desiste.
-  As estatísticas separam os perdidos na rede dos que não chegaram a tempo. Atraso a mais durante
+  As estatísticas separam os perdidos na rede dos que não chegaram a tempo. Se depois de desistir
+  voltar a chegar um pacote mais antigo do que o seguinte (o outro lado parou e retomou atrasado em
+  relação ao tempo real), recomeça nele e corta o excesso até ao atraso alvo. Atraso a mais durante
   0,5 s: salta um frame.
 * Motor (`call/src/engine.rs`): a app entrega 20 ms do microfone (`push_capture`) e pede 20 ms
   para tocar (`pull_playback`); a rede corre numa thread própria. Entra na sala (pedido a cada
