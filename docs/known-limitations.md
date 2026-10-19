@@ -1,11 +1,12 @@
-# Limitações conhecidas (v0.2)
+# Limitações conhecidas
 
 Ordenadas por impacto. O detalhe do modelo de adversário está em
 `threat-model.md`. **Nenhum item aqui foi resolvido por "o teste passa".**
 
 ## Segurança / criptografia
-1. **Sem auditoria externa.** Todo o código (incl. a integração `ml-kem 0.2.3`) é
-   de um único autor, assistido por IA. Não usar para proteger pessoas em risco.
+1. **Versão de testes (0.9.x).** Até à 1.0 o protocolo e as apps ainda podem mudar (por
+   exemplo, as apps 0.9.3 não falam com as 0.9.2). Para já, não usar como única proteção de
+   pessoas em risco.
 2. **Autenticação e Sealed Sender são clássicos** (Ed25519/X25519). Só o segredo
    inicial é híbrido pós-quântico. O transporte Noise é clássico.
 3. ~~**HKDF do PQXDH sem *transcript binding***~~ (resolvido na 0.9.3): PQXDH v2 com

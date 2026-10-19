@@ -1,6 +1,6 @@
 # SEALER para Android (Kotlin / Jetpack Compose)
 
-**Versão alpha, NÃO auditada. Não uses para informação sensível.**
+**Versão de testes (0.9.13).**
 Toda a criptografia está no Rust (`libqt_ffi.so`); o Kotlin só move bytes e desenha ecrãs.
 No telemóvel a app chama-se **SEALER**. O identificador na Play Store é `sealer.app` (desde a 0.9.0; antes `pt.qt.app`); o código Kotlin continua no pacote `pt.qt.app`.
 
@@ -115,16 +115,16 @@ Chave do SQLCipher gerada aleatoriamente e protegida pelo Android Keystore (Stro
 bloqueio da app opcional (código próprio que cifra a chave do SQLCipher e a lista de contactos, com Argon2id no Rust, mais desbloqueio com impressão digital, rosto ou PIN do telemóvel através de uma chave do Keystore que só funciona depois de autenticar; ao bloquear, as imagens em memória são esquecidas); pinning da chave do relay (obrigatório na *release*); confirmação (`Ack`) só depois de processar; deduplicação feita pelo Rust.
 
 ## Limitações (ver `docs/known-limitations.md`, itens 30 a 36)
-Com a app fechada chega só um aviso genérico ("Tens mensagens novas"); a mensagem é decifrada quando abres a app. Enquanto o Android não
-fecha a app, a ligação de espera fica aberta em segundo plano (um pedido a cada 25 s); imagens: o relay vê o tamanho aproximado e quem envia
-e descarrega cada ficheiro, e um anexo não descarregado em 24 horas perde-se; **sem auditoria**.
+Com a app fechada chega só um aviso genérico ("Tens mensagens novas"), sem nome nem texto. Desde a 0.9.6 a app decifra em segundo plano
+para as chamadas tocarem (com o bloqueio da app ativo nada é decifrado sem o código). As ligações ao relay fecham 30 s depois de a app sair
+do ecrã. Anexos: o relay vê o tamanho aproximado e quem envia e descarrega cada ficheiro, e um anexo não descarregado em 24 horas perde-se.
 
 ## O que foi verificado
 Compilada no Android Studio em *debug* e *release* (R8 ativo), instalada num emulador e em telemóveis reais,
 e testada com mensagens trocadas entre dois telemóveis através do relay na AWS (`wss://` + pinning).
-As imagens, os GIFs e o código QR foram compilados e instalados, mas a troca de imagens entre dois
-telemóveis através da AWS ainda está por confirmar.
-**Não** foram feitos testes automáticos de interface, testes em muitos modelos/versões de Android, nem auditoria.
+Fotos, GIFs, voz, ficheiros, grupos, chamadas de voz e notificações testados entre três Samsung
+(dois Galaxy S23 e um S26) através do relay na AWS.
+Ainda não há testes automáticos de interface nem testes em muitos modelos e versões de Android.
 
 ## Assinatura de release (keystore própria)
 

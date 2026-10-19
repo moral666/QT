@@ -39,6 +39,9 @@ seguir.
   (PT, EN, FR, ES, DE, IT, 0.9.10). Por agora só no Android.
 - **Novo design** (0.9.11): cabeçalho com o fundo curvo, ecrã de Definições e ecrã Novo
   contacto; foto de perfil com pré-visualização e "Aplicar". Por agora só no Android.
+- **Desempenho** (0.9.12): lista de conversas que não fica mais lenta com o histórico,
+  fotos de perfil com menos memória, chamadas sem gastar CPU quando o microfone falha e
+  APK mais pequena.
 
 ## A seguir: tornar isto usável no dia a dia
 
@@ -59,8 +62,6 @@ seguir.
   cada corrida). Ver `docs/threat-model.md`, secção 3.
 - [ ] **Fuzzing guiado por cobertura** (`cargo-fuzz`), corrido durante horas:
   ainda não existe no repositório.
-- [ ] **Auditoria de segurança externa**: nenhuma alegação de segurança
-  deveria ser levada a sério sem isto; é a prioridade mais alta desta fase.
 - [x] **Limites no relay por utilizador** (0.9.3): ligações por IP e por conta,
   envios e pedidos de bundle por minuto, prova de trabalho ao criar conta.
 - [x] **One-time prekeys servidas pelo relay**, uma por pedido (0.9.3).

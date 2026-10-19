@@ -739,9 +739,9 @@ fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit) {
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            s(R.string.t_versao_alpha_ainda_nao_auditada_nao),
+            s(R.string.t_versao_de_testes),
             style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.error,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (BuildConfig.RELAY_EDITABLE) {   // so na build debug
             TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) s(R.string.t_esconder_opcoes_de_teste) else s(R.string.t_opcoes_de_teste)) }

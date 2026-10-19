@@ -102,7 +102,7 @@
     <string name="t_a_abrir_o_armazenamento_seguro">Opening secure storage…</string>
     <string name="t_mensagens_cifradas_ponta_a_ponta_com">End-to-end encrypted messages with post-quantum cryptography. No phone number, no email.</string>
     <string name="t_comecar">Get started</string>
-    <string name="t_versao_alpha_ainda_nao_auditada_nao">Alpha version, not yet audited. Do not use it for sensitive information.</string>
+    <string name="t_versao_de_testes">Test version. Until version 1.0, the app keeps being improved.</string>
     <string name="t_esconder_opcoes_de_teste">Hide test options</string>
     <string name="t_opcoes_de_teste">Test options</string>
     <string name="t_url_do_relay">Relay URL</string>

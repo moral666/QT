@@ -22,8 +22,7 @@ especificação formal revisada por pares.
 Os formatos de fio descritos aqui (X3DH/PQXDH, mensagens do Double
 Ratchet, envelope do sealed sender, bundle serializado em
 `cli/src/wire_format.rs`) estão **congelados nesta versão (v0.1)**
-enquanto decorre a bateria de testes de robustez, fuzzing, e qualquer
-auditoria futura. Qualquer mudança ao formato de bytes trocados entre
+enquanto decorre a bateria de testes de robustez e fuzzing. Qualquer mudança ao formato de bytes trocados entre
 cliente e servidor, ou entre dois clientes, deve:
 
 1. Ser justificada por um problema real encontrado (bug de segurança,

@@ -73,7 +73,7 @@ impl CallAudio {
             return Err(bad("pcm"));
         }
         let Some(e) = self.engine() else { return Ok(()) };
-        let samples: Vec<i16> = pcm.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
+        let samples: Vec<i16> = pcm.as_chunks::<2>().0.iter().map(|b| i16::from_le_bytes(*b)).collect();
         e.push_capture(&samples).map_err(|_| QtError::Crypto)
     }
 
