@@ -37,8 +37,8 @@ seguir.
 
 ## A seguir: tornar isto usável no dia a dia
 
-- [ ] **Chamadas de voz na app Android** (fase 4): ecrã de chamada, aviso de chamada
-  com a app fechada e microfone com o cancelamento de eco do telemóvel. Depois, no iPhone.
+- [x] **Chamadas de voz na app Android com a app aberta** (fase 4a, app 0.9.4).
+- [ ] **Chamadas a tocar com a app fechada** (fase 4b). Depois, chamadas no iPhone.
 - [ ] **Bloqueio da app no iPhone**, igual ao do Android.
 - [ ] **Infraestrutura de produção:** backups e alertas do servidor.
 - [ ] **Distribuição:** Google Play e App Store (TestFlight).
