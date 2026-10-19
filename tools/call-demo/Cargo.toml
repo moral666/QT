@@ -1,0 +1,21 @@
+# Ferramenta de teste das chamadas no PC (fase 3): a tua voz vai ao relay das chamadas
+# e volta, e ouves-te com o atraso real, com o Opus, o DRED e o jitter buffer da app.
+#
+# Fora do workspace principal (tem o seu proprio [workspace]): precisa do ALSA
+# (sudo apt install libasound2-dev) e a CI nao tem de o instalar.
+#
+#   cd tools/call-demo && cargo run --release -- eco
+[package]
+name = "qt-call-demo"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+publish = false
+
+[dependencies]
+qt_call = { path = "../../call" }
+qt_core = { path = "../../core" }
+cpal = "0.15"
+getrandom = "0.2"
+
+[workspace]

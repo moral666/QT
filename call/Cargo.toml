@@ -1,0 +1,28 @@
+[package]
+name = "qt_call"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "Motor das chamadas de voz: Opus 1.6 (DRED, PLC neural), jitter buffer e ligacao ao relay das chamadas"
+publish = false
+
+[features]
+default = ["ws"]
+# Reserva por WebSocket (wss://<relay>/call) para redes que bloqueiam UDP. Traz o TLS
+# (rustls, com o ring) para dentro do motor. A decisao para a app Android e da fase 4.
+ws = ["dep:tokio-tungstenite", "dep:rustls", "dep:futures-util"]
+
+[dependencies]
+qt_core = { path = "../core" }
+qt_transport = { path = "../transport" }
+# libopus 1.6.1 (oficial, em C, compilado com CMake). `dred` traz o DRED e o PLC neural
+# (os modelos vem dentro do pacote). Versao fixa: o DRED ainda muda entre versoes.
+opusic-sys = { version = "=0.7.5", features = ["dred"] }
+tokio = { version = "1", features = ["rt", "net", "time", "sync", "macros"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"], optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+futures-util = { version = "0.3", optional = true }
+thiserror = "1"
+
+[dev-dependencies]
+qt_server = { path = "../server" }
