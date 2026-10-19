@@ -4,7 +4,7 @@
 
 As apps chamam-se **SEALER**; QT é o nome do protocolo e deste repositório.
 
-**Versão de testes (Android 0.9.4, iPhone 0.9.3), não auditada.** Um mensageiro E2EE com criptografia
+**Versão de testes (Android 0.9.10, iPhone 0.9.3), não auditada.** Um mensageiro E2EE com criptografia
 pós-quântica (X3DH, PQXDH, Double Ratchet, Sealed Sender, Noise Protocol),
 tudo implementado em Rust, com apps Android e iPhone e relay na nuvem, já
 a funcionar de ponta a ponta. **Ainda não é um produto acabado nem deve ser
@@ -32,16 +32,17 @@ O QT tenta responder a isto com engenharia, não só com uma política de privac
 
 ## Sê honesto comigo: isto já funciona?
 
-Sim, de ponta a ponta, em versão de testes (**app Android 0.9.4 e app iPhone 0.9.3**), com testes fechados entre poucas pessoas. Não foi auditado de forma independente e não deve ser usado para conversas reais ou informação sensível.
+Sim, de ponta a ponta, em versão de testes (**app Android 0.9.10 e app iPhone 0.9.3**), com testes fechados entre poucas pessoas. Não foi auditado de forma independente e não deve ser usado para conversas reais ou informação sensível.
 
 ### O que a app já faz (19 de outubro de 2026)
 
-- **Chamadas de voz cifradas ponta a ponta** (novo na Android 0.9.4), testadas entre dois telemóveis com muito boa qualidade. Por agora, as duas pessoas têm de ter a app aberta. Ver "Chamadas de voz" mais abaixo.
-
+- **Chamadas de voz cifradas ponta a ponta** no Android, testadas entre dois telemóveis com muito boa qualidade. Tocam com a app fechada ou o telemóvel bloqueado (desde a 0.9.6), com um toque próprio da SEALER (0.9.8). Ver "Chamadas de voz" mais abaixo.
 - **Conversas a dois e em grupo** (até 10 pessoas, 3 administradores), entre Android e iPhone, com histórico cifrado no telemóvel e avisos de *Enviado / Entregue / Visto*.
 - **Fotos, GIFs, mensagens de voz e ficheiros até 25 MB** (PDF, documentos...), a dois e nos grupos. Cada ficheiro é cifrado no telemóvel com uma chave própria e apagado do relay quando é descarregado, ou ao fim de 24 horas.
 - **Notificações push com a app fechada:** um aviso genérico ("Tens mensagens novas"), sem o nome de quem envia nem o texto. Desde a Android 0.9.6 a app decifra em segundo plano, no telemóvel, para as chamadas tocarem com a app fechada; com o bloqueio da app ativo nada é decifrado sem o código.
 - **Convites por código QR**, reações, bloquear contactos, online / offline só para os contactos (cifrado) e bloqueio da app com código próprio, impressão digital ou rosto (por agora só no Android).
+- **Foto de perfil** (0.9.9): só os teus contactos a veem, cifrada ponta a ponta dentro da conversa (o servidor nem sabe que é uma foto). Até 3 MB, e só se pode mudar de 72 em 72 horas.
+- **Seis línguas** (0.9.10): português, inglês, francês, espanhol, alemão e italiano. Segue a língua do telemóvel, ou escolhe-se no menu "Idioma".
 - **Apagar a conta** no telemóvel e no servidor, com um toque.
 - **Segurança do protocolo (0.9.3):** PQXDH v2 (X25519 + ML-KEM-768), chaves que rodam a cada 7 dias e chaves de uso único servidas pelo relay, enchimento das mensagens (o relay não distingue mensagens curtas de recibos), prova de trabalho para contas novas e limites por conta no relay. As apps 0.9.3 não falam com versões anteriores.
 
@@ -55,7 +56,8 @@ Sim, de ponta a ponta, em versão de testes (**app Android 0.9.4 e app iPhone 0.
 
 ### O que ainda falta
 
-- **Chamadas de voz cifradas a dois:** o protocolo, o servidor das chamadas e o motor de áudio já estão feitos e testados; falta ligá-los à app (Android primeiro). Ver "Chamadas de voz" mais abaixo.
+- **Chamadas de voz no iPhone**, e no Android a integração com o sistema de chamadas (auricular Bluetooth, carro, chamada normal ao mesmo tempo).
+- **Foto de perfil e seis línguas no iPhone** (por agora só no Android).
 - **Distribuição pela Google Play e pela App Store** (hoje a app é instalada à mão pelos testadores). Já preparado: eliminação de conta, política de privacidade e respostas dos formulários ([`docs/google-play.md`](docs/google-play.md)).
 - **Infraestrutura de produção:** redundância, backups e alertas do servidor.
 - **Auditoria de segurança independente.**
@@ -74,11 +76,11 @@ Sim, de ponta a ponta, em versão de testes (**app Android 0.9.4 e app iPhone 0.
 | `core/` | Estabelecimento de sessão (X3DH + variante pós-quântica) e cifra contínua (Double Ratchet), o mesmo desenho usado pelo Signal | ✅ Testado (mais de 40 testes automáticos, incluindo casos que devem falhar propositadamente) |
 | `transport/` | Proteção da ligação em rede (Noise Protocol) sobre WebSocket | ✅ Testado com ligações WebSocket reais, não simuladas |
 | `server/` | O "carteiro": entrega mensagens sem nunca ver o conteúdo nem saber quem as enviou, e guarda as imagens cifradas no máximo 24 horas. Inclui, à parte, o relay das chamadas de voz (UDP, salas anónimas) | ✅ Testado, incluindo sobreviver a ser desligado à força (`kill -9`) e com a lista de comandos do Redis de produção; o relay das chamadas está em produção |
-| `call/` | O motor das chamadas de voz: Opus 1.6 com DRED e PLC neural, jitter buffer adaptativo e ligação ao relay das chamadas (UDP, com reserva por WebSocket) | ✅ Testado em Rust, com chamadas de ponta a ponta por um relay local e perdas simuladas; ainda não está na app |
+| `call/` | O motor das chamadas de voz: Opus 1.6 com DRED e PLC neural, jitter buffer adaptativo e ligação ao relay das chamadas (UDP, com reserva por WebSocket) | ✅ Testado em Rust, com chamadas de ponta a ponta por um relay local e perdas simuladas; em uso na app Android desde a 0.9.4 |
 | `storage/` | Guarda a tua identidade e conversas no disco, cifradas | ✅ Testado, incluindo confirmar que uma password errada não abre nada |
 | `cli/` | O mensageiro no terminal (`messenger`), com o mesmo núcleo das apps, e uma demonstração visível do protocolo (`messenger_demo`) | ✅ Testado de ponta a ponta com um relay real: terminal ↔ terminal e terminal ↔ cliente igual ao das apps |
 | `ffi/` | A ponte que liga tudo isto a Kotlin (Android), Swift (iOS) e Python: histórico, fila de saída, imagens, bloqueio da app | ✅ Testado em Rust (incluindo sessões cruzadas e imagens) e a partir do Python |
-| `android/` | App Android (Kotlin/Compose); toda a criptografia continua no Rust | ✅ Versão 0.9.4 (com chamadas de voz), release assinada testada em telemóveis reais através do relay na AWS |
+| `android/` | App Android (Kotlin/Compose); toda a criptografia continua no Rust | ✅ Versão 0.9.10 (chamadas de voz, foto de perfil, seis línguas), release assinada testada em telemóveis reais através do relay na AWS |
 | `ios/` | App iPhone (SwiftUI), igual à Android, com o mesmo núcleo Rust | ✅ Versão 0.9.3 compilada num Mac e testada num iPhone, a trocar mensagens com as apps Android através do relay na AWS |
 | `deploy/` | Instalação do relay numa EC2: Redis só em localhost com ACL, serviço systemd isolado, TLS automático | ✅ Usado no deploy atual |
 
@@ -109,9 +111,9 @@ Os números de cima são do relay sozinho. Com telemóveis reais (três Samsung,
 
 As apps ficam à espera numa ligação aberta e o relay entrega cada mensagem no instante em que ela chega. As poucas mensagens lentas são para telemóveis que estavam a dormir: a notificação acorda-os e a mensagem chega quando a app abre.
 
-## Chamadas de voz (em desenvolvimento)
+## Chamadas de voz
 
-**As chamadas de voz a dois já funcionam na app Android 0.9.4**, testadas a 19 de outubro de 2026 entre dois telemóveis, com muito boa qualidade. Por agora, as duas pessoas têm de ter a app aberta; tocar com a app fechada é a próxima fase. O iPhone vem depois.
+**As chamadas de voz a dois funcionam na app Android**, testadas a 19 de outubro de 2026 entre dois telemóveis, com muito boa qualidade. Desde a 0.9.6 tocam com a app fechada ou o telemóvel bloqueado; desde a 0.9.8 com um toque próprio da SEALER. O iPhone vem depois.
 
 <p align="center"><img src="docs/img/chamada-0.9.4.jpg" width="260" alt="Ecrã de uma chamada de voz na SEALER 0.9.4: contador, cifrada ponta a ponta, ligação por UDP a 64 ms do servidor, e os botões Silenciar, Altifalante e Desligar."></p>
 
@@ -121,7 +123,8 @@ As apps ficam à espera numa ligação aberta e o relay entrega cada mensagem no
 | 2. Relay das chamadas | Serviço à parte no servidor (UDP 443) que só reencaminha pacotes de áudio cifrados | ✅ Em produção, testado a partir de casa |
 | 3. Motor de áudio | Opus 1.6 com DRED e PLC neural, jitter buffer adaptativo e ligação ao relay | ✅ Feita e testada em Rust (`call/`) |
 | 4a. App Android, com a app aberta | Botão de ligar, ecrã de chamada, microfone com o cancelamento de eco do telemóvel, altifalante e silenciar | ✅ Feita (Android 0.9.4), testada em telemóveis reais |
-| 4b. Tocar com a app fechada | Aviso de chamada com a app fechada ou o telemóvel bloqueado, com o ecrã de chamada do Android | ⏳ A seguir |
+| 4b. Tocar com a app fechada | Aviso de chamada com a app fechada ou o telemóvel bloqueado, com Atender e Recusar por cima do bloqueio | ✅ Feita (Android 0.9.6) |
+| 5. iPhone e sistema de chamadas | Chamadas no iPhone; no Android, auricular Bluetooth, carro e chamada normal ao mesmo tempo | ⏳ A seguir |
 
 **Como protege a privacidade:**
 
@@ -224,16 +227,16 @@ cargo run --release -- eco --ws         # usa a reserva por WebSocket
 
 ## App Android
 
-O core Rust é o único backend criptográfico da app Android (Kotlin/Compose): API `QtClient` via UniFFI, storage SQLCipher com chave do Android Keystore, PQXDH (X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, relay autenticado com entrega *at-least-once*, notificações push (FCM, aviso genérico) e chamadas de voz (motor `call/`). **Versão de testes (0.9.4), não auditada.**
+O core Rust é o único backend criptográfico da app Android (Kotlin/Compose): API `QtClient` via UniFFI, storage SQLCipher com chave do Android Keystore, PQXDH (X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, relay autenticado com entrega *at-least-once*, notificações push (FCM, aviso genérico), chamadas de voz (motor `call/`) e textos em seis línguas (`res/values*/strings.xml`). **Versão de testes (0.9.10), não auditada.**
 
 ```bash
 export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/<versao>
-ABIS="arm64-v8a armeabi-v7a" ./scripts/build-android.sh   # libqt_ffi.so (16 KB) + bindings Kotlin
-cd android && ./sync-native.sh ..                          # copia para a app
+ABIS="arm64-v8a armeabi-v7a x86_64" ./scripts/build-android.sh   # libqt_ffi.so (16 KB) + bindings Kotlin
+cd android && ./sync-native.sh                                    # copia para a app
 # depois: abrir a pasta android/ no Android Studio
 ```
 
-A build *release* exige uma keystore própria e o relay de produção (`qtRelayUrl` / `qtRelayPin` em `android/gradle.properties`); nessa build o relay é fixo e não aparece na interface. Usa o NDK 27 ou mais recente (com o r26d a compilação do OpenSSL incluído falhou). Passo a passo em [`android/README.md`](android/README.md).
+A build *release* exige uma keystore própria e o relay de produção (`qtRelayUrl` / `qtRelayPin` em `android/gradle.properties`); nessa build o relay é fixo e não aparece na interface. Usa o NDK 30 (o r26d não compila o OpenSSL incluído nem a `x86_64` do emulador). Passo a passo em [`android/README.md`](android/README.md).
 
 * Guia de integração e build: [`docs/android-integration.md`](docs/android-integration.md)
 * Referência da API: [`docs/ffi-api.md`](docs/ffi-api.md)

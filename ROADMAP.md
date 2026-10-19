@@ -16,8 +16,8 @@ seguir.
   entregue / vista*, apagar conversa e contacto, verificação de segurança
   (safety numbers), adicionar contactos por código QR, fotos, GIFs, voz e
   ficheiros até 25 MB, reações, convites e grupos até 10 pessoas (app 0.9.3).
-- **Notificações push com a app fechada** (aviso genérico "Tens mensagens novas",
-  sem decifrar nada em segundo plano).
+- **Notificações push com a app fechada** (aviso genérico "Tens mensagens novas";
+  desde a 0.9.6 a app decifra em segundo plano, no telemóvel, para as chamadas tocarem).
 - **Relay em `relay.sealer.pt`** (HAProxy com TLS), medido com 8 000 ligações
   em simultâneo sem falhas.
 - **Relay acessível pela internet** (AWS EC2), atrás de TLS (`wss://`), com
@@ -31,14 +31,20 @@ seguir.
 - **Bloqueio da app no Android** (código próprio e biometria).
 - **Teste de campo** com cinco aparelhos em três plataformas
   (`docs/field-tests.md`).
-- **Base das chamadas de voz** (19/10/2026): sinalização dentro do Double Ratchet,
-  relay das chamadas em produção (UDP 443, salas anónimas, reserva por WebSocket) e
-  motor de áudio (Opus 1.6 com DRED e PLC neural, jitter buffer adaptativo).
+- **Chamadas de voz no Android** (19/10/2026): sinalização dentro do Double Ratchet,
+  relay das chamadas em produção (UDP 443, salas anónimas, reserva por WebSocket),
+  motor de áudio (Opus 1.6 com DRED e PLC neural, jitter buffer adaptativo), com a app
+  aberta (0.9.4) e a tocar com a app fechada (0.9.6), com toque próprio (0.9.8).
+- **Foto de perfil** só para contactos, cifrada (0.9.9), e **app em seis línguas**
+  (PT, EN, FR, ES, DE, IT, 0.9.10). Por agora só no Android.
 
 ## A seguir: tornar isto usável no dia a dia
 
 - [x] **Chamadas de voz na app Android com a app aberta** (fase 4a, app 0.9.4).
-- [ ] **Chamadas a tocar com a app fechada** (fase 4b). Depois, chamadas no iPhone.
+- [x] **Chamadas a tocar com a app fechada** (fase 4b, app 0.9.6).
+- [ ] **Chamadas no iPhone**, e no Android a integração com o sistema de chamadas
+  (auricular Bluetooth, carro, chamada normal ao mesmo tempo).
+- [ ] **Foto de perfil e seis línguas no iPhone.**
 - [ ] **Bloqueio da app no iPhone**, igual ao do Android.
 - [ ] **Infraestrutura de produção:** backups e alertas do servidor.
 - [ ] **Distribuição:** Google Play e App Store (TestFlight).
