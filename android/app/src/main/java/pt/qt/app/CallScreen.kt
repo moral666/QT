@@ -89,10 +89,6 @@ fun CallScreen(
             Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onTopBar.copy(alpha = 0.85f))
             Spacer(Modifier.height(4.dp))
             Text("Cifrada ponta a ponta", style = MaterialTheme.typography.labelSmall, color = colors.onTopBar.copy(alpha = 0.6f))
-            if (call.info.isNotEmpty() && call.phase != CallPhase.ENDED) {
-                Spacer(Modifier.height(4.dp))
-                Text(call.info, style = MaterialTheme.typography.labelSmall, color = colors.onTopBar.copy(alpha = 0.5f))
-            }
             Spacer(Modifier.weight(1f))
             when (call.phase) {
                 CallPhase.INCOMING -> Row(horizontalArrangement = Arrangement.spacedBy(56.dp)) {

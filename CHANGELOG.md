@@ -6,6 +6,12 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: ecrã da chamada sem dados técnicos (app 0.9.7)
+
+- O ecrã da chamada deixa de mostrar a linha técnica (UDP ou WebSocket, ms ao servidor, pacotes
+  perdidos e atrasados). Os números vão só para o registo, de 5 em 5 segundos
+  (`adb logcat -s SealerRelay`).
+
 ### 19 de outubro de 2026: chamadas a tocar com a app fechada, fase 4b (app 0.9.6, relay)
 
 - As chamadas tocam com a app fechada ou o telemóvel bloqueado: notificação de ecrã inteiro do
