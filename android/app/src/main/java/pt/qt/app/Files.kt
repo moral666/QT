@@ -279,8 +279,8 @@ fun FileContent(m: ChatMessage, att: AttachmentInfo, progress: Float?, onOpen: (
     val busy = att.state == AttachmentState.UPLOADING || att.state == AttachmentState.DOWNLOADING
     val ext = fileExtension(name)
     val subtitle = when (att.state) {
-        AttachmentState.EXPIRED -> "Já não está disponível (passaram mais de 24 horas)."
-        AttachmentState.FAILED -> if (m.outgoing) "Não foi possível enviar." else "Não foi possível receber."
+        AttachmentState.EXPIRED -> s(R.string.t_ja_nao_esta_disponivel_passaram_mais)
+        AttachmentState.FAILED -> if (m.outgoing) s(R.string.t_nao_foi_possivel_enviar) else s(R.string.t_nao_foi_possivel_receber)
         AttachmentState.UPLOADING -> "A enviar… ${formatSize(att.size.toLong())}"
         AttachmentState.DOWNLOADING -> "A receber… ${formatSize(att.size.toLong())}"
         else -> if (ext.isNotEmpty()) "${formatSize(att.size.toLong())} · $ext" else formatSize(att.size.toLong())
@@ -348,7 +348,7 @@ fun FileActionsDialog(m: ChatMessage, load: suspend (String, String) -> ByteArra
                         }
                     }
                 }
-                toast(if (ok) "Ficheiro guardado." else "Não foi possível guardar o ficheiro.")
+                toast(if (ok) s(R.string.t_ficheiro_guardado) else s(R.string.t_nao_foi_possivel_guardar_o_ficheiro))
                 onDismiss()
             }
         }
@@ -359,7 +359,7 @@ fun FileActionsDialog(m: ChatMessage, load: suspend (String, String) -> ByteArra
         scope.launch {
             val bytes = load(m.contactId, m.messageId)
             if (bytes == null) {
-                toast("Não foi possível abrir o ficheiro.")
+                toast(s(R.string.t_nao_foi_possivel_abrir_o_ficheiro))
                 busy = false
                 return@launch
             }
@@ -371,7 +371,7 @@ fun FileActionsDialog(m: ChatMessage, load: suspend (String, String) -> ByteArra
                 onDismiss()
             } catch (e: ActivityNotFoundException) {
                 AutoLockPause.active = false
-                toast("Não há nenhuma app para abrir este tipo de ficheiro. Usa \"Guardar\".")
+                toast(s(R.string.t_nao_ha_nenhuma_app_para_abrir))
                 busy = false
             }
         }
@@ -384,16 +384,16 @@ fun FileActionsDialog(m: ChatMessage, load: suspend (String, String) -> ByteArra
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(formatSize(att.size.toLong()), style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    "Fica cifrado no teu telemóvel. Ao abrir, é decifrado só na memória e entregue à app que escolheres, que pode guardar uma cópia.",
+                    s(R.string.t_fica_cifrado_no_teu_telemovel_ao),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (busy) CircularProgressIndicator(Modifier.size(24.dp))
             }
         },
-        confirmButton = { TextButton(onClick = { open() }, enabled = !busy) { Text("Abrir") } },
+        confirmButton = { TextButton(onClick = { open() }, enabled = !busy) { Text(s(R.string.t_abrir)) } },
         dismissButton = {
             Row {
-                TextButton(onClick = onDismiss) { Text("Fechar") }
+                TextButton(onClick = onDismiss) { Text(s(R.string.t_fechar)) }
                 TextButton(
                     onClick = {
                         busy = true
@@ -401,7 +401,7 @@ fun FileActionsDialog(m: ChatMessage, load: suspend (String, String) -> ByteArra
                         saver.launch(name)
                     },
                     enabled = !busy,
-                ) { Text("Guardar") }
+                ) { Text(s(R.string.t_guardar)) }
             }
         },
     )
@@ -421,20 +421,20 @@ fun SendFileDialog(uri: Uri, onSend: () -> Unit, onDismiss: () -> Unit) {
     val tooBig = (info.second ?: 0L) > FilePrep.MAX_BYTES
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Enviar ficheiro") },
+        title = { Text(s(R.string.t_enviar_ficheiro)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(info.first, style = MaterialTheme.typography.bodyLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 info.second?.let { Text(formatSize(it), style = MaterialTheme.typography.bodyMedium) }
                 Text(
-                    if (tooBig) "O ficheiro tem mais de 25 MB e não pode ser enviado."
-                    else "Vai tal como está, cifrado no teu telemóvel antes de sair.",
+                    if (tooBig) s(R.string.t_o_ficheiro_tem_mais_de_25)
+                    else s(R.string.t_vai_tal_como_esta_cifrado_no),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (tooBig) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onSend, enabled = !tooBig) { Text("Enviar") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = { TextButton(onClick = onSend, enabled = !tooBig) { Text(s(R.string.t_enviar)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) } },
     )
 }

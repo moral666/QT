@@ -6,6 +6,16 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: app em seis línguas (app 0.9.10)
+
+- A app fala português, inglês, francês, espanhol, alemão e italiano. Segue a língua do telemóvel
+  (português se não for nenhuma destas) e há um menu "Idioma" para escolher à mão. No Android 13+
+  a escolha também aparece nas definições do sistema para a app.
+- Todos os textos do ecrã passaram do código Kotlin para `res/values*/strings.xml` (cerca de 300).
+  Os textos que vêm do núcleo Rust (foto, mensagem de voz, "atualiza a app") são traduzidos na app.
+- A palavra para confirmar "Destruir perfil e dados" passa a ser a da língua (APAGAR, DELETE,
+  SUPPRIMER, BORRAR, LÖSCHEN, ELIMINA).
+
 ### 19 de outubro de 2026: foto de perfil (app 0.9.9, núcleo)
 
 - Menu "Foto de perfil": escolher uma foto da galeria (até 3 MB), ver e tirar. A app corta ao

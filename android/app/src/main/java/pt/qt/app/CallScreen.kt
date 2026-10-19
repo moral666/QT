@@ -59,9 +59,9 @@ fun CallScreen(
         }
     }
     val status = when (call.phase) {
-        CallPhase.CALLING -> "A chamar…"
-        CallPhase.RINGING_OUT -> "A tocar…"
-        CallPhase.INCOMING -> "Chamada de voz"
+        CallPhase.CALLING -> s(R.string.t_a_chamar)
+        CallPhase.RINGING_OUT -> s(R.string.t_a_tocar)
+        CallPhase.INCOMING -> s(R.string.t_chamada_de_voz)
         CallPhase.ACTIVE -> {
             val s = ((now - call.answeredAt).coerceAtLeast(0L) / 1000L)
             "%d:%02d".format(s / 60, s % 60)
@@ -88,22 +88,22 @@ fun CallScreen(
             Spacer(Modifier.height(8.dp))
             Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onTopBar.copy(alpha = 0.85f))
             Spacer(Modifier.height(4.dp))
-            Text("Cifrada ponta a ponta", style = MaterialTheme.typography.labelSmall, color = colors.onTopBar.copy(alpha = 0.6f))
+            Text(s(R.string.t_cifrada_ponta_a_ponta), style = MaterialTheme.typography.labelSmall, color = colors.onTopBar.copy(alpha = 0.6f))
             Spacer(Modifier.weight(1f))
             when (call.phase) {
                 CallPhase.INCOMING -> Row(horizontalArrangement = Arrangement.spacedBy(56.dp)) {
-                    RoundAction("Recusar", RED, Icons.Filled.Call, hangup = true, onClick = onHangup)
-                    RoundAction("Atender", GREEN, Icons.Filled.Call, hangup = false, onClick = onAccept)
+                    RoundAction(s(R.string.t_recusar), RED, Icons.Filled.Call, hangup = true, onClick = onHangup)
+                    RoundAction(s(R.string.t_atender), GREEN, Icons.Filled.Call, hangup = false, onClick = onAccept)
                 }
                 CallPhase.ENDED -> Spacer(Modifier.height(1.dp))
                 else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         val btn = ButtonDefaults.outlinedButtonColors(contentColor = colors.onTopBar)
-                        OutlinedButton(onClick = onMute, colors = btn) { Text(if (call.muted) "Ligar o microfone" else "Silenciar") }
-                        OutlinedButton(onClick = onSpeaker, colors = btn) { Text(if (call.speaker) "Auricular" else "Altifalante") }
+                        OutlinedButton(onClick = onMute, colors = btn) { Text(if (call.muted) s(R.string.t_ligar_o_microfone) else s(R.string.t_silenciar)) }
+                        OutlinedButton(onClick = onSpeaker, colors = btn) { Text(if (call.speaker) s(R.string.t_auricular) else s(R.string.t_altifalante)) }
                     }
                     Spacer(Modifier.height(28.dp))
-                    RoundAction("Desligar", RED, Icons.Filled.Call, hangup = true, onClick = onHangup)
+                    RoundAction(s(R.string.t_desligar), RED, Icons.Filled.Call, hangup = true, onClick = onHangup)
                 }
             }
             Spacer(Modifier.height(32.dp))

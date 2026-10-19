@@ -17,11 +17,11 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /** Tempos de bloqueio automatico oferecidos nas definicoes (rotulo, milissegundos). */
-val LOCK_TIMEOUTS: List<Pair<String, Long>> = listOf(
-    "Imediatamente" to 0L,
-    "Após 1 minuto" to 60_000L,
-    "Após 5 minutos" to 300_000L,
-    "Após 15 minutos" to 900_000L,
+val LOCK_TIMEOUTS: List<Pair<String, Long>> get() = listOf(
+    s(R.string.t_imediatamente) to 0L,
+    s(R.string.t_apos_1_minuto) to 60_000L,
+    s(R.string.t_apos_5_minutos) to 300_000L,
+    s(R.string.t_apos_15_minutos) to 900_000L,
 )
 
 /** Para que serve um pedido de autenticacao do sistema (BiometricPrompt). */

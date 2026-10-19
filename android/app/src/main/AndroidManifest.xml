@@ -21,6 +21,8 @@
          do Keystore deste aparelho; nem backup na nuvem nem copia entre aparelhos
          (Android 12+ ignora allowBackup na copia direta, dai as regras). -->
     <application
+        android:name=".SealerApp"
+        android:localeConfig="@xml/locales_config"
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules"

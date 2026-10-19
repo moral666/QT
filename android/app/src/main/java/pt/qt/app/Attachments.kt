@@ -305,7 +305,7 @@ fun AttachmentImage(bytes: ByteArray, key: String, modifier: Modifier, contentSc
     }
     AsyncImage(
         model = request,
-        contentDescription = "Imagem",
+        contentDescription = s(R.string.t_imagem),
         imageLoader = SealerImages.loader(ctx),
         modifier = modifier,
         contentScale = contentScale,
@@ -349,9 +349,9 @@ fun AttachmentContent(
             AttachmentImage(bytes, m.messageId, Modifier.fillMaxSize(), ContentScale.Crop)
         } else if (big && ready) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(if (att.mime == "image/gif") "GIF" else "Foto", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                Text(if (att.mime == "image/gif") "GIF" else s(R.string.t_foto), fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
                 Text(formatSize(att.size.toLong()), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Toca para ver", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                Text(s(R.string.t_toca_para_ver), fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
             }
         }
         val busy = att.state == AttachmentState.UPLOADING || att.state == AttachmentState.DOWNLOADING
@@ -365,8 +365,8 @@ fun AttachmentContent(
             }
         }
         val problem = when (att.state) {
-            AttachmentState.EXPIRED -> "A imagem já não está disponível (passaram mais de 24 horas)."
-            AttachmentState.FAILED -> if (m.outgoing) "Não foi possível enviar." else "Não foi possível receber a imagem."
+            AttachmentState.EXPIRED -> s(R.string.t_a_imagem_ja_nao_esta_disponivel)
+            AttachmentState.FAILED -> if (m.outgoing) s(R.string.t_nao_foi_possivel_enviar) else s(R.string.t_nao_foi_possivel_receber_a_imagem)
             else -> null
         }
         if (problem != null) {
@@ -406,12 +406,12 @@ fun SendImageDialog(uri: Uri, onSend: (original: Boolean) -> Unit, onDismiss: ()
     val isGif = remember(uri) { runCatching { ImagePrep.sniffMime(ctx, uri) == "image/gif" }.getOrDefault(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (isGif) "Enviar GIF" else "Enviar imagem") },
+        title = { Text(if (isGif) s(R.string.t_enviar_gif) else s(R.string.t_enviar_imagem)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 AsyncImage(
                     model = uri,
-                    contentDescription = "Pré-visualização",
+                    contentDescription = s(R.string.t_pre_visualizacao),
                     imageLoader = SealerImages.loader(ctx),
                     modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp).clip(RoundedCornerShape(12.dp)),
                     contentScale = ContentScale.Fit,
@@ -423,9 +423,9 @@ fun SendImageDialog(uri: Uri, onSend: (original: Boolean) -> Unit, onDismiss: ()
                     ) {
                         Checkbox(checked = original, onCheckedChange = { original = it })
                         Column {
-                            Text("Qualidade original", style = MaterialTheme.typography.bodyMedium)
+                            Text(s(R.string.t_qualidade_original), style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                if (original) "Mais nítida, mas gasta mais dados." else "Comprimida: envia mais depressa e gasta menos dados.",
+                                if (original) s(R.string.t_mais_nitida_mas_gasta_mais_dados) else s(R.string.t_comprimida_envia_mais_depressa_e_gasta),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -433,13 +433,13 @@ fun SendImageDialog(uri: Uri, onSend: (original: Boolean) -> Unit, onDismiss: ()
                     }
                 }
                 Text(
-                    "Cifrada no teu telemóvel antes de sair. A localização da foto é removida.",
+                    s(R.string.t_cifrada_no_teu_telemovel_antes_de),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onSend(original) }) { Text("Enviar") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = { TextButton(onClick = { onSend(original) }) { Text(s(R.string.t_enviar)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) } },
     )
 }

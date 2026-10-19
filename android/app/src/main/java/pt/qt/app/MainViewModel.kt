@@ -142,8 +142,8 @@ fun UiState.groupOf(conversationId: String): GroupInfo? =
 
 /** Nome a mostrar para um membro de um grupo: "Tu", o nome nos contactos, ou um nome curto. */
 fun UiState.memberName(contactId: String): String = when {
-    publicId.length >= 68 && publicId.substring(4, 68) == contactId -> "Tu"
-    else -> contacts.firstOrNull { it.contactId == contactId }?.nickname ?: "Membro ${contactId.take(6)}"
+    publicId.length >= 68 && publicId.substring(4, 68) == contactId -> s(R.string.t_tu)
+    else -> contacts.firstOrNull { it.contactId == contactId }?.nickname ?: s(R.string.t_membro, contactId.take(6))
 }
 
 /** Versao dos termos de utilizacao: subir quando mudarem, para voltar a pedir a aceitacao. */
@@ -234,9 +234,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             showLocked()
         } catch (e: StorageKeyUnavailableException) {
             // Nunca se cria uma chave nova por cima: o utilizador decide se apaga os dados locais.
-            _ui.update { it.copy(loading = false, error = "Chave do armazenamento seguro indisponivel: ${e.message}") }
+            _ui.update { it.copy(loading = false, error = s(R.string.t_chave_do_armazenamento_seguro_indisponivel, e.message)) }
         } catch (e: Exception) {
-            _ui.update { it.copy(loading = false, error = "Nao foi possivel abrir o armazenamento seguro: ${e.safeMsg()}") }
+            _ui.update { it.copy(loading = false, error = s(R.string.t_nao_foi_possivel_abrir_o_armazenamento, e.safeMsg())) }
         }
     }
 
@@ -450,11 +450,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             openClient(key)
         } catch (e: QtException.Crypto) {
             val wait2 = registerFail()
-            _ui.update { it.copy(unlocking = false, lockMessage = "Código errado." + (if (wait2 > 0) " " + waitMessage(wait2) else "")) }
+            _ui.update { it.copy(unlocking = false, lockMessage = s(R.string.t_codigo_errado) + (if (wait2 > 0) " " + waitMessage(wait2) else "")) }
         } catch (e: QtException.InvalidInput) {
-            _ui.update { it.copy(unlocking = false, lockMessage = "O código tem pelo menos ${minCodeLen()} dígitos.") }
+            _ui.update { it.copy(unlocking = false, lockMessage = s(R.string.t_o_codigo_tem_pelo_menos_digitos, minCodeLen())) }
         } catch (e: Exception) {
-            _ui.update { it.copy(unlocking = false, lockMessage = "Não foi possível desbloquear: ${e.safeMsg()}") }
+            _ui.update { it.copy(unlocking = false, lockMessage = s(R.string.t_nao_foi_possivel_desbloquear, e.safeMsg())) }
         }
     }
 
@@ -467,7 +467,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _ui.update {
                 it.copy(
                     bioEnabled = false,
-                    lockMessage = "A impressão digital ou o bloqueio do ecrã mudaram. Usa o código e volta a ativar a biometria.",
+                    lockMessage = s(R.string.t_a_impressao_digital_ou_o_bloqueio),
                 )
             }
             return@io
@@ -483,7 +483,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             resetFails()
             openClient(key)
         } catch (e: Exception) {
-            _ui.update { it.copy(unlocking = false, lockMessage = "Não foi possível desbloquear assim. Usa o código.") }
+            _ui.update { it.copy(unlocking = false, lockMessage = s(R.string.t_nao_foi_possivel_desbloquear_assim_usa)) }
         }
     }
 
@@ -498,9 +498,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             resetFails()
             _ui.update { it.copy(lockEnabled = true, bioAvailable = bio.isAvailable()) }
         } catch (e: QtException.InvalidInput) {
-            error("O código tem de ter pelo menos ${minCodeLen()} dígitos.")
+            error(s(R.string.t_o_codigo_tem_de_ter_pelo, minCodeLen()))
         } catch (e: Exception) {
-            error("Não foi possível ativar o bloqueio: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_ativar_o_bloqueio, e.safeMsg()))
         }
     }
 
@@ -513,9 +513,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _ui.update { it.copy(lockEnabled = false, bioEnabled = false) }
         } catch (e: QtException.Crypto) {
             registerFail()
-            error("Código errado.")
+            error(s(R.string.t_codigo_errado))
         } catch (e: Exception) {
-            error("Não foi possível desativar o bloqueio: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_desativar_o_bloqueio, e.safeMsg()))
         }
     }
 
@@ -524,21 +524,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         try {
             storageKeys.changeCode(oldCode, newCode)
             resetFails()
-            error("Código alterado.")
+            error(s(R.string.t_codigo_alterado))
         } catch (e: QtException.Crypto) {
             registerFail()
-            error("O código atual está errado.")
+            error(s(R.string.t_o_codigo_atual_esta_errado))
         } catch (e: QtException.InvalidInput) {
-            error("O código tem de ter pelo menos ${minCodeLen()} dígitos.")
+            error(s(R.string.t_o_codigo_tem_de_ter_pelo, minCodeLen()))
         } catch (e: Exception) {
-            error("Não foi possível mudar o código: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_mudar_o_codigo, e.safeMsg()))
         }
     }
 
     /** Ativar a biometria: confirma o codigo e pede o BiometricPrompt. */
     fun startBioEnable(code: String) = io {
         if (Build.VERSION.SDK_INT < 30 || !bio.isAvailable()) {
-            error("Este telemóvel não permite desbloquear assim (precisa de Android 11 ou mais recente e de bloqueio de ecrã).")
+            error(s(R.string.t_este_telemovel_nao_permite_desbloquear_assim))
             return@io
         }
         if (lockWaitMs() > 0) { error(waitMessage(lockWaitMs())); return@io }
@@ -550,10 +550,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (Build.VERSION.SDK_INT >= 30) bioChannel.send(BioRequest(BioPurpose.ENABLE, bio.cipherForEnable()))
         } catch (e: QtException.Crypto) {
             registerFail()
-            error("Código errado.")
+            error(s(R.string.t_codigo_errado))
         } catch (e: Exception) {
             cancelBioEnable()
-            error("Não foi possível ativar: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_ativar, e.safeMsg()))
         }
     }
 
@@ -565,7 +565,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _ui.update { it.copy(bioEnabled = true) }
         } catch (e: Exception) {
             bio.disable()
-            error("Não foi possível ativar: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_ativar, e.safeMsg()))
         } finally {
             key.fill(0)
             pendingBioKey = null
@@ -623,7 +623,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().remove("lock_fails").remove("lock_until").apply()
     }
 
-    private fun waitMessage(ms: Long) = "Demasiadas tentativas. Tenta de novo daqui a ${(ms + 999) / 1000} s."
+    private fun waitMessage(ms: Long) = s(R.string.t_demasiadas_tentativas_tenta_de_novo_daqui, (ms + 999) / 1000)
 
     // ---------------------------------------------------------------- configuracao
 
@@ -639,7 +639,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (!BuildConfig.RELAY_EDITABLE) return   // release: relay fixo, nunca alteravel
         val u = relayUrl.trim().lowercase()
         if (!u.startsWith("wss://") && !(BuildConfig.ALLOW_CLEARTEXT && u.startsWith("ws://"))) {
-            error("O relay tem de usar wss:// (ws:// so na build debug)")
+            error(s(R.string.t_o_relay_tem_de_usar_wss))
             return
         }
         prefs.edit().putString("relay_url", relayUrl.trim()).putString("relay_key", relayKeyHex.trim()).apply()
@@ -797,11 +797,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val bytes = ProfilePhoto.prepare(getApplication(), uri)
             if (client.profilePhotoSet(bytes, _ui.value.contacts.map { it.contactId }) > 0u) flushOutbox()
         } catch (e: PhotoTooBigException) {
-            error("A foto tem mais de 3 MB. Escolhe uma mais pequena.")
+            error(s(R.string.t_a_foto_tem_mais_de_3))
         } catch (e: QtException.InvalidInput) {
-            error(if (e.field == "photo_wait") "Só podes mudar a foto de 72 em 72 horas." else "Essa imagem não serve como foto de perfil.")
+            error(if (e.field == "photo_wait") s(R.string.photo_wait) else s(R.string.photo_invalid))
         } catch (e: java.io.IOException) {
-            error("Não foi possível ler essa imagem.")
+            error(s(R.string.t_nao_foi_possivel_ler_essa_imagem))
         }
         refreshPhotos(client)
     }
@@ -861,15 +861,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         try {
             val id = publicId.trim()
             val relayId = relayIdOfPublicId(id)               // valida o formato no Rust
-            val c = Contact(nickname.trim().ifBlank { "Contacto" }, id, relayId)
-            if (c.publicId == _ui.value.publicId) { error("Esse e o teu proprio ID"); return@io }
+            val c = Contact(nickname.trim().ifBlank { s(R.string.t_contacto) }, id, relayId)
+            if (c.publicId == _ui.value.publicId) { error(s(R.string.t_esse_e_o_teu_proprio_id)); return@io }
             val list = (_ui.value.contacts.filter { it.contactId != c.contactId }) + c
             contactStore.save(list, contactsKey ?: return@io)
             _ui.update { it.copy(contacts = list, error = null) }
             qt?.let { syncPresence(it) }
             flushOutbox()   // recibos que estavam a espera de saber o endereco deste contacto
         } catch (e: QtException) {
-            error("Public ID invalido")
+            error(s(R.string.t_public_id_invalido))
         }
     }
 
@@ -882,7 +882,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val n = client.safetyNumber(contact.publicId)
             _ui.update { it.copy(safetyNumber = "${contact.nickname}\n\n$n") }
         } catch (e: Exception) {
-            error("Nao foi possivel calcular o safety number: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_calcular_o_safety, e.safeMsg()))
         }
     }
 
@@ -931,7 +931,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             refreshViews(client)
         } catch (e: Exception) {
-            error("Nao foi possivel eliminar a conversa: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_eliminar_a_conversa, e.safeMsg()))
         }
     }
 
@@ -946,7 +946,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _ui.update { it.copy(blocked = it.blocked + contactId) }
             refreshViews(client)
         } catch (e: Exception) {
-            error("Nao foi possivel bloquear: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_bloquear, e.safeMsg()))
         }
     }
 
@@ -956,7 +956,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             client.unblockContact(contactId)
             _ui.update { it.copy(blocked = it.blocked - contactId) }
         } catch (e: Exception) {
-            error("Nao foi possivel desbloquear: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_desbloquear_2, e.safeMsg()))
         }
     }
 
@@ -967,8 +967,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun acceptInvite(contactId: String, nickname: String) = io {
         val client = qt ?: return@io
         try {
-            val publicId = client.pendingIntro(contactId) ?: run { error("Este convite já não está disponível"); return@io }
-            val c = Contact(nickname.trim().ifBlank { "Contacto ${contactId.take(4)}" }, publicId, relayIdOfPublicId(publicId))
+            val publicId = client.pendingIntro(contactId) ?: run { error(s(R.string.t_este_convite_ja_nao_esta_disponivel)); return@io }
+            val c = Contact(nickname.trim().ifBlank { s(R.string.t_contacto_2, contactId.take(4)) }, publicId, relayIdOfPublicId(publicId))
             val list = _ui.value.contacts.filter { it.contactId != c.contactId } + c
             contactStore.save(list, contactsKey ?: return@io)
             client.dismissIntro(contactId)
@@ -977,7 +977,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             refreshViews(client)
             flushOutbox()   // recibos que estavam a espera de saber o endereco deste contacto
         } catch (e: Exception) {
-            error("Nao foi possivel aceitar o convite: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_aceitar_o_convite, e.safeMsg()))
         }
     }
 
@@ -1020,7 +1020,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             refreshViews(client)
             flushOutbox()   // o aviso "sessao terminada" (fica na outbox se nao houver rede)
         } catch (e: Exception) {
-            error("Nao foi possivel apagar o contacto: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_apagar_o_contacto, e.safeMsg()))
         }
     }
 
@@ -1059,7 +1059,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // Depois apaga os ficheiros e as chaves (incluindo o bloqueio) e abre um armazenamento novo.
             resetStorage()
         } catch (e: Exception) {
-            error("Nao foi possivel apagar os dados: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_apagar_os_dados, e.safeMsg()))
         }
     }
 
@@ -1067,16 +1067,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Pede ao relay para apagar a conta. `null` se apagou; senao, o motivo (para mostrar). */
     private suspend fun deleteOnRelay(client: QtClient): String? {
-        val l = link ?: return "sem ligação ao servidor"
+        val l = link ?: return s(R.string.t_sem_ligacao_ao_servidor)
         return try {
             when (val r = l.request(client.relayRequestDeleteAccount())) {
                 is RelayResponse.Ack -> null
                 is RelayResponse.Error ->
-                    if (r.reason == RELAY_UNKNOWN_REQUEST) "o servidor ainda não tem esta função" else "o servidor respondeu: ${r.reason}"
-                else -> "resposta inesperada do servidor"
+                    if (r.reason == RELAY_UNKNOWN_REQUEST) s(R.string.t_o_servidor_ainda_nao_tem_esta) else s(R.string.t_o_servidor_respondeu, r.reason)
+                else -> s(R.string.t_resposta_inesperada_do_servidor)
             }
         } catch (e: Exception) {
-            "sem ligação ao servidor"
+            s(R.string.t_sem_ligacao_ao_servidor)
         }
     }
 
@@ -1144,7 +1144,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun send(contact: Contact, text: String) = io {
         val client = qt ?: return@io
         val bytes = text.trim().toByteArray(Charsets.UTF_8)
-        if (bytes.isEmpty() || bytes.size > MAX_TEXT_BYTES) { error("Mensagem vazia ou maior que $MAX_TEXT_BYTES bytes"); return@io }
+        if (bytes.isEmpty() || bytes.size > MAX_TEXT_BYTES) { error(s(R.string.t_mensagem_vazia_ou_maior_que_bytes, MAX_TEXT_BYTES)); return@io }
         try {
             ensureSession(client, contact)
             // Numa so transacao no Rust: ratchet avanca + mensagem guardada + envelope na outbox.
@@ -1152,7 +1152,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             refreshViews(client)
             flushOutbox()
         } catch (e: Exception) {
-            error("Nao foi possivel enviar: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_enviar_2, e.safeMsg()))
         }
     }
 
@@ -1168,7 +1168,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             refreshViews(client)
             transferKick.trySend(Unit)
         } catch (e: Exception) {
-            error("Não foi possível enviar a mensagem de voz: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_enviar_a_mensagem, e.safeMsg()))
         } finally {
             file.delete()
         }
@@ -1183,7 +1183,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             refreshMessages(client, contactId, listOf(messageId))
             flushOutbox()
         } catch (e: Exception) {
-            error("Nao foi possivel reagir: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_reagir, e.safeMsg()))
         }
     }
 
@@ -1220,21 +1220,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             flushOutbox()
             openChat(g.conversationId)
         } catch (e: Exception) {
-            error("Não foi possível criar o grupo: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_criar_o_grupo, e.safeMsg()))
         }
     }
 
     fun sendGroup(groupId: String, text: String) = io {
         val client = qt ?: return@io
         val bytes = text.trim().toByteArray(Charsets.UTF_8)
-        if (bytes.isEmpty() || bytes.size > MAX_TEXT_BYTES) { error("Mensagem vazia ou maior que $MAX_TEXT_BYTES bytes"); return@io }
+        if (bytes.isEmpty() || bytes.size > MAX_TEXT_BYTES) { error(s(R.string.t_mensagem_vazia_ou_maior_que_bytes, MAX_TEXT_BYTES)); return@io }
         try {
             ensureSessions(client, client.groupMembersNeedingSession(groupId))
             client.groupSendText(groupId, text.trim())
             refreshViews(client)
             flushOutbox()
         } catch (e: Exception) {
-            error("Nao foi possivel enviar: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_enviar_2, e.safeMsg()))
         }
     }
 
@@ -1247,7 +1247,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             client.group(groupId)?.let { refreshMessages(client, it.conversationId, listOf(messageId)) }
             flushOutbox()
         } catch (e: Exception) {
-            error("Nao foi possivel reagir: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_reagir, e.safeMsg()))
         }
     }
 
@@ -1260,7 +1260,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             refreshViews(client)
             flushOutbox()
         } catch (e: Exception) {
-            error("Não foi possível mudar o grupo: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_mudar_o_grupo, e.safeMsg()))
         }
     }
 
@@ -1272,7 +1272,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             refreshViews(client)
             flushOutbox()
         } catch (e: Exception) {
-            error("Não foi possível sair do grupo: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_sair_do_grupo, e.safeMsg()))
         }
     }
 
@@ -1287,7 +1287,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             refreshViews(client)
             flushOutbox()
         } catch (e: Exception) {
-            error("Não foi possível apagar o grupo: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_apagar_o_grupo, e.safeMsg()))
         }
     }
 
@@ -1307,10 +1307,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val prepared = try {
             ImagePrep.prepare(getApplication<Application>(), uri, original, keepAsIs = keyboardCopy != null)
         } catch (e: ImageTooBigException) {
-            error("A imagem tem mais de 25 MB.")
+            error(s(R.string.t_a_imagem_tem_mais_de_25))
             return@io
         } catch (e: Exception) {
-            error("Não foi possível ler esta imagem.")
+            error(s(R.string.t_nao_foi_possivel_ler_esta_imagem))
             return@io
         } finally {
             keyboardCopy?.delete()
@@ -1321,7 +1321,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             refreshViews(client)
             transferKick.trySend(Unit)
         } catch (e: Exception) {
-            error("Não foi possível enviar a imagem: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_enviar_a_imagem, e.safeMsg()))
         } finally {
             prepared.file.delete()
         }
@@ -1336,10 +1336,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val prepared = try {
             FilePrep.prepare(getApplication<Application>(), uri)
         } catch (e: FileTooBigException) {
-            error("O ficheiro tem mais de 25 MB.")
+            error(s(R.string.t_o_ficheiro_tem_mais_de_25_2))
             return@io
         } catch (e: Exception) {
-            error("Não foi possível ler este ficheiro.")
+            error(s(R.string.t_nao_foi_possivel_ler_este_ficheiro))
             return@io
         }
         try {
@@ -1348,7 +1348,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             refreshViews(client)
             transferKick.trySend(Unit)
         } catch (e: Exception) {
-            error("Não foi possível enviar o ficheiro: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_enviar_o_ficheiro, e.safeMsg()))
         } finally {
             prepared.file.delete()
         }
@@ -1517,10 +1517,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun relayRefusal(reason: String): String = when {
         reason.contains("invalida") || reason.contains("desativados") ->
-            "O servidor ainda não aceita anexos (tem de ser atualizado)."
-        reason.contains("limite") -> "Atingiste o limite diário de anexos. Tenta amanhã."
-        reason.contains("espaco") -> "O servidor está sem espaço para anexos. Tenta mais tarde."
-        else -> "Não foi possível enviar o anexo: $reason"
+            s(R.string.t_o_servidor_ainda_nao_aceita_anexos)
+        reason.contains("limite") -> s(R.string.att_daily_limit)
+        reason.contains("espaco") -> s(R.string.att_no_space)
+        else -> s(R.string.t_nao_foi_possivel_enviar_o_anexo, reason)
     }
 
     /**
@@ -1590,8 +1590,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } else if (r is RelayResponse.Error && r.reason == relayRecipientDeletedReason()) {
                 // O contacto apagou a conta: avisa uma vez por sessao (a mensagem fica por enviar).
                 if (deletedNotified.add(item.contactId)) {
-                    val name = _ui.value.contacts.firstOrNull { it.contactId == item.contactId }?.nickname ?: "Este contacto"
-                    error("$name apagou a conta SEALER: as mensagens para este contacto já não são entregues.")
+                    val name = _ui.value.contacts.firstOrNull { it.contactId == item.contactId }?.nickname ?: s(R.string.t_este_contacto)
+                    error(s(R.string.t_apagou_a_conta_sealer_as_mensagens, name))
                 }
             }
             // Outra resposta (ex.: fila do destinatario cheia): fica na outbox e segue para o proximo.
@@ -1752,7 +1752,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         } catch (e: Exception) {
             callIO = null
-            error("Não foi possível usar o microfone: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_usar_o_microfone_2, e.safeMsg()))
         }
     }
 
@@ -1816,7 +1816,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             stopCallMedia()
             _ui.update { it.copy(call = null) }
-            error("Não foi possível ligar: ${e.safeMsg()}")
+            error(s(R.string.t_nao_foi_possivel_ligar, e.safeMsg()))
         }
     }
 
@@ -1836,7 +1836,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             startCallIO()
             handleCallEvents(client)
         } catch (e: Exception) {
-            endCallLocal("A chamada já não está disponível")
+            endCallLocal(s(R.string.t_a_chamada_ja_nao_esta_disponivel))
         }
     }
 
@@ -1850,7 +1850,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             Log.w(TAG, "desligar: ${e.safeMsg()}")
         }
-        endCallLocal(if (c.phase == CallPhase.INCOMING) "Chamada recusada" else "Chamada terminada")
+        endCallLocal(if (c.phase == CallPhase.INCOMING) s(R.string.t_chamada_recusada) else s(R.string.t_chamada_terminada))
     }
 
     fun toggleMute() {
@@ -1890,12 +1890,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun endText(reason: CallEndReason, incoming: Boolean): String = when (reason) {
-        CallEndReason.HANGUP -> "Chamada terminada"
-        CallEndReason.REJECTED -> "Chamada recusada"
-        CallEndReason.BUSY -> "Ocupado noutra chamada"
-        CallEndReason.NO_ANSWER -> if (incoming) "Chamada perdida" else "Sem resposta"
-        CallEndReason.CANCELLED -> if (incoming) "Chamada perdida" else "Chamada cancelada"
-        CallEndReason.EXPIRED -> "Chamada perdida"
+        CallEndReason.HANGUP -> s(R.string.t_chamada_terminada)
+        CallEndReason.REJECTED -> s(R.string.t_chamada_recusada)
+        CallEndReason.BUSY -> s(R.string.t_ocupado_noutra_chamada)
+        CallEndReason.NO_ANSWER -> if (incoming) s(R.string.t_chamada_perdida) else s(R.string.t_sem_resposta)
+        CallEndReason.CANCELLED -> if (incoming) s(R.string.t_chamada_perdida) else s(R.string.t_chamada_cancelada)
+        CallEndReason.EXPIRED -> s(R.string.t_chamada_perdida)
     }
 
     /**
@@ -2016,7 +2016,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (qt != null) error("Erro: ${e.safeMsg()}")
+                if (qt != null) error(s(R.string.t_erro, e.safeMsg()))
             }
         }
     }

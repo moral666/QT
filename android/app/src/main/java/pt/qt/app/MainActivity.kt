@@ -193,6 +193,11 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    // Antes do Android 13, a lingua escolhida no menu aplica-se aqui (no 13+ e o sistema).
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(Lang.localized(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Desenho de ponta a ponta (obrigatorio com o SDK 35+): a app desenha por baixo
         // das barras do sistema e cada ecra reserva o espaco delas (Scaffold/insets).
@@ -301,8 +306,8 @@ class MainActivity : FragmentActivity() {
             return
         }
         val info = BiometricPrompt.PromptInfo.Builder()
-            .setTitle(if (req.purpose == BioPurpose.UNLOCK) "Desbloquear $APP_NAME" else "Ativar desbloqueio rápido")
-            .setSubtitle("Impressão digital, rosto ou PIN do telemóvel")
+            .setTitle(if (req.purpose == BioPurpose.UNLOCK) s(R.string.t_desbloquear, APP_NAME) else s(R.string.t_ativar_desbloqueio_rapido))
+            .setSubtitle(s(R.string.t_impressao_digital_rosto_ou_pin_do))
             // Com o PIN do telemovel permitido, o Android nao aceita um botao "Cancelar" proprio.
             .setAllowedAuthenticators(BioUnlock.AUTHENTICATORS)
             .build()
@@ -314,7 +319,7 @@ class MainActivity : FragmentActivity() {
             vm.authInProgress = false
             vm.bioPurpose = null
             if (req.purpose == BioPurpose.ENABLE) vm.cancelBioEnable()
-            vm.bioMessage("Não foi possível pedir a autenticação do telemóvel.")
+            vm.bioMessage(s(R.string.t_nao_foi_possivel_pedir_a_autenticacao))
         }
     }
 }
@@ -365,7 +370,7 @@ fun AppRoot(
     val ctx = LocalContext.current
     val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted && ui.pushOn) {
-            android.widget.Toast.makeText(ctx, "Sem permissão, a app não consegue avisar de mensagens novas. Podes ativá-la nas definições do Android.", android.widget.Toast.LENGTH_LONG).show()
+            android.widget.Toast.makeText(ctx, s(R.string.t_sem_permissao_a_app_nao_consegue), android.widget.Toast.LENGTH_LONG).show()
         }
     }
     // Chamadas: o microfone e pedido so ao ligar ou atender (uma vez).
@@ -376,7 +381,7 @@ fun AppRoot(
         if (granted) {
             then?.invoke()
         } else {
-            android.widget.Toast.makeText(ctx, "Sem acesso ao microfone não é possível fazer chamadas. Podes ativá-lo nas definições do Android.", android.widget.Toast.LENGTH_LONG).show()
+            android.widget.Toast.makeText(ctx, s(R.string.t_sem_acesso_ao_microfone_nao_e_2), android.widget.Toast.LENGTH_LONG).show()
         }
     }
     val withMic: (() -> Unit) -> Unit = { action ->
@@ -407,6 +412,7 @@ fun AppRoot(
 
     val call = ui.call
     var showPhoto by remember { mutableStateOf(false) }
+    var showLanguage by remember { mutableStateOf(false) }
     CompositionLocalProvider(LocalPhotos provides ui.photos) { when {
         overLock -> CallOverLock(ui, vm, withMic, keyguardLocked, onLeaveLock, onDone)
         ui.loading -> LoadingScreen()
@@ -496,11 +502,25 @@ fun AppRoot(
                 }
             },
             onProfilePhoto = { showPhoto = true },
+            onLanguage = { showLanguage = true },
         )
     } }
     // Por cima do bloqueio do telemovel: nenhum dialogo (so a chamada).
     if (overLock) return
     if (showMyId && !ui.locked) MyIdDialog(ui.publicId, onDismiss = { showMyId = false })
+    if (showLanguage && !ui.locked) {
+        LanguageDialog(
+            onPick = { tag ->
+                showLanguage = false
+                if (tag != Lang.chosen()) {
+                    Lang.choose(tag)
+                    // No Android 13+ o sistema recria a Activity sozinho; antes, recria-se aqui.
+                    if (Build.VERSION.SDK_INT < 33) (ctx as? android.app.Activity)?.recreate()
+                }
+            },
+            onDismiss = { showLanguage = false },
+        )
+    }
     if (showPhoto && !ui.locked) {
         ProfilePhotoDialog(
             ui,
@@ -521,16 +541,15 @@ fun AppRoot(
         AlertDialog(
             onDismissRequest = vm::dismissSafetyNumber,
             icon = { Icon(Icons.Filled.Lock, contentDescription = null) },
-            confirmButton = { TextButton(onClick = vm::dismissSafetyNumber) { Text("Fechar") } },
-            title = { Text("Verificar segurança") },
+            confirmButton = { TextButton(onClick = vm::dismissSafetyNumber) { Text(s(R.string.t_fechar)) } },
+            title = { Text(s(R.string.t_verificar_seguranca)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SelectionContainer {
                         Text(text, style = MaterialTheme.typography.bodyLarge, fontFamily = FontFamily.Monospace)
                     }
                     Text(
-                        "Compara estes números com a outra pessoa, pessoalmente ou numa chamada. " +
-                            "Se forem iguais, ninguém (nem o servidor) está a intercetar a conversa.",
+                        s(R.string.t_compara_estes_numeros_com_a_outra),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -599,7 +618,7 @@ fun LoadingScreen() {
     Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
             BrandMark(72)
-            Text("A abrir o armazenamento seguro…", style = MaterialTheme.typography.bodyMedium)
+            Text(s(R.string.t_a_abrir_o_armazenamento_seguro), style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -692,25 +711,25 @@ fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit) {
         Text(APP_NAME, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Mensagens cifradas ponta a ponta, com criptografia pós-quântica. Sem número de telefone, sem email.",
+            s(R.string.t_mensagens_cifradas_ponta_a_ponta_com),
             style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(32.dp))
         Button(onClick = { onCreate(url, key) }, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(26.dp)) {
-            Text("Começar", fontSize = 16.sp)
+            Text(s(R.string.t_comecar), fontSize = 16.sp)
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            "Versão alpha, ainda não auditada. Não uses para informação sensível.",
+            s(R.string.t_versao_alpha_ainda_nao_auditada_nao),
             style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.error,
         )
         if (BuildConfig.RELAY_EDITABLE) {   // so na build debug
-            TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Esconder opções de teste" else "Opções de teste") }
+            TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) s(R.string.t_esconder_opcoes_de_teste) else s(R.string.t_opcoes_de_teste)) }
             if (advanced) {
-                OutlinedTextField(url, { url = it }, label = { Text("URL do relay") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(key, { key = it }, label = { Text("Chave pública do relay (pinning)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(url, { url = it }, label = { Text(s(R.string.t_url_do_relay)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(key, { key = it }, label = { Text(s(R.string.t_chave_publica_do_relay_pinning)) }, modifier = Modifier.fillMaxWidth())
             }
         }
     }
@@ -721,11 +740,11 @@ fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit) {
 fun SettingsScreen(ui: UiState, onSave: (String, String) -> Unit, onBack: () -> Unit) {
     var url by remember { mutableStateOf(ui.relayUrl) }
     var key by remember { mutableStateOf(ui.relayKeyHex) }
-    Scaffold(topBar = { SealerTopBar(title = { Text("Relay (teste)") }, onBack = onBack) }) { pad ->
+    Scaffold(topBar = { SealerTopBar(title = { Text(s(R.string.t_relay_teste)) }, onBack = onBack) }) { pad ->
         Column(Modifier.padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(url, { url = it }, label = { Text("URL do relay") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            OutlinedTextField(key, { key = it }, label = { Text("Chave pública do relay (pinning)") }, modifier = Modifier.fillMaxWidth())
-            Button(onClick = { onSave(url, key) }) { Text("Guardar e voltar a ligar") }
+            OutlinedTextField(url, { url = it }, label = { Text(s(R.string.t_url_do_relay)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(key, { key = it }, label = { Text(s(R.string.t_chave_publica_do_relay_pinning)) }, modifier = Modifier.fillMaxWidth())
+            Button(onClick = { onSave(url, key) }) { Text(s(R.string.t_guardar_e_voltar_a_ligar)) }
         }
     }
 }
@@ -762,7 +781,7 @@ fun SealerTopBar(
             title = title,
             navigationIcon = {
                 if (onBack != null) {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = s(R.string.t_voltar)) }
                 }
             },
             actions = { actions() },
@@ -798,6 +817,7 @@ fun HomeScreen(
     onPresence: (Boolean) -> Unit = {},
     onPush: (Boolean) -> Unit = {},
     onProfilePhoto: () -> Unit = {},
+    onLanguage: () -> Unit = {},
 ) {
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
@@ -814,41 +834,42 @@ fun HomeScreen(
                 title = { SealerWordmark() },
                 actions = {
                     Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções") }
+                        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = s(R.string.t_mais_opcoes)) }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(text = { Text("O meu ID") }, onClick = { menu = false; onMyId() })
-                            DropdownMenuItem(text = { Text("Foto de perfil") }, onClick = { menu = false; onProfilePhoto() })
-                            DropdownMenuItem(text = { Text("Novo grupo") }, onClick = { menu = false; showNewGroup = true })
+                            DropdownMenuItem(text = { Text(s(R.string.t_o_meu_id)) }, onClick = { menu = false; onMyId() })
+                            DropdownMenuItem(text = { Text(s(R.string.t_foto_de_perfil)) }, onClick = { menu = false; onProfilePhoto() })
+                            DropdownMenuItem(text = { Text(s(R.string.lang_menu)) }, onClick = { menu = false; onLanguage() })
+                            DropdownMenuItem(text = { Text(s(R.string.t_novo_grupo)) }, onClick = { menu = false; showNewGroup = true })
                             if (Push.available) {
                                 DropdownMenuItem(
-                                    text = { Text("Notificações") },
+                                    text = { Text(s(R.string.t_notificacoes)) },
                                     onClick = { onPush(!ui.pushOn) },
                                     trailingIcon = { Switch(checked = ui.pushOn, onCheckedChange = { onPush(it) }) },
                                 )
                             }
                             DropdownMenuItem(
-                                text = { Text("Confirmações de leitura") },
+                                text = { Text(s(R.string.t_confirmacoes_de_leitura)) },
                                 onClick = { onReadReceipts(!ui.readReceipts) },
                                 trailingIcon = { Switch(checked = ui.readReceipts, onCheckedChange = { onReadReceipts(it) }) },
                             )
                             DropdownMenuItem(
-                                text = { Text("Mostrar quando estou online") },
+                                text = { Text(s(R.string.t_mostrar_quando_estou_online)) },
                                 onClick = { onPresence(!ui.presenceOn) },
                                 trailingIcon = { Switch(checked = ui.presenceOn, onCheckedChange = { onPresence(it) }) },
                             )
-                            DropdownMenuItem(text = { Text("Bloqueio da app") }, onClick = { menu = false; onLockSettings() })
+                            DropdownMenuItem(text = { Text(s(R.string.t_bloqueio_da_app)) }, onClick = { menu = false; onLockSettings() })
                             if (ui.lockEnabled) {
-                                DropdownMenuItem(text = { Text("Bloquear agora") }, onClick = { menu = false; onLockNow() })
+                                DropdownMenuItem(text = { Text(s(R.string.t_bloquear_agora)) }, onClick = { menu = false; onLockNow() })
                             }
                             if (ui.blocked.isNotEmpty()) {
-                                DropdownMenuItem(text = { Text("Contactos bloqueados") }, onClick = { menu = false; showBlocked = true })
+                                DropdownMenuItem(text = { Text(s(R.string.t_contactos_bloqueados)) }, onClick = { menu = false; showBlocked = true })
                             }
                             if (BuildConfig.RELAY_EDITABLE) {
-                                DropdownMenuItem(text = { Text("Relay (teste)") }, onClick = { menu = false; onSettings() })
+                                DropdownMenuItem(text = { Text(s(R.string.t_relay_teste)) }, onClick = { menu = false; onSettings() })
                             }
                             HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text("Destruir perfil e dados", color = MaterialTheme.colorScheme.error) },
+                                text = { Text(s(R.string.t_destruir_perfil_e_dados), color = MaterialTheme.colorScheme.error) },
                                 onClick = { menu = false; showWipe = true },
                             )
                             HorizontalDivider()
@@ -856,7 +877,7 @@ fun HomeScreen(
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        "Versão ${BuildConfig.VERSION_NAME}",
+                                        s(R.string.t_versao, BuildConfig.VERSION_NAME),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -876,7 +897,7 @@ fun HomeScreen(
                 onClick = { showAdd = true },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.semantics { contentDescription = "Novo contacto" },
+                modifier = Modifier.semantics { contentDescription = s(R.string.t_novo_contacto) },
             ) { BrandMark(34) }
         },
     ) { pad ->
@@ -904,12 +925,12 @@ fun HomeScreen(
                         } else {
                             val name = ui.contacts.firstOrNull { it.contactId == conv.contactId }?.nickname
                             ConversationRow(
-                                name ?: "Desconhecido", conv.contactId, conv,
+                                name ?: s(R.string.t_desconhecido), conv.contactId, conv,
                                 blocked = conv.contactId in ui.blocked,
                                 invite = name == null && conv.contactId in ui.invites,
                                 online = name != null && conv.contactId in ui.online,
                                 onClick = { onOpen(conv.contactId) },
-                                onLongClick = { actionsFor = conv.contactId to (name ?: "Desconhecido") },
+                                onLongClick = { actionsFor = conv.contactId to (name ?: s(R.string.t_desconhecido)) },
                             )
                         }
                     }
@@ -942,7 +963,7 @@ fun HomeScreen(
     }
     if (showBlocked) {
         BlockedContactsDialog(
-            ui.blocked.map { cid -> cid to (ui.contacts.firstOrNull { it.contactId == cid }?.nickname ?: "Desconhecido (${cid.take(8)}…)") },
+            ui.blocked.map { cid -> cid to (ui.contacts.firstOrNull { it.contactId == cid }?.nickname ?: s(R.string.t_desconhecido_2, cid.take(8))) },
             onUnblock = onUnblock,
             onDismiss = { showBlocked = false },
         )
@@ -968,15 +989,15 @@ fun EmptyConversations(onMyId: () -> Unit) {
     ) {
         BrandMark(64)
         Spacer(Modifier.height(16.dp))
-        Text("Ainda não tens conversas", style = MaterialTheme.typography.titleMedium)
+        Text(s(R.string.t_ainda_nao_tens_conversas), style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Partilha o teu ID com quem quiseres falar, ou toca em + para adicionar o ID de outra pessoa.",
+            s(R.string.t_partilha_o_teu_id_com_quem),
             style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(16.dp))
-        OutlinedButton(onClick = onMyId) { Text("Partilhar o meu ID") }
+        OutlinedButton(onClick = onMyId) { Text(s(R.string.t_partilhar_o_meu_id)) }
     }
 }
 
@@ -985,7 +1006,7 @@ fun EmptyConversations(onMyId: () -> Unit) {
 fun OnlineNowStrip(contacts: List<Contact>, onOpen: (String) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
         Text(
-            "Online agora", Modifier.padding(horizontal = 16.dp),
+            s(R.string.t_online_agora), Modifier.padding(horizontal = 16.dp),
             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         LazyRow(
@@ -1028,7 +1049,7 @@ fun Avatar(name: String, seed: String, sizeDp: Int = 48, online: Boolean = false
                 Modifier.align(Alignment.BottomEnd).size((sizeDp / 4).coerceAtLeast(10).dp)
                     .clip(CircleShape).background(MaterialTheme.colorScheme.surface).padding(2.dp)
                     .clip(CircleShape).background(OnlineGreen)
-                    .semantics { contentDescription = "online" },
+                    .semantics { contentDescription = s(R.string.t_online) },
             )
         }
     }
@@ -1070,12 +1091,12 @@ fun ConversationRow(
                 Spacer(Modifier.height(2.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val preview = when {
-                        blocked -> "Bloqueado"
-                        invite -> "Quer falar contigo · toca para aceitar"
-                        last == null -> "Toca para começar a conversar"
-                        last.outgoing -> statusGlyph(last.status) + "  " + last.text
-                        previewPrefix != null -> "$previewPrefix: ${last.text}"
-                        else -> last.text
+                        blocked -> s(R.string.t_bloqueado)
+                        invite -> s(R.string.t_quer_falar_contigo_toca_para_aceitar)
+                        last == null -> s(R.string.t_toca_para_comecar_a_conversar)
+                        last.outgoing -> statusGlyph(last.status) + "  " + coreText(last.text)
+                        previewPrefix != null -> "$previewPrefix: ${coreText(last.text)}"
+                        else -> coreText(last.text)
                     }
                     Text(
                         preview, style = MaterialTheme.typography.bodyMedium,
@@ -1104,7 +1125,7 @@ fun MyIdDialog(publicId: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("O teu ID") },
+        title = { Text(s(R.string.t_o_teu_id)) },
         text = {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (publicId.isNotBlank()) {
@@ -1112,7 +1133,7 @@ fun MyIdDialog(publicId: String, onDismiss: () -> Unit) {
                     val qr = remember(publicId) { qrCode(publicId.uppercase()) }
                     Image(
                         bitmap = qr,
-                        contentDescription = "Código QR do teu ID",
+                        contentDescription = s(R.string.t_codigo_qr_do_teu_id),
                         modifier = Modifier.size(250.dp).clip(RoundedCornerShape(12.dp)).background(Color.White).padding(6.dp),
                     )
                 }
@@ -1129,11 +1150,11 @@ fun MyIdDialog(publicId: String, onDismiss: () -> Unit) {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_TEXT, publicId)
                 }
-                context.startActivity(Intent.createChooser(send, "Partilhar o meu ID"))
-            }) { Text("Partilhar") }
+                context.startActivity(Intent.createChooser(send, s(R.string.t_partilhar_o_meu_id)))
+            }) { Text(s(R.string.t_partilhar)) }
         },
         dismissButton = {
-            TextButton(onClick = { clipboard.setText(AnnotatedString(publicId)); onDismiss() }) { Text("Copiar") }
+            TextButton(onClick = { clipboard.setText(AnnotatedString(publicId)); onDismiss() }) { Text(s(R.string.t_copiar)) }
         },
     )
 }
@@ -1150,40 +1171,38 @@ fun AddContactDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
         val id = idFromQr(result.contents)
         when {
             id != null -> { pid = id; scanError = null }
-            result.contents != null -> scanError = "Este código QR não é um ID SEALER."
+            result.contents != null -> scanError = s(R.string.t_este_codigo_qr_nao_e_um)
         }
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = { onAdd(nick, pid) }, enabled = pid.isNotBlank()) { Text("Adicionar") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
-        title = { Text("Novo contacto") },
+        confirmButton = { TextButton(onClick = { onAdd(nick, pid) }, enabled = pid.isNotBlank()) { Text(s(R.string.t_adicionar)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) } },
+        title = { Text(s(R.string.t_novo_contacto)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(nick, { nick = it }, label = { Text("Nome") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(pid, { pid = it }, label = { Text("ID (qt1:…)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(nick, { nick = it }, label = { Text(s(R.string.t_nome)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(pid, { pid = it }, label = { Text(s(R.string.t_id_qt1)) }, modifier = Modifier.fillMaxWidth())
                 OutlinedButton(
                     onClick = {
                         AutoLockPause.active = true
                         scanner.launch(
                             ScanOptions()
                                 .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                                .setPrompt("Aponta para o código QR da outra pessoa")
+                                .setPrompt(s(R.string.t_aponta_para_o_codigo_qr_da))
                                 .setBeepEnabled(false)
                                 .setOrientationLocked(false)
                                 .addExtra(
                                     Intents.Scan.MISSING_CAMERA_PERMISSION_DIALOG_MESSAGE,
-                                    "Sem acesso à câmara. Para ler o código QR, permite-o nas definições da app, " +
-                                        "ou escreve o ID à mão.",
+                                    s(R.string.t_sem_acesso_a_camara_para_ler),
                                 ),
                         )
                     },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Ler código QR") }
+                ) { Text(s(R.string.t_ler_codigo_qr)) }
                 scanError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 Text(
-                    "Recebe o ID diretamente da pessoa: lê o código QR dela quando estiverem juntos, " +
-                        "ou usa um canal em que confies.",
+                    s(R.string.t_recebe_o_id_diretamente_da_pessoa),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1223,7 +1242,7 @@ fun ChatScreen(
     var showDelete by remember { mutableStateOf(false) }
     var confirmBlock by remember { mutableStateOf(false) }
     var reactingTo by remember { mutableStateOf<ChatMessage?>(null) }
-    val name = contact?.nickname ?: "Desconhecido"
+    val name = contact?.nickname ?: s(R.string.t_desconhecido)
     // Mensagens da MAIS RECENTE para a mais antiga; com reverseLayout a lista
     // fica colada ao fundo e "subir" percorre o passado.
     val msgs = ui.chatMessages
@@ -1252,7 +1271,7 @@ fun ChatScreen(
                         Column {
                             Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
-                                if (isOnline) "online" else "cifrada ponta a ponta",
+                                if (isOnline) s(R.string.t_online) else s(R.string.t_cifrada_ponta_a_ponta_2),
                                 style = MaterialTheme.typography.labelSmall, color = colors.onTopBar.copy(alpha = 0.8f),
                             )
                         }
@@ -1260,29 +1279,29 @@ fun ChatScreen(
                 },
                 actions = {
                     if (contact != null && !blocked && !invite) {
-                        IconButton(onClick = { onCall(contact) }) { Icon(Icons.Filled.Call, contentDescription = "Ligar") }
+                        IconButton(onClick = { onCall(contact) }) { Icon(Icons.Filled.Call, contentDescription = s(R.string.t_ligar)) }
                     }
                     if (contact != null) {
-                        IconButton(onClick = { onSafety(contact) }) { Icon(Icons.Filled.Lock, contentDescription = "Verificar segurança") }
+                        IconButton(onClick = { onSafety(contact) }) { Icon(Icons.Filled.Lock, contentDescription = s(R.string.t_verificar_seguranca)) }
                     }
                     Box {
-                        IconButton(onClick = { chatMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções") }
+                        IconButton(onClick = { chatMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = s(R.string.t_mais_opcoes)) }
                         DropdownMenu(expanded = chatMenu, onDismissRequest = { chatMenu = false }) {
                             if (blocked) {
                                 DropdownMenuItem(
-                                    text = { Text("Desbloquear") },
+                                    text = { Text(s(R.string.t_desbloquear_2)) },
                                     leadingIcon = { Icon(Icons.Filled.Check, contentDescription = null) },
                                     onClick = { chatMenu = false; onUnblock(contactId) },
                                 )
                             } else {
                                 DropdownMenuItem(
-                                    text = { Text("Bloquear") },
+                                    text = { Text(s(R.string.t_bloquear)) },
                                     leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) },
                                     onClick = { chatMenu = false; confirmBlock = true },
                                 )
                             }
                             DropdownMenuItem(
-                                text = { Text("Eliminar conversa ou contacto") },
+                                text = { Text(s(R.string.t_eliminar_conversa_ou_contacto)) },
                                 leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
                                 onClick = { chatMenu = false; showDelete = true },
                             )
@@ -1322,7 +1341,7 @@ fun ChatScreen(
                 if (ui.chatHasMore) {
                     item(key = "more") {
                         Text(
-                            "A carregar mensagens anteriores…", Modifier.fillMaxWidth().padding(8.dp),
+                            s(R.string.t_a_carregar_mensagens_anteriores), Modifier.fillMaxWidth().padding(8.dp),
                             style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                         )
                     }
@@ -1335,9 +1354,9 @@ fun ChatScreen(
                     Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("Bloqueaste esta pessoa. As mensagens dela não te chegam.", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                    Text(s(R.string.t_bloqueaste_esta_pessoa_as_mensagens_dela), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(8.dp))
-                    OutlinedButton(onClick = { onUnblock(contactId) }) { Text("Desbloquear") }
+                    OutlinedButton(onClick = { onUnblock(contactId) }) { Text(s(R.string.t_desbloquear_2)) }
                 }
             } else if (contact == null && invite) {
                 InviteCard(
@@ -1350,9 +1369,9 @@ fun ChatScreen(
                     Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("Esta pessoa não está nos teus contactos.", style = MaterialTheme.typography.bodyMedium)
+                    Text(s(R.string.t_esta_pessoa_nao_esta_nos_teus), style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = { showAdd = true }) { Text("Adicionar para responder") }
+                    Button(onClick = { showAdd = true }) { Text(s(R.string.t_adicionar_para_responder)) }
                 }
             } else {
                 ChatComposer(
@@ -1386,19 +1405,18 @@ fun ChatScreen(
         AlertDialog(
             onDismissRequest = { confirmBlock = false },
             icon = { Icon(Icons.Filled.Close, contentDescription = null) },
-            title = { Text("Bloquear $name?") },
+            title = { Text(s(R.string.t_bloquear_2, name)) },
             text = { ObscuredTouchGuard()
                 Text(
-                    "As mensagens desta pessoa deixam de te chegar e não lhe consegues escrever. " +
-                        "Ela não é avisada. A conversa fica, e podes desbloquear quando quiseres.",
+                    s(R.string.t_as_mensagens_desta_pessoa_deixam_de),
                 )
             },
             confirmButton = {
                 TextButton(onClick = { confirmBlock = false; onBlock(contactId) }) {
-                    Text("Bloquear", color = MaterialTheme.colorScheme.error)
+                    Text(s(R.string.t_bloquear), color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { confirmBlock = false }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { confirmBlock = false }) { Text(s(R.string.t_cancelar)) } },
         )
     }
 }
@@ -1425,84 +1443,74 @@ fun DeleteActions(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = { confirm = "conversa" }, enabled = hasHistory, modifier = Modifier.fillMaxWidth()) {
-                        Text("Eliminar conversa", modifier = Modifier.fillMaxWidth())
+                        Text(s(R.string.t_eliminar_conversa), modifier = Modifier.fillMaxWidth())
                     }
                     TextButton(onClick = { confirm = "contacto" }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Apagar contacto", color = MaterialTheme.colorScheme.error, modifier = Modifier.fillMaxWidth())
+                        Text(s(R.string.t_apagar_contacto), color = MaterialTheme.colorScheme.error, modifier = Modifier.fillMaxWidth())
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+            confirmButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) } },
         )
         "conversa" -> AlertDialog(
             onDismissRequest = onDismiss,
             icon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-            title = { Text("Eliminar conversa?") },
+            title = { Text(s(R.string.t_eliminar_conversa_2)) },
             text = { ObscuredTouchGuard()
                 Text(
-                    "Todas as mensagens com $name são apagadas para sempre deste telemóvel, incluindo as que ainda " +
-                        "não foram enviadas. Não é possível recuperá-las.\n\nO contacto mantém-se e podem continuar a falar. " +
-                        "As mensagens no telemóvel da outra pessoa não são apagadas.",
+                    s(R.string.t_todas_as_mensagens_com_sao_apagadas, name),
                 )
             },
             confirmButton = {
-                TextButton(onClick = onDeleteConversation) { Text("Eliminar", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = onDeleteConversation) { Text(s(R.string.t_eliminar), color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) } },
         )
         else -> AlertDialog(
             onDismissRequest = onDismiss,
             icon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-            title = { Text("Apagar contacto?") },
+            title = { Text(s(R.string.t_apagar_contacto_2)) },
             text = { ObscuredTouchGuard()
                 Text(
-                    "$name é removido da tua lista e são apagadas para sempre deste telemóvel: as mensagens, " +
-                        "as que estavam por enviar e as chaves da conversa cifrada. Não é possível recuperar.\n\n" +
-                        "Se voltarem a falar, começa uma conversa cifrada nova. As mensagens no telemóvel da outra " +
-                        "pessoa não são apagadas.",
+                    s(R.string.t_e_removido_da_tua_lista_e, name),
                 )
             },
             confirmButton = {
-                TextButton(onClick = onDeleteContact) { Text("Apagar", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = onDeleteContact) { Text(s(R.string.t_apagar_2), color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) } },
         )
     }
 }
 
-/** Apagar tudo: so com a palavra APAGAR escrita (evita toques acidentais). */
+/** Apagar tudo: so com a palavra de confirmacao escrita (APAGAR em PT) (evita toques acidentais). */
 @Composable
 fun WipeAllDialog(onDismiss: () -> Unit, onConfirm: () -> Unit, serverToo: Boolean = true) {
     var typed by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-        title = { Text("Destruir perfil e dados?") },
+        title = { Text(s(R.string.t_destruir_perfil_e_dados_2)) },
         text = { ObscuredTouchGuard()
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     if (serverToo) {
-                        "São apagados para sempre: do servidor, as tuas chaves públicas e as mensagens à tua espera; " +
-                            "deste telemóvel, o teu ID e as tuas chaves, todos os contactos, todas as conversas e as definições. " +
-                            "O teu ID atual deixa de funcionar e terás de criar um novo."
+                        s(R.string.t_sao_apagados_para_sempre_do_servidor)
                     } else {
                         // Com a app bloqueada nao ha acesso a identidade, por isso nao se consegue falar com o servidor.
-                        "São apagados para sempre deste telemóvel: o teu ID e as tuas chaves, todos os contactos, " +
-                            "todas as conversas e as definições. O teu ID atual deixa de funcionar e terás de criar um novo. " +
-                            "O que está no servidor apaga-se sozinho: as mensagens em espera ao fim de 30 dias e as tuas " +
-                            "chaves públicas ao fim de 90 dias."
+                        s(R.string.t_sao_apagados_para_sempre_deste_telemovel)
                     },
                 )
-                Text("Para confirmar, escreve APAGAR:", style = MaterialTheme.typography.bodySmall)
+                Text(s(R.string.t_para_confirmar_escreve_apagar, s(R.string.confirm_word)), style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(typed, { typed = it }, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, enabled = typed.trim() == "APAGAR") {
-                Text("Apagar tudo", color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = onConfirm, enabled = typed.trim().equals(s(R.string.confirm_word), ignoreCase = true)) {
+                Text(s(R.string.t_apagar_tudo), color = MaterialTheme.colorScheme.error)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) } },
     )
 }
 
@@ -1519,21 +1527,21 @@ fun InviteCard(onAccept: (String) -> Unit, onDecline: () -> Unit, onBlock: () ->
         Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Esta pessoa quer falar contigo.", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(s(R.string.t_esta_pessoa_quer_falar_contigo), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         Text(
-            "Ainda não está nos teus contactos. Só aceites se a conheceres.",
+            s(R.string.t_ainda_nao_esta_nos_teus_contactos),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedTextField(
             nick, { nick = it.take(40) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-            label = { Text("Nome (opcional)") },
+            label = { Text(s(R.string.t_nome_opcional)) },
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = { onAccept(nick) }) { Text("Aceitar") }
-            OutlinedButton(onClick = onDecline) { Text("Recusar") }
+            Button(onClick = { onAccept(nick) }) { Text(s(R.string.t_aceitar)) }
+            OutlinedButton(onClick = onDecline) { Text(s(R.string.t_recusar)) }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onBlock) { Text("Bloquear", color = MaterialTheme.colorScheme.error) }
+            TextButton(onClick = onBlock) { Text(s(R.string.t_bloquear), color = MaterialTheme.colorScheme.error) }
         }
     }
 }
@@ -1559,13 +1567,13 @@ fun TermsScreen(onAccept: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Spacer(Modifier.height(24.dp))
-            Text("Antes de começar", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            Text("A SEALER está em testes. Ao usá-la, aceitas o seguinte:", style = MaterialTheme.typography.bodyLarge)
+            Text(s(R.string.t_antes_de_comecar), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text(s(R.string.t_a_sealer_esta_em_testes_ao), style = MaterialTheme.typography.bodyLarge)
             for (line in listOf(
-                "Não uses a SEALER para nada ilegal, para ameaçar, assediar ou enganar outras pessoas, nem para enviar spam.",
-                "Se alguém te incomodar, podes bloqueá-lo na conversa (menu ⋮ → Bloquear).",
-                "As tuas mensagens só existem nos telemóveis. Se perderes o telemóvel ou apagares a app, as conversas perdem-se.",
-                "Por estar em testes, a app pode ter falhas. Não a uses para informação crítica.",
+                s(R.string.t_nao_uses_a_sealer_para_nada),
+                s(R.string.t_se_alguem_te_incomodar_podes_bloquea),
+                s(R.string.t_as_tuas_mensagens_so_existem_nos),
+                s(R.string.t_por_estar_em_testes_a_app),
             )) {
                 Row {
                     Text("•  ", style = MaterialTheme.typography.bodyMedium)
@@ -1573,14 +1581,14 @@ fun TermsScreen(onAccept: () -> Unit) {
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { runCatching { uri.openUri(TERMS_URL) } }) { Text("Termos de utilização") }
-                TextButton(onClick = { runCatching { uri.openUri(PRIVACY_URL) } }) { Text("Política de privacidade") }
+                TextButton(onClick = { runCatching { uri.openUri(TERMS_URL) } }) { Text(s(R.string.t_termos_de_utilizacao)) }
+                TextButton(onClick = { runCatching { uri.openUri(PRIVACY_URL) } }) { Text(s(R.string.t_politica_de_privacidade)) }
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { agreed = !agreed }) {
                 Checkbox(checked = agreed, onCheckedChange = { agreed = it })
-                Text("Li e aceito os Termos de utilização e a Política de privacidade.", style = MaterialTheme.typography.bodyMedium)
+                Text(s(R.string.t_li_e_aceito_os_termos_de), style = MaterialTheme.typography.bodyMedium)
             }
-            Button(onClick = onAccept, enabled = agreed, modifier = Modifier.fillMaxWidth()) { Text("Continuar") }
+            Button(onClick = onAccept, enabled = agreed, modifier = Modifier.fillMaxWidth()) { Text(s(R.string.t_continuar)) }
         }
     }
 }
@@ -1590,19 +1598,19 @@ fun TermsScreen(onAccept: () -> Unit) {
 fun BlockedContactsDialog(items: List<Pair<String, String>>, onUnblock: (String) -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Contactos bloqueados") },
+        title = { Text(s(R.string.t_contactos_bloqueados)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (items.isEmpty()) Text("Não tens ninguém bloqueado.")
+                if (items.isEmpty()) Text(s(R.string.t_nao_tens_ninguem_bloqueado))
                 for ((cid, name) in items) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        TextButton(onClick = { onUnblock(cid) }) { Text("Desbloquear") }
+                        TextButton(onClick = { onUnblock(cid) }) { Text(s(R.string.t_desbloquear_2)) }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Fechar") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_fechar)) } },
     )
 }
 
@@ -1612,23 +1620,21 @@ fun WipeServerFailedDialog(reason: String, onRetry: () -> Unit, onLocalOnly: () 
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-        title = { Text("Não foi possível apagar no servidor") },
+        title = { Text(s(R.string.t_nao_foi_possivel_apagar_no_servidor)) },
         text = { ObscuredTouchGuard()
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Motivo: $reason. Ainda não foi apagado nada.")
+                Text(s(R.string.t_motivo_ainda_nao_foi_apagado_nada, reason))
                 Text(
-                    "Podes tentar de novo quando tiveres rede, ou apagar já só deste telemóvel. Nesse caso, o que está " +
-                        "no servidor apaga-se sozinho: as mensagens em espera ao fim de 30 dias e as tuas chaves públicas " +
-                        "ao fim de 90 dias.",
+                    s(R.string.t_podes_tentar_de_novo_quando_tiveres),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onRetry) { Text("Tentar de novo") } },
+        confirmButton = { TextButton(onClick = onRetry) { Text(s(R.string.t_tentar_de_novo)) } },
         dismissButton = {
             Row {
-                TextButton(onClick = onDismiss) { Text("Cancelar") }
-                TextButton(onClick = onLocalOnly) { Text("Apagar só aqui", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) }
+                TextButton(onClick = onLocalOnly) { Text(s(R.string.t_apagar_so_aqui), color = MaterialTheme.colorScheme.error) }
             }
         },
     )
@@ -1645,7 +1651,7 @@ fun EncryptionNotice() {
             Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
             Spacer(Modifier.width(6.dp))
             Text(
-                "As mensagens são cifradas ponta a ponta. Nem o servidor as consegue ler.",
+                s(R.string.t_as_mensagens_sao_cifradas_ponta_a),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer,
                 textAlign = TextAlign.Center,
             )
@@ -1703,7 +1709,7 @@ fun MessageBubble(
             if (att != null) {
                 AttachmentContent(m, att, progress, loadAttachment, onOpen, onLongPress)
             } else {
-                Text(m.text, style = MaterialTheme.typography.bodyLarge, color = c.bubbleText)
+                Text(coreText(m.text), style = MaterialTheme.typography.bodyLarge, color = c.bubbleText)
             }
             Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
                 Text(timeOf(m.localAtMs), fontSize = 11.sp, color = c.bubbleMeta)
@@ -1738,7 +1744,7 @@ private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "
 fun ReactionPicker(current: String?, onPick: (String) -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Reagir") },
+        title = { Text(s(R.string.t_reagir)) },
         text = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 for (e in QUICK_REACTIONS) {
@@ -1752,9 +1758,9 @@ fun ReactionPicker(current: String?, onPick: (String) -> Unit, onDismiss: () -> 
             }
         },
         confirmButton = {
-            if (current != null) TextButton(onClick = { onPick("") }) { Text("Retirar a minha") }
+            if (current != null) TextButton(onClick = { onPick("") }) { Text(s(R.string.t_retirar_a_minha)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) } },
     )
 }
 
@@ -1781,16 +1787,16 @@ fun dayLabel(ms: Long): String {
     val today = dayKey(System.currentTimeMillis())
     val yesterday = dayKey(System.currentTimeMillis() - 24L * 3600 * 1000)
     return when (dayKey(ms)) {
-        today -> "Hoje"
-        yesterday -> "Ontem"
+        today -> s(R.string.t_hoje)
+        yesterday -> s(R.string.t_ontem)
         else -> dateFmt.format(java.util.Date(ms))
     }
 }
 
 /** Hora (hoje), "Ontem" ou a data, para a lista de conversas. */
 fun shortTime(ms: Long): String = when (dayLabel(ms)) {
-    "Hoje" -> timeOf(ms)
-    "Ontem" -> "Ontem"
+    s(R.string.t_hoje) -> timeOf(ms)
+    s(R.string.t_ontem) -> s(R.string.t_ontem)
     else -> java.text.SimpleDateFormat("dd/MM", java.util.Locale.getDefault()).format(java.util.Date(ms))
 }
 
@@ -1817,14 +1823,14 @@ fun LockScreen(ui: UiState, onCode: (String) -> Unit, onBio: () -> Unit, onWipe:
         BrandMark(80)
         Spacer(Modifier.height(20.dp))
         Text(
-            "$APP_NAME está bloqueado", style = MaterialTheme.typography.titleLarge,
+            s(R.string.t_esta_bloqueado, APP_NAME), style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(
             value = code,
             onValueChange = { v -> code = v.filter { it.isDigit() }.take(32) },
-            label = { Text("Código de acesso") },
+            label = { Text(s(R.string.t_codigo_de_acesso)) },
             singleLine = true,
             enabled = !ui.unlocking,
             visualTransformation = PasswordVisualTransformation(),
@@ -1840,32 +1846,31 @@ fun LockScreen(ui: UiState, onCode: (String) -> Unit, onBio: () -> Unit, onWipe:
         Button(
             onClick = { onCode(code) }, enabled = canSubmit,
             modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(26.dp),
-        ) { Text(if (ui.unlocking) "A verificar…" else "Desbloquear", fontSize = 16.sp) }
+        ) { Text(if (ui.unlocking) s(R.string.t_a_verificar) else s(R.string.t_desbloquear_2), fontSize = 16.sp) }
         if (ui.bioEnabled) {
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = onBio, enabled = !ui.unlocking, modifier = Modifier.fillMaxWidth()) {
-                Text("Usar impressão digital ou PIN do telemóvel")
+                Text(s(R.string.t_usar_impressao_digital_ou_pin_do))
             }
         }
         Spacer(Modifier.height(8.dp))
-        TextButton(onClick = { forgot = true }) { Text("Esqueci-me do código") }
+        TextButton(onClick = { forgot = true }) { Text(s(R.string.t_esqueci_me_do_codigo)) }
     }
     if (forgot) {
         AlertDialog(
             onDismissRequest = { forgot = false },
-            title = { Text("Esqueceste o código?") },
+            title = { Text(s(R.string.t_esqueceste_o_codigo)) },
             text = { ObscuredTouchGuard()
                 Text(
-                    "Sem o código não é possível abrir as conversas: estão cifradas com ele e ninguém o pode " +
-                        "recuperar. A única saída é apagar todos os dados deste telemóvel e começar de novo, com um ID novo.",
+                    s(R.string.t_sem_o_codigo_nao_e_possivel),
                 )
             },
             confirmButton = {
                 TextButton(onClick = { forgot = false; wipe = true }) {
-                    Text("Apagar tudo", color = MaterialTheme.colorScheme.error)
+                    Text(s(R.string.t_apagar_tudo), color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { forgot = false }) { Text("Voltar") } },
+            dismissButton = { TextButton(onClick = { forgot = false }) { Text(s(R.string.t_voltar)) } },
         )
     }
     if (wipe) WipeAllDialog(onDismiss = { wipe = false }, onConfirm = { wipe = false; onWipe() }, serverToo = false)
@@ -1886,25 +1891,24 @@ fun LockSettingsScreen(
     onTimeout: (Long) -> Unit,
 ) {
     var dialog by remember { mutableStateOf<LockDialog?>(null) }
-    Scaffold(topBar = { SealerTopBar(title = { Text("Bloqueio da app") }, onBack = onBack) }) { pad ->
+    Scaffold(topBar = { SealerTopBar(title = { Text(s(R.string.t_bloqueio_da_app)) }, onBack = onBack) }) { pad ->
         Column(
             Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                "Com o bloqueio ativo, as conversas e os contactos só abrem com o teu código de acesso. " +
-                    "O código protege a chave que cifra os dados neste telemóvel: não é só um ecrã por cima.",
+                s(R.string.t_com_o_bloqueio_ativo_as_conversas),
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (!ui.lockEnabled) {
-                Button(onClick = { dialog = LockDialog.ENABLE }) { Text("Ativar bloqueio") }
+                Button(onClick = { dialog = LockDialog.ENABLE }) { Text(s(R.string.t_ativar_bloqueio)) }
             } else {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Impressão digital, rosto ou PIN do telemóvel", style = MaterialTheme.typography.bodyLarge)
+                        Text(s(R.string.t_impressao_digital_rosto_ou_pin_do), style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            if (ui.bioAvailable || ui.bioEnabled) "Para desbloquear sem escrever o código."
-                            else "Indisponível: precisa de Android 11 ou mais recente e de bloqueio de ecrã.",
+                            if (ui.bioAvailable || ui.bioEnabled) s(R.string.t_para_desbloquear_sem_escrever_o_codigo)
+                            else s(R.string.t_indisponivel_precisa_de_android_11_ou),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1916,7 +1920,7 @@ fun LockSettingsScreen(
                     )
                 }
                 HorizontalDivider()
-                Text("Bloquear automaticamente", style = MaterialTheme.typography.titleSmall)
+                Text(s(R.string.t_bloquear_automaticamente), style = MaterialTheme.typography.titleSmall)
                 Column {
                     LOCK_TIMEOUTS.forEach { (label, ms) ->
                         Row(
@@ -1929,14 +1933,13 @@ fun LockSettingsScreen(
                     }
                 }
                 HorizontalDivider()
-                OutlinedButton(onClick = { dialog = LockDialog.CHANGE }) { Text("Mudar código") }
+                OutlinedButton(onClick = { dialog = LockDialog.CHANGE }) { Text(s(R.string.t_mudar_codigo)) }
                 TextButton(onClick = { dialog = LockDialog.DISABLE }) {
-                    Text("Desativar bloqueio", color = MaterialTheme.colorScheme.error)
+                    Text(s(R.string.t_desativar_bloqueio), color = MaterialTheme.colorScheme.error)
                 }
             }
             Text(
-                "Se te esqueceres do código e não puderes usar a impressão digital, não há forma de recuperar " +
-                    "as conversas: a única saída é apagar todos os dados.",
+                s(R.string.t_se_te_esqueceres_do_codigo_e),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -1944,28 +1947,28 @@ fun LockSettingsScreen(
     }
     when (dialog) {
         LockDialog.ENABLE -> CodeDialog(
-            title = "Ativar bloqueio",
-            text = "Escolhe um código só com números e guarda-o bem: sem ele não há forma de abrir as conversas.",
-            askCurrent = false, askNew = true, confirm = "Ativar",
+            title = s(R.string.t_ativar_bloqueio),
+            text = s(R.string.t_escolhe_um_codigo_so_com_numeros),
+            askCurrent = false, askNew = true, confirm = s(R.string.t_ativar),
             onDismiss = { dialog = null },
             onConfirm = { _, new -> dialog = null; onEnable(new) },
         )
         LockDialog.DISABLE -> CodeDialog(
-            title = "Desativar bloqueio", text = null,
-            askCurrent = true, askNew = false, confirm = "Desativar",
+            title = s(R.string.t_desativar_bloqueio), text = null,
+            askCurrent = true, askNew = false, confirm = s(R.string.t_desativar),
             onDismiss = { dialog = null },
             onConfirm = { cur, _ -> dialog = null; onDisable(cur) },
         )
         LockDialog.CHANGE -> CodeDialog(
-            title = "Mudar código", text = null,
-            askCurrent = true, askNew = true, confirm = "Mudar",
+            title = s(R.string.t_mudar_codigo), text = null,
+            askCurrent = true, askNew = true, confirm = s(R.string.t_mudar),
             onDismiss = { dialog = null },
             onConfirm = { cur, new -> dialog = null; onChange(cur, new) },
         )
         LockDialog.BIO_ON -> CodeDialog(
-            title = "Desbloqueio rápido",
-            text = "Confirma com o teu código. A seguir, o telemóvel pede a impressão digital, o rosto ou o PIN.",
-            askCurrent = true, askNew = false, confirm = "Continuar",
+            title = s(R.string.t_desbloqueio_rapido),
+            text = s(R.string.t_confirma_com_o_teu_codigo_a),
+            askCurrent = true, askNew = false, confirm = s(R.string.t_continuar),
             onDismiss = { dialog = null },
             onConfirm = { cur, _ -> dialog = null; onBioOn(cur) },
         )
@@ -1997,18 +2000,18 @@ fun CodeDialog(
         text = { ObscuredTouchGuard()
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 text?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-                if (askCurrent) CodeField(cur, { cur = it }, "Código atual")
+                if (askCurrent) CodeField(cur, { cur = it }, s(R.string.t_codigo_atual))
                 if (askNew) {
-                    CodeField(new1, { new1 = it }, "Novo código (mínimo $minLen dígitos)")
-                    CodeField(new2, { new2 = it }, "Repetir o novo código")
+                    CodeField(new1, { new1 = it }, s(R.string.t_novo_codigo_minimo_digitos, minLen))
+                    CodeField(new2, { new2 = it }, s(R.string.t_repetir_o_novo_codigo))
                     if (new2.isNotEmpty() && new1 != new2) {
-                        Text("Os códigos não são iguais.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        Text(s(R.string.t_os_codigos_nao_sao_iguais), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
         },
         confirmButton = { TextButton(onClick = { onConfirm(cur, new1) }, enabled = okCur && okNew) { Text(confirm) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) } },
     )
 }
 
