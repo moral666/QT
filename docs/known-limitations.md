@@ -83,8 +83,8 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     ao reinício da app.
 33. ~~**Poll de 3 s** em vez de *push*~~ (resolvido com a app aberta, 16/10/2026): entrega
     imediata com `WaitMessages` (o relay responde no instante em que a mensagem chega; ver
-    `docs/protocol-spec.md`). Continua sem notificações com a app fechada (precisa de FCM/APNs;
-    o interruptor "Notificações" do menu só decide se a app envia o aviso de "vista"). Android
+    `docs/protocol-spec.md`). Com a app fechada chega um aviso genérico (ver 41); o interruptor
+    "Notificações" do menu só decide se a app envia o aviso de "vista". Android
     (desde a 0.7.0): 30 s depois de a app sair do ecrã, fecha as ligações ao relay (antes
     ficavam abertas, com ping e pedido de espera de 25 em 25 s, a gastar bateria sem mostrar
     nada); ao voltar, religa e vai buscar o que chegou. Até lá, quem envia vê só ✓.
@@ -116,9 +116,9 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     depois). Cada mensagem sai uma vez por membro (até 9 envelopes), por isso gasta mais
     dados do que uma conversa a dois. Os membros veem os Public IDs uns dos outros (estão na
     info do grupo, cifrada).
-38. **App iPhone desatualizada:** ainda não tem convites, reações, voz, grupos nem presença (o código Swift
-    tem de ser atualizado aos tipos novos do núcleo Rust antes da próxima build iOS).
-39. **Online / offline.** Só com a app aberta (sem notificações, a app fechada não diz nada).
+38. ~~**App iPhone desatualizada**~~ (resolvido na 0.9.3, 19/10/2026): mensagens, grupos, voz, fotos,
+    ficheiros e notificações push testados num iPhone. Falta o bloqueio da app (35).
+39. **Online / offline.** Só com a app aberta (a app fechada não diz nada).
     Se a app morrer ou o telemóvel ficar sem rede, os contactos continuam a ver "online" até 5
     min. Bloquear a app (código) não manda "offline": passa a offline ao fim desses 5 min. O
     relay não sabe o que é, mas vê que, ao abrir a app, sai um envelope para cada contacto
@@ -135,4 +135,4 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     ID). O relay guarda o token FCM de cada utilizador, o que liga o ID a um identificador do
     telemóvel dado pela Google. A notificação é sempre genérica ("Tens mensagens novas"): para
     ver quem escreveu é preciso abrir a app. Telemóveis sem serviços Google (ex.: Huawei
-    recentes) não recebem avisos com a app fechada. Ainda não existe na app iPhone (APNs).
+    recentes) não recebem avisos com a app fechada.

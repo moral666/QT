@@ -58,7 +58,7 @@ CONTENT = {
         "iphone_key": "Chave local: Secure Enclave",
         "server": "Servidor · AWS, Estocolmo",
         "relay": [
-            ("Caddy", "TLS com Let's Encrypt", False),
+            ("HAProxy", "TLS com Let's Encrypt", False),
             ("Relay em Rust", "envelopes e anexos cifrados", False),
             ("Redis", "filas e pre-keys, só local", False),
         ],
@@ -86,7 +86,7 @@ CONTENT = {
         "description": (
             "Duas apps SEALER, Android e iPhone, usam o mesmo núcleo QT em Rust através de ligações UniFFI. "
             "A cifra acontece no núcleo, dentro de cada telemóvel. As apps trocam envelopes cifrados através "
-            "de um relay na AWS, em Estocolmo (Caddy com TLS, relay em Rust e Redis), por Noise_XX sobre wss "
+            "de um relay na AWS, em Estocolmo (HAProxy com TLS, relay em Rust e Redis), por Noise_XX sobre wss "
             "com a chave do relay fixada nas apps. O relay nunca vê o conteúdo nem quem envia. O núcleo tem "
             "quatro partes: core, transport, storage e ffi. O site sealer.pt está à parte, na Cloudflare, e "
             "não comunica com o relay."
@@ -113,7 +113,7 @@ CONTENT = {
         "iphone_key": "Local key: Secure Enclave",
         "server": "Server · AWS, Stockholm",
         "relay": [
-            ("Caddy", "TLS with Let's Encrypt", False),
+            ("HAProxy", "TLS with Let's Encrypt", False),
             ("Relay in Rust", "encrypted envelopes and files", False),
             ("Redis", "queues and pre-keys, local only", False),
         ],
@@ -140,7 +140,7 @@ CONTENT = {
         "description": (
             "Two SEALER apps, Android and iPhone, use the same QT core in Rust through UniFFI bindings. "
             "Encryption happens in the core, on each phone. The apps exchange encrypted envelopes through a "
-            "relay on AWS in Stockholm (Caddy with TLS, a Rust relay and Redis), using Noise_XX over wss with "
+            "relay on AWS in Stockholm (HAProxy with TLS, a Rust relay and Redis), using Noise_XX over wss with "
             "the relay key pinned in the apps. The relay never sees the content or the sender. The core has "
             "four parts: core, transport, storage and ffi. The sealer.pt website is separate, on Cloudflare, "
             "and never talks to the relay."

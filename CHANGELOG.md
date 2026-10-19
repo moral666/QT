@@ -6,6 +6,16 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: documentação e site ao estado da 0.9.3
+
+- Site: "Em versão de testes (0.9.3)", quadrado "O que é a versão 0.9.3" e "O que vem a seguir"
+  (o que lá estava já existe; a seguir vem a Google Play e a App Store).
+- READMEs (pt e en): estado da app 0.9.3 (grupos, voz, ficheiros, notificações push, segurança do
+  protocolo), app iPhone 0.9.3 testada num iPhone, relay em `relay.sealer.pt` com HAProxy, tempos
+  medidos a 19/10 e o script de instalação a partir do ramo `site-sealer`.
+- `ROADMAP.md`, `android/README.md`, `ios/README.md`, `docs/known-limitations.md`, `site/README.md`
+  e `CLAUDE.md`: notificações push e app iPhone já feitas; Caddy substituído por HAProxy.
+
 ### 19 de outubro de 2026: marcador do site com o tempo da mensagem típica
 
 - O marcador ao lado do nome SEALER passa a dizer "entre telemóveis" (dizia "envio") e mostra a

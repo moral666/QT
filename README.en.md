@@ -4,7 +4,7 @@
 
 The apps are called **SEALER**; QT is the name of the protocol and of this repository.
 
-**Alpha version, not audited.** An E2EE messenger with post-quantum
+**Test version (0.9.3), not audited.** An E2EE messenger with post-quantum
 cryptography (X3DH, PQXDH, Double Ratchet, Sealed Sender, Noise Protocol),
 all implemented in Rust, with Android and iPhone apps and a cloud relay,
 already working end to end. **It is not a finished product yet and must not be
@@ -39,49 +39,37 @@ can verify there are no hidden tricks.
 
 ## Be honest with me: does this actually work?
 
-Yes, end to end, as an **alpha** release. **It has not been independently audited and must not be used for real conversations or sensitive information.**
+Yes, end to end, as a test version (**app 0.9.3**, Android and iPhone), in closed testing with a few people. **It has not been independently audited and must not be used for real conversations or sensitive information.**
 
-### Validated as of 15 October 2026
+### What the 0.9.3 app already does (19 October 2026)
 
-- Cryptographic core (PQXDH + Double Ratchet + Sealed Sender), transport, relay, local storage and FFI implemented in Rust, with the test suite passing (`cargo test --workspace`).
-- Relay running on an AWS EC2 instance behind real TLS (`wss://`, Let's Encrypt certificate via certbot and HAProxy), with Redis reachable only on `127.0.0.1` and protected by ACLs.
-- Android app built as a signed *release* (V2/V3 schemes), native libraries aligned to 16 KB pages, no detections on VirusTotal (0/68).
-- **Messages exchanged between two real phones through the relay on AWS.**
-- **iPhone app (SwiftUI) on the same core, exchanging messages with the Android apps.**
-- **Field test with five devices on three platforms** (2 real Android phones, 1 Android emulator, 1 iPhone and 1 Mac), with simultaneous, continuous sending: no messages lost. Details, problems found and what is still untested in [`docs/field-tests.md`](docs/field-tests.md) (in Portuguese).
-- **Relay with 10,000 simultaneous connections** (each one polling for messages every 3 seconds, like the apps): no failures, about **14 KB of memory per connection**. See "The relay in numbers" below.
+- **One-to-one and group chats** (up to 10 people, 3 admins), between Android and iPhone, with encrypted history on the phone and *Sent / Delivered / Seen* indicators.
+- **Photos, GIFs, voice messages and files up to 25 MB** (PDFs, documents...), one-to-one and in groups. Each file is encrypted on the phone with its own key and deleted from the relay once downloaded, or after 24 hours.
+- **Push notifications with the app closed:** a generic notice ("You have new messages"), without the sender's name or the text. The message is only decrypted when you open the app.
+- **Invites by QR code**, reactions, blocking contacts, online / offline for contacts only (encrypted) and an app lock with its own passcode, fingerprint or face (for now only on Android).
+- **Delete your account** on the phone and on the server, with one tap.
+- **Protocol security (0.9.3):** PQXDH v2 (X25519 + ML-KEM-768), keys that rotate every 7 days and one-time keys served by the relay, message padding (the relay cannot tell short messages from receipts), proof of work for new accounts and per-account limits on the relay. 0.9.3 apps do not talk to earlier versions.
 
-### New on 16 and 17 October 2026
+### Tested
 
-- **Instant delivery, tested with real phones:** the typical time for a message to reach the other phone went from **about 2,000 ms to 300 to 430 ms**. See "Real-world times, between phones" below.
-- **Deleting the account also on the server:** "Destroy profile and data" deletes the public keys and waiting messages on the relay, then everything on the phone.
-- **Lighter on the battery (Android):** 30 seconds after leaving the app, it closes its connections to the relay and reconnects when you open it again.
-- **Getting ready for Google Play:** privacy policy and account deletion page on sealer.pt, and answers for the Play Console forms in [`docs/google-play.md`](docs/google-play.md) (in Portuguese).
-
-### Just added, still to be confirmed in real use
-
-- **Images and GIFs up to 25 MB**, in both apps. Each file is encrypted on the phone with its own key, goes to the relay in chunks and is deleted there once the other phone downloads it, or after 24 hours. Covered by the automated tests (including against the production Redis command list); the exchange between phones through AWS is still being confirmed. Details in [`docs/protocol-spec.md`](docs/protocol-spec.md), section 14 (in Portuguese).
-- **Adding contacts with a QR code**, in both apps (the code is generated and read on the phone, with no network involved).
-- SEALER branding in the apps (logo, name and theme).
-
-The iPhone app with these additions has not been built in Xcode yet (see [`ios/README.md`](ios/README.md), in Portuguese).
+- Cryptographic core, transport, relay, local storage and FFI in Rust, with the test suite passing (`cargo test --workspace`).
+- Relay on an AWS EC2 instance in Stockholm, at `wss://relay.sealer.pt` (HAProxy with a Let's Encrypt certificate), with Redis only on `127.0.0.1` and protected by an ACL.
+- Signed *release* Android app, tested on three Samsung phones and the emulator; iPhone app 0.9.3 built and tested on an iPhone.
+- Field test with five devices on three platforms (2 real Android phones, 1 Android emulator, 1 iPhone and 1 Mac), with simultaneous, continuous sending: no message lost. See [`docs/field-tests.md`](docs/field-tests.md).
+- Relay with 8,000 simultaneous connections through HAProxy with no failures (about 40 KB per connection). See "The relay in numbers" below.
 
 ### Still missing
 
-- ~~Persistent history~~ (**done**): history stored in SQLCipher (in the same transaction that advances the ratchet), with *Sent / Delivered / Read* indicators via encrypted receipts and a persistent outbox.
-- ~~Adding contacts via QR code~~ (done in both apps).
-- **Push notifications**: the app only receives messages while it is open.
-- **Production infrastructure**: own domain (the current one is temporary), redundancy, backups and server alerts.
-- ~~App lock~~ (done on Android): an app passcode that encrypts the key to the conversations (Argon2id), plus optional unlock with fingerprint, face or the phone's PIN. Still missing on iPhone.
-- Distribution through the Play Store (some antivirus apps currently warn because the app comes from an unknown source). Already prepared: account deletion, privacy policy and form answers ([`docs/google-play.md`](docs/google-play.md), in Portuguese).
-- Load testing on the AWS relay (already measured on a local machine, see [`docs/performance.md`](docs/performance.md), in Portuguese) and an **independent security audit**.
+- **Distribution through Google Play and the App Store** (today testers install the app by hand). Already prepared: account deletion, privacy policy and answers for the forms ([`docs/google-play.md`](docs/google-play.md)).
+- **Production infrastructure:** redundancy, backups and server alerts.
+- **Independent security audit.**
 
-**Next stages:** *alpha* (now: works end to end, tested with a few people) → *beta* (notifications, app lock on iPhone, Play Store testing) → *1.0* (after an external audit).
+**Next stages:** *closed testing* (now, 0.9.x) → *beta* (Google Play and App Store, more testers) → *1.0* (after an external audit).
 
 ## Architecture
 
 <!-- Generated by site/scripts/architecture_diagram.py (see site/README.md, section 14). -->
-![SEALER architecture: the Android and iPhone apps use the same QT core in Rust and exchange encrypted envelopes through a relay on AWS (Caddy, a Rust relay and Redis). The sealer.pt website is separate, on Cloudflare.](docs/architecture.svg)
+![SEALER architecture: the Android and iPhone apps use the same QT core in Rust and exchange encrypted envelopes through a relay on AWS (HAProxy, a Rust relay and Redis). The sealer.pt website is separate, on Cloudflare.](docs/architecture.svg)
 
 ## What's already built
 
@@ -93,8 +81,8 @@ The iPhone app with these additions has not been built in Xcode yet (see [`ios/R
 | `storage/` | Stores your identity and conversations on disk, encrypted | ✅ Tested, including confirming a wrong password opens nothing |
 | `cli/` | The messenger in the terminal (`messenger`), on the same core as the apps, plus a visible protocol demo (`messenger_demo`) | ✅ Tested end to end against a real relay: terminal ↔ terminal and terminal ↔ a client identical to the apps' |
 | `ffi/` | The bridge connecting all of this to Kotlin (Android), Swift (iOS) and Python: history, outbox, images, app lock | ✅ Tested in Rust (including crossed sessions and images) and from Python |
-| `android/` | Android app (Kotlin/Compose); all cryptography stays in Rust | ✅ Signed release tested between two real phones through the relay on AWS |
-| `ios/` | iPhone app (SwiftUI), same as the Android one, on the same Rust core | ✅ Built on a Mac and exchanging messages through the relay on AWS (the latest additions not built yet) |
+| `android/` | Android app (Kotlin/Compose); all cryptography stays in Rust | ✅ Version 0.9.3, signed release tested on three real phones through the relay on AWS |
+| `ios/` | iPhone app (SwiftUI), same as the Android one, on the same Rust core | ✅ Version 0.9.3 built on a Mac and tested on an iPhone, exchanging messages with the Android apps through the relay on AWS |
 | `deploy/` | Relay install on EC2: Redis on localhost only with ACLs, sandboxed systemd service, automatic TLS | ✅ Used in the current deployment |
 
 ## The relay in numbers
@@ -115,14 +103,14 @@ Measured on a local 2 vCPU machine, without the proxy's TLS and without a real n
 
 ## Real-world times, between phones
 
-The numbers above are for the relay on its own. With real phones (three Samsungs, in Viseu and Cascais, on Wi-Fi and mobile data, with the relay in Stockholm), measured by the relay itself in October 2026 over hundreds of messages:
+The numbers above are for the relay alone. With real phones (three Samsung phones, in Viseu and Cascais, on Wi-Fi and mobile data, with the relay in Stockholm), measured by the relay itself on 19 October 2026, over an hour with 110 messages:
 
-| | Before (16 Oct) | Now (17 Oct) |
+| | Typical message (median) | 95% of messages |
 |---|---|---|
-| From the server until the other phone has the message (typical time, median) | **about 2,000 ms** | **300 to 430 ms** |
-| From the sender's phone to the server (average) | | **about 50 ms** |
+| From the sender's phone to the server | **42 ms** | 57 ms |
+| From the server until the other phone has the message | **141 ms** | 18 s |
 
-The big difference came from **instant delivery**: before, the apps asked the relay every 3 seconds whether there were new messages; now they wait on an open connection and the relay delivers each message the moment it arrives. What is left is mostly the network round trip to Sweden and back, plus the phone decrypting and storing the message. With the relay closer (for example, in Spain), these times should drop further.
+The apps wait on an open connection and the relay delivers each message the moment it arrives. The few slow messages go to phones that were asleep: the notification wakes them up and the message arrives when the app opens.
 
 ## What's missing, plainly
 
@@ -197,7 +185,7 @@ The passphrase is always asked for in the terminal, hidden (or read from one lin
 
 ## Android app
 
-The Rust core is the only cryptographic backend of the Android app (Kotlin/Compose): `QtClient` API via UniFFI, SQLCipher storage with a key from the Android Keystore, PQXDH (X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, authenticated relay with *at-least-once* delivery. **Alpha version, not audited.**
+The Rust core is the only cryptographic backend of the Android app (Kotlin/Compose): `QtClient` API via UniFFI, SQLCipher storage with a key from the Android Keystore, PQXDH (X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, authenticated relay with *at-least-once* delivery and push notifications (FCM, generic notice). **Test version (0.9.3), not audited.**
 
 ```bash
 export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/<version>
@@ -231,7 +219,7 @@ Step by step, Apple accounts and the differences from Android in [`ios/README.md
 On a fresh EC2 instance with Ubuntu 24.04 (Security Group with only 22, 80 and 443):
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/moral666/QT/security-hardening/deploy/aws/setup-ec2.sh
+curl -fsSLO https://raw.githubusercontent.com/moral666/QT/site-sealer/deploy/aws/setup-ec2.sh
 sudo bash setup-ec2.sh
 ```
 

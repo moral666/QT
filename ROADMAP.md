@@ -14,8 +14,12 @@ seguir.
 - **Apps Android e iPhone (SEALER)** com a conversa completa: lista de
   conversas, chat, histórico guardado no SQLCipher, estados *enviada /
   entregue / vista*, apagar conversa e contacto, verificação de segurança
-  (safety numbers), adicionar contactos por código QR, imagens e GIFs até
-  25 MB.
+  (safety numbers), adicionar contactos por código QR, fotos, GIFs, voz e
+  ficheiros até 25 MB, reações, convites e grupos até 10 pessoas (app 0.9.3).
+- **Notificações push com a app fechada** (aviso genérico "Tens mensagens novas",
+  sem decifrar nada em segundo plano).
+- **Relay em `relay.sealer.pt`** (HAProxy com TLS), medido com 8 000 ligações
+  em simultâneo sem falhas.
 - **Relay acessível pela internet** (AWS EC2), atrás de TLS (`wss://`), com
   pinning da chave Noise nas apps e o Redis só em `127.0.0.1` com ACL.
 - **Chave da base de dados vinda do Android Keystore / Secure Enclave**; o
@@ -30,18 +34,9 @@ seguir.
 
 ## A seguir: tornar isto usável no dia a dia
 
-- [ ] **Notificações push** (Android e iPhone; no iPhone exige a conta paga da
-  Apple). Hoje as apps perguntam ao relay de 3 em 3 segundos enquanto estão
-  abertas, e o Android continua a perguntar em segundo plano até fechar a
-  app, o que gasta bateria e dados.
 - [ ] **Bloqueio da app no iPhone**, igual ao do Android.
-- [ ] **Confirmar as imagens e os GIFs entre telemóveis** através do relay da
-  AWS, e compilar no Xcode as novidades da app iPhone.
-- [ ] **Infraestrutura de produção:** domínio próprio, backups e alertas do
-  servidor.
-- [ ] **Distribuição:** Play Store e TestFlight.
-- [ ] **Teste de carga no relay da AWS** (até agora só medido numa máquina
-  local, ver `docs/performance.md`).
+- [ ] **Infraestrutura de produção:** backups e alertas do servidor.
+- [ ] **Distribuição:** Google Play e App Store (TestFlight).
 
 ## Robustez e confiança
 
@@ -68,8 +63,8 @@ seguir.
 - [ ] **Federação**: vários servidores independentes, em vez de um
   único, para que a falha ou a manutenção de um nó não pare a rede
   inteira
-- [ ] **Suporte a grupos** (conversas com mais de duas pessoas): exige
-  uma extensão ao protocolo atual (ex.: Sender Keys ou MLS)
+- [ ] **Grupos maiores:** os grupos atuais (até 10 pessoas) enviam uma cópia
+  cifrada a cada membro; para grupos grandes faz sentido Sender Keys ou MLS
 
 ## Fora do roadmap (por agora, deliberadamente)
 
