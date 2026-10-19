@@ -36,8 +36,11 @@ pub struct CallAudioStats {
     /// Ida e volta ate ao relay das chamadas, em ms.
     pub relay_rtt_ms: Option<u32>,
     pub received: u64,
-    /// Frames perdidos pela rede (reconstruidos pelo DRED ou preenchidos pelo PLC).
+    /// Frames perdidos na rede (reconstruidos pelo DRED ou preenchidos pelo PLC).
     pub lost: u64,
+    /// Frames que nao chegaram a tempo de tocar (o microfone ou a rede do outro lado
+    /// pararam mais de 200 ms): preenchidos pelo PLC. Nao sao perdas da rede.
+    pub late: u64,
     pub dred_frames: u64,
     pub plc_frames: u64,
     /// Variacao das chegadas e atraso atual do jitter buffer, em ms.
@@ -97,6 +100,7 @@ impl CallAudio {
             relay_rtt_ms: s.relay_rtt_ms,
             received: s.received,
             lost: s.jitter.lost,
+            late: s.jitter.gave_up,
             dred_frames: s.dred_frames,
             plc_frames: s.plc_frames,
             jitter_ms: s.jitter.jitter_ms,

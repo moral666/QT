@@ -788,8 +788,10 @@ CMake), com o DRED e o PLC neural (os modelos vêm no pacote).
   bytes por frame. Descodificador com complexidade 5 (PLC neural).
 * Jitter buffer (`call/src/jitter.rs`): atraso alvo de 40 a 200 ms, pelo percentil 95 da variação
   das chegadas dos últimos 3 s. Frame em falta com um pacote mais à frente: perdido, reconstruído
-  com o DRED desse pacote. Sem nada à frente: espera até 100 ms (PLC sem avançar, o atraso cresce
-  20 ms de cada vez) e depois desiste. Atraso a mais durante 0,5 s: salta um frame.
+  com o DRED desse pacote. Sem nada à frente: espera até 200 ms, contados no relógio e não em
+  pedidos do altifalante (PLC sem avançar, o atraso cresce 20 ms de cada vez) e depois desiste.
+  As estatísticas separam os perdidos na rede dos que não chegaram a tempo. Atraso a mais durante
+  0,5 s: salta um frame.
 * Motor (`call/src/engine.rs`): a app entrega 20 ms do microfone (`push_capture`) e pede 20 ms
   para tocar (`pull_playback`); a rede corre numa thread própria. Entra na sala (pedido a cada
   500 ms até à resposta, a cada 10 s depois, o que mede também a ida e volta ao relay), envia por

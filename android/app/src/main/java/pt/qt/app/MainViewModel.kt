@@ -1689,7 +1689,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     callAudio?.stats()?.let { st ->
                         val net = if (st.transport == "udp") "UDP" else if (st.transport == "websocket") "WebSocket" else st.transport
                         val rtt = st.relayRttMs?.let { " · ${it} ms ao servidor" } ?: ""
-                        val loss = if (st.lost > 0uL) " · ${st.lost} perdidos (${st.dredFrames} recuperados)" else ""
+                        val lost = if (st.lost > 0uL) " · ${st.lost} perdidos na rede (${st.dredFrames} recuperados)" else ""
+                        val late = if (st.late > 0uL) " · ${st.late} atrasados" else ""
+                        val loss = "$lost$late"
                         val info = "$net$rtt$loss"
                         _ui.update { u -> u.call?.let { c -> u.copy(call = c.copy(info = info)) } ?: u }
                     }

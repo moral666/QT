@@ -6,6 +6,15 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: chamadas, jitter buffer mais tolerante (app 0.9.5)
+
+- O jitter buffer espera até 200 ms por um pacote atrasado (antes 100 ms), contados no relógio e
+  não em pedidos do altifalante. Um arranque lento do microfone do outro lado já não faz perder
+  o início da chamada.
+- Estatísticas separadas: perdidos na rede (reconstruídos pelo DRED) e atrasados (não chegaram a
+  tempo). A linha técnica da chamada mostra os dois.
+- Testes novos: microfone lento no arranque e espera contada no relógio.
+
 ### 19 de outubro de 2026: chamadas de voz na app Android, fase 4a (app 0.9.4)
 
 - Ligar a um contacto pelo botão de telefone na conversa; ecrã de chamada (a chamar, a tocar,
