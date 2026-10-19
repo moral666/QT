@@ -52,5 +52,11 @@ DerivedData/
 *.ipa
 medicoes/
 
-# Firebase (notificacoes): descarregado da consola; fica so no PC do Nuno
+# Firebase (notificacoes): descarregado da consola; fica so no PC/Mac do Nuno
 /android/app/google-services.json
+GoogleService-Info.plist
+# Chaves e perfis da Apple (APNs, assinatura): nunca no git
+*.p8
+*.p12
+*.mobileprovision
+*.cer
