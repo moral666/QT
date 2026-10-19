@@ -1217,3 +1217,34 @@ p {
     transition: none;
   }
 }
+
+/* ---------- Seletor de língua (PT · EN · ES) ---------- */
+
+.lang {
+  margin: var(--space-s, 0.75rem) 0 0;
+  font-size: 0.875rem;
+  letter-spacing: 0.04em;
+  color: var(--mist);
+}
+
+.lang a {
+  color: var(--mist);
+  text-decoration: none;
+  padding: 0.25rem 0.2rem;
+  pointer-events: auto;
+}
+
+.lang a:hover {
+  color: var(--ice, #fff);
+}
+
+.lang a[aria-current='true'] {
+  color: var(--lilac);
+  font-weight: 600;
+}
+
+.lang a:focus-visible {
+  outline: 2px solid var(--lilac);
+  outline-offset: 3px;
+  border-radius: 2px;
+}

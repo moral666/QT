@@ -11,6 +11,7 @@
  * antes de a página aparecer.
  */
 import { createField } from './grid/field.js';
+import { L, translatePage } from './i18n.js';
 
 export function initLayout({ setLogoActive }) {
   const root = document.documentElement;
@@ -45,7 +46,7 @@ export function initLayout({ setLogoActive }) {
     root.classList.toggle('mode-grid', next === 'grid');
     root.classList.toggle('mode-list', next === 'list');
     hero.inert = false;
-    toggle.textContent = next === 'grid' ? 'Ver em lista' : 'Ver em grelha';
+    toggle.textContent = next === 'grid' ? L({ pt: 'Ver em lista', en: 'View as list', es: 'Ver en lista' }) : L({ pt: 'Ver em grelha', en: 'View as grid', es: 'Ver en cuadrícula' });
     toggle.setAttribute('aria-pressed', String(next === 'list'));
 
     if (next === 'grid') attachWhenReady();
@@ -82,7 +83,8 @@ export function initLayout({ setLogoActive }) {
       logo.addEventListener('error', resolve, { once: true });
     });
     // Dois pedidos de fotograma: quando o segundo corre, o logótipo já foi pintado.
-    painted.then(() => requestAnimationFrame(() => requestAnimationFrame(attach)));
+    // As cópias das janelas (ecrãs grandes) são feitas já com o texto na língua da página.
+    Promise.all([painted, translatePage()]).then(() => requestAnimationFrame(() => requestAnimationFrame(attach)));
   }
 
   toggle.addEventListener('click', () => setMode(mode === 'grid' ? 'list' : 'grid'));

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-PT">
+<html lang="pt-PT" data-page="index">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -7,7 +7,7 @@
     <meta
       name="description"
       content="A SEALER é uma app de mensagens em que só tu e quem recebe conseguem ler o que escreves. Para Android e iPhone, em versão de testes."
-    />
+     data-i18n-content="index.@0"/>
     <meta name="theme-color" content="#05060d" />
     <meta name="color-scheme" content="dark" />
     <meta name="referrer" content="no-referrer" />
@@ -53,9 +53,9 @@
     <div class="app" id="app">
       <header class="bar" id="bar">
         <div class="bar__start">
-          <button class="bar__brand" id="bar-brand" type="button" aria-label="Voltar ao início">
+          <button class="bar__brand" id="bar-brand" type="button" aria-label="Voltar ao início" data-i18n-aria-label="index.@1">
             <img src="./src/assets/logo/logo-96.webp" width="96" height="96" alt="" />
-            <span>SEALER</span>
+            <span data-i18n="index.0">SEALER</span>
           </button>
           <!-- Estado do serviço na AWS (src/status.js), ao lado do nome. Escondido sem JavaScript. -->
           <p class="status-pill" id="service-status" role="status" data-state="checking" hidden>
@@ -94,23 +94,24 @@
             alt="Logótipo da SEALER: um balão de conversa em vidro lilás com a letra S e três pontos."
             fetchpriority="high"
             decoding="async"
-          />
+           data-i18n-alt="index.@2"/>
           <p class="stage__missing" aria-hidden="true">S</p>
         </div>
 
-        <h1 class="wordmark" id="hero-title">SEALER</h1>
-        <p class="lede">Mensagens que só tu e quem as recebe conseguem&nbsp;ler.</p>
-        <p class="status">Para Android e iPhone. Em versão de testes&nbsp;(0.9.10).</p>
-        <p class="more"><a class="more__link" href="./como-funciona">Vê como funciona <span aria-hidden="true">→</span></a></p>
+        <h1 class="wordmark" id="hero-title" data-i18n="index.3">SEALER</h1>
+        <p class="lede" data-i18n="index.4">Mensagens que só tu e quem as recebe conseguem&nbsp;ler.</p>
+        <p class="status" data-i18n="index.5">Para Android e iPhone. Em versão de testes&nbsp;(0.9.10).</p>
+        <p class="more" data-i18n="index.6"><a class="more__link" href="./como-funciona">Vê como funciona <span aria-hidden="true">→</span></a></p>
+        <p class="lang" aria-label="Idioma / Language / Idioma"><a data-lang="pt" lang="pt-PT" href="?lang=pt">PT</a> · <a data-lang="en" lang="en" href="?lang=en">EN</a> · <a data-lang="es" lang="es" href="?lang=es">ES</a></p>
         <p class="hint" aria-hidden="true">
           <svg class="hint__icon" viewBox="0 0 24 24" width="18" height="18">
             <path d="M12 3l3 3h-2v4h-2V6H9zM12 21l-3-3h2v-4h2v4h2zM3 12l3-3v2h4v2H6v2zM21 12l-3 3v-2h-4v-2h4V9z" />
           </svg>
-          Arrasta para explorar
+          <span data-i18n="index.hint">Arrasta para explorar</span>
         </p>
       </section>
 
-      <div class="field" id="field" role="region" aria-label="Janelas com informação sobre a SEALER. Arrasta ou usa as setas para explorar.">
+      <div class="field" id="field" role="region" aria-label="Janelas com informação sobre a SEALER. Arrasta ou usa as setas para explorar." data-i18n-aria-label="index.@3">
         <div class="field__zoom">
           <div class="field__layer" id="field-layer"></div>
         </div>
@@ -125,51 +126,51 @@
     -->
     <main class="list" id="lista">
       <section class="group" aria-labelledby="g-todos">
-        <h2 id="g-todos">Para todos</h2>
+        <h2 id="g-todos" data-i18n="index.7">Para todos</h2>
         <div class="group__tiles">
           <article class="tile tile--todos" data-cell="1-2" aria-labelledby="t-so-tu">
-            <p class="tile__label tile__label--group">Para todos</p>
+            <p class="tile__label tile__label--group" data-i18n="index.8">Para todos</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M4 24c5-8 12-12 20-12s15 4 20 12c-5 8-12 12-20 12S9 32 4 24z" /><circle cx="24" cy="24" r="6" /><path d="M8 40 40 8" /></svg>
-            <h3 class="tile__title" id="t-so-tu">Só tu e quem recebe</h3>
-            <p class="tile__text">Ninguém pelo caminho consegue ler as tuas mensagens. Nem a&nbsp;SEALER. <a href="./como-funciona">Vê como funciona</a></p>
+            <h3 class="tile__title" id="t-so-tu" data-i18n="index.9">Só tu e quem recebe</h3>
+            <p class="tile__text" data-i18n="index.10">Ninguém pelo caminho consegue ler as tuas mensagens. Nem a&nbsp;SEALER. <a href="./como-funciona">Vê como funciona</a></p>
           </article>
           <article class="tile tile--todos" data-cell="0-1" aria-labelledby="t-simples">
-            <p class="tile__label tile__label--group">Para todos</p>
+            <p class="tile__label tile__label--group" data-i18n="index.11">Para todos</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M6 22 42 6 30 42l-7-15z" /><path d="M23 27 42 6" /></svg>
-            <h3 class="tile__title" id="t-simples">Sem complicações</h3>
-            <p class="tile__text">Escreves e envias como em qualquer app de mensagens. A proteção acontece&nbsp;sozinha.</p>
+            <h3 class="tile__title" id="t-simples" data-i18n="index.12">Sem complicações</h3>
+            <p class="tile__text" data-i18n="index.13">Escreves e envias como em qualquer app de mensagens. A proteção acontece&nbsp;sozinha.</p>
           </article>
           <article class="tile tile--todos" data-cell="2-1" aria-labelledby="t-android-iphone">
-            <p class="tile__label tile__label--group">Para todos</p>
+            <p class="tile__label tile__label--group" data-i18n="index.14">Para todos</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="7" width="16" height="30" rx="3.5" /><rect x="26" y="12" width="16" height="30" rx="3.5" /><path d="M12 11.5h4M32 16.5h4" /></svg>
-            <h3 class="tile__title" id="t-android-iphone">Android e iPhone</h3>
-            <p class="tile__text">Podes conversar com quem tem Android e com quem tem&nbsp;iPhone.</p>
+            <h3 class="tile__title" id="t-android-iphone" data-i18n="index.15">Android e iPhone</h3>
+            <p class="tile__text" data-i18n="index.16">Podes conversar com quem tem Android e com quem tem&nbsp;iPhone.</p>
           </article>
           <article class="tile tile--todos" data-cell="1-0" aria-labelledby="t-guardadas">
-            <p class="tile__label tile__label--group">Para todos</p>
+            <p class="tile__label tile__label--group" data-i18n="index.17">Para todos</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><rect x="11" y="22" width="26" height="19" rx="4" /><path d="M16 22v-6a8 8 0 0 1 16 0v6M24 29.5v4" /></svg>
-            <h3 class="tile__title" id="t-guardadas">Também trancadas no telemóvel</h3>
-            <p class="tile__text">As conversas que ficam guardadas no teu telemóvel também estão&nbsp;trancadas.</p>
+            <h3 class="tile__title" id="t-guardadas" data-i18n="index.18">Também trancadas no telemóvel</h3>
+            <p class="tile__text" data-i18n="index.19">As conversas que ficam guardadas no teu telemóvel também estão&nbsp;trancadas.</p>
           </article>
           <article class="tile tile--todos" data-cell="2-5" aria-labelledby="t-alpha">
-            <p class="tile__label tile__label--group">Para todos</p>
+            <p class="tile__label tile__label--group" data-i18n="index.20">Para todos</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><circle class="tile__icon-dash" cx="24" cy="24" r="16" /><path d="M24 8a16 16 0 0 1 13.9 24" /></svg>
-            <h3 class="tile__title" id="t-alpha">O que é a versão 0.9.10</h3>
-            <p class="tile__text">
+            <h3 class="tile__title" id="t-alpha" data-i18n="index.21">O que é a versão 0.9.10</h3>
+            <p class="tile__text" data-i18n="index.22">
               Quer dizer que a app já funciona, mas ainda está a ser testada e melhorada antes do lançamento da versão&nbsp;1.0.
             </p>
           </article>
           <article class="tile tile--todos" data-cell="0-5" aria-labelledby="t-apagar">
-            <p class="tile__label tile__label--group">Para todos</p>
+            <p class="tile__label tile__label--group" data-i18n="index.23">Para todos</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M9 14h30M19 14v-4h10v4M13 14l2.2 26h17.6L35 14M21 21v12M27 21v12" /></svg>
-            <h3 class="tile__title" id="t-apagar">Apagas tudo quando quiseres</h3>
-            <p class="tile__text">Um toque apaga a tua conta do telemóvel e do nosso servidor. <a href="./apagar-conta">Como&nbsp;apagar</a></p>
+            <h3 class="tile__title" id="t-apagar" data-i18n="index.24">Apagas tudo quando quiseres</h3>
+            <p class="tile__text" data-i18n="index.25">Um toque apaga a tua conta do telemóvel e do nosso servidor. <a href="./apagar-conta">Como&nbsp;apagar</a></p>
           </article>
           <article class="tile tile--todos" data-cell="1-4" aria-labelledby="t-futuro">
-            <p class="tile__label tile__label--group">Para todos</p>
+            <p class="tile__label tile__label--group" data-i18n="index.26">Para todos</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><ellipse cx="24" cy="24" rx="19" ry="7" /><ellipse cx="24" cy="24" rx="19" ry="7" transform="rotate(60 24 24)" /><ellipse cx="24" cy="24" rx="19" ry="7" transform="rotate(120 24 24)" /><circle class="tile__icon-fill" cx="24" cy="24" r="2.5" /></svg>
-            <h3 class="tile__title" id="t-futuro">Pensada para o futuro</h3>
-            <p class="tile__text">
+            <h3 class="tile__title" id="t-futuro" data-i18n="index.27">Pensada para o futuro</h3>
+            <p class="tile__text" data-i18n="index.28">
               Usa também uma proteção feita para resistir aos computadores quânticos, que ainda estão a&nbsp;chegar.
             </p>
           </article>
@@ -177,81 +178,81 @@
       </section>
 
       <section class="group" aria-labelledby="g-caminho">
-        <h2 id="g-caminho">O caminho de uma mensagem</h2>
+        <h2 id="g-caminho" data-i18n="index.29">O caminho de uma mensagem</h2>
         <div class="group__tiles">
           <article class="tile tile--passo" data-cell="1-3" aria-labelledby="t-passo-1">
-            <p class="tile__label">Passo 1 de 3</p>
+            <p class="tile__label" data-i18n="index.30">Passo 1 de 3</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><rect x="14" y="5" width="20" height="38" rx="4.5" /><rect x="19" y="23" width="10" height="8" rx="2" /><path d="M21 23v-2.5a3 3 0 0 1 6 0V23M21.5 9h5" /></svg>
-            <h3 class="tile__title" id="t-passo-1">Fechada no teu telemóvel</h3>
-            <p class="tile__text">Antes de sair, a mensagem é trancada com uma chave. Cada mensagem tem uma chave&nbsp;diferente.</p>
+            <h3 class="tile__title" id="t-passo-1" data-i18n="index.31">Fechada no teu telemóvel</h3>
+            <p class="tile__text" data-i18n="index.32">Antes de sair, a mensagem é trancada com uma chave. Cada mensagem tem uma chave&nbsp;diferente.</p>
           </article>
           <article class="tile tile--passo" data-cell="2-3" aria-labelledby="t-passo-2">
-            <p class="tile__label">Passo 2 de 3</p>
+            <p class="tile__label" data-i18n="index.33">Passo 2 de 3</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><rect x="13" y="13" width="31" height="22" rx="3.5" /><path d="m13 16.5 15.5 10 15.5-10M3 19h6M5 25h4M3 31h6" /></svg>
-            <h3 class="tile__title" id="t-passo-2">Viaja sempre fechada</h3>
-            <p class="tile__text">Passa pelo nosso servidor, que só a entrega. Não a consegue abrir nem sabe quem a&nbsp;enviou.</p>
+            <h3 class="tile__title" id="t-passo-2" data-i18n="index.34">Viaja sempre fechada</h3>
+            <p class="tile__text" data-i18n="index.35">Passa pelo nosso servidor, que só a entrega. Não a consegue abrir nem sabe quem a&nbsp;enviou.</p>
           </article>
           <article class="tile tile--passo" data-cell="2-2" aria-labelledby="t-passo-3">
-            <p class="tile__label">Passo 3 de 3</p>
+            <p class="tile__label" data-i18n="index.36">Passo 3 de 3</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><circle cx="15" cy="24" r="8" /><path d="M23 24h21M37 24v7M43 24v5" /></svg>
-            <h3 class="tile__title" id="t-passo-3">Abre só no destino</h3>
-            <p class="tile__text">Só o telemóvel de quem a recebe tem a chave para a&nbsp;abrir.</p>
+            <h3 class="tile__title" id="t-passo-3" data-i18n="index.37">Abre só no destino</h3>
+            <p class="tile__text" data-i18n="index.38">Só o telemóvel de quem a recebe tem a chave para a&nbsp;abrir.</p>
           </article>
         </div>
       </section>
 
       <section class="group" aria-labelledby="g-especialistas">
-        <h2 id="g-especialistas">Para especialistas</h2>
+        <h2 id="g-especialistas" data-i18n="index.39">Para especialistas</h2>
         <div class="group__tiles">
           <article class="tile tile--tecnico" data-cell="1-1" aria-labelledby="t-ratchet">
-            <p class="tile__label tile__label--group">Para especialistas</p>
+            <p class="tile__label tile__label--group" data-i18n="index.40">Para especialistas</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M39 18a16 16 0 0 0-29.5-2M9 30a16 16 0 0 0 29.5 2M9.5 8v8h8M38.5 40v-8h-8" /></svg>
-            <h3 class="tile__title" id="t-ratchet">Double Ratchet</h3>
-            <p class="tile__text">Uma chave nova por mensagem, com sigilo futuro e recuperação depois de uma chave ser&nbsp;comprometida.</p>
+            <h3 class="tile__title" id="t-ratchet" data-i18n="index.41">Double Ratchet</h3>
+            <p class="tile__text" data-i18n="index.42">Uma chave nova por mensagem, com sigilo futuro e recuperação depois de uma chave ser&nbsp;comprometida.</p>
           </article>
           <article class="tile tile--tecnico" data-cell="3-2" aria-labelledby="t-pqxdh">
-            <p class="tile__label tile__label--group">Para especialistas</p>
+            <p class="tile__label tile__label--group" data-i18n="index.43">Para especialistas</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><circle cx="18" cy="24" r="12" /><circle cx="30" cy="24" r="12" /></svg>
-            <h3 class="tile__title" id="t-pqxdh">PQXDH</h3>
-            <p class="tile__text">
+            <h3 class="tile__title" id="t-pqxdh" data-i18n="index.44">PQXDH</h3>
+            <p class="tile__text" data-i18n="index.45">
               Acordo de chaves híbrido: <code>X25519</code> com <code class="nowrap">ML-KEM-768</code>. O X3DH clássico
               continua&nbsp;disponível.
             </p>
           </article>
           <article class="tile tile--tecnico" data-cell="0-0" aria-labelledby="t-sealed">
-            <p class="tile__label tile__label--group">Para especialistas</p>
+            <p class="tile__label tile__label--group" data-i18n="index.46">Para especialistas</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="11" width="36" height="26" rx="3.5" /><path d="m6 14.5 18 12 18-12" /><circle cx="24" cy="31" r="5.5" /></svg>
-            <h3 class="tile__title" id="t-sealed">Remetente selado</h3>
-            <p class="tile__text">O relay recebe envelopes cifrados sem saber quem os enviou (sealed&nbsp;sender).</p>
+            <h3 class="tile__title" id="t-sealed" data-i18n="index.47">Remetente selado</h3>
+            <p class="tile__text" data-i18n="index.48">O relay recebe envelopes cifrados sem saber quem os enviou (sealed&nbsp;sender).</p>
           </article>
           <article class="tile tile--tecnico" data-cell="1-5" aria-labelledby="t-ligacao">
-            <p class="tile__label tile__label--group">Para especialistas</p>
+            <p class="tile__label tile__label--group" data-i18n="index.49">Para especialistas</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="m20 28 8-8M17 23l-4 4a6.5 6.5 0 0 0 9.2 9.2l4-4M31 25l4-4a6.5 6.5 0 0 0-9.2-9.2l-4 4" /></svg>
-            <h3 class="tile__title" id="t-ligacao">Ligação ao relay</h3>
-            <p class="tile__text">WebSocket seguro (<code>wss</code>) com o protocolo Noise, e a chave do relay fixada na&nbsp;app.</p>
+            <h3 class="tile__title" id="t-ligacao" data-i18n="index.50">Ligação ao relay</h3>
+            <p class="tile__text" data-i18n="index.51">WebSocket seguro (<code>wss</code>) com o protocolo Noise, e a chave do relay fixada na&nbsp;app.</p>
           </article>
           <article class="tile tile--tecnico" data-cell="3-0" aria-labelledby="t-storage">
-            <p class="tile__label tile__label--group">Para especialistas</p>
+            <p class="tile__label tile__label--group" data-i18n="index.52">Para especialistas</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><ellipse cx="24" cy="11" rx="15" ry="5.5" /><path d="M9 11v26c0 3 6.7 5.5 15 5.5S39 40 39 37V11M9 24c0 3 6.7 5.5 15 5.5S39 27 39 24" /></svg>
-            <h3 class="tile__title" id="t-storage">Armazenamento</h3>
-            <p class="tile__text">
+            <h3 class="tile__title" id="t-storage" data-i18n="index.53">Armazenamento</h3>
+            <p class="tile__text" data-i18n="index.54">
               SQLCipher, com a chave protegida pelo Android Keystore e <code>secure_delete</code>&nbsp;ativo.
             </p>
           </article>
           <article class="tile tile--tecnico" data-cell="0-4" aria-labelledby="t-rust">
-            <p class="tile__label tile__label--group">Para especialistas</p>
+            <p class="tile__label tile__label--group" data-i18n="index.55">Para especialistas</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="7" /><circle cx="24" cy="24" r="14" /><path d="M24 4v6M24 38v6M4 24h6M38 24h6M9.9 9.9l4.2 4.2M33.9 33.9l4.2 4.2M9.9 38.1l4.2-4.2M33.9 14.1l4.2-4.2" /></svg>
-            <h3 class="tile__title" id="t-rust">Núcleo em Rust</h3>
-            <p class="tile__text">
+            <h3 class="tile__title" id="t-rust" data-i18n="index.56">Núcleo em Rust</h3>
+            <p class="tile__text" data-i18n="index.57">
               Toda a criptografia vive num só núcleo em Rust (<code>core</code>, <code>ffi</code>, <code>storage</code>).
               Nada é reimplementado nas&nbsp;apps.
             </p>
           </article>
           <article class="tile tile--tecnico" data-cell="3-5" aria-labelledby="t-uniffi">
-            <p class="tile__label tile__label--group">Para especialistas</p>
+            <p class="tile__label tile__label--group" data-i18n="index.58">Para especialistas</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M4 31h40M9 31c0-8.3 6.7-15 15-15s15 6.7 15 15M13 31v9M35 31v9M24 16v15" /></svg>
-            <h3 class="tile__title" id="t-uniffi">UniFFI</h3>
-            <p class="tile__text">
+            <h3 class="tile__title" id="t-uniffi" data-i18n="index.59">UniFFI</h3>
+            <p class="tile__text" data-i18n="index.60">
               As apps chamam o núcleo por ligações geradas com UniFFI. No Android: <code>arm64-v8a</code>,
               <code>armeabi-v7a</code> e&nbsp;<code>x86_64</code>.
             </p>
@@ -260,66 +261,66 @@
       </section>
 
       <section class="group" aria-labelledby="g-arquitetura">
-        <h2 id="g-arquitetura">Arquitetura</h2>
+        <h2 id="g-arquitetura" data-i18n="index.61">Arquitetura</h2>
         <div class="group__tiles">
           <article class="tile tile--arquitetura tile--diagram" data-cell="0-2" aria-labelledby="t-arquitetura">
-            <p class="tile__label tile__label--group">Arquitetura</p>
-            <svg class="dia" viewBox="0 0 240 118" role="img" aria-label="Diagrama: um telemóvel envia ao servidor, que entrega ao outro telemóvel.">
+            <p class="tile__label tile__label--group" data-i18n="index.62">Arquitetura</p>
+            <svg class="dia" viewBox="0 0 240 118" role="img" aria-label="Diagrama: um telemóvel envia ao servidor, que entrega ao outro telemóvel." data-i18n-aria-label="index.@4">
               <defs>
                 <marker id="dia-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                   <path class="dia__arrow" d="M0 0 8 4 0 8z" />
                 </marker>
               </defs>
               <rect class="dia__box" x="2" y="4" width="92" height="38" rx="12" />
-              <text class="dia__text" x="48" y="28" text-anchor="middle">Telemóvel</text>
+              <text class="dia__text" x="48" y="28" text-anchor="middle" data-i18n="index.63">Telemóvel</text>
               <rect class="dia__box" x="146" y="4" width="92" height="38" rx="12" />
-              <text class="dia__text" x="192" y="28" text-anchor="middle">Telemóvel</text>
+              <text class="dia__text" x="192" y="28" text-anchor="middle" data-i18n="index.64">Telemóvel</text>
               <rect class="dia__box dia__box--relay" x="70" y="76" width="100" height="38" rx="12" />
-              <text class="dia__text" x="120" y="100" text-anchor="middle">Servidor</text>
+              <text class="dia__text" x="120" y="100" text-anchor="middle" data-i18n="index.65">Servidor</text>
               <path class="dia__line" d="M48 42 C48 64 70 70 84 76" marker-end="url(#dia-arrow)" />
               <path class="dia__line" d="M156 76 C170 70 192 64 192 42" marker-end="url(#dia-arrow)" />
             </svg>
-            <h3 class="tile__title tile__title--small" id="t-arquitetura">A cifra acontece nos telemóveis</h3>
-            <p class="tile__text">O servidor (relay) só guarda e entrega envelopes&nbsp;fechados.</p>
+            <h3 class="tile__title tile__title--small" id="t-arquitetura" data-i18n="index.66">A cifra acontece nos telemóveis</h3>
+            <p class="tile__text" data-i18n="index.67">O servidor (relay) só guarda e entrega envelopes&nbsp;fechados.</p>
           </article>
           <article class="tile tile--arquitetura" data-cell="2-4" aria-labelledby="t-relay">
-            <p class="tile__label tile__label--group">Arquitetura</p>
+            <p class="tile__label tile__label--group" data-i18n="index.68">Arquitetura</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="7" width="30" height="13" rx="3.5" /><rect x="9" y="27" width="30" height="13" rx="3.5" /><path d="M15 13.5h.01M15 33.5h.01M21 13.5h12M21 33.5h12" /></svg>
-            <h3 class="tile__title" id="t-relay">Servidor na União Europeia</h3>
-            <p class="tile__text">O relay corre em Estocolmo, com uma fila de mensagens em Redis. Nunca tem as chaves&nbsp;privadas.</p>
+            <h3 class="tile__title" id="t-relay" data-i18n="index.69">Servidor na União Europeia</h3>
+            <p class="tile__text" data-i18n="index.70">O relay corre em Estocolmo, com uma fila de mensagens em Redis. Nunca tem as chaves&nbsp;privadas.</p>
           </article>
         </div>
       </section>
 
       <section class="group" aria-labelledby="g-testes">
-        <h2 id="g-testes">Testes e números</h2>
+        <h2 id="g-testes" data-i18n="index.71">Testes e números</h2>
         <div class="group__tiles">
           <article class="tile tile--testes tile--figure" data-cell="0-3" aria-labelledby="t-aparelhos">
-            <p class="tile__label">Testes</p>
-            <h3 class="tile__figure" id="t-aparelhos">5 aparelhos</h3>
-            <p class="tile__text">2 Android, 1 emulador, 1 iPhone e 1 Mac trocaram mensagens sem parar, com envios em simultâneo, sem&nbsp;falhas.</p>
+            <p class="tile__label" data-i18n="index.72">Testes</p>
+            <h3 class="tile__figure" id="t-aparelhos" data-i18n="index.73">5 aparelhos</h3>
+            <p class="tile__text" data-i18n="index.74">2 Android, 1 emulador, 1 iPhone e 1 Mac trocaram mensagens sem parar, com envios em simultâneo, sem&nbsp;falhas.</p>
           </article>
           <article class="tile tile--testes tile--figure" data-cell="2-0" aria-labelledby="t-tempo">
-            <p class="tile__label">Esta página</p>
+            <p class="tile__label" data-i18n="index.75">Esta página</p>
             <h3 class="tile__figure" id="t-tempo">0,8 s</h3>
-            <p class="tile__text">Até esta página aparecer num telemóvel lento, com rede 4G&nbsp;lenta.</p>
+            <p class="tile__text" data-i18n="index.76">Até esta página aparecer num telemóvel lento, com rede 4G&nbsp;lenta.</p>
           </article>
           <article class="tile tile--testes tile--figure" data-cell="3-4" aria-labelledby="t-cookies">
-            <p class="tile__label">Esta página</p>
-            <h3 class="tile__figure" id="t-cookies">0 cookies</h3>
-            <p class="tile__text">Nem ferramentas para seguir o que fazes. Tudo vem do próprio&nbsp;site. <a href="./politica-de-cookies">Política de cookies</a></p>
+            <p class="tile__label" data-i18n="index.77">Esta página</p>
+            <h3 class="tile__figure" id="t-cookies" data-i18n="index.78">0 cookies</h3>
+            <p class="tile__text" data-i18n="index.79">Nem ferramentas para seguir o que fazes. Tudo vem do próprio&nbsp;site. <a href="./politica-de-cookies">Política de cookies</a></p>
           </article>
         </div>
       </section>
 
       <section class="group" aria-labelledby="g-caminho-app">
-        <h2 id="g-caminho-app">A caminho</h2>
+        <h2 id="g-caminho-app" data-i18n="index.80">A caminho</h2>
         <div class="group__tiles">
           <article class="tile tile--proximo" data-cell="3-3" aria-labelledby="t-proximo">
-            <p class="tile__label tile__label--group">A caminho</p>
+            <p class="tile__label tile__label--group" data-i18n="index.81">A caminho</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><path class="tile__icon-dash" d="M6 40c11 0 9-15 19-15s7-13 17-13" /><path d="m36 7 6 5-5.5 5.5" /></svg>
-            <h3 class="tile__title" id="t-proximo">O que vem a seguir</h3>
-            <p class="tile__text">Já há chamadas de voz cifradas no Android, foto de perfil, seis línguas, grupos e ficheiros até 25&nbsp;MB. A seguir: chamadas no iPhone, Google Play e App&nbsp;Store.</p>
+            <h3 class="tile__title" id="t-proximo" data-i18n="index.82">O que vem a seguir</h3>
+            <p class="tile__text" data-i18n="index.83">Já há chamadas de voz cifradas no Android, foto de perfil, seis línguas, grupos e ficheiros até 25&nbsp;MB. A seguir: chamadas no iPhone, Google Play e App&nbsp;Store.</p>
           </article>
         </div>
       </section>
@@ -333,9 +334,9 @@
     </main>
 
     <footer class="footer">
-      <p>Esta página não usa cookies nem ferramentas para seguir o que fazes nela. <a href="./politica-de-cookies">Política de cookies</a></p>
-      <p><a href="./como-funciona">Como funciona</a> · <a href="./privacidade">Privacidade</a> · <a href="./termos">Termos</a> · <a href="./apagar-conta">Apagar a conta</a></p>
-      <p>© 2026 SEALER, um projeto QT.</p>
+      <p data-i18n="index.84">Esta página não usa cookies nem ferramentas para seguir o que fazes nela. <a href="./politica-de-cookies">Política de cookies</a></p>
+      <p data-i18n="index.85"><a href="./como-funciona">Como funciona</a> · <a href="./privacidade">Privacidade</a> · <a href="./termos">Termos</a> · <a href="./apagar-conta">Apagar a conta</a></p>
+      <p data-i18n="index.86">© 2026 SEALER, um projeto QT.</p>
     </footer>
   </body>
 </html>

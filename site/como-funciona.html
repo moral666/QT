@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-PT">
+<html lang="pt-PT" data-page="como">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -7,7 +7,7 @@
     <meta
       name="description"
       content="Em 5 passos simples: como uma mensagem viaja trancada na SEALER, do telemóvel de quem escreve até ao de quem recebe."
-    />
+     data-i18n-content="como.@0"/>
     <meta name="theme-color" content="#05060d" />
     <meta name="color-scheme" content="dark" />
     <meta name="referrer" content="no-referrer" />
@@ -32,13 +32,13 @@
     <header class="legal-bar">
       <a class="legal-bar__brand" href="./">
         <img src="./src/assets/logo/logo-96.webp" width="96" height="96" alt="" />
-        <span>SEALER</span>
+        <span data-i18n="como.0">SEALER</span>
       </a>
     </header>
 
     <main class="cf">
-      <h1>Como viaja uma mensagem</h1>
-      <p class="cf__lede">Em 5 passos simples, o que acontece quando carregas em enviar.</p>
+      <h1 data-i18n="como.1">Como viaja uma mensagem</h1>
+      <p class="cf__lede" data-i18n="como.2">Em 5 passos simples, o que acontece quando carregas em enviar.</p>
 
       <div class="cf-stage">
         <svg id="scene" viewBox="0 0 800 450" data-scene="1" role="img" aria-labelledby="cap-title cap-text">
@@ -53,10 +53,10 @@
             <circle class="led" cx="433" cy="66" r="3.5" />
             <circle class="led" cx="433" cy="92" r="3.5" />
             <circle class="led" cx="433" cy="118" r="3.5" />
-            <text class="label" x="400" y="170">Servidor SEALER</text>
+            <text class="label" x="400" y="170" data-i18n="como.3">Servidor SEALER</text>
           </g>
           <g id="g-sees" class="fade sees">
-            <text class="tag tag--cold" x="400" y="24">Não consegue ler. Só vê o envelope.</text>
+            <text class="tag tag--cold" x="400" y="24" data-i18n="como.4">Não consegue ler. Só vê o envelope.</text>
           </g>
 
           <!-- Ana -->
@@ -66,7 +66,7 @@
             <rect class="bubble" x="56" y="110" width="138" height="46" rx="16" />
             <text id="ana-text" class="bubble-text" x="125" y="134">Olá, Rui!</text>
             <path id="ana-tick" class="tick" d="M160 172 l6 6 l11 -12" opacity="0" />
-            <text class="who" x="125" y="420">Ana</text>
+            <text class="who" x="125" y="420" data-i18n="como.6">Ana</text>
           </g>
 
           <!-- Rui -->
@@ -75,21 +75,21 @@
             <rect class="notch" x="650" y="82" width="50" height="7" rx="3.5" />
             <g class="fade rui-msg">
               <rect class="bubble-in" x="606" y="110" width="138" height="46" rx="16" />
-              <text class="bubble-text" x="675" y="134">Olá, Rui!</text>
+              <text class="bubble-text" x="675" y="134" data-i18n="como.7">Olá, Rui!</text>
             </g>
-            <text class="who" x="675" y="420">Rui</text>
+            <text class="who" x="675" y="420" data-i18n="como.8">Rui</text>
           </g>
 
           <!-- A chave do Rui, guardada no telemóvel dele -->
           <g id="key-label" class="key-part">
-            <text class="tag tag--key" x="675" y="358">Chave do Rui</text>
+            <text class="tag tag--key" x="675" y="358" data-i18n="como.9">Chave do Rui</text>
           </g>
 
           <!-- Passo 5: escudo -->
           <g id="g-quantum" class="fade quantum">
             <path class="shield" d="M400 222 l62 22 v42 c0 40 -28 66 -62 80 c-34 -14 -62 -40 -62 -80 v-42 z" />
             <path class="shield-check" d="M378 292 l15 15 l30 -32" />
-            <text class="tag tag--cold" x="400" y="404">Protegida contra computadores quânticos</text>
+            <text class="tag tag--cold" x="400" y="404" data-i18n="como.10">Protegida contra computadores quânticos</text>
           </g>
 
           <!-- Envelope e chave (movidos por JavaScript) -->
@@ -118,29 +118,30 @@
       </section>
 
       <div class="cf-controls">
-        <button class="cf-btn" id="prev" type="button" aria-label="Passo anterior">← Anterior</button>
+        <button class="cf-btn" id="prev" type="button" aria-label="Passo anterior" data-i18n-aria-label="como.@1" data-i18n="como.15">← Anterior</button>
         <button class="cf-btn cf-btn--main" id="play" type="button">Pausar</button>
-        <button class="cf-btn" id="next" type="button" aria-label="Passo seguinte">Seguinte →</button>
-        <div class="cf-dots" id="dots" role="group" aria-label="Escolher passo"></div>
+        <button class="cf-btn" id="next" type="button" aria-label="Passo seguinte" data-i18n-aria-label="como.@2" data-i18n="como.17">Seguinte →</button>
+        <div class="cf-dots" id="dots" role="group" aria-label="Escolher passo" data-i18n-aria-label="como.@3"></div>
       </div>
 
       <section class="cf-chamadas" aria-labelledby="ch-title">
-        <h2 id="ch-title">E as chamadas de voz?</h2>
-        <p>
+        <h2 id="ch-title" data-i18n="como.18">E as chamadas de voz?</h2>
+        <p data-i18n="como.19">
           Na versão de testes para Android já há chamadas de voz a dois, cifradas ponta a ponta como as
           mensagens. O som passa sempre pelo nosso servidor, que não o consegue ouvir, e por isso quem te liga nunca fica a
           saber o teu endereço de rede. As chamadas tocam mesmo com a app fechada ou o telemóvel bloqueado. No iPhone
           chegam mais tarde.
         </p>
         <img src="./chamada-0.9.4.jpg" width="540" height="1170" loading="lazy" decoding="async"
-          alt="Ecrã de uma chamada de voz na SEALER: contador, cifrada ponta a ponta e os botões Silenciar, Altifalante e Desligar." />
+          alt="Ecrã de uma chamada de voz na SEALER: contador, cifrada ponta a ponta e os botões Silenciar, Altifalante e Desligar."  data-i18n-alt="como.@4"/>
       </section>
 
-      <p class="cf__back"><a href="./">Voltar ao início</a></p>
+      <p class="cf__back" data-i18n="como.20"><a href="./">Voltar ao início</a></p>
     </main>
 
     <footer class="legal-footer">
-      <p>© 2026 SEALER, um projeto QT. <a href="./privacidade">Privacidade</a> · <a href="./politica-de-cookies">Política de cookies</a></p>
+      <p class="lang" aria-label="Idioma / Language / Idioma"><a data-lang="pt" lang="pt-PT" href="?lang=pt">PT</a> · <a data-lang="en" lang="en" href="?lang=en">EN</a> · <a data-lang="es" lang="es" href="?lang=es">ES</a></p>
+      <p data-i18n="como.21">© 2026 SEALER, um projeto QT. <a href="./privacidade">Privacidade</a> · <a href="./politica-de-cookies">Política de cookies</a></p>
     </footer>
   </body>
 </html>

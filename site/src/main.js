@@ -12,6 +12,9 @@ import './styles.css';
 import { decide3D } from './capabilities.js';
 import { initLayout } from './layout.js';
 import { initStatus } from './status.js';
+import { translatePage } from './i18n.js';
+
+translatePage();
 
 const root = document.documentElement;
 const stage = document.getElementById('stage');
