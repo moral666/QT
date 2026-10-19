@@ -49,7 +49,7 @@ formato que já mudou outra vez.
 8. a 18. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v3,
    envelope v2, protocolo do relay, mensagem dentro do ratchet, sessões cruzadas e
    eliminação, anexos (imagens, GIFs, voz e ficheiros), grupos, presença, notificações,
-   chamadas de voz
+   chamadas de voz, foto de perfil
 
 *(Se preferires uma explicação sem jargão técnico, começa antes por
 o [`README.md`](../README.md). Este
@@ -529,6 +529,9 @@ tipo 7 = info do grupo:     [16 group_id][JSON: versão, nome, membros e adminis
 tipo 8 = saída do grupo:    [16 group_id]
 tipo 9 = presença: [1 estado: 1 = online, 0 = offline]  (msg_id sempre o mesmo)
 tipo 10 = sessão terminada: [vazio]
+tipo 11 = chamada de voz (ver secção 18)
+tipo 12 = foto de perfil: [1 op: 1 = foto, 0 = sem foto][foto WebP ou JPEG, máx. 10 000 bytes]
+          (msg_id sempre o mesmo)
 ```
 
 **Mensagens de voz** são anexos (tipo 3) com o MIME `audio/mp4` (AAC), até 10 s e 1 MiB;
@@ -832,6 +835,30 @@ já na sala, mesmo antes de atender) com `push_capture` e `pull_playback` (20 ms
 48 kHz, mono, 1920 bytes little-endian), `stats`, `active` e `stop`; ao atender, as chaves do
 áudio passam para o motor, e ao terminar a chamada ele para sozinho. As chaves nunca atravessam
 a FFI.
+
+## 19. Foto de perfil (desde a app 0.9.9)
+
+Cada pessoa escolhe uma foto (a original até 3 MB). A app corta-a ao centro e reduz para um
+quadrado em WebP (256 px, ou menos até caber) com no máximo 10 000 bytes, e o núcleo
+(`ffi/src/profile.rs`) envia-a aos contactos guardados no tipo 12, dentro do Double Ratchet.
+Com o cabeçalho cabe no maior balde do enchimento (10 240), por isso o relay vê um envelope
+do mesmo tamanho que uma mensagem de texto longa e não sabe que é uma foto. Nada vai ao
+armazenamento de anexos do relay.
+
+- **72 horas:** só se escolhe uma foto nova 72 h depois da anterior (`profile_photo_set` devolve
+  `InvalidInput { field: "photo_wait" }`). Tirar a foto pode-se sempre e não reinicia o prazo.
+  Quem recebe não aceita uma foto nova do mesmo contacto antes de 71 h (hora local), por isso
+  uma app alterada não troca mais depressa.
+- **Só contactos:** a app passa a lista dos contactos guardados; `profile_photo_sync` manda o
+  estado atual (foto ou "sem foto") a quem ainda não tem essa versão (contactos novos, sessões
+  novas), uma só vez por versão. Precisa de sessão: um contacto acabado de adicionar recebe a
+  foto depois da primeira troca de mensagens.
+- **Guardado:** na base de dados cifrada (SQLCipher, tabela `kv`). A foto de um contacto apaga-se
+  com o contacto. No ecrã, só se mostram imagens até 1024 px de lado.
+- Versões antigas da app (até à 0.9.8) não conhecem o tipo 12: mostram "atualiza a app" no
+  máximo uma vez por contacto (o `msg_id` é sempre o mesmo).
+
+Testes: `ffi/tests/profile.rs`.
 
 ## Documentos relacionados
 
