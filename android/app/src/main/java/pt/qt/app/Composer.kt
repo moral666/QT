@@ -91,13 +91,13 @@ fun ChatComposer(
         recording = try {
             recorder.start(); true
         } catch (e: Exception) {
-            Toast.makeText(ctx, "Não foi possível usar o microfone.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, s(R.string.t_nao_foi_possivel_usar_o_microfone), Toast.LENGTH_SHORT).show()
             false
         }
     }
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startRecording()
-        else Toast.makeText(ctx, "Sem acesso ao microfone, não é possível gravar.", Toast.LENGTH_SHORT).show()
+        else Toast.makeText(ctx, s(R.string.t_sem_acesso_ao_microfone_nao_e), Toast.LENGTH_SHORT).show()
     }
     val sendImage by rememberUpdatedState(onSendImage)
     val keyboardImages = remember {
@@ -133,11 +133,11 @@ fun ChatComposer(
         ) {
             Box(Modifier.padding(bottom = 4.dp)) {
                 IconButton(onClick = { attachMenu = true }) {
-                    Icon(Icons.Filled.Add, contentDescription = "Enviar foto, GIF ou ficheiro")
+                    Icon(Icons.Filled.Add, contentDescription = s(R.string.t_enviar_foto_gif_ou_ficheiro))
                 }
                 DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }) {
                     DropdownMenuItem(
-                        text = { Text("Foto ou GIF") },
+                        text = { Text(s(R.string.t_foto_ou_gif)) },
                         leadingIcon = { Text("📷", fontSize = 18.sp) },
                         onClick = {
                             attachMenu = false
@@ -147,7 +147,7 @@ fun ChatComposer(
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("Ficheiro (até 25 MB)") },
+                        text = { Text(s(R.string.t_ficheiro_ate_25_mb)) },
                         leadingIcon = { Text("📄", fontSize = 18.sp) },
                         onClick = {
                             attachMenu = false
@@ -169,7 +169,7 @@ fun ChatComposer(
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                     ) {
                         if (input.text.isEmpty()) {
-                            Text("Mensagem", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(s(R.string.t_mensagem), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         inner()
                     }
@@ -196,7 +196,7 @@ fun ChatComposer(
                 modifier = Modifier.size(52.dp),
             ) {
                 if (empty) Text("🎤", fontSize = 22.sp)
-                else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Enviar")
+                else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = s(R.string.t_enviar))
             }
         }
     }

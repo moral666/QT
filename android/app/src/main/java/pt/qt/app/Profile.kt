@@ -153,10 +153,10 @@ object ProfilePhoto {
 fun waitText(ms: Long): String {
     val h = (ms + 3_599_999) / 3_600_000
     return when {
-        h <= 1 -> "daqui a menos de 1 h"
-        h < 24 -> "daqui a $h h"
-        h % 24 == 0L -> "daqui a ${h / 24} d"
-        else -> "daqui a ${h / 24} d e ${h % 24} h"
+        h <= 1 -> s(R.string.t_daqui_a_menos_de_1_h)
+        h < 24 -> s(R.string.t_daqui_a_h, h)
+        h % 24 == 0L -> s(R.string.t_daqui_a_d, h / 24)
+        else -> s(R.string.t_daqui_a_d_e_h, h / 24, h % 24)
     }
 }
 
@@ -169,23 +169,23 @@ fun ProfilePhotoDialog(ui: UiState, onPick: (Uri) -> Unit, onRemove: () -> Unit,
     val canChange = ui.photoNextChangeMs <= 0L
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Foto de perfil") },
+        title = { Text(s(R.string.t_foto_de_perfil)) },
         text = {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 val mine = ui.myPhoto
                 if (mine != null) {
-                    Image(mine, contentDescription = "A tua foto", modifier = Modifier.size(140.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                    Image(mine, contentDescription = s(R.string.t_a_tua_foto), modifier = Modifier.size(140.dp).clip(CircleShape), contentScale = ContentScale.Crop)
                 } else {
                     Avatar("Eu", "eu", sizeDp = 140)
                 }
                 Text(
-                    "Só os teus contactos a veem, cifrada de ponta a ponta. Máximo 3 MB. Podes mudar de 72 em 72 horas.",
+                    s(R.string.t_so_os_teus_contactos_a_veem),
                     style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (!canChange) {
                     Text(
-                        "Próxima mudança ${waitText(ui.photoNextChangeMs)}.",
+                        s(R.string.t_proxima_mudanca, waitText(ui.photoNextChangeMs)),
                         style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center,
                     )
                 }
@@ -193,16 +193,16 @@ fun ProfilePhotoDialog(ui: UiState, onPick: (Uri) -> Unit, onRemove: () -> Unit,
         },
         confirmButton = {
             Row {
-                if (ui.myPhoto != null) TextButton(onClick = onRemove) { Text("Tirar") }
+                if (ui.myPhoto != null) TextButton(onClick = onRemove) { Text(s(R.string.t_tirar)) }
                 TextButton(
                     enabled = canChange,
                     onClick = {
                         AutoLockPause.active = true   // escolher a foto nao conta como sair da app
                         pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     },
-                ) { Text("Escolher foto") }
+                ) { Text(s(R.string.t_escolher_foto)) }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Fechar") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_fechar)) } },
     )
 }

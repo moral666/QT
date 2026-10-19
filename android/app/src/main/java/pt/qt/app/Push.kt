@@ -112,8 +112,8 @@ object Push {
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         if (nm.getNotificationChannel(CHANNEL) != null) return
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Mensagens", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Aviso de mensagens novas (sem o conteúdo nem quem enviou)."
+            NotificationChannel(CHANNEL, s(R.string.t_mensagens), NotificationManager.IMPORTANCE_HIGH).apply {
+                description = s(R.string.t_aviso_de_mensagens_novas_sem_o)
             },
         )
     }
@@ -128,7 +128,7 @@ object Push {
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_sealer)
             .setContentTitle("SEALER")
-            .setContentText("Tens mensagens novas")
+            .setContentText(s(R.string.t_tens_mensagens_novas))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)

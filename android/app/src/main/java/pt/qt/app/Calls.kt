@@ -319,8 +319,8 @@ class CallService : Service() {
             val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
             if (nm.getNotificationChannel(CHANNEL) != null) return
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Chamadas", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Chamadas de voz em curso e a chegar com a app aberta."
+                NotificationChannel(CHANNEL, s(R.string.t_chamadas), NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = s(R.string.t_chamadas_de_voz_em_curso_e)
                     setSound(null, null)
                 },
             )
@@ -337,12 +337,12 @@ class CallService : Service() {
             return NotificationCompat.Builder(ctx, CHANNEL)
                 .setSmallIcon(R.drawable.ic_stat_sealer)
                 .setContentTitle("SEALER")
-                .setContentText("Chamada de voz em curso")
+                .setContentText(s(R.string.t_chamada_de_voz_em_curso))
                 .setOngoing(true)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setContentIntent(pi)
-                .addAction(0, "Desligar", hang)
+                .addAction(0, s(R.string.t_desligar), hang)
                 .build()
         }
 
@@ -388,8 +388,8 @@ object CallNotify {
         if (nm.getNotificationChannel(OLD_RING_CHANNEL) != null) nm.deleteNotificationChannel(OLD_RING_CHANNEL)
         if (nm.getNotificationChannel(RING_CHANNEL) != null) return
         nm.createNotificationChannel(
-            NotificationChannel(RING_CHANNEL, "Chamadas a tocar", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Toque das chamadas de voz com a app fechada."
+            NotificationChannel(RING_CHANNEL, s(R.string.t_chamadas_a_tocar), NotificationManager.IMPORTANCE_HIGH).apply {
+                description = s(R.string.t_toque_das_chamadas_de_voz_com)
                 setSound(
                     ringUri(ctx),
                     AudioAttributes.Builder()
@@ -423,12 +423,12 @@ object CallNotify {
             ctx, 6, Intent(ctx, CallActionReceiver::class.java).setAction(ACTION_DECLINE),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val title = name?.takeIf { it.isNotBlank() } ?: "Chamada SEALER"
+        val title = name?.takeIf { it.isNotBlank() } ?: s(R.string.t_chamada_sealer)
         val channel = if (sound) RING_CHANNEL else CallService.CHANNEL
         fun base() = NotificationCompat.Builder(ctx, channel)
             .setSmallIcon(R.drawable.ic_stat_sealer)
             .setContentTitle(title)
-            .setContentText("Chamada de voz SEALER")
+            .setContentText(s(R.string.t_chamada_de_voz_sealer))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -441,7 +441,7 @@ object CallNotify {
             base().setStyle(NotificationCompat.CallStyle.forIncomingCall(person, decline, answer)).build()
         }.getOrElse {
             // Sem o estilo de chamada: botoes normais.
-            base().addAction(0, "Recusar", decline).addAction(0, "Atender", answer).build()
+            base().addAction(0, s(R.string.t_recusar), decline).addAction(0, s(R.string.t_atender), answer).build()
         }
         if (sound) n.flags = n.flags or Notification.FLAG_INSISTENT
         try {
@@ -464,9 +464,9 @@ object CallNotify {
             .setCategory("missed_call")   // Notification.CATEGORY_MISSED_CALL (Android 11+)
             .setContentIntent(pi)
             .setAutoCancel(true)
-        val hidden = base().setContentText("Chamada perdida").build()
+        val hidden = base().setContentText(s(R.string.t_chamada_perdida)).build()
         val n = base()
-            .setContentText(if (name.isNullOrBlank()) "Chamada perdida" else "Chamada perdida de $name")
+            .setContentText(if (name.isNullOrBlank()) s(R.string.t_chamada_perdida) else s(R.string.t_chamada_perdida_de, name))
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(hidden)
             .build()

@@ -140,8 +140,8 @@ fun VoiceRecordBar(recorder: VoiceRecorder, onCancel: () -> Unit, onSend: () -> 
         Box(Modifier.size(12.dp).clip(CircleShape).background(Color(0xFFE53935)))
         Text("${formatVoice(elapsed)} / ${formatVoice(VOICE_MAX_MS)}", style = MaterialTheme.typography.bodyLarge)
         LinearProgressIndicator(progress = { (elapsed.toFloat() / VOICE_MAX_MS).coerceIn(0f, 1f) }, modifier = Modifier.weight(1f))
-        TextButton(onClick = onCancel) { Text("Cancelar") }
-        TextButton(onClick = onSend) { Text("Enviar") }
+        TextButton(onClick = onCancel) { Text(s(R.string.t_cancelar)) }
+        TextButton(onClick = onSend) { Text(s(R.string.t_enviar)) }
     }
 }
 
@@ -215,8 +215,8 @@ fun VoiceContent(
     }
     val busy = att.state == AttachmentState.UPLOADING || att.state == AttachmentState.DOWNLOADING
     val problem = when (att.state) {
-        AttachmentState.EXPIRED -> "Já não está disponível (passaram mais de 24 horas)."
-        AttachmentState.FAILED -> if (m.outgoing) "Não foi possível enviar." else "Não foi possível receber."
+        AttachmentState.EXPIRED -> s(R.string.t_ja_nao_esta_disponivel_passaram_mais)
+        AttachmentState.FAILED -> if (m.outgoing) s(R.string.t_nao_foi_possivel_enviar) else s(R.string.t_nao_foi_possivel_receber)
         else -> null
     }
     Column(Modifier.width(230.dp).combinedClickable(onClick = { toggle() }, onLongClick = onLongPress).padding(6.dp)) {
@@ -232,7 +232,7 @@ fun VoiceContent(
                         CircularProgressIndicator(color = Color.White, modifier = Modifier.size(28.dp))
                     }
                     playing -> Text("❚❚", color = Color.White, fontSize = 14.sp)
-                    else -> Icon(Icons.Filled.PlayArrow, contentDescription = "Ouvir", tint = Color.White)
+                    else -> Icon(Icons.Filled.PlayArrow, contentDescription = s(R.string.t_ouvir), tint = Color.White)
                 }
             }
             Spacer(Modifier.width(10.dp))

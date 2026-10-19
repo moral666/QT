@@ -117,7 +117,7 @@ fun GroupChatScreen(
                         Column {
                             Text(group.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
-                                "${group.members.size} pessoas · cifrado ponta a ponta",
+                                s(R.string.t_pessoas_cifrado_ponta_a_ponta, group.members.size),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = colors.onTopBar.copy(alpha = 0.8f),
                             )
@@ -125,7 +125,7 @@ fun GroupChatScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onInfo) { Icon(Icons.Filled.Info, contentDescription = "Informação do grupo") }
+                    IconButton(onClick = onInfo) { Icon(Icons.Filled.Info, contentDescription = s(R.string.t_informacao_do_grupo)) }
                 },
             )
         },
@@ -157,7 +157,7 @@ fun GroupChatScreen(
                 if (ui.chatHasMore) {
                     item(key = "more") {
                         Text(
-                            "A carregar mensagens anteriores…", Modifier.fillMaxWidth().padding(8.dp),
+                            s(R.string.t_a_carregar_mensagens_anteriores), Modifier.fillMaxWidth().padding(8.dp),
                             style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                         )
                     }
@@ -167,7 +167,7 @@ fun GroupChatScreen(
             }
             if (!group.active) {
                 Text(
-                    "Já não fazes parte deste grupo.",
+                    s(R.string.t_ja_nao_fazes_parte_deste_grupo),
                     Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(16.dp),
                     style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
                 )
@@ -200,19 +200,19 @@ fun NewGroupDialog(ui: UiState, onDismiss: () -> Unit, onCreate: (String, List<C
     val full = chosen.size >= GROUP_MAX_MEMBERS - 1
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Novo grupo") },
+        title = { Text(s(R.string.t_novo_grupo)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     name, { name = it },
-                    label = { Text("Nome do grupo (opcional)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    label = { Text(s(R.string.t_nome_do_grupo_opcional)) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    "Pessoas (opcional, até ${GROUP_MAX_MEMBERS - 1}): ${chosen.size} escolhidas. Podes acrescentar mais tarde.",
+                    s(R.string.t_pessoas_opcional_ate_escolhidas_podes_acrescen, GROUP_MAX_MEMBERS - 1, chosen.size),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (choices.isEmpty()) {
-                    Text("Ainda não tens contactos: o grupo começa só contigo.", style = MaterialTheme.typography.bodyMedium)
+                    Text(s(R.string.t_ainda_nao_tens_contactos_o_grupo), style = MaterialTheme.typography.bodyMedium)
                 }
                 LazyColumn(Modifier.heightIn(max = 320.dp)) {
                     items(choices, key = { it.contactId }) { c ->
@@ -236,9 +236,9 @@ fun NewGroupDialog(ui: UiState, onDismiss: () -> Unit, onCreate: (String, List<C
         confirmButton = {
             TextButton(
                 onClick = { onCreate(name.trim(), choices.filter { it.contactId in chosen }) },
-            ) { Text("Criar") }
+            ) { Text(s(R.string.t_criar)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) } },
     )
 }
 
@@ -266,7 +266,7 @@ fun GroupInfoScreen(
     fun current() = group.members.map { GroupMemberInput(it.publicId, it.admin) }
     fun isContact(m: GroupMember) = m.me || ui.contacts.any { it.contactId == m.contactId }
 
-    Scaffold(topBar = { SealerTopBar(title = { Text("Grupo") }, onBack = onBack) }) { pad ->
+    Scaffold(topBar = { SealerTopBar(title = { Text(s(R.string.t_grupo)) }, onBack = onBack) }) { pad ->
         LazyColumn(Modifier.padding(pad).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
             item(key = "head") {
                 Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -274,21 +274,21 @@ fun GroupInfoScreen(
                     Spacer(Modifier.height(12.dp))
                     Text(group.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
                     Text(
-                        "${group.members.size} de $GROUP_MAX_MEMBERS pessoas",
+                        s(R.string.t_de_pessoas, group.members.size, GROUP_MAX_MEMBERS),
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (group.iAmAdmin) {
-                        TextButton(onClick = { rename = true }) { Text("Mudar o nome") }
+                        TextButton(onClick = { rename = true }) { Text(s(R.string.t_mudar_o_nome)) }
                     }
                     if (!group.active) {
-                        Text("Já não fazes parte deste grupo.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                        Text(s(R.string.t_ja_nao_fazes_parte_deste_grupo), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                     }
                 }
                 HorizontalDivider()
             }
             if (group.iAmAdmin && group.members.size < GROUP_MAX_MEMBERS) {
                 item(key = "add") {
-                    TextButton(onClick = { adding = true }, modifier = Modifier.padding(horizontal = 8.dp)) { Text("+ Adicionar pessoas") }
+                    TextButton(onClick = { adding = true }, modifier = Modifier.padding(horizontal = 8.dp)) { Text(s(R.string.t_adicionar_pessoas)) }
                 }
             }
             items(group.members, key = { it.contactId }) { m ->
@@ -304,7 +304,7 @@ fun GroupInfoScreen(
                     Text(n, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (m.admin) {
                         Text(
-                            "Administrador",
+                            s(R.string.t_administrador),
                             Modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.secondaryContainer)
                                 .padding(horizontal = 8.dp, vertical = 2.dp),
                             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -316,9 +316,9 @@ fun GroupInfoScreen(
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 Column(Modifier.padding(horizontal = 8.dp)) {
                     if (group.active) {
-                        TextButton(onClick = { confirmLeave = true }) { Text("Sair do grupo", color = MaterialTheme.colorScheme.error) }
+                        TextButton(onClick = { confirmLeave = true }) { Text(s(R.string.t_sair_do_grupo), color = MaterialTheme.colorScheme.error) }
                     }
-                    TextButton(onClick = { confirmDelete = true }) { Text("Apagar grupo deste telemóvel", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = { confirmDelete = true }) { Text(s(R.string.t_apagar_grupo_deste_telemovel), color = MaterialTheme.colorScheme.error) }
                 }
             }
         }
@@ -332,14 +332,14 @@ fun GroupInfoScreen(
             text = {
                 Column {
                     if (!isContact(m)) {
-                        TextButton(onClick = { memberMenu = null; saveContact = m }) { Text("Guardar nos contactos") }
+                        TextButton(onClick = { memberMenu = null; saveContact = m }) { Text(s(R.string.t_guardar_nos_contactos)) }
                     }
                     if (group.iAmAdmin) {
                         if (m.admin) {
                             TextButton(onClick = {
                                 memberMenu = null
                                 onUpdate(group.name, current().map { if (it.publicId == m.publicId) GroupMemberInput(it.publicId, false) else it })
-                            }) { Text("Deixar de ser administrador") }
+                            }) { Text(s(R.string.t_deixar_de_ser_administrador)) }
                         } else {
                             TextButton(
                                 enabled = admins < GROUP_MAX_ADMINS,
@@ -347,37 +347,37 @@ fun GroupInfoScreen(
                                     memberMenu = null
                                     onUpdate(group.name, current().map { if (it.publicId == m.publicId) GroupMemberInput(it.publicId, true) else it })
                                 },
-                            ) { Text(if (admins < GROUP_MAX_ADMINS) "Tornar administrador" else "Já há $GROUP_MAX_ADMINS administradores") }
+                            ) { Text(if (admins < GROUP_MAX_ADMINS) s(R.string.t_tornar_administrador) else s(R.string.t_ja_ha_administradores, GROUP_MAX_ADMINS)) }
                         }
                         TextButton(onClick = {
                             memberMenu = null
                             onUpdate(group.name, current().filter { it.publicId != m.publicId })
-                        }) { Text("Retirar do grupo", color = MaterialTheme.colorScheme.error) }
+                        }) { Text(s(R.string.t_retirar_do_grupo), color = MaterialTheme.colorScheme.error) }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { memberMenu = null }) { Text("Fechar") } },
+            confirmButton = { TextButton(onClick = { memberMenu = null }) { Text(s(R.string.t_fechar)) } },
         )
     }
     saveContact?.let { m ->
         var nick by remember(m.contactId) { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { saveContact = null },
-            title = { Text("Guardar nos contactos") },
+            title = { Text(s(R.string.t_guardar_nos_contactos)) },
             text = {
-                OutlinedTextField(nick, { nick = it }, label = { Text("Nome") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(nick, { nick = it }, label = { Text(s(R.string.t_nome)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             },
             confirmButton = {
-                TextButton(enabled = nick.isNotBlank(), onClick = { onAddContact(nick.trim(), m.publicId); saveContact = null }) { Text("Guardar") }
+                TextButton(enabled = nick.isNotBlank(), onClick = { onAddContact(nick.trim(), m.publicId); saveContact = null }) { Text(s(R.string.t_guardar)) }
             },
-            dismissButton = { TextButton(onClick = { saveContact = null }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { saveContact = null }) { Text(s(R.string.t_cancelar)) } },
         )
     }
     if (rename) {
         var name by remember { mutableStateOf(group.name) }
         AlertDialog(
             onDismissRequest = { rename = false },
-            title = { Text("Nome do grupo") },
+            title = { Text(s(R.string.t_nome_do_grupo)) },
             text = {
                 OutlinedTextField(
                     name, { name = it },
@@ -385,9 +385,9 @@ fun GroupInfoScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { rename = false; onUpdate(name.trim(), current()) }) { Text("Guardar") }
+                TextButton(onClick = { rename = false; onUpdate(name.trim(), current()) }) { Text(s(R.string.t_guardar)) }
             },
-            dismissButton = { TextButton(onClick = { rename = false }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { rename = false }) { Text(s(R.string.t_cancelar)) } },
         )
     }
     if (adding) {
@@ -397,11 +397,11 @@ fun GroupInfoScreen(
         val room = GROUP_MAX_MEMBERS - group.members.size
         AlertDialog(
             onDismissRequest = { adding = false },
-            title = { Text("Adicionar pessoas") },
+            title = { Text(s(R.string.t_adicionar_pessoas_2)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Ainda cabem $room (${chosen.size} escolhidos).", style = MaterialTheme.typography.bodySmall)
-                    if (choices.isEmpty()) Text("Não há contactos para adicionar.")
+                    Text(s(R.string.t_ainda_cabem_escolhidos, room, chosen.size), style = MaterialTheme.typography.bodySmall)
+                    if (choices.isEmpty()) Text(s(R.string.t_nao_ha_contactos_para_adicionar))
                     LazyColumn(Modifier.heightIn(max = 320.dp)) {
                         items(choices, key = { it.contactId }) { c ->
                             val on = c.contactId in chosen
@@ -425,20 +425,20 @@ fun GroupInfoScreen(
                     adding = false
                     val add = choices.filter { it.contactId in chosen }.map { GroupMemberInput(it.publicId, false) }
                     onUpdate(group.name, current() + add)
-                }) { Text("Adicionar") }
+                }) { Text(s(R.string.t_adicionar)) }
             },
-            dismissButton = { TextButton(onClick = { adding = false }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { adding = false }) { Text(s(R.string.t_cancelar)) } },
         )
     }
     if (confirmLeave) {
         AlertDialog(
             onDismissRequest = { confirmLeave = false },
-            title = { Text("Sair de ${group.name}?") },
-            text = { ObscuredTouchGuard(); Text("Deixas de receber as mensagens do grupo. As que já tens ficam neste telemóvel até apagares o grupo.") },
+            title = { Text(s(R.string.t_sair_de, group.name)) },
+            text = { ObscuredTouchGuard(); Text(s(R.string.t_deixas_de_receber_as_mensagens_do)) },
             confirmButton = {
-                TextButton(onClick = { confirmLeave = false; onLeave() }) { Text("Sair", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = { confirmLeave = false; onLeave() }) { Text(s(R.string.t_sair), color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = { confirmLeave = false }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { confirmLeave = false }) { Text(s(R.string.t_cancelar)) } },
         )
     }
     if (confirmDelete) {
@@ -451,14 +451,13 @@ fun GroupInfoScreen(
 fun GroupDeleteDialog(name: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Apagar $name?") },
+        title = { Text(s(R.string.t_apagar, name)) },
         text = { ObscuredTouchGuard()
             Text(
-                "Sais do grupo (se ainda estiveres) e todas as mensagens dele são apagadas para sempre deste telemóvel. " +
-                    "As mensagens nos telemóveis dos outros membros não são apagadas.",
+                s(R.string.t_sais_do_grupo_se_ainda_estiveres),
             )
         },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("Apagar", color = MaterialTheme.colorScheme.error) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(s(R.string.t_apagar_2), color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) } },
     )
 }
