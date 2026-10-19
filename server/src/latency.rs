@@ -198,6 +198,8 @@ pub fn roll_minute() -> (Summary, Summary) {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LastReading {
     pub avg_ms: u64,
+    /// Mediana da mesma janela (o numero que o site mostra); `None` em ficheiros antigos.
+    pub median_ms: Option<u64>,
     /// Quando foi medida (segundos desde 1970).
     pub at_unix: u64,
 }
@@ -206,21 +208,28 @@ pub struct LastReading {
 /// ou pela anterior, que so tinha `entrega_media_ms` e `atualizado`).
 pub fn parse_last(json: &str) -> Option<LastReading> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    let pair = |a: &str, t: &str| Some(LastReading { avg_ms: v.get(a)?.as_u64()?, at_unix: v.get(t)?.as_u64()? });
-    pair("ultima_media_ms", "ultima_medicao").or_else(|| pair("entrega_media_ms", "atualizado"))
+    let med = v.get("ultima_mediana_ms").and_then(|m| m.as_u64());
+    let pair = |a: &str, t: &str, m: Option<u64>| {
+        Some(LastReading { avg_ms: v.get(a)?.as_u64()?, median_ms: m, at_unix: v.get(t)?.as_u64()? })
+    };
+    pair("ultima_media_ms", "ultima_medicao", med).or_else(|| pair("entrega_media_ms", "atualizado", None))
 }
 
 /// Como `parse_last`, para a ultima media da ida (telemovel -> relay).
 pub fn parse_last_ida(json: &str) -> Option<LastReading> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    Some(LastReading { avg_ms: v.get("ultima_ida_ms")?.as_u64()?, at_unix: v.get("ultima_ida_medicao")?.as_u64()? })
+    Some(LastReading {
+        avg_ms: v.get("ultima_ida_ms")?.as_u64()?,
+        median_ms: v.get("ultima_ida_mediana_ms").and_then(|m| m.as_u64()),
+        at_unix: v.get("ultima_ida_medicao")?.as_u64()?,
+    })
 }
 
 /// JSON publicado em `RELAY_STATUS_FILE` (sem serde na escrita: so numeros).
 pub fn to_json(s: &Summary, updated_unix: u64, last: Option<LastReading>, ida: &Summary, last_ida: Option<LastReading>) -> String {
     let opt = |v: Option<u64>| v.map(|v| v.to_string()).unwrap_or_else(|| "null".to_string());
     format!(
-        "{{\"entrega_media_ms\":{},\"entrega_mediana_ms\":{},\"entrega_p95_ms\":{},\"mensagens\":{},\"janela_minutos\":{},\"espera_maxima_s\":{},\"atualizado\":{updated_unix},\"ultima_media_ms\":{},\"ultima_medicao\":{},\"ida_media_ms\":{},\"ida_mediana_ms\":{},\"ida_p95_ms\":{},\"ida_amostras\":{},\"ultima_ida_ms\":{},\"ultima_ida_medicao\":{}}}\n",
+        "{{\"entrega_media_ms\":{},\"entrega_mediana_ms\":{},\"entrega_p95_ms\":{},\"mensagens\":{},\"janela_minutos\":{},\"espera_maxima_s\":{},\"atualizado\":{updated_unix},\"ultima_media_ms\":{},\"ultima_mediana_ms\":{},\"ultima_medicao\":{},\"ida_media_ms\":{},\"ida_mediana_ms\":{},\"ida_p95_ms\":{},\"ida_amostras\":{},\"ultima_ida_ms\":{},\"ultima_ida_mediana_ms\":{},\"ultima_ida_medicao\":{}}}\n",
         opt(s.avg_ms),
         opt(s.median_ms),
         opt(s.p95_ms),
@@ -228,12 +237,14 @@ pub fn to_json(s: &Summary, updated_unix: u64, last: Option<LastReading>, ida: &
         s.minutes,
         MAX_WAIT.as_secs(),
         opt(last.map(|l| l.avg_ms)),
+        opt(last.and_then(|l| l.median_ms)),
         opt(last.map(|l| l.at_unix)),
         opt(ida.avg_ms),
         opt(ida.median_ms),
         opt(ida.p95_ms),
         ida.messages,
         opt(last_ida.map(|l| l.avg_ms)),
+        opt(last_ida.and_then(|l| l.median_ms)),
         opt(last_ida.map(|l| l.at_unix)),
     )
 }
@@ -342,30 +353,34 @@ mod tests {
     #[test]
     fn json_do_estado() {
         let s = Summary { avg_ms: Some(1520), median_ms: Some(180), p95_ms: Some(9000), messages: 37, minutes: 60 };
-        let last = Some(LastReading { avg_ms: 1520, at_unix: 1_792_000_000 });
+        let last = Some(LastReading { avg_ms: 1520, median_ms: Some(180), at_unix: 1_792_000_000 });
         assert_eq!(
             to_json(&s, 1_792_000_000, last, &Summary::default(), None),
-            "{\"entrega_media_ms\":1520,\"entrega_mediana_ms\":180,\"entrega_p95_ms\":9000,\"mensagens\":37,\"janela_minutos\":60,\"espera_maxima_s\":60,\"atualizado\":1792000000,\"ultima_media_ms\":1520,\"ultima_medicao\":1792000000,\"ida_media_ms\":null,\"ida_mediana_ms\":null,\"ida_p95_ms\":null,\"ida_amostras\":0,\"ultima_ida_ms\":null,\"ultima_ida_medicao\":null}\n"
+            "{\"entrega_media_ms\":1520,\"entrega_mediana_ms\":180,\"entrega_p95_ms\":9000,\"mensagens\":37,\"janela_minutos\":60,\"espera_maxima_s\":60,\"atualizado\":1792000000,\"ultima_media_ms\":1520,\"ultima_mediana_ms\":180,\"ultima_medicao\":1792000000,\"ida_media_ms\":null,\"ida_mediana_ms\":null,\"ida_p95_ms\":null,\"ida_amostras\":0,\"ultima_ida_ms\":null,\"ultima_ida_mediana_ms\":null,\"ultima_ida_medicao\":null}\n"
         );
         let vazio = Summary { minutes: 3, ..Summary::default() };
         let j = to_json(&vazio, 1, None, &vazio, None);
-        assert!(j.starts_with("{\"entrega_media_ms\":null,") && j.contains("\"ultima_media_ms\":null,\"ultima_medicao\":null,"), "{j}");
+        assert!(j.starts_with("{\"entrega_media_ms\":null,") && j.contains("\"ultima_media_ms\":null,\"ultima_mediana_ms\":null,\"ultima_medicao\":null,"), "{j}");
         let ida = Summary { avg_ms: Some(23), median_ms: Some(21), p95_ms: Some(60), messages: 12, minutes: 60 };
-        let j = to_json(&vazio, 1, None, &ida, Some(LastReading { avg_ms: 23, at_unix: 5 }));
-        assert!(j.contains("\"ida_media_ms\":23,\"ida_mediana_ms\":21,\"ida_p95_ms\":60,\"ida_amostras\":12,\"ultima_ida_ms\":23,\"ultima_ida_medicao\":5}"), "{j}");
-        assert_eq!(parse_last_ida(&j), Some(LastReading { avg_ms: 23, at_unix: 5 }));
+        let j = to_json(&vazio, 1, None, &ida, Some(LastReading { avg_ms: 23, median_ms: Some(21), at_unix: 5 }));
+        assert!(j.contains("\"ida_media_ms\":23,\"ida_mediana_ms\":21,\"ida_p95_ms\":60,\"ida_amostras\":12,\"ultima_ida_ms\":23,\"ultima_ida_mediana_ms\":21,\"ultima_ida_medicao\":5}"), "{j}");
+        assert_eq!(parse_last_ida(&j), Some(LastReading { avg_ms: 23, median_ms: Some(21), at_unix: 5 }));
         assert_eq!(parse_last_ida("{\"entrega_media_ms\":1}"), None);
     }
 
     #[test]
     fn ultima_medicao_sobrevive_a_um_reinicio() {
         // Ficheiro desta versao: a ultima medicao vem dos campos proprios.
-        let last = LastReading { avg_ms: 1311, at_unix: 1_792_100_000 };
+        let last = LastReading { avg_ms: 1311, median_ms: Some(150), at_unix: 1_792_100_000 };
         let j = to_json(&Summary { minutes: 60, ..Summary::default() }, 1_792_200_000, Some(last), &Summary::default(), None);
         assert_eq!(parse_last(&j), Some(last));
         // Ficheiro da versao anterior: usa a media e a hora em que foi escrito.
         let antigo = "{\"entrega_media_ms\":2096,\"mensagens\":9,\"janela_minutos\":12,\"espera_maxima_s\":60,\"atualizado\":1792000000}";
-        assert_eq!(parse_last(antigo), Some(LastReading { avg_ms: 2096, at_unix: 1_792_000_000 }));
+        assert_eq!(parse_last(antigo), Some(LastReading { avg_ms: 2096, median_ms: None, at_unix: 1_792_000_000 }));
+        // Ficheiro da 0.9.3 (sem mediana): le a media e fica sem mediana.
+        let sem_mediana = "{\"ultima_media_ms\":900,\"ultima_medicao\":7,\"ultima_ida_ms\":40,\"ultima_ida_medicao\":7}";
+        assert_eq!(parse_last(sem_mediana), Some(LastReading { avg_ms: 900, median_ms: None, at_unix: 7 }));
+        assert_eq!(parse_last_ida(sem_mediana), Some(LastReading { avg_ms: 40, median_ms: None, at_unix: 7 }));
         // Sem medicao nenhuma, ou ficheiro estragado: nada.
         assert_eq!(parse_last("{\"entrega_media_ms\":null,\"atualizado\":1}"), None);
         assert_eq!(parse_last("lixo"), None);

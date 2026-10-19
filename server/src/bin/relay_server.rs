@@ -221,10 +221,10 @@ async fn main() {
                 println!("{line} (ultimos {} min)", summary.minutes);
             }
             if let Some(ms) = summary.avg_ms {
-                last = Some(qt_server::latency::LastReading { avg_ms: ms, at_unix: unix_now() });
+                last = Some(qt_server::latency::LastReading { avg_ms: ms, median_ms: summary.median_ms, at_unix: unix_now() });
             }
             if let Some(ms) = ida.avg_ms {
-                last_ida = Some(qt_server::latency::LastReading { avg_ms: ms, at_unix: unix_now() });
+                last_ida = Some(qt_server::latency::LastReading { avg_ms: ms, median_ms: ida.median_ms, at_unix: unix_now() });
             }
             if let Some(path) = &status_file {
                 write_status(path, &summary, last, &ida, last_ida);

@@ -6,6 +6,15 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: marcador do site com o tempo da mensagem típica
+
+- O marcador ao lado do nome SEALER passa a dizer "entre telemóveis" (dizia "envio") e mostra a
+  **mediana** do envio mais a mediana da entrega da última hora, em vez das médias. Umas poucas
+  mensagens para telemóveis a dormir (acordados pela notificação, até 60 s) puxavam a média para
+  mais de 1,5 s, com a mensagem típica a demorar menos de 200 ms.
+- Relay: o `estado.json` passa a guardar também a última mediana conhecida
+  (`ultima_mediana_ms`, `ultima_ida_mediana_ms`). O site volta à média se o relay ainda não as tiver.
+
 ### 19 de outubro de 2026: segurança do protocolo (app 0.9.3)
 
 Quatro pontos da revisão de desenho, todos no núcleo Rust e no relay (o Kotlin não mudou):
