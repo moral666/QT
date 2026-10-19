@@ -6,6 +6,22 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: chamadas de voz, fase 3 (motor de áudio)
+
+- Novo crate `call/` (`qt_call`): o motor das chamadas, que a app vai usar na fase 4.
+  - `codec.rs`: Opus 1.6.1 (libopus oficial, pelo `opusic-sys`, com CMake) com DRED e PLC
+    neural; voz em banda larga, frames de 20 ms, teto de 126 bytes, sem DTX.
+  - `jitter.rs`: jitter buffer adaptativo (40 a 200 ms), reconstrução de perdas com o DRED do
+    pacote seguinte, espera por pacotes atrasados e redução do atraso quando sobra.
+  - `engine.rs`: microfone, Opus, cifra, relay (UDP com reserva por WebSocket), decifra, jitter
+    buffer e altifalante, com estatísticas (ida e volta ao relay, perdas, DRED, PLC).
+- `tools/call-demo`: ferramenta para ouvir no PC a própria voz depois de ir ao relay e voltar,
+  com perdas simuladas (`--perda 15`).
+- Testes: codec (DRED reconstrói três frames perdidos), jitter buffer e quatro testes de ponta a
+  ponta pelo relay das chamadas (UDP, 15% de perdas recuperadas pelo DRED, WebSocket e passagem
+  automática para WebSocket quando o UDP não responde).
+- Compilar o workspace passa a precisar do `cmake` (para o libopus).
+
 ### 19 de outubro de 2026: chamadas de voz, fase 2 (relay das chamadas)
 
 - Novo processo `qt-call-relay` (`server/src/call_relay.rs`): reencaminha os pacotes de áudio

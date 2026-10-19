@@ -93,8 +93,12 @@ Só Android primeiro, 1 a 1, áudio sempre pelo relay (sem P2P). Quatro fases, c
 antes: 1) núcleo, sinalização (tipo 11) e cifra dos pacotes estilo WireGuard (**feita**,
 `core/src/call.rs`, `ffi/src/call.rs`, `ffi/tests/calls.rs`); 2) relay UDP 443 com salas
 anónimas e reserva por WebSocket sem conta (**feita**, processo à parte `qt-call-relay`,
-`server/src/call_relay.rs`; porta 443 UDP aberta no Security Group a 19/10/2026); 3) Opus 1.5 (DRED, PLC neural), jitter buffer, CBR sem DTX;
-4) Android (ConnectionService, FCM, `VOICE_COMMUNICATION`). Ver `docs/protocol-spec.md`, secção 18.
+`server/src/call_relay.rs`; porta 443 UDP aberta no Security Group a 19/10/2026; testado em
+produção a partir de casa do Nuno: ida e volta PC-relay-PC-relay-PC de 128 ms); 3) motor de áudio
+(**feita**, crate `call/` = `qt_call`: libopus 1.6.1 com DRED e PLC neural pelo `opusic-sys`, jitter
+buffer adaptativo, rede com reserva WebSocket; ferramenta `tools/call-demo`); 4) Android
+(ConnectionService, FCM, `VOICE_COMMUNICATION`; decidir aí se a reserva WebSocket fica no Rust com
+rustls ou no OkHttp). Ver `docs/protocol-spec.md`, secção 18.
 
 ### Funcionalidades da 0.9.0
 
@@ -110,7 +114,18 @@ cifrado vai uma vez ao relay; nos grupos quem recebe não o apaga, o relay apaga
 cargo test -p qt_ffi --features pq      # núcleo da app (inclui grupos e presença)
 cargo test -p qt_storage
 cargo test -p qt_server                 # precisa de Redis local: redis-cli ping || redis-server --daemonize yes
+cargo test -p qt_call                   # motor das chamadas (precisa do cmake: compila o libopus)
 ./ffi/generate_bindings.sh              # gera os bindings e corre os testes em Python
+```
+
+### Testar as chamadas no PC (ferramenta de eco)
+
+Precisa de `sudo apt install cmake libasound2-dev` e de auscultadores:
+```
+cd ~/QT-repo/tools/call-demo && cargo run --release -- eco            # voz -> relay -> auscultadores
+cargo run --release -- eco --perda 15                                # 15% de pacotes perdidos
+cargo run --release -- eco --ws                                      # reserva wss://.../call
+cargo run --release -- eco --tom                                     # som de teste, sem microfone
 ```
 
 ### Build automática (GitHub Actions)
@@ -173,6 +188,9 @@ o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo
 - Às vezes o crates.io e o push para o GitHub estão bloqueados na nuvem: aí o Rust não compila
   aqui (só `rustfmt --check` para a sintaxe) e o Nuno faz o commit e o push no PC; a CI compila e testa.
   O Nuno ligou "Allow network egress" a 19/10/2026: com isso o crates.io funciona.
+- Na nuvem há `cmake`; o ALSA para a ferramenta `tools/call-demo` instala-se com
+  `apt-get update && apt-get install -y libasound2-dev`. A nuvem não chega ao relay por UDP (só DNS):
+  testar a produção a partir do PC do Nuno.
 - Na nuvem não há `libsqlcipher`: compilar e testar com o SQLCipher embutido, por exemplo
   `cargo test -p qt_ffi --features "pq qt_storage/bundled-sqlcipher"` e
   `cargo test -p qt_server -p qt_storage --features qt_storage/bundled-sqlcipher`.

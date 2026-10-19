@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["core", "transport", "server", "demo", "cli", "storage", "ffi"]
+members = ["core", "transport", "server", "demo", "cli", "storage", "ffi", "call"]
 
 # Binarios de release (incluindo libqt_ffi.so para Android): sem simbolos de
 # debug, otimizacao entre crates. NAO usar panic = "abort": o UniFFI apanha

@@ -709,13 +709,14 @@ novas", sem abrir a base de dados nem decifrar nada em segundo plano (funciona c
 bloqueado e com o bloqueio da app). As mensagens só são buscadas quando a app abre. Nos primeiros
 30 s em segundo plano a app ainda está ligada (o relay não toca): o aviso é então criado pela app.
 
-## 18. Chamadas de voz 1 a 1 (fases 1 e 2: sinalização, cifra dos pacotes e relay)
+## 18. Chamadas de voz 1 a 1 (fases 1 a 3: sinalização, cifra, relay e áudio)
 
 Desenho aprovado a 19/10/2026: só Android primeiro, sem ligação direta entre telemóveis (o áudio
 passa sempre pelo relay, o contacto nunca vê o IP). Fase 1 no núcleo (`core/src/call.rs`,
 `ffi/src/call.rs`, testes em `ffi/tests/calls.rs`); fase 2 no relay das chamadas
 (`server/src/call_relay.rs`, `server/src/bin/call_relay.rs`, testes em
-`server/tests/call_relay_e2e.rs`). O áudio Opus (fase 3) e a app (fase 4) vêm depois.
+`server/tests/call_relay_e2e.rs`); fase 3 no motor de áudio (`call/`, crate `qt_call`, testes em
+`call/tests/engine_e2e.rs`). A app Android (fase 4) vem depois.
 
 **Sinalização (tipo 11, dentro do Double Ratchet).** Vai como as outras mensagens (envelope v3
 com enchimento): o relay não sabe que é uma chamada. `msg_id` = `call_id` (16 bytes aleatórios),
@@ -776,6 +777,25 @@ redes que bloqueiam UDP: `wss://<relay>/call` (WebSocket sem conta, pelo HAProxy
 * Limites: 2 lados por sala; a sala fecha se o segundo não entrar em 60 s ou ao fim de 30 s sem
   nada; 2 000 salas no total e 20 por IP (redes móveis com CGNAT); 60 pedidos de entrada por IP a
   cada 10 s; 100 pacotes/s por lado. Sem registos com IPs: uma linha por minuto só com contagens.
+
+**Áudio (fase 3, `qt_call`).** libopus 1.6.1 (crate `opusic-sys` 0.7.5, licença BSD, compilado com
+CMake), com o DRED e o PLC neural (os modelos vêm no pacote).
+
+* Opus: 48 kHz mono, frames de 20 ms, voz em banda larga, VBR com restrição e teto de 126 bytes
+  (cabe no `pad` 128 do pacote, que tem sempre o mesmo tamanho), sem DTX e sem o FEC interno
+  (LBRR). Débito pedido 36 kbit/s com perda esperada de 10% e DRED até 500 ms: o libopus tira os
+  bits do DRED ao débito total, e na prática cada pacote cobre ~200 ms para trás. Medido: ~90
+  bytes por frame. Descodificador com complexidade 5 (PLC neural).
+* Jitter buffer (`call/src/jitter.rs`): atraso alvo de 40 a 200 ms, pelo percentil 95 da variação
+  das chegadas dos últimos 3 s. Frame em falta com um pacote mais à frente: perdido, reconstruído
+  com o DRED desse pacote. Sem nada à frente: espera até 100 ms (PLC sem avançar, o atraso cresce
+  20 ms de cada vez) e depois desiste. Atraso a mais durante 0,5 s: salta um frame.
+* Motor (`call/src/engine.rs`): a app entrega 20 ms do microfone (`push_capture`) e pede 20 ms
+  para tocar (`pull_playback`); a rede corre numa thread própria. Entra na sala (pedido a cada
+  500 ms até à resposta, a cada 10 s depois, o que mede também a ida e volta ao relay), envia por
+  UDP e passa para `wss://<relay>/call` se o UDP não responder em 2 s.
+* Ferramenta do PC `tools/call-demo` (fora do workspace, precisa do ALSA): modo eco, a voz vai ao
+  relay e volta, com `--perda N` para simular pacotes perdidos.
 
 **API (`QtClient`).** `call_start`, `call_accept`, `call_hangup` (o motivo sai do estado),
 `call_events` (Incoming, Ringing, Answered, Ended; chamar depois de cada lote recebido e de
