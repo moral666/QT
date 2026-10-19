@@ -16,12 +16,21 @@ use sha2::{Digest, Sha512};
 use thiserror::Error;
 use x25519_dalek::PublicKey;
 
+/// Bundle v3 (apps ate a 0.9.2): ainda aceite pelo relay, ja nao publicado.
 pub const BUNDLE_VERSION: u8 = 3;
 pub const PQ_PUBLIC_KEY_BYTES: usize = 1184;
 /// [1 ver][32 identity][32 signing][32 signed_prekey][64 assinatura][4 pq_id BE][1184 pq_pub]
 pub const BUNDLE_LEN: usize = 1 + 32 + 32 + 32 + 64 + 4 + PQ_PUBLIC_KEY_BYTES;
 
+/// Bundle v4 (desde a app 0.9.3): a signed pre-key tem numero (para poder rodar) e o
+/// bundle tem a hora em que foi criado, tudo coberto pela assinatura.
+pub const BUNDLE_VERSION_V4: u8 = 4;
+/// [1 ver=4][32 identity][32 signing][4 spk_id BE][32 signed_prekey][8 criado_em BE (s unix)]
+/// [64 assinatura][4 pq_id BE][1184 pq_pub]
+pub const BUNDLE_V4_LEN: usize = 1 + 32 + 32 + 4 + 32 + 8 + 64 + 4 + PQ_PUBLIC_KEY_BYTES;
+
 const BUNDLE_SIG_CONTEXT_V2: &[u8] = b"QT-PQXDH-v2-bundle";
+const BUNDLE_SIG_CONTEXT_V4: &[u8] = b"QT-PQXDH-v4-bundle";
 const AD_CONTEXT: &[u8] = b"QT-AD-v1";
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -70,8 +79,114 @@ pub fn encode_bundle(
     Some(out)
 }
 
+/// Mensagem assinada no bundle v4: alem do v3, cobre o numero da signed pre-key, a
+/// hora de criacao e o numero da prekey ML-KEM (um relay nao consegue servir uma
+/// signed pre-key antiga como se fosse recente, nem trocar os numeros).
+pub fn bundle_v4_signed_message(
+    identity_key: &PublicKey,
+    signed_pre_key_id: u32,
+    signed_pre_key: &PublicKey,
+    created_at: u64,
+    pq_pre_key_id: u32,
+    pq_pre_key_bytes: &[u8],
+) -> Vec<u8> {
+    let mut m = BUNDLE_SIG_CONTEXT_V4.to_vec();
+    m.extend_from_slice(identity_key.as_bytes());
+    m.extend_from_slice(&signed_pre_key_id.to_be_bytes());
+    m.extend_from_slice(signed_pre_key.as_bytes());
+    m.extend_from_slice(&created_at.to_be_bytes());
+    m.extend_from_slice(&pq_pre_key_id.to_be_bytes());
+    m.extend_from_slice(pq_pre_key_bytes);
+    m
+}
+
+/// Serializa e ASSINA o bundle v4 a publicar.
+pub fn encode_bundle_v4(
+    identity_key: &PublicKey,
+    signing: &SigningKeyPair,
+    signed_pre_key_id: u32,
+    signed_pre_key: &PublicKey,
+    created_at: u64,
+    pq_pre_key_id: u32,
+    pq_pre_key_bytes: &[u8],
+) -> Option<Vec<u8>> {
+    if pq_pre_key_bytes.len() != PQ_PUBLIC_KEY_BYTES {
+        return None;
+    }
+    let msg = bundle_v4_signed_message(identity_key, signed_pre_key_id, signed_pre_key, created_at, pq_pre_key_id, pq_pre_key_bytes);
+    let sig = signing.sign(&msg);
+    let mut out = Vec::with_capacity(BUNDLE_V4_LEN);
+    out.push(BUNDLE_VERSION_V4);
+    out.extend_from_slice(identity_key.as_bytes());
+    out.extend_from_slice(&signing.verifying_key.to_bytes());
+    out.extend_from_slice(&signed_pre_key_id.to_be_bytes());
+    out.extend_from_slice(signed_pre_key.as_bytes());
+    out.extend_from_slice(&created_at.to_be_bytes());
+    out.extend_from_slice(&sig.to_bytes());
+    out.extend_from_slice(&pq_pre_key_id.to_be_bytes());
+    out.extend_from_slice(pq_pre_key_bytes);
+    Some(out)
+}
+
+/// Campos de um bundle v4 ja separados (a assinatura ainda NAO esta verificada:
+/// usar `verify_bundle_v4`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BundleV4 {
+    pub identity: [u8; 32],
+    pub signing: [u8; 32],
+    pub signed_pre_key_id: u32,
+    pub signed_pre_key: [u8; 32],
+    pub created_at: u64,
+    pub signature: [u8; 64],
+    pub pq_pre_key_id: u32,
+    pub pq_pre_key: Vec<u8>,
+}
+
+/// Separa os campos de um bundle v4 (so formato e tamanhos).
+pub fn parse_bundle_v4(bytes: &[u8]) -> Result<BundleV4, IdentityError> {
+    if bytes.len() != BUNDLE_V4_LEN || bytes[0] != BUNDLE_VERSION_V4 {
+        return Err(IdentityError::BadFormat);
+    }
+    let f = |a: usize, b: usize| bytes.get(a..b).ok_or(IdentityError::BadFormat);
+    let u32_at = |a: usize| -> Result<u32, IdentityError> {
+        Ok(u32::from_be_bytes(f(a, a + 4)?.try_into().map_err(|_| IdentityError::BadFormat)?))
+    };
+    Ok(BundleV4 {
+        identity: f(1, 33)?.try_into().map_err(|_| IdentityError::BadFormat)?,
+        signing: f(33, 65)?.try_into().map_err(|_| IdentityError::BadFormat)?,
+        signed_pre_key_id: u32_at(65)?,
+        signed_pre_key: f(69, 101)?.try_into().map_err(|_| IdentityError::BadFormat)?,
+        created_at: u64::from_be_bytes(f(101, 109)?.try_into().map_err(|_| IdentityError::BadFormat)?),
+        signature: f(109, 173)?.try_into().map_err(|_| IdentityError::BadFormat)?,
+        pq_pre_key_id: u32_at(173)?,
+        pq_pre_key: f(177, BUNDLE_V4_LEN)?.to_vec(),
+    })
+}
+
+/// Verifica a assinatura de um bundle v4 com a chave Ed25519 nele contida.
+pub fn verify_bundle_v4(b: &BundleV4) -> Result<(), IdentityError> {
+    let vk = VerifyingKey::from_bytes(&b.signing).map_err(|_| IdentityError::BadFormat)?;
+    let msg = bundle_v4_signed_message(
+        &PublicKey::from(b.identity),
+        b.signed_pre_key_id,
+        &PublicKey::from(b.signed_pre_key),
+        b.created_at,
+        b.pq_pre_key_id,
+        &b.pq_pre_key,
+    );
+    verify_signature(&vk, &msg, &Signature::from_bytes(&b.signature)).map_err(|_| IdentityError::BadSignature)
+}
+
 /// Verifica formato, dono (chave Ed25519 == `expected_signing`) e assinatura.
+/// Aceita o bundle v4 (atual) e o v3 (apps ate a 0.9.2).
 pub fn verify_published_bundle(bytes: &[u8], expected_signing: &[u8; 32]) -> Result<(), IdentityError> {
+    if bytes.first() == Some(&BUNDLE_VERSION_V4) {
+        let b = parse_bundle_v4(bytes)?;
+        if &b.signing != expected_signing {
+            return Err(IdentityError::WrongOwner);
+        }
+        return verify_bundle_v4(&b);
+    }
     if bytes.len() != BUNDLE_LEN || bytes[0] != BUNDLE_VERSION {
         return Err(IdentityError::BadFormat);
     }
@@ -173,5 +288,31 @@ mod tests {
         t[1..33].copy_from_slice(DhKeyPair::generate().public.as_bytes());
         assert_eq!(verify_published_bundle(&t, &me), Err(IdentityError::BadSignature));
         assert_eq!(verify_published_bundle(&b[..100], &me), Err(IdentityError::BadFormat));
+    }
+
+    #[test]
+    fn bundle_v4_assinado_cobre_numeros_e_data() {
+        let id = DhKeyPair::generate();
+        let spk = DhKeyPair::generate();
+        let sg = SigningKeyPair::generate();
+        let pq = [9u8; PQ_PUBLIC_KEY_BYTES];
+        let b = encode_bundle_v4(&id.public, &sg, 7, &spk.public, 1_790_000_000, 3, &pq).unwrap();
+        assert_eq!(b.len(), BUNDLE_V4_LEN);
+        let me = sg.verifying_key.to_bytes();
+        assert_eq!(verify_published_bundle(&b, &me), Ok(()));
+        let p = parse_bundle_v4(&b).unwrap();
+        assert_eq!((p.signed_pre_key_id, p.created_at, p.pq_pre_key_id), (7, 1_790_000_000, 3));
+        assert_eq!(p.identity, id.public.to_bytes());
+        assert_eq!(p.signed_pre_key, spk.public.to_bytes());
+        assert_eq!(p.pq_pre_key, pq.to_vec());
+        let outro = SigningKeyPair::generate().verifying_key.to_bytes();
+        assert_eq!(verify_published_bundle(&b, &outro), Err(IdentityError::WrongOwner));
+        // Mudar o numero da signed pre-key, a data ou o numero da prekey PQ parte a assinatura.
+        for pos in [66usize, 105, 176] {
+            let mut t = b.clone();
+            t[pos] ^= 1;
+            assert_eq!(verify_published_bundle(&t, &me), Err(IdentityError::BadSignature), "byte {pos}");
+        }
+        assert_eq!(parse_bundle_v4(&b[..200]), Err(IdentityError::BadFormat));
     }
 }

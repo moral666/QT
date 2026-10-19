@@ -99,18 +99,18 @@ async fn utilizadores_nao_acedem_a_filas_ou_bundles_de_outros() {
     assert!(matches!(r, ServerMessage::Error { .. }));
     let r = m.request(ClientMessage::AckMessages { user_id: uid(&bob), ids: vec![1, 2, 3] }).await.unwrap();
     assert!(matches!(r, ServerMessage::Error { .. }));
-    let r = m.request(ClientMessage::RegisterPreKeyBundle { user_id: uid(&bob), bundle_bytes: common::valid_bundle(&mallory, 9) }).await.unwrap();
+    let r = m.request(ClientMessage::RegisterPreKeyBundle { user_id: uid(&bob), bundle_bytes: common::valid_bundle(&mallory, 9), pow: None, one_time_pre_keys: None }).await.unwrap();
     assert!(matches!(r, ServerMessage::Error { .. }), "nao se escreve no slot do Bob");
     // Mallory regista no SEU slot um bundle que reclama a chave do Bob (e assinado por Bob): recusado.
-    let r = m.request(ClientMessage::RegisterPreKeyBundle { user_id: uid(&mallory), bundle_bytes: bundle_bob.clone() }).await.unwrap();
+    let r = m.request(ClientMessage::RegisterPreKeyBundle { user_id: uid(&mallory), bundle_bytes: bundle_bob.clone(), pow: None, one_time_pre_keys: None }).await.unwrap();
     assert!(matches!(r, ServerMessage::Error { .. }), "bundle de outra identidade");
     // Mallory assina o seu bundle mas adultera a identidade X25519 depois: assinatura invalida.
     let mut adulterado = common::valid_bundle(&mallory, 9);
     adulterado[1] ^= 0xFF;
-    let r = m.request(ClientMessage::RegisterPreKeyBundle { user_id: uid(&mallory), bundle_bytes: adulterado }).await.unwrap();
+    let r = m.request(ClientMessage::RegisterPreKeyBundle { user_id: uid(&mallory), bundle_bytes: adulterado, pow: None, one_time_pre_keys: None }).await.unwrap();
     assert!(matches!(r, ServerMessage::Error { .. }), "assinatura nao cobre a identidade");
     // Lixo arbitrario no proprio slot tambem e recusado.
-    let r = m.request(ClientMessage::RegisterPreKeyBundle { user_id: uid(&mallory), bundle_bytes: b"falso".to_vec() }).await.unwrap();
+    let r = m.request(ClientMessage::RegisterPreKeyBundle { user_id: uid(&mallory), bundle_bytes: b"falso".to_vec(), pow: None, one_time_pre_keys: None }).await.unwrap();
     assert!(matches!(r, ServerMessage::Error { .. }));
 
     assert_eq!(a.fetch_bundle(&uid(&bob)).await.unwrap().unwrap(), bundle_bob);
@@ -179,7 +179,9 @@ async fn limites_e_validacao_de_entrada() {
 
 #[tokio::test]
 async fn fila_cheia_e_rejeitada_sem_derrubar_o_relay() {
-    let relay = TestRelay::start(fast_cfg()).await;
+    // Sem o limite de envios por conta (300 por minuto), para chegar as 1000 da fila.
+    let no_rate = qt_server::limits::Rate { burst: 0, per_minute: 0 };
+    let relay = TestRelay::start(ServerConfig { send_rate: no_rate, ..fast_cfg() }).await;
     let (alice, bob) = (SigningKeyPair::generate(), SigningKeyPair::generate());
     let mut a = client(&relay, &alice, RelayConfig { request_timeout: Duration::from_secs(5), ..quick() }).await;
     let mut last = Ok(());

@@ -72,6 +72,14 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     assert_eq!(q.len(), 1);
     assert_eq!(store.ack_messages(&alice, &[q[0].id]).await.unwrap(), 1);
 
+    // One-time prekeys (0.9.3): DEL + RPUSH + EXPIRE numa transacao (MULTI/EXEC), LPOP e LLEN.
+    store.replace_one_time_prekeys(&alice, &[vec![1; 36], vec![2; 36]]).await.unwrap();
+    assert_eq!(store.count_one_time_prekeys(&alice).await.unwrap(), 2);
+    assert_eq!(store.pop_one_time_prekey(&alice).await.unwrap(), Some(vec![1; 36]));
+    store.replace_one_time_prekeys(&alice, &[vec![3; 36]]).await.unwrap();
+    assert_eq!(store.pop_one_time_prekey(&alice).await.unwrap(), Some(vec![3; 36]));
+    assert_eq!(store.pop_one_time_prekey(&alice).await.unwrap(), None);
+
     // Anexos: todos os comandos novos (HMSET, HSET, HGET, HGETALL, DEL, INCRBY, DECRBY).
     let (id, token) = store.blob_create(&alice, 5).await.unwrap();
     let b64 = base64::engine::general_purpose::STANDARD.encode([7u8; 5]);

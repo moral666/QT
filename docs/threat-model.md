@@ -79,8 +79,8 @@ e depois alimenta a root key do Double Ratchet.
   * **O transporte Noise é clássico.** Só o E2EE (conteúdo) é híbrido.
   * ML-KEM é uma implementação (`ml-kem 0.2.3`) **sem auditoria independente**
     e sem garantias de tempo constante verificadas por nós.
-  * Sem *transcript binding*: o HKDF não inclui as chaves públicas nem o
-    ciphertext KEM (mantido para compatibilidade com o formato v0.1).
+  * Desde a app 0.9.3 (PQXDH v2) o HKDF inclui a transcrição (todas as chaves
+    públicas e o ciphertext KEM). Sessões iniciadas antes continuam com o v1.
 
 ## 4. O que NÃO está protegido (limitações)
 
@@ -96,13 +96,14 @@ e depois alimenta a root key do Double Ratchet.
 * **O relay pode censurar, atrasar, descartar ou reordenar** (disponibilidade
   não é garantida). Não há federação.
 * **Spam / abuso:** qualquer utilizador autenticado pode enfileirar mensagens
-  para qualquer `user_id` (limite de 1000 mensagens por fila). Não há *rate
-  limiting*, nem consentimento de contacto no relay.
-* **Sem one-time prekeys servidas pelo relay:** o relay entrega o mesmo
-  bundle a todos (sem OTPK). O PQXDH sem OTPK é válido mas perde a proteção
-  extra contra replay do handshake inicial.
-* **Bundles sem validade:** um relay pode servir um bundle antigo (signed
-  pre-key e prekey PQ não rodam automaticamente nem têm timestamp).
+  para qualquer `user_id` (limite de 1000 mensagens por fila). Desde a 0.9.3 há
+  limites por conta (300 envelopes por minuto) e uma prova de trabalho ao criar
+  conta (alguns segundos de CPU), mas um atacante com muitas máquinas continua a
+  conseguir criar contas. Não há consentimento de contacto no relay.
+* **One-time prekeys e validade dos bundles (desde a 0.9.3):** o relay entrega uma
+  one-time prekey por pedido e o bundle tem data assinada (recusado com mais de 90
+  dias). Quem pede bundles em massa pode esgotar as one-time prekeys de alguém (o
+  limite por conta atrasa isto); sem elas o PQXDH continua válido.
 * **Rollback do armazenamento:** quem restaurar uma cópia antiga do ficheiro
   SQLCipher faz o ratchet recuar (reabrindo janelas de replay/chaves antigas).
   O SQLCipher protege confidencialidade e integridade das páginas, não a

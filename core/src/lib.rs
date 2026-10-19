@@ -14,6 +14,7 @@
 //! (transporte, sealed sender, armazenamento persistente).
 
 pub mod identity;
+pub mod pow;
 pub mod primitives;
 pub mod x3dh;
 pub mod ratchet;

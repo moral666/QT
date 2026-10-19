@@ -43,6 +43,12 @@ pub struct Stats {
     pub rejected_unauthenticated: AtomicU64,
     /// Ligacoes antigas fechadas porque a mesma conta abriu uma nova acima do maximo.
     pub closed_oldest: AtomicU64,
+    /// Registos de conta nova recusados por falta de prova de trabalho valida.
+    pub pow_rejected: AtomicU64,
+    /// Pedidos recusados por passarem o limite por conta (envios, bundles).
+    pub rate_limited: AtomicU64,
+    /// One-time prekeys entregues com um bundle.
+    pub otpks_served: AtomicU64,
 }
 
 pub static STATS: Stats = Stats {
@@ -72,6 +78,9 @@ pub static STATS: Stats = Stats {
     push_failed: AtomicU64::new(0),
     rejected_unauthenticated: AtomicU64::new(0),
     closed_oldest: AtomicU64::new(0),
+    pow_rejected: AtomicU64::new(0),
+    rate_limited: AtomicU64::new(0),
+    otpks_served: AtomicU64::new(0),
 };
 
 pub fn inc(c: &AtomicU64) {
@@ -112,6 +121,9 @@ pub fn take_line(s: &Stats) -> Option<String> {
         ("notificacoes_falhadas", t(&s.push_failed)),
         ("por_autenticar_cheio", t(&s.rejected_unauthenticated)),
         ("antigas_fechadas", t(&s.closed_oldest)),
+        ("sem_prova_de_trabalho", t(&s.pow_rejected)),
+        ("limite_por_conta", t(&s.rate_limited)),
+        ("otpks_entregues", t(&s.otpks_served)),
     ];
     let active = s.active.load(Relaxed);
     if active == 0 && v.iter().all(|(_, n)| *n == 0) {

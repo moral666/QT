@@ -53,18 +53,15 @@ seguir.
   ainda não existe no repositório.
 - [ ] **Auditoria de segurança externa**: nenhuma alegação de segurança
   deveria ser levada a sério sem isto; é a prioridade mais alta desta fase.
-- [ ] **Limites no relay por utilizador** (rate limiting, anti-spam, limite
-  de bytes por fila). Hoje há só o limite de 1000 mensagens por fila e a
-  quota diária das imagens.
-- [ ] **One-time prekeys servidas pelo relay**, uma por pedido. Hoje o relay
-  entrega o mesmo bundle a todos, sem one-time prekey (o PQXDH continua
-  válido, mas perde essa proteção extra).
-- [ ] **Validade e rotação** da signed pre-key e da prekey ML-KEM.
+- [x] **Limites no relay por utilizador** (0.9.3): ligações por IP e por conta,
+  envios e pedidos de bundle por minuto, prova de trabalho ao criar conta.
+- [x] **One-time prekeys servidas pelo relay**, uma por pedido (0.9.3).
+- [x] **Validade e rotação** da signed pre-key e da prekey ML-KEM (0.9.3, 7 dias).
+- [x] **PQXDH v2** com transcrição no HKDF (0.9.3).
 - [ ] **Reinício de sessão completo:** falta o caso em que quem apagou o
   contacto recebe a primeira mensagem (ver `docs/known-limitations.md`, 10).
-- [ ] **Padding de tamanho das mensagens de texto e jitter de timing**, para
-  dificultar a análise de tráfego por quem observe o relay (as imagens já vão
-  com o tamanho arredondado).
+- [x] **Enchimento do tamanho das mensagens de texto** (0.9.3: 4 tamanhos fixos).
+- [ ] **Jitter de timing**, para dificultar a análise de tráfego por quem observe o relay.
 
 ## Fase de escala (mais distante, mas desenhada desde o início)
 

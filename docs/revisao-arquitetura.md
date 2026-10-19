@@ -27,7 +27,7 @@ a versão final, quando o protocolo estiver congelado.
 
 ## 2. Estado do projeto
 
-- Versão da app Android: 0.9.2 (alpha), testada em 3 telemóveis. A app iPhone está atrasada
+- Versão da app Android: 0.9.3 (alpha), testada em 3 telemóveis. A app iPhone está atrasada
   e fora do âmbito desta revisão.
 - Um relay em produção (AWS eu-north-1, t3.small), usado só por testadores.
 - Código aberto (AGPL, com licença comercial dupla), repositório `moral666/QT`, ramo
@@ -82,12 +82,12 @@ Ordenadas por custo de mudar mais tarde. Cada uma tem a pergunta concreta.
 |---|---|---|
 | 1 | Endereço do relay: desde a app 0.9.2 é `relay.sealer.pt`, um registo DNS sem proxy (de propósito, para nenhum intermediário ver os IPs dos utilizadores). Sem proteção contra DDoS além da básica da AWS | Este compromisso (privacidade em vez de proteção contra DDoS) é aceitável? Há alternativas que não exponham os IPs a terceiros? |
 | 2 | Uma só chave do relay fixa na app, sem forma de a trocar (já há cópia de segurança fora do servidor) | Que mecanismo de rotação recomendam (por exemplo, a app aceitar a chave atual e uma de reserva)? |
-| 3 | HKDF do PQXDH sem *transcript binding* e com salt vazio | Vale a pena mudar já, enquanto só há testadores (as sessões atuais deixam de servir)? Que formato recomendam? |
-| 4 | Sem one-time prekeys servidas pelo relay; signed pre-key e prekey ML-KEM sem rotação nem validade | É prioritário antes da versão 1.0? Que período de rotação? |
+| 3 | Feito na 0.9.3: PQXDH v2 com transcrição, prefixo 0xFF e salt de zeros (`docs/protocol-spec.md` §8) | O formato da transcrição e a forma de manter o v1 só para receber estão corretos? |
+| 4 | Feito na 0.9.3: one-time prekeys servidas pelo relay (sem assinatura, como no Signal), rotação de 7 dias, bundle com data assinada e recusado com mais de 90 dias (§9) | Os períodos (7, 35 e 90 dias) e o lote diário de 100 são razoáveis? |
 | 5 | Duas ligações por app, protocolo sequencial | Multiplexar pedidos numa só ligação (pedidos com identificador) traz algum risco de segurança que devamos considerar no desenho? |
-| 6 | Já há limites de ligações por IP e por conta (secção 3), mas criar uma conta é gerar uma chave, sem custo, e não há limite de mensagens | Que defesa contra spam recomendam ao nível do desenho (prova de trabalho no registo, limite de mensagens, consentimento de contacto)? |
+| 6 | Limites de ligações por IP e por conta, 300 envelopes e 60 bundles por minuto por conta, e prova de trabalho Argon2id (8 MiB, 7 bits) para criar conta (0.9.3) | A prova de trabalho é suficiente, ou recomendam outra defesa (consentimento de contacto)? |
 | 7 | Anexos: o relay vê que utilizador enviou e que utilizador descarregou cada ficheiro | Faz sentido descarregar os anexos por uma ligação sem autenticação, para não ligar quem fala com quem? |
-| 8 | Tamanho das mensagens de texto sem enchimento; o campo `silent` diz ao relay que um envio não é uma mensagem | Quanto pesa esta fuga de metadados e que enchimento recomendam? |
+| 8 | Feito na 0.9.3: enchimento até 256, 1024, 4096 ou 10 240 bytes (§10). O campo `silent` continua a dizer ao relay que um envio não é uma mensagem | Os tamanhos são adequados? Vale a pena esconder também o `silent`? |
 | 9 | Deploy: o servidor compila código vindo do GitHub, como root | Devemos passar a compilar no CI e instalar só binários assinados? |
 | 10 | Um só servidor e Redis sem réplica (sem segunda máquina, por custo) | Qual é o mínimo aceitável para uma versão pública sem aumentar o custo mensal? |
 

@@ -109,7 +109,12 @@ async fn main() {
     let resp = enviar_ao_servidor(
         &server_url,
         bob_identity_signing.to_bytes(),
-        ClientMessage::RegisterPreKeyBundle { user_id: bob_uid.clone(), bundle_bytes },
+        ClientMessage::RegisterPreKeyBundle {
+            user_id: bob_uid.clone(),
+            bundle_bytes,
+            pow: qt_core::pow::pow_solve(&bob_identity_signing.verifying_key.to_bytes(), qt_core::pow::POW_BITS),
+            one_time_pre_keys: None,
+        },
     )
     .await;
     println!("    servidor respondeu: {resp:?}");
@@ -126,7 +131,7 @@ async fn main() {
     )
     .await;
     let bob_bundle = match resp {
-        ServerMessage::PreKeyBundle { bundle_bytes } => {
+        ServerMessage::PreKeyBundle { bundle_bytes, .. } => {
             wire_format::deserialize_bundle(&bundle_bytes).expect("bundle invalido")
         }
         other => panic!("esperava PreKeyBundle, recebi {other:?}"),

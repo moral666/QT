@@ -24,6 +24,8 @@ pub mod applock;
 pub mod attachments;
 #[cfg(feature = "pq")]
 pub mod client;
+#[cfg(feature = "pq")]
+pub(crate) mod prekeys;
 pub mod groups;
 pub mod presence;
 pub mod history;

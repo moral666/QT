@@ -31,17 +31,12 @@ impl Peer {
     fn restart(&mut self) {
         self.c = QtClient::open(self.path.clone(), self.key.to_vec()).unwrap();
     }
+    /// Bundle v4 publicado + a one-time prekey `n` de um lote novo (como o relay entrega).
     fn peer_bundle(&self, n: usize) -> PeerBundle {
-        let b = self.c.generate_prekey_bundle(5).unwrap();
-        PeerBundle {
-            identity_public: b.identity_public,
-            signing_public: b.signing_public,
-            signed_pre_key_public: b.signed_pre_key_public,
-            signed_pre_key_signature: b.signed_pre_key_signature,
-            pq_pre_key_id: b.pq_pre_key_id,
-            pq_pre_key_public: b.pq_pre_key_public,
-            one_time_pre_key: b.one_time_pre_keys.get(n).cloned(),
-        }
+        let otpks = self.c.generate_prekey_bundle(5).unwrap().one_time_pre_keys;
+        let mut b = peer_bundle_from_relay_bytes(self.c.publishable_bundle().unwrap()).unwrap();
+        b.one_time_pre_key = otpks.get(n).cloned();
+        b
     }
 }
 fn cid(p: &Peer) -> String {
@@ -190,7 +185,9 @@ fn clone_bundle(b: &PeerBundle) -> PeerBundle {
     PeerBundle {
         identity_public: b.identity_public.clone(),
         signing_public: b.signing_public.clone(),
+        signed_pre_key_id: b.signed_pre_key_id,
         signed_pre_key_public: b.signed_pre_key_public.clone(),
+        created_at: b.created_at,
         signed_pre_key_signature: b.signed_pre_key_signature.clone(),
         pq_pre_key_id: b.pq_pre_key_id,
         pq_pre_key_public: b.pq_pre_key_public.clone(),
@@ -400,4 +397,42 @@ fn mensagem_atrasada_da_cadeia_anterior_chega_depois_do_dh_ratchet() {
     let e3 = a.c.encrypt(bob_cid, b"a3".to_vec()).unwrap(); // cadeia DH nova
     assert_eq!(b.c.decrypt(alice_cid.clone(), e3).unwrap(), b"a3");
     assert_eq!(b.c.decrypt(alice_cid, e2).unwrap(), b"a2", "recupera via PN");
+}
+
+// ------------------------------------------------------------ enchimento (0.9.3)
+
+#[test]
+fn mensagens_curtas_de_tamanhos_diferentes_dao_envelopes_iguais() {
+    let (a, b, bob_cid, _) = setup();
+    let alice_cid = cid(&a);
+    // A primeira leva o cabecalho PQXDH; depois de o Bob responder, ja nao.
+    let first = a.c.encrypt(bob_cid.clone(), b"ola".to_vec()).unwrap();
+    assert_eq!(first[..2], [3, 2], "envelope v3 com cabecalho PQXDH v2");
+    assert_eq!(b.c.decrypt(alice_cid.clone(), first).unwrap(), b"ola");
+    let reply = b.c.encrypt(alice_cid.clone(), b"ok".to_vec()).unwrap();
+    assert_eq!(a.c.decrypt(bob_cid.clone(), reply).unwrap(), b"ok");
+    let curta = a.c.encrypt(bob_cid.clone(), b"s".to_vec()).unwrap();
+    let media = a.c.encrypt(bob_cid.clone(), vec![b'x'; 200]).unwrap();
+    let longa = a.c.encrypt(bob_cid.clone(), vec![b'y'; 2000]).unwrap();
+    assert_eq!(curta.len(), media.len(), "1 e 200 bytes cabem no mesmo tamanho");
+    assert!(longa.len() > media.len());
+    assert_eq!(b.c.decrypt(alice_cid.clone(), curta).unwrap(), b"s");
+    assert_eq!(b.c.decrypt(alice_cid.clone(), media).unwrap(), vec![b'x'; 200]);
+    assert_eq!(b.c.decrypt(alice_cid.clone(), longa).unwrap(), vec![b'y'; 2000]);
+    // O maximo continua a caber.
+    let max = a.c.encrypt(bob_cid, vec![b'z'; 10_000]).unwrap();
+    assert_eq!(b.c.decrypt(alice_cid, max).unwrap(), vec![b'z'; 10_000]);
+}
+
+#[test]
+fn bundle_antigo_ou_v3_e_recusado() {
+    let a = peer("old_a", KA);
+    let b = peer("old_b", KB);
+    let mut bundle = b.peer_bundle(0);
+    bundle.created_at -= 91 * 86_400;
+    assert!(matches!(a.c.start_session(b.id.public_id.clone(), bundle), Err(QtError::InvalidBundle)));
+    // Os bytes de um bundle v3 (apps ate a 0.9.2) ja nao sao aceites.
+    let mut v3 = vec![3u8];
+    v3.extend_from_slice(&[0u8; 1348]);
+    assert!(peer_bundle_from_relay_bytes(v3).is_err());
 }

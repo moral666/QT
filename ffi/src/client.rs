@@ -6,20 +6,26 @@
 //! Fluxo: PQXDH (X25519 + ML-KEM-768) -> Double Ratchet -> (opcional)
 //! Sealed Sender. Ver docs/protocol-spec.md ("Fluxo de sessao da app").
 //!
-//! Formato do ENVELOPE (v1) - e o unico que o relay ve (opaco para ele):
-//!   [1 versao=1][1 tipo: 0=mensagem, 1=mensagem com cabecalho PQXDH]
-//!   se tipo=1: [32 ephemeral_pub][4 opk_id BE (0=nenhuma)][4 pq_prekey_id BE][1088 ct ML-KEM]
+//! Formato do ENVELOPE (v3, desde a app 0.9.3) - e o unico que o relay ve (opaco):
+//!   [1 versao=3][1 tipo: 0=mensagem, 2=mensagem com cabecalho PQXDH v2]
+//!   se tipo=2: [32 ephemeral_pub][4 opk_id BE (0=nenhuma)][4 pq_prekey_id BE]
+//!              [4 spk_id BE][1088 ct ML-KEM]
 //!   [32 dh_public do ratchet][4 pn BE][4 n BE][ciphertext AEAD]
-//! Envelope SELADO: [1 versao=1][2 len BE][caixa selada com identidade do
+//! No v3 o plaintext leva ENCHIMENTO antes de ser cifrado (`pad_plaintext`): o
+//! tamanho das mensagens fica num de poucos valores fixos.
+//! Ainda se RECEBE o v2 (apps ate a 0.9.2 e sessoes iniciadas antes): tipo 0 ou
+//! 1 (cabecalho PQXDH v1 sem spk_id), sem enchimento.
+//! Envelope SELADO: [1 versao=2][2 len BE][caixa selada com identidade do
 //! remetente][envelope]. O cabecalho PQXDH NAO contem a identidade do
 //! remetente (vai dentro da caixa selada, ou e dada pelo relay no modo normal).
 
 use std::sync::{Arc, Mutex};
 
 use qt_core::pqxdh::{
-    pq_ciphertext_from_bytes, pq_public_key_from_bytes, pqxdh_initiate, pqxdh_respond, PqPreKeyBundle,
-    PqPreKeyPair, PQ_CIPHERTEXT_LEN, PQ_PUBLIC_KEY_LEN,
+    pq_ciphertext_from_bytes, pqxdh_initiate_v2, pqxdh_respond, pqxdh_respond_v2, PqPreKeyPair, PQ_CIPHERTEXT_LEN,
+    PQ_PUBLIC_KEY_LEN,
 };
+use crate::prekeys;
 use qt_core::identity::{self, session_associated_data};
 use qt_core::primitives::{DhKeyPair, SigningKeyPair};
 use qt_core::ratchet::{EncryptedMessage, RatchetState};
@@ -30,11 +36,22 @@ use crate::history::OutboxItem;
 use x25519_dalek::PublicKey;
 use zeroize::Zeroize;
 
-const ENV_VERSION: u8 = 2; // v2: cabecalho do ratchet com PN; AD de sessao; caixa selada ligada ao envelope
+/// v2 (so a receber): cabecalho do ratchet com PN; AD de sessao; sem enchimento.
+const ENV_VERSION_V2: u8 = 2;
+/// v3 (atual): como o v2, com enchimento do plaintext e cabecalho PQXDH v2.
+const ENV_VERSION: u8 = 3;
+/// Envelope selado (caixa com a identidade do remetente): formato igual desde a v2.
+const SEALED_VERSION: u8 = 2;
 const KIND_MSG: u8 = 0;
+/// Cabecalho PQXDH v1 (so a receber, ou sessoes iniciadas antes da 0.9.3).
 const KIND_PREKEY_MSG: u8 = 1;
+/// Cabecalho PQXDH v2 (com o numero da signed pre-key).
+const KIND_PREKEY_MSG_V2: u8 = 2;
 const HEADER_LEN: usize = 32 + 4 + 4 + PQ_CIPHERTEXT_LEN;
-const PQ_PREKEY_ID: u32 = 1;
+const HEADER_V2_LEN: usize = 32 + 4 + 4 + 4 + PQ_CIPHERTEXT_LEN;
+const PQ_PREKEY_ID: u32 = prekeys::FIRST_ID;
+/// Tamanhos fixos do plaintext com enchimento (o ultimo cabe `MAX_PLAINTEXT_LEN` + 1).
+const PAD_BUCKETS: [usize; 4] = [256, 1024, 4096, 10_240];
 const MAX_ENVELOPE_LEN: usize = 1024 * 1024;
 // Limite de plaintext por mensagem. Os frames do relay sao JSON dentro de uma
 // mensagem Noise (max 65535 bytes) e cada byte vira ate 4 caracteres JSON:
@@ -103,6 +120,24 @@ fn arr32(b: &[u8], field: &str) -> Result<[u8; 32], QtError> {
     b.try_into().map_err(|_| bad(field))
 }
 
+/// Enchimento antes de cifrar: o plaintext, um byte 0x80 e zeros ate ao primeiro
+/// tamanho de `PAD_BUCKETS` que caiba. Assim quem ve o tamanho dos envelopes (o
+/// relay) so distingue 4 tamanhos, e nao um recibo de uma mensagem curta.
+pub(crate) fn pad_plaintext(p: &[u8]) -> Vec<u8> {
+    let target = PAD_BUCKETS.iter().copied().find(|b| *b > p.len()).unwrap_or(p.len() + 1);
+    let mut out = Vec::with_capacity(target);
+    out.extend_from_slice(p);
+    out.push(0x80);
+    out.resize(target, 0);
+    out
+}
+
+/// Retira o enchimento de `pad_plaintext`. `None` se o formato nao bater certo.
+pub(crate) fn unpad_plaintext(p: &[u8]) -> Option<Vec<u8>> {
+    let end = p.iter().rposition(|b| *b != 0)?;
+    (p[end] == 0x80).then(|| p[..end].to_vec())
+}
+
 // ---------------------------------------------------------------- records
 
 #[derive(uniffi::Record)]
@@ -133,12 +168,16 @@ pub struct PublishedBundle {
     pub one_time_pre_keys: Vec<OneTimePreKeyPublic>,
 }
 
-/// Bundle de um CONTACTO, tal como o relay o entrega (no maximo 1 one-time prekey).
+/// Bundle de um CONTACTO, tal como o relay o entrega (bundle v4 e, se o relay ainda
+/// tiver, uma one-time prekey). Ver `peer_bundle_from_relay_bytes`.
 #[derive(uniffi::Record)]
 pub struct PeerBundle {
     pub identity_public: Vec<u8>,
     pub signing_public: Vec<u8>,
+    pub signed_pre_key_id: u32,
     pub signed_pre_key_public: Vec<u8>,
+    /// Hora (segundos unix) em que o contacto criou a signed pre-key; assinada.
+    pub created_at: u64,
     pub signed_pre_key_signature: Vec<u8>,
     pub pq_pre_key_id: u32,
     pub pq_pre_key_public: Vec<u8>,
@@ -271,20 +310,13 @@ impl QtClient {
         }
         let c = self.lock()?;
         let ident = st::load_identity(&c)?;
-        let pq = st::load_pq_prekey(&c, PQ_PREKEY_ID)?.ok_or(QtError::Storage)?;
+        let pq_id = prekeys::current_pq_id(&c)?;
+        let pq = st::load_pq_prekey(&c, pq_id)?.ok_or(QtError::Storage)?;
         let tx = c.unchecked_transaction()?;
-        let mut next = match st::kv_get(&tx, "opk_next")? {
-            Some(b) => u32::from_be_bytes(b.as_slice().try_into().map_err(|_| QtError::Storage)?),
-            None => 1,
-        };
-        let mut otpks = Vec::new();
-        for _ in 0..count {
-            let kp = DhKeyPair::generate();
-            st::save_one_time_prekey(&tx, next, &kp)?;
-            otpks.push(OneTimePreKeyPublic { id: next, public: kp.public.as_bytes().to_vec() });
-            next = next.checked_add(1).ok_or(QtError::Storage)?;
-        }
-        st::kv_set(&tx, "opk_next", &next.to_be_bytes())?;
+        let otpks = prekeys::new_one_time_prekeys(&tx, count)?
+            .into_iter()
+            .map(|(id, public)| OneTimePreKeyPublic { id, public: public.to_vec() })
+            .collect();
         tx.commit()?;
         let sig = qt_core::pqxdh::sign_pre_key(&ident.identity_signing, &ident.identity.public, &ident.signed_pre_key.public, &pq.public_key_bytes());
         Ok(PublishedBundle {
@@ -292,7 +324,7 @@ impl QtClient {
             signing_public: ident.identity_signing.verifying_key.to_bytes().to_vec(),
             signed_pre_key_public: ident.signed_pre_key.public.as_bytes().to_vec(),
             signed_pre_key_signature: sig.to_bytes().to_vec(),
-            pq_pre_key_id: PQ_PREKEY_ID,
+            pq_pre_key_id: pq_id,
             pq_pre_key_public: pq.public_key_bytes(),
             one_time_pre_keys: otpks,
         })
@@ -309,18 +341,27 @@ impl QtClient {
         if bundle.identity_public != id_pub || bundle.signing_public != sign_pub {
             return Err(QtError::InvalidBundle);
         }
-        let their_spk = PublicKey::from(arr32(&bundle.signed_pre_key_public, "signed_pre_key_public")?);
-        let sig: [u8; 64] = bundle
-            .signed_pre_key_signature
-            .as_slice()
-            .try_into()
-            .map_err(|_| QtError::InvalidBundle)?;
-        let verifying =
-            ed25519_dalek::VerifyingKey::from_bytes(&sign_pub).map_err(|_| QtError::InvalidBundle)?;
         if bundle.pq_pre_key_public.len() != PQ_PUBLIC_KEY_LEN {
             return Err(QtError::InvalidBundle);
         }
-        let pq_pub = pq_public_key_from_bytes(&bundle.pq_pre_key_public).map_err(|_| QtError::InvalidBundle)?;
+        // Bundle demasiado antigo (o contacto nao abre a app ha meses, ou um relay a
+        // servir chaves velhas) ou com data no futuro: recusado.
+        let t = prekeys::now();
+        if bundle.created_at.saturating_add(prekeys::MAX_BUNDLE_AGE_SECS) < t
+            || bundle.created_at > t.saturating_add(prekeys::MAX_BUNDLE_FUTURE_SECS)
+        {
+            return Err(QtError::InvalidBundle);
+        }
+        let v4 = identity::BundleV4 {
+            identity: id_pub,
+            signing: sign_pub,
+            signed_pre_key_id: bundle.signed_pre_key_id,
+            signed_pre_key: arr32(&bundle.signed_pre_key_public, "signed_pre_key_public")?,
+            created_at: bundle.created_at,
+            signature: bundle.signed_pre_key_signature.as_slice().try_into().map_err(|_| QtError::InvalidBundle)?,
+            pq_pre_key_id: bundle.pq_pre_key_id,
+            pq_pre_key: bundle.pq_pre_key_public.clone(),
+        };
         let (opk_id, opk_pub) = match &bundle.one_time_pre_key {
             Some(o) if o.id != 0 => (o.id, Some(PublicKey::from(arr32(&o.public, "one_time_pre_key")?))),
             Some(_) => return Err(QtError::InvalidBundle),
@@ -333,24 +374,18 @@ impl QtClient {
         if st::load_session(&c, &contact_id)?.is_some() {
             return Err(bad("contact_id (sessao ja existe)"));
         }
-        let pq_bundle = PqPreKeyBundle {
-            identity_key: PublicKey::from(id_pub),
-            identity_signing_key: verifying,
-            signed_pre_key: their_spk,
-            signed_pre_key_signature: ed25519_dalek::Signature::from_bytes(&sig),
-            pq_pre_key: pq_pub,
-            one_time_pre_key: opk_pub,
-        };
-        let mut init = pqxdh_initiate(&ident.identity, &pq_bundle).map_err(|_| QtError::InvalidBundle)?;
-        let ratchet = RatchetState::init_as_initiator(init.shared_secret, their_spk).with_associated_data(
+        // Verifica a assinatura do bundle (chave Ed25519 = a do QT Public ID) e faz o PQXDH v2.
+        let mut init = pqxdh_initiate_v2(&ident.identity, &v4, opk_pub.as_ref()).map_err(|_| QtError::InvalidBundle)?;
+        let ratchet = RatchetState::init_as_initiator(init.shared_secret, init.signed_pre_key).with_associated_data(
             session_associated_data(&ident.identity.public, &PublicKey::from(id_pub)),
         );
         init.shared_secret.zeroize();
 
-        let mut header = Vec::with_capacity(HEADER_LEN);
+        let mut header = Vec::with_capacity(HEADER_V2_LEN);
         header.extend_from_slice(init.ephemeral_public.as_bytes());
         header.extend_from_slice(&opk_id.to_be_bytes());
-        header.extend_from_slice(&bundle.pq_pre_key_id.to_be_bytes());
+        header.extend_from_slice(&init.pq_pre_key_id.to_be_bytes());
+        header.extend_from_slice(&init.signed_pre_key_id.to_be_bytes());
         header.extend_from_slice(init.pq_ciphertext.as_slice());
 
         let tx = c.unchecked_transaction()?;
@@ -412,23 +447,28 @@ impl QtClient {
         self.decrypt_locked(&c, &contact_id, &envelope)
     }
 
-    /// Bundle PUBLICO para registar no relay (formato binario v3, 1349 bytes):
-    /// [1 ver=3][32 identity][32 signing][32 signed_prekey][64 assinatura][4 pq_id BE][1184 pq_pub].
-    /// A assinatura Ed25519 cobre a identidade X25519 (liga as duas chaves).
-    /// Sem one-time prekeys: o relay atual nao as distribui de forma
-    /// single-use (ver docs); PQXDH sem OTPK continua valido.
+    /// Bundle PUBLICO para registar no relay (formato binario v4, ver
+    /// `qt_core::identity::encode_bundle_v4`). A assinatura Ed25519 cobre a identidade
+    /// X25519, o numero e a data da signed pre-key e a prekey ML-KEM. Se a signed
+    /// pre-key tiver mais de 7 dias, e trocada aqui (ver `prekeys::rotate_if_due`).
     pub fn publishable_bundle(&self) -> Result<Vec<u8>, QtError> {
         let c = self.lock()?;
-        let ident = st::load_identity(&c)?;
-        let pq = st::load_pq_prekey(&c, PQ_PREKEY_ID)?.ok_or(QtError::Storage)?;
-        identity::encode_bundle(
+        let tx = c.unchecked_transaction()?;
+        let mut ident = st::load_identity(&tx)?;
+        let (spk_id, created, pq_id) = prekeys::rotate_if_due(&tx, &mut ident)?;
+        let pq = st::load_pq_prekey(&tx, pq_id)?.ok_or(QtError::Storage)?;
+        let out = identity::encode_bundle_v4(
             &ident.identity.public,
             &ident.identity_signing,
+            spk_id,
             &ident.signed_pre_key.public,
-            PQ_PREKEY_ID,
+            created,
+            pq_id,
             &pq.public_key_bytes(),
         )
-        .ok_or(QtError::Crypto)
+        .ok_or(QtError::Crypto)?;
+        tx.commit()?;
+        Ok(out)
     }
 
     /// SAFETY NUMBER (60 digitos) entre ti e o dono de `peer_public_id`, para
@@ -494,9 +534,25 @@ impl QtClient {
         }}))
     }
 
+    /// Pedido de registo do bundle (de `publishable_bundle`). Leva tambem:
+    /// - a prova de trabalho da conta (calculada na primeira vez, uns segundos;
+    ///   chamar fora da thread principal), que o relay exige a contas novas;
+    /// - uma vez por dia, um lote novo de one-time prekeys (substitui o do relay).
     pub fn relay_request_register_bundle(&self, bundle_bytes: Vec<u8>) -> Result<Vec<u8>, QtError> {
         let uid = self.relay_user_id()?;
-        json_bytes(serde_json::json!({"RegisterPreKeyBundle": {"user_id": uid, "bundle_bytes": bundle_bytes}}))
+        let pow = self.pow_nonce()?;
+        let opks = {
+            let c = self.lock()?;
+            let tx = c.unchecked_transaction()?;
+            let r = prekeys::one_time_prekeys_to_upload(&tx)?;
+            tx.commit()?;
+            r
+        };
+        let mut body = serde_json::json!({"user_id": uid, "bundle_bytes": bundle_bytes, "pow": pow});
+        if let Some(keys) = opks {
+            body["one_time_pre_keys"] = serde_json::json!(keys);
+        }
+        json_bytes(serde_json::json!({ "RegisterPreKeyBundle": body }))
     }
 
     pub fn relay_request_fetch_bundle(&self, relay_id: String) -> Result<Vec<u8>, QtError> {
@@ -588,6 +644,22 @@ impl QtClient {
 }
 
 impl QtClient {
+    /// `nonce` da prova de trabalho desta conta: guardado, ou calculado agora (sem
+    /// prender a base de dados durante o calculo).
+    fn pow_nonce(&self) -> Result<u64, QtError> {
+        let signing = {
+            let c = self.lock()?;
+            if let Some(n) = prekeys::stored_pow(&c)? {
+                return Ok(n);
+            }
+            st::load_identity(&c)?.identity_signing.verifying_key.to_bytes()
+        };
+        let n = qt_core::pow::pow_solve(&signing, qt_core::pow::POW_BITS).ok_or(QtError::Crypto)?;
+        let c = self.lock()?;
+        prekeys::save_pow(&c, n)?;
+        Ok(n)
+    }
+
     pub(crate) fn lock(&self) -> Result<std::sync::MutexGuard<'_, st::rusqlite::Connection>, QtError> {
         self.conn.lock().map_err(|_| QtError::Storage)
     }
@@ -599,9 +671,22 @@ impl QtClient {
             return Err(bad("plaintext"));
         }
         let mut state = st::load_session(c, contact_id)?.ok_or(QtError::UnknownSession)?;
-        let msg = state.encrypt(plaintext).map_err(|_| QtError::Crypto)?;
         let pending = st::kv_get(c, &format!("pending:{contact_id}"))?;
-        let mut env = vec![ENV_VERSION, if pending.is_some() { KIND_PREKEY_MSG } else { KIND_MSG }];
+        // Sessao iniciada antes da 0.9.3 e ainda sem resposta: envelope v2 (cabecalho
+        // PQXDH v1, sem enchimento), como quando foi criada. Tudo o resto: v3.
+        let (version, kind) = match pending.as_ref().map(|h| h.len()) {
+            None => (ENV_VERSION, KIND_MSG),
+            Some(HEADER_V2_LEN) => (ENV_VERSION, KIND_PREKEY_MSG_V2),
+            Some(HEADER_LEN) => (ENV_VERSION_V2, KIND_PREKEY_MSG),
+            Some(_) => return Err(QtError::Storage),
+        };
+        let msg = if version == ENV_VERSION {
+            state.encrypt(&pad_plaintext(plaintext))
+        } else {
+            state.encrypt(plaintext)
+        }
+        .map_err(|_| QtError::Crypto)?;
+        let mut env = vec![version, kind];
         if let Some(h) = pending {
             env.extend_from_slice(&h);
         }
@@ -624,7 +709,7 @@ impl QtClient {
         let env = self.encrypt_with(c, contact_id, plaintext)?;
         let me = st::load_identity(c)?.identity.public;
         let sealed = seal_sender_identity_bound(&me, &recipient, &envelope_binding(&env)).map_err(|_| QtError::Crypto)?;
-        let mut out = vec![ENV_VERSION];
+        let mut out = vec![SEALED_VERSION];
         out.extend_from_slice(&(sealed.len() as u16).to_be_bytes());
         out.extend_from_slice(&sealed);
         out.extend_from_slice(&env);
@@ -641,7 +726,7 @@ impl QtClient {
         sealed_envelope: &[u8],
         after: &mut AfterDecrypt<'_>,
     ) -> Result<(String, Vec<u8>), QtError> {
-        if sealed_envelope.len() < 3 || sealed_envelope.len() > MAX_ENVELOPE_LEN || sealed_envelope[0] != ENV_VERSION {
+        if sealed_envelope.len() < 3 || sealed_envelope.len() > MAX_ENVELOPE_LEN || sealed_envelope[0] != SEALED_VERSION {
             return Err(QtError::InvalidEnvelope);
         }
         let len = u16::from_be_bytes([sealed_envelope[1], sealed_envelope[2]]) as usize;
@@ -676,20 +761,22 @@ impl QtClient {
         env: &[u8],
         after: &mut AfterDecrypt<'_>,
     ) -> Result<Vec<u8>, QtError> {
-        if env.len() < 2 || env[0] != ENV_VERSION {
+        if env.len() < 2 {
             return Err(QtError::InvalidEnvelope);
         }
-        let kind = env[1];
-        let (header, ratchet_bytes) = match kind {
-            KIND_MSG => (None, &env[2..]),
-            KIND_PREKEY_MSG => {
-                if env.len() < 2 + HEADER_LEN {
-                    return Err(QtError::InvalidEnvelope);
-                }
-                (Some(&env[2..2 + HEADER_LEN]), &env[2 + HEADER_LEN..])
-            }
+        let (version, kind) = (env[0], env[1]);
+        let header_len = match (version, kind) {
+            (ENV_VERSION, KIND_MSG) | (ENV_VERSION_V2, KIND_MSG) => 0,
+            (ENV_VERSION, KIND_PREKEY_MSG_V2) => HEADER_V2_LEN,
+            (ENV_VERSION_V2, KIND_PREKEY_MSG) => HEADER_LEN,
             _ => return Err(QtError::InvalidEnvelope),
         };
+        let padded = version == ENV_VERSION;
+        if env.len() < 2 + header_len {
+            return Err(QtError::InvalidEnvelope);
+        }
+        let header = (header_len > 0).then(|| &env[2..2 + header_len]);
+        let ratchet_bytes = &env[2 + header_len..];
         let msg = parse_ratchet_part(ratchet_bytes)?;
         // ID do envelope = (chave DH do ratchet, n): identifica univocamente a mensagem.
         let mut env_id = msg.dh_public.as_bytes().to_vec();
@@ -710,7 +797,7 @@ impl QtClient {
         let (state, plaintext) = match st::load_session(c, contact_id)? {
             None => {
                 let h = header.ok_or(QtError::UnknownSession)?;
-                let (mut s, opk) = self.establish_responder(c, contact_id, h)?;
+                let (mut s, opk) = self.establish_responder(c, contact_id, kind, h)?;
                 let p = s.decrypt(&msg).map_err(|_| QtError::Crypto)?;
                 used_opk = opk;
                 new_session = true;
@@ -730,7 +817,7 @@ impl QtClient {
                     if st::kv_get(c, &format!("{KV_PEER_EPH}{contact_id}"))?.as_deref() == Some(&h[..32]) {
                         return Err(QtError::Crypto);
                     }
-                    let (mut ns, opk) = self.establish_responder(c, contact_id, h).map_err(|_| QtError::Crypto)?;
+                    let (mut ns, opk) = self.establish_responder(c, contact_id, kind, h).map_err(|_| QtError::Crypto)?;
                     let p = ns.decrypt(&msg).map_err(|_| QtError::Crypto)?;
                     let ours_pending = st::kv_get(c, &format!("pending:{contact_id}"))?.is_some();
                     // SESSOES CRUZADAS: os dois iniciaram uma sessao ao mesmo tempo (ex.:
@@ -753,6 +840,10 @@ impl QtClient {
                 }
             },
         };
+
+        // Envelope v3: retira o enchimento. Formato errado = envelope invalido (nada
+        // foi guardado ainda).
+        let plaintext = if padded { unpad_plaintext(&plaintext).ok_or(QtError::InvalidEnvelope)? } else { plaintext };
 
         let tx = c.unchecked_transaction()?;
         if let Some(state) = &state {
@@ -799,29 +890,29 @@ impl QtClient {
         &self,
         c: &st::rusqlite::Connection,
         contact_id: &str,
+        kind: u8,
         header: &[u8],
     ) -> Result<(RatchetState, Option<u32>), QtError> {
         let their_identity = contact_to_identity(contact_id)?;
         let eph = PublicKey::from(arr32(&header[..32], "header")?);
-        let opk_id = u32::from_be_bytes(header[32..36].try_into().map_err(|_| QtError::InvalidEnvelope)?);
-        let pq_id = u32::from_be_bytes(header[36..40].try_into().map_err(|_| QtError::InvalidEnvelope)?);
-        let ct = pq_ciphertext_from_bytes(&header[40..]).map_err(|_| QtError::InvalidEnvelope)?;
+        let u32_at = |a: usize| -> Result<u32, QtError> {
+            Ok(u32::from_be_bytes(header.get(a..a + 4).and_then(|b| b.try_into().ok()).ok_or(QtError::InvalidEnvelope)?))
+        };
+        let opk_id = u32_at(32)?;
+        let pq_id = u32_at(36)?;
+        // v2: numero da signed pre-key no cabecalho. v1 (antes da rotacao): a primeira.
+        let (spk_id, ct_at) = if kind == KIND_PREKEY_MSG_V2 { (u32_at(40)?, 44) } else { (prekeys::FIRST_ID, 40) };
+        let ct = pq_ciphertext_from_bytes(&header[ct_at..]).map_err(|_| QtError::InvalidEnvelope)?;
 
         let ident = st::load_identity(c)?;
+        let spk = prekeys::load_spk(c, &ident, spk_id)?;
         let pq = st::load_pq_prekey(c, pq_id)?.ok_or(QtError::PrekeyUnavailable)?;
         // Le a OPK sem a consumir: so e apagada depois de a 1.a mensagem autenticar.
         let opk = if opk_id == 0 { None } else { Some(st::load_one_time_prekey(c, opk_id)?) };
-        let mut secret = pqxdh_respond(
-            &ident.identity,
-            &ident.signed_pre_key,
-            &pq,
-            opk.as_ref(),
-            &their_identity,
-            &eph,
-            &ct,
-        )
-        .map_err(|_| QtError::Crypto)?;
-        let state = RatchetState::init_as_responder(secret, ident.signed_pre_key)
+        let respond = if kind == KIND_PREKEY_MSG_V2 { pqxdh_respond_v2 } else { pqxdh_respond };
+        let mut secret = respond(&ident.identity, &spk, &pq, opk.as_ref(), &their_identity, &eph, &ct)
+            .map_err(|_| QtError::Crypto)?;
+        let state = RatchetState::init_as_responder(secret, spk)
             .with_associated_data(session_associated_data(&their_identity, &ident.identity.public));
         secret.zeroize();
 
@@ -886,7 +977,12 @@ struct WireDelivered {
 #[derive(serde::Deserialize)]
 enum WireServerMsg {
     Ack,
-    PreKeyBundle { bundle_bytes: Vec<u8> },
+    PreKeyBundle {
+        bundle_bytes: Vec<u8>,
+        /// One-time prekey do contacto (`[4 numero BE][32 publica]`), se o relay tiver.
+        #[serde(default)]
+        one_time_pre_key: Option<Vec<u8>>,
+    },
     PreKeyBundleNotFound,
     Messages { messages: Vec<WireDelivered> },
     Error { reason: String },
@@ -905,7 +1001,14 @@ pub fn relay_parse_response(bytes: Vec<u8>) -> Result<RelayResponse, QtError> {
     let m: WireServerMsg = serde_json::from_slice(&bytes).map_err(|_| QtError::InvalidEnvelope)?;
     Ok(match m {
         WireServerMsg::Ack => RelayResponse::Ack,
-        WireServerMsg::PreKeyBundle { bundle_bytes } => RelayResponse::Bundle { bytes: bundle_bytes },
+        // A one-time prekey segue colada ao bundle (`peer_bundle_from_relay_bytes` separa-a):
+        // assim a app passa os mesmos bytes de sempre a `start_session`.
+        WireServerMsg::PreKeyBundle { mut bundle_bytes, one_time_pre_key } => {
+            if let Some(k) = one_time_pre_key.filter(|k| k.len() == OTPK_WIRE_LEN) {
+                bundle_bytes.extend_from_slice(&k);
+            }
+            RelayResponse::Bundle { bytes: bundle_bytes }
+        }
         WireServerMsg::PreKeyBundleNotFound => RelayResponse::BundleNotFound,
         WireServerMsg::Messages { messages } => RelayResponse::Messages {
             messages: messages
@@ -942,23 +1045,40 @@ pub fn relay_id_of_public_id(public_id: String) -> Result<String, QtError> {
     Ok(hex(&sign))
 }
 
-const BUNDLE_V1_LEN: usize = identity::BUNDLE_LEN;
+/// One-time prekey como o relay a guarda e entrega: `[4 numero BE][32 publica]`.
+pub(crate) const OTPK_WIRE_LEN: usize = 36;
 
-/// Interpreta o bundle devolvido pelo relay (formato de `publishable_bundle`).
-/// A verificacao criptografica (contra o QT Public ID e a assinatura) e feita
-/// por `start_session`.
+/// Interpreta o bundle devolvido pelo relay: bundle v4 (formato de
+/// `publishable_bundle`) e, opcionalmente, uma one-time prekey colada no fim. A
+/// verificacao criptografica (contra o QT Public ID, assinatura e data) e feita por
+/// `start_session`. Bundles v3 (apps ate a 0.9.2) sao recusados: o contacto tem de
+/// atualizar a app.
 #[uniffi::export]
 pub fn peer_bundle_from_relay_bytes(bytes: Vec<u8>) -> Result<PeerBundle, QtError> {
-    if bytes.len() != BUNDLE_V1_LEN || bytes[0] != identity::BUNDLE_VERSION {
-        return Err(QtError::InvalidBundle);
-    }
+    let (bundle, otpk) = match bytes.len() {
+        identity::BUNDLE_V4_LEN => (&bytes[..], None),
+        n if n == identity::BUNDLE_V4_LEN + OTPK_WIRE_LEN => {
+            (&bytes[..identity::BUNDLE_V4_LEN], Some(&bytes[identity::BUNDLE_V4_LEN..]))
+        }
+        _ => return Err(QtError::InvalidBundle),
+    };
+    let b = identity::parse_bundle_v4(bundle).map_err(|_| QtError::InvalidBundle)?;
+    let one_time_pre_key = match otpk {
+        None => None,
+        Some(k) => {
+            let id = u32::from_be_bytes(k[..4].try_into().map_err(|_| QtError::InvalidBundle)?);
+            (id != 0).then(|| OneTimePreKeyPublic { id, public: k[4..].to_vec() })
+        }
+    };
     Ok(PeerBundle {
-        identity_public: bytes[1..33].to_vec(),
-        signing_public: bytes[33..65].to_vec(),
-        signed_pre_key_public: bytes[65..97].to_vec(),
-        signed_pre_key_signature: bytes[97..161].to_vec(),
-        pq_pre_key_id: u32::from_be_bytes(bytes[161..165].try_into().map_err(|_| QtError::InvalidBundle)?),
-        pq_pre_key_public: bytes[165..].to_vec(),
-        one_time_pre_key: None,
+        identity_public: b.identity.to_vec(),
+        signing_public: b.signing.to_vec(),
+        signed_pre_key_id: b.signed_pre_key_id,
+        signed_pre_key_public: b.signed_pre_key.to_vec(),
+        created_at: b.created_at,
+        signed_pre_key_signature: b.signature.to_vec(),
+        pq_pre_key_id: b.pq_pre_key_id,
+        pq_pre_key_public: b.pq_pre_key,
+        one_time_pre_key,
     })
 }
