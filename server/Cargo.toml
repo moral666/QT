@@ -19,7 +19,7 @@ redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
 base64 = "0.22"
 sha2 = "0.10"
 # Notificacoes (push.rs): HTTPS para a Google (FCM) e o JWT da conta de servico.
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2"] }
 jsonwebtoken = "9"
 # Relay das chamadas (call_relay.rs): reserva por WebSocket e chaves apagadas da memoria.
 tokio-tungstenite = "0.24"

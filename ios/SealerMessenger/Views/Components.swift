@@ -1,10 +1,12 @@
 import SwiftUI
+import UIKit
+
+// ======================================================================== logotipo
 
 /// Logotipo SEALER (bolha de vidro com o S e os tres pontos), de Assets.xcassets/Logo,
-/// sempre a rodar devagar como um piao, a volta do eixo vertical (uma volta a cada 6 s),
-/// como na app Android. Tem espessura: varias camadas, umas atras das outras (as das
-/// faces sao o logo, as do meio a silhueta lilas), para de lado nao parecer uma folha
-/// de papel. Parado se o utilizador tiver "Reduzir movimento" ativo.
+/// a rodar devagar como um piao (uma volta a cada 6 s), com espessura. Desde a 0.9.11 so
+/// roda no cabecalho do ecra inicial; nos outros ecras fica parado (`BrandLogo`).
+/// Parado se o utilizador tiver "Reduzir movimento" ativo.
 struct BrandMark: View {
     let size: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -32,7 +34,7 @@ private struct SpinningLogo: View {
     var body: some View {
         let radians = angle * .pi / 180
         let thickness = Double(size) * 0.10
-        let layers = 24
+        let layers = max(6, min(24, Int(thickness)))
         let frontVisible = cos(radians) >= 0
         let shift = thickness * sin(radians)
         ZStack {
@@ -51,7 +53,6 @@ private struct SpinningLogo: View {
         if index == 0 || index == count - 1 {
             Image("Logo").resizable().scaledToFit()
         } else {
-            // Lilas claro junto as faces, mais escuro ao centro.
             let middle = 1 - abs(2 * depth)
             Image("Logo").renderingMode(.template).resizable().scaledToFit()
                 .foregroundStyle(Color(red: 0.84 - 0.23 * middle, green: 0.81 - 0.25 * middle, blue: 0.94 - 0.15 * middle))
@@ -59,20 +60,75 @@ private struct SpinningLogo: View {
     }
 }
 
-/// Marca na barra de topo: logo pequeno (parado) e "Sealer" em Manrope Bold
-/// (SIL Open Font License 1.1, ver Resources/Manrope-OFL.txt), igual ao Android.
-struct SealerWordmark: View {
+/// Logotipo parado (fora do ecra inicial o logo nao roda).
+struct BrandLogo: View {
+    let size: CGFloat
     var body: some View {
-        HStack(spacing: 10) {
-            Image("Logo").resizable().scaledToFit().frame(width: 30, height: 30)
-            Text("Sealer").font(.custom("Manrope-Bold", size: 22))
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Sealer")
+        Image("Logo").resizable().scaledToFit().frame(width: size, height: size).accessibilityHidden(true)
     }
 }
 
-/// Barra de topo roxa (como a TopAppBar do Android), com voltar opcional e acoes.
+// ===================================================================== cabecalhos
+
+/// Forma dos cabecalhos (0.9.11): em baixo, a direita, uma curva larga que comeca a 36% da
+/// largura e sobe `curve` ate ao lado direito.
+struct CurvedBottomShape: Shape {
+    let curve: CGFloat
+    var widthFraction: CGFloat = 0.64
+
+    func path(in rect: CGRect) -> Path {
+        let ry = min(curve, rect.height)
+        let rx = rect.width * widthFraction
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - ry))
+        // Quarto de elipse do lado direito ate ao fundo.
+        p.addQuadCurve(to: CGPoint(x: rect.maxX - rx, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// Estrelas do fundo dos cabecalhos: sempre nas mesmas posicoes (gerador simples e determinista).
+private let galaxyStars: [(x: Double, y: Double, size: Double, alpha: Double)] = {
+    var seed: UInt64 = 7
+    func next() -> Double {
+        seed = seed &* 6364136223846793005 &+ 1442695040888963407
+        return Double(seed >> 11) / Double(1 << 53)
+    }
+    return (0..<28).map { _ in (next(), next(), 0.6 + next() * 0.8, 0.25 + next() * 0.45) }
+}()
+
+/// Fundo "galaxia" dos cabecalhos: gradiente da marca, estrelas fixas, brilho na curva.
+struct GalaxyHeader<Content: View>: View {
+    let curve: CGFloat
+    @ViewBuilder let content: () -> Content
+    @Environment(\.chat) private var c
+
+    var body: some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                ZStack {
+                    LinearGradient(colors: c.topBarGradient, startPoint: .topLeading, endPoint: .bottomTrailing)
+                    Canvas { ctx, size in
+                        ctx.fill(Path(ellipseIn: CGRect(x: size.width - 250, y: size.height - 100, width: 340, height: 250)),
+                                 with: .color(.white.opacity(0.09)))
+                        for st in galaxyStars {
+                            let r = CGRect(x: st.x * size.width, y: st.y * size.height, width: st.size, height: st.size)
+                            ctx.fill(Path(ellipseIn: r), with: .color(.white.opacity(st.alpha)))
+                        }
+                    }
+                }
+                .clipShape(CurvedBottomShape(curve: curve))
+                .ignoresSafeArea(edges: .top)
+            )
+    }
+}
+
+/// Barra de topo dos outros ecras (fundo curvo pequeno), com voltar opcional e acoes.
 struct SealerTopBar<Title: View, Actions: View>: View {
     var onBack: (() -> Void)?
     @ViewBuilder var title: () -> Title
@@ -88,50 +144,26 @@ struct SealerTopBar<Title: View, Actions: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
-            if let onBack {
-                Button(action: onBack) {
-                    Image(systemName: "arrow.left").font(.system(size: 20, weight: .medium))
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Voltar")
-            } else {
-                Spacer().frame(width: 12)
-            }
-            title().frame(maxWidth: .infinity, alignment: .leading)
-            actions()
-        }
-        .padding(.horizontal, 4)
-        .frame(height: 56)
-        .foregroundStyle(c.onTopBar)
-        .tint(c.onTopBar)
-        .background(GalaxyBackground(colors: c.topBarGradient).ignoresSafeArea(edges: .top))
-    }
-}
-
-/// Fundo "galaxia" da barra de topo: gradiente diagonal com estrelas pequenas,
-/// sempre nas mesmas posicoes (igual a app Android).
-struct GalaxyBackground: View {
-    let colors: [Color]
-    private static let stars: [(x: Double, y: Double, size: Double, alpha: Double)] = {
-        var seed: UInt64 = 7
-        func next() -> Double {   // gerador simples e determinista
-            seed = seed &* 6364136223846793005 &+ 1442695040888963407
-            return Double(seed >> 11) / Double(1 << 53)
-        }
-        return (0..<28).map { _ in (next(), next(), 0.6 + next() * 0.8, 0.25 + next() * 0.45) }
-    }()
-
-    var body: some View {
-        LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-            .overlay(
-                Canvas { context, size in
-                    for s in GalaxyBackground.stars {
-                        let rect = CGRect(x: s.x * size.width, y: s.y * size.height, width: s.size, height: s.size)
-                        context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(s.alpha)))
+        GalaxyHeader(curve: 30) {
+            HStack(spacing: 4) {
+                if let onBack {
+                    Button(action: onBack) {
+                        Image(systemName: "chevron.left").font(.system(size: 20, weight: .semibold))
+                            .frame(width: 44, height: 44)
                     }
+                    .accessibilityLabel(s("t_voltar"))
+                } else {
+                    Spacer().frame(width: 12)
                 }
-            )
+                title().font(.sTitleMedium).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                actions()
+            }
+            .padding(.horizontal, 4)
+            .frame(height: 56)
+            .padding(.bottom, 14)
+            .foregroundStyle(c.onTopBar)
+            .tint(c.onTopBar)
+        }
     }
 }
 
@@ -147,27 +179,115 @@ struct TopBarIcon: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemName).font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44)
+            Image(systemName: systemName).font(.system(size: 18, weight: .medium)).frame(width: 44, height: 44)
         }
         .accessibilityLabel(label)
     }
 }
 
-/// Avatar com as iniciais, numa cor estavel por contacto (mesma cor que no Android).
+/// A minha foto (ou um boneco, sem foto) num circulo com aro, e um emblema redondo no canto
+/// (engrenagem para as Definicoes, lapis para a foto). Tocar em qualquer dos dois faz o mesmo.
+struct MyAvatar: View {
+    let photo: UIImage?
+    let badge: String
+    let label: String
+    let action: () -> Void
+    var size: CGFloat = 76
+    @Environment(\.chat) private var c
+
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: .bottomTrailing) {
+                ZStack {
+                    Circle().fill(Color.white.opacity(0.22))
+                    Circle().fill(c.headerAvatar).padding(4)
+                    if let photo {
+                        Image(uiImage: photo).resizable().scaledToFill().clipShape(Circle()).padding(4)
+                    } else {
+                        Image(systemName: "person.fill").font(.system(size: size * 0.45)).foregroundStyle(c.headerAvatarInk)
+                    }
+                }
+                .frame(width: size, height: size)
+                Circle().fill(c.surface).frame(width: 32, height: 32).shadow(color: .black.opacity(0.2), radius: 3, y: 1)
+                    .overlay(Image(systemName: badge).font(.system(size: 15, weight: .semibold)).foregroundStyle(c.primary))
+                    .offset(x: 6, y: 6)
+            }
+            .frame(width: size + 10, height: size + 10, alignment: .topLeading)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+}
+
+/// O meu ID abreviado numa pastilha (tocar mostra o QR e o ID completo).
+struct IdChip: View {
+    let publicId: String
+    let action: () -> Void
+    @Environment(\.chat) private var c
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "lock.fill").font(.system(size: 12))
+                Text(shortId(publicId)).font(Jakarta.font(13, .semibold)).lineLimit(1)
+            }
+            .foregroundStyle(c.onTopBar.opacity(0.92))
+            .padding(.horizontal, 12)
+            .frame(minHeight: 34)
+            .background(Capsule().fill(Color.white.opacity(0.14)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(s("t_o_meu_id"))
+    }
+}
+
+/// So o inicio e o fim do ID (para reconhecer); Copiar e Partilhar dao o ID completo.
+func shortId(_ id: String) -> String { id.count > 20 ? String(id.prefix(10)) + "…" + String(id.suffix(6)) : id }
+
+// ========================================================================= avatares
+
+private struct PhotosKey: EnvironmentKey { static let defaultValue: [String: UIImage] = [:] }
+
+extension EnvironmentValues {
+    /// Fotos de perfil ja decifradas, por contactId (os Avatar leem daqui).
+    var photos: [String: UIImage] {
+        get { self[PhotosKey.self] }
+        set { self[PhotosKey.self] = newValue }
+    }
+}
+
+/// Avatar: a foto de perfil do contacto (se houver) ou as iniciais, numa cor estavel por
+/// contacto (a mesma do Android), com o ponto verde quando esta online.
 struct Avatar: View {
     let name: String
     let seed: String
     var size: CGFloat = 48
+    var online = false
+    @Environment(\.photos) private var photos
+    @Environment(\.chat) private var c
 
     var body: some View {
         let palette = ChatColors.avatarPalette
         let color = palette[Int(javaHashCode(seed) & 0x7fffffff) % palette.count]
-        ZStack {
-            Circle().fill(color)
-            Text(initials(name)).font(.system(size: size / 2.6, weight: .semibold)).foregroundStyle(.white)
+        ZStack(alignment: .bottomTrailing) {
+            if let photo = photos[seed] {
+                Image(uiImage: photo).resizable().scaledToFill().frame(width: size, height: size).clipShape(Circle())
+            } else {
+                ZStack {
+                    Circle().fill(color)
+                    Text(initials(name)).font(Jakarta.font(size / 2.6, .semibold)).foregroundStyle(.white)
+                }
+                .frame(width: size, height: size)
+            }
+            if online {
+                let d = max(10, size / 4)
+                Circle().fill(onlineGreen).frame(width: d - 4, height: d - 4)
+                    .padding(2).background(Circle().fill(c.surface))
+                    .accessibilityLabel(s("t_online"))
+            }
         }
         .frame(width: size, height: size)
-        .accessibilityHidden(true)
+        .accessibilityHidden(!online)
     }
 }
 
@@ -184,33 +304,46 @@ func initials(_ name: String) -> String {
     return s.isEmpty ? "?" : s
 }
 
-struct ConnectionBanner: View {
-    let status: String
-    @Environment(\.chat) private var c
-    var body: some View {
-        Text(status)
-            .font(.caption.weight(.medium))
-            .lineLimit(1).truncationMode(.tail)
-            .foregroundStyle(c.onSecondaryContainer)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16).padding(.vertical, 6)
-            .background(c.secondaryContainer)
-    }
-}
+// ========================================================================== botoes
 
 /// Botao principal arredondado (como o Button do Material 3).
 struct PrimaryButton: View {
     let title: String
     var height: CGFloat = 52
+    var radius: CGFloat = 26
     let action: () -> Void
     @Environment(\.chat) private var c
     @Environment(\.isEnabled) private var enabled
     var body: some View {
         Button(action: action) {
-            Text(title).font(.system(size: 16, weight: .medium))
+            Text(title).font(Jakarta.font(16, .semibold))
                 .frame(maxWidth: .infinity).frame(height: height)
                 .foregroundStyle(c.onPrimary)
-                .background(Capsule().fill(c.primary.opacity(enabled ? 1 : 0.4)))
+                .background(RoundedRectangle(cornerRadius: radius).fill(c.primary.opacity(enabled ? 1 : 0.4)))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Botao com contorno (OutlinedButton do Material 3).
+struct OutlineButton: View {
+    let title: String
+    var systemImage: String?
+    var height: CGFloat = 52
+    var color: Color?
+    let action: () -> Void
+    @Environment(\.chat) private var c
+    @Environment(\.isEnabled) private var enabled
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if let systemImage { Image(systemName: systemImage) }
+                Text(title).font(Jakarta.font(15, .bold)).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity).frame(height: height)
+            .foregroundStyle((color ?? c.primary).opacity(enabled ? 1 : 0.4))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(c.outlineVariant, lineWidth: 1))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -220,17 +353,129 @@ struct OutlinedField: View {
     let label: String
     @Binding var text: String
     var monospaced = false
+    var secure = false
+    var numeric = false
+    var singleLine = false
     @Environment(\.chat) private var c
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.caption).foregroundStyle(c.onSurfaceVariant)
-            TextField("", text: $text, axis: .vertical)
-                .lineLimit(1...4)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .font(monospaced ? .system(.footnote, design: .monospaced) : .body)
-                .padding(12)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(c.onSurfaceVariant.opacity(0.6), lineWidth: 1))
+            Text(label).font(.sLabelMedium).foregroundStyle(c.onSurfaceVariant)
+            Group {
+                if secure {
+                    SecureField("", text: $text)
+                } else if singleLine {
+                    TextField("", text: $text)
+                } else {
+                    TextField("", text: $text, axis: .vertical).lineLimit(1...4)
+                }
+            }
+            .keyboardType(numeric ? .numberPad : .default)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .font(monospaced ? .system(.footnote, design: .monospaced) : .sBodyLarge)
+            .padding(12)
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(c.onSurfaceVariant.opacity(0.5), lineWidth: 1))
+        }
+    }
+}
+
+/// Campo do codigo de acesso: so algarismos, escondido.
+struct CodeField: View {
+    let label: String
+    @Binding var code: String
+    var body: some View {
+        OutlinedField(label: label, text: Binding(get: { code }, set: { code = String($0.filter(\.isNumber).prefix(32)) }),
+                      secure: true, numeric: true, singleLine: true)
+    }
+}
+
+/// Texto de seccao das Definicoes ("CONTA", "PRIVACIDADE"...).
+struct SectionLabel: View {
+    let text: String
+    @Environment(\.chat) private var c
+    var body: some View {
+        Text(text.uppercased())
+            .font(Jakarta.font(12, .bold)).kerning(1)
+            .foregroundStyle(c.onSurfaceVariant)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 6)
+    }
+}
+
+/// Linha das Definicoes: quadrado com o icone, titulo e seta (ou um interruptor).
+struct SettingsRow<Trailing: View>: View {
+    let icon: String?
+    var glyph: String?
+    let title: String
+    var danger = false
+    var divider = true
+    let action: (() -> Void)?
+    @ViewBuilder var trailing: () -> Trailing
+    @Environment(\.chat) private var c
+
+    var body: some View {
+        let ink = danger ? c.error : c.primary
+        let row = HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14).fill(danger ? c.errorContainer : c.tile)
+                if let icon {
+                    Image(systemName: icon).font(.system(size: 19, weight: .semibold)).foregroundStyle(ink)
+                } else {
+                    Text(glyph ?? "").font(Jakarta.font(15, .heavy)).foregroundStyle(ink)
+                }
+            }
+            .frame(width: 44, height: 44)
+            VStack(spacing: 0) {
+                HStack {
+                    Text(title).font(Jakarta.font(16, .bold)).foregroundStyle(danger ? c.error : c.onSurface)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    trailing()
+                }
+                .frame(minHeight: 67)
+                .padding(.trailing, 16)
+                if divider { Rectangle().fill(c.outlineVariant).frame(height: 0.5) }
+            }
+        }
+        .padding(.leading, 20)
+        .frame(minHeight: 68)
+        .contentShape(Rectangle())
+        if let action {
+            Button(action: action) { row }.buttonStyle(.plain)
+        } else {
+            row
+        }
+    }
+}
+
+extension SettingsRow where Trailing == AnyView {
+    /// Linha com a seta (se tiver acao).
+    init(icon: String?, glyph: String? = nil, title: String, danger: Bool = false, divider: Bool = true, action: (() -> Void)?) {
+        self.icon = icon
+        self.glyph = glyph
+        self.title = title
+        self.danger = danger
+        self.divider = divider
+        self.action = action
+        let hasAction = action != nil
+        self.trailing = {
+            AnyView(Group {
+                if hasAction { Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold)).foregroundStyle(.secondary) }
+            })
+        }
+    }
+}
+
+/// Linha com interruptor.
+struct SettingsSwitch: View {
+    let icon: String
+    let title: String
+    let isOn: Bool
+    var divider = true
+    let onChange: (Bool) -> Void
+    @Environment(\.chat) private var c
+    var body: some View {
+        SettingsRow(icon: icon, title: title, divider: divider, action: { onChange(!isOn) }) {
+            Toggle("", isOn: Binding(get: { isOn }, set: onChange)).labelsHidden().tint(c.primary)
         }
     }
 }
@@ -268,20 +513,32 @@ func dayKey(_ ms: Int64) -> String { dayFmt.string(from: date(ms)) }
 /// "Hoje", "Ontem" ou a data.
 func dayLabel(_ ms: Int64) -> String {
     let now = Date()
-    let today = dayFmt.string(from: now)
-    let yesterday = dayFmt.string(from: now.addingTimeInterval(-24 * 3600))
     switch dayKey(ms) {
-    case today: return "Hoje"
-    case yesterday: return "Ontem"
+    case dayFmt.string(from: now): return s("t_hoje")
+    case dayFmt.string(from: now.addingTimeInterval(-24 * 3600)): return s("t_ontem")
     default: return dateFmt.string(from: date(ms))
     }
 }
 
 /// Hora (hoje), "Ontem" ou a data, para a lista de conversas.
 func shortTime(_ ms: Int64) -> String {
-    switch dayLabel(ms) {
-    case "Hoje": return timeOf(ms)
-    case "Ontem": return "Ontem"
+    let now = Date()
+    switch dayKey(ms) {
+    case dayFmt.string(from: now): return timeOf(ms)
+    case dayFmt.string(from: now.addingTimeInterval(-24 * 3600)): return s("t_ontem")
     default: return shortDateFmt.string(from: date(ms))
+    }
+}
+
+/// Toque com feedback (os avisos curtos do Android, "Toast").
+struct NoticeBanner: View {
+    let text: String
+    @Environment(\.chat) private var c
+    var body: some View {
+        Text(text).font(.sBodyMedium).foregroundStyle(c.onPrimary)
+            .padding(.horizontal, 18).padding(.vertical, 12)
+            .background(Capsule().fill(c.onSurface.opacity(0.88)))
+            .padding(.bottom, 40)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }

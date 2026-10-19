@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // Os objetos do UniFFI (QtClient, NoiseSession) sao Arc<...> com Mutex no Rust: podem ser
 // usados a partir de qualquer thread. Os tipos de dados sao copias imutaveis.
@@ -16,6 +17,20 @@ extension PeerBundle: @unchecked Sendable {}
 extension AttachmentInfo: @unchecked Sendable {}
 extension AttachmentRef: @unchecked Sendable {}
 extension AttachmentState: @unchecked Sendable {}
+extension CallAudio: @unchecked Sendable {}
+extension CallAudioStats: @unchecked Sendable {}
+extension CallEvent: @unchecked Sendable {}
+extension CallEndReason: @unchecked Sendable {}
+extension CallStart: @unchecked Sendable {}
+extension CallWake: @unchecked Sendable {}
+extension GroupInfo: @unchecked Sendable {}
+extension GroupMember: @unchecked Sendable {}
+extension GroupMemberInput: @unchecked Sendable {}
+extension Reaction: @unchecked Sendable {}
+
+extension GroupInfo: Identifiable {
+    public var id: String { groupId }
+}
 
 extension ChatMessage: Identifiable {
     public var id: Int64 { seq }
@@ -24,6 +39,11 @@ extension ChatMessage: Identifiable {
 /// Corre trabalho bloqueante (SQLCipher / criptografia no Rust) FORA da thread principal.
 func background<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
     try await Task.detached(priority: .userInitiated) { try work() }.value
+}
+
+/// O mesmo, para trabalho que nao falha.
+func background<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+    await Task.detached(priority: .userInitiated) { work() }.value
 }
 
 /// Exclusao mutua para codigo async (equivalente ao Mutex das corrotinas Kotlin).
@@ -59,6 +79,13 @@ extension RelayResponse {
         case .blobNotFound: return "BlobNotFound"
         }
     }
+}
+
+/// Registos (Consola do Mac, como o `adb logcat -s SealerRelay` do Android): nunca conteudo
+/// nem chaves, so estados e motivos de erro.
+func log(_ tag: String, _ msg: @autoclosure () -> String) {
+    let text = msg()
+    Logger(subsystem: "sealer", category: tag).notice("\(text, privacy: .public)")
 }
 
 /// Mensagem curta e SEGURA para mostrar: nunca inclui conteudo nem chaves.

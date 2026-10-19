@@ -4,7 +4,7 @@
 
 **SEALER** é um mensageiro privado: sem número de telefone, sem email, com cifra ponta a ponta e proteção pós-quântica. **QT** é o nome do protocolo e deste repositório.
 
-**Estado:** versão de testes, em testes fechados. App Android **0.9.13**, app iPhone **0.9.3**, servidor em produção.
+**Estado:** versão de testes, em testes fechados. App Android **0.9.13**, app iPhone **0.9.13** (a testar), servidor em produção.
 
 [Read this in English →](README.en.md)
 
@@ -61,8 +61,8 @@ O que isto protege e o que não protege está em [`docs/threat-model.md`](docs/t
 
 **A seguir:**
 
-- Chamadas de voz no iPhone e, no Android, a integração com o sistema de chamadas (Bluetooth, carro).
-- Foto de perfil, seis línguas, novo design e bloqueio da app no iPhone.
+- Testar no iPhone a 0.9.13 (igual à Android: grupos, chamadas, foto de perfil, seis línguas, novo design e bloqueio da app).
+- No Android, a integração com o sistema de chamadas (Bluetooth, carro).
 - Distribuição pela Google Play e pela App Store (hoje a app é instalada à mão pelos testadores). Já preparado: [`docs/google-play.md`](docs/google-play.md).
 - Servidor de produção com backups e alertas.
 
@@ -174,11 +174,10 @@ A build *release* precisa de uma keystore própria e do servidor de produção (
 
 ### App iPhone
 
-Precisa de um Mac com Xcode e do [XcodeGen](https://github.com/yonaskolb/XcodeGen):
+Precisa de um Mac com Xcode (o script instala o Rust, o [XcodeGen](https://github.com/yonaskolb/XcodeGen) e o cmake se faltarem):
 
 ```bash
-./scripts/build-ios.sh          # compila o núcleo Rust para iPhone e simulador
-cd ios && xcodegen && open SealerMessenger.xcodeproj
+bash compilar-iphone.sh         # núcleo Rust para iPhone e simulador, projeto Xcode e abre-o
 ```
 
 Passo a passo em [`ios/README.md`](ios/README.md).

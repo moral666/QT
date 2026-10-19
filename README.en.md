@@ -4,7 +4,7 @@
 
 **SEALER** is a private messenger: no phone number, no email, end-to-end encryption and post-quantum protection. **QT** is the name of the protocol and of this repository.
 
-**Status:** test version, in closed testing. Android app **0.9.13**, iPhone app **0.9.3**, server in production.
+**Status:** test version, in closed testing. Android app **0.9.13**, iPhone app **0.9.13** (being tested), server in production.
 
 [Ler em português →](README.md)
 
@@ -61,8 +61,8 @@ What this does and does not protect against is in [`docs/threat-model.md`](docs/
 
 **Next:**
 
-- Voice calls on iPhone and, on Android, integration with the system call service (Bluetooth, car).
-- Profile photo, six languages, new design and app lock on iPhone.
+- Test version 0.9.13 on iPhone (same as Android: groups, calls, profile photo, six languages, new design and app lock).
+- On Android, integration with the system call service (Bluetooth, car).
 - Distribution through Google Play and the App Store (today testers install the app by hand). Already prepared: [`docs/google-play.md`](docs/google-play.md).
 - Production server with backups and alerts.
 
@@ -174,11 +174,10 @@ The *release* build needs its own keystore and the production server (`qtRelayUr
 
 ### iPhone app
 
-Needs a Mac with Xcode and [XcodeGen](https://github.com/yonaskolb/XcodeGen):
+Needs a Mac with Xcode (the script installs Rust, [XcodeGen](https://github.com/yonaskolb/XcodeGen) and cmake if missing):
 
 ```bash
-./scripts/build-ios.sh          # builds the Rust core for iPhone and simulator
-cd ios && xcodegen && open SealerMessenger.xcodeproj
+bash compilar-iphone.sh         # Rust core for iPhone and simulator, Xcode project, then opens it
 ```
 
 Step by step in [`ios/README.md`](ios/README.md).

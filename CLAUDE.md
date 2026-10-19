@@ -23,14 +23,19 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 
 ## Decisões que não se mudam sem ele pedir
 
-- **App iPhone 0.9.3** compilada e testada num iPhone pelo Nuno (19/10/2026): mensagens, grupos,
-  voz, fotos, ficheiros e notificações push. O código Swift dessa versão está no Mac do Nuno
-  (confirmar que foi para o GitHub antes de mexer em `ios/`; passos em `ios/README.md`, "Enviar o código do Mac", ramo `iphone-mac`). Falta o bloqueio da app. O `GoogleService-Info.plist` e as chaves da Apple ficam fora do git.
+- **App iPhone 0.9.13** (19/10/2026, a testar no Mac do amigo do Nuno): posta a par da Android 0.9.13
+  pelo Claude (o código Swift da 0.9.3 do Mac nunca chegou ao GitHub). Identificador `sealer.app`.
+  Decisões tomadas pelo Claude com as regras do Nuno (privacidade e desempenho), a confirmar com ele:
+  **notificações direto pela Apple, sem Firebase** (`server/src/apns.rs`, `/etc/qt/apns.json`, token
+  `apns:...`), **chamadas com CallKit + PushKit** (fora do histórico do telefone), Face ID no bloqueio
+  da app, a escolha do idioma nas Definições do iPhone, fotos de perfil em JPEG. Textos:
+  `python3 scripts/strings-ios.py` (a partir dos do Android). Ver `ios/README.md`. Sem conta paga da
+  Apple não há notificações (`QT_ENTITLEMENTS` no `ios/Configs/Local.xcconfig`).
 - **Sem avisos de ligação na app** ("A ligar ao relay", "Sem ligação",
   barras de estado): se houver problemas, só no registo (`adb logcat -s SealerRelay`).
 - A build de release **não mostra opções de teste do relay** (URL, chave).
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
-- O **site, a documentação e a app nunca mencionam auditorias em falta** ("sem auditoria", "não auditada", 19/10/2026). Falta mudar o aviso do ecrã inicial no iPhone (`ios/.../RootViews.swift`), quando o código Swift estiver no GitHub.
+- O **site, a documentação e a app nunca mencionam auditorias em falta** ("sem auditoria", "não auditada", 19/10/2026).
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
 - Versões da app: série 0.x (agora **0.9.13**, `versionCode` 20), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
@@ -50,6 +55,8 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
   App: `Push.kt` lê `android/app/google-services.json` (fora do git). Relay: `/etc/qt/fcm.json`
   (conta de serviço, fora do git) e o `setup-ec2.sh` liga as notificações se o ficheiro existir.
   Só tocam para mensagens: recibos, reações, convites e presença vão com `silent: true` (18/10/2026).
+  iPhone: sem Firebase, o relay fala com a Apple (`server/src/apns.rs`) se existir `/etc/qt/apns.json`
+  (`team_id`, `key_id`, `topic` `sealer.app`, `private_key` da chave `.p8`; fora do git e da conversa).
 
 ## O projeto
 
@@ -62,6 +69,8 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
   endereço (seletor PT · EN · ES) ou a do navegador (outra qualquer: inglês). **Nada é guardado no
   navegador** (a política de cookies diz que não há armazenamento). Ao mudar um texto do site,
   mudar também em `en.js` e `es.js`. As páginas legais traduzidas dizem que vale a versão portuguesa.
+- App iPhone: `ios/` (SwiftUI, mesmo núcleo). Ao mudar um ecrã no Android, mudar também no iPhone
+  (tabela em `ios/README.md`); ao mudar um texto, correr `python3 scripts/strings-ios.py`.
 - Núcleo Rust: `core` (PQXDH + Double Ratchet + Sealed Sender), `storage`
   (SQLCipher), `ffi` (UniFFI para Kotlin/Swift), `transport` (WebSocket + Noise),
   `server` (relay, Redis). Nenhuma criptografia em Kotlin.
@@ -249,4 +258,4 @@ o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo
   B) código curto no servidor que expira (precisa de mudar o relay),
   C) ID com metade do tamanho (mudança grande, os IDs atuais deixam de servir).
   Sugestão dada: deixar como está.
-- Depois: AAB e ficha da Play Store, bloqueio da app no iPhone.
+- Depois: AAB e ficha da Play Store; ficha da App Store (conta paga da Apple).

@@ -154,26 +154,43 @@ RELAY_BLOB_MIN_FREE_MB=${RELAY_BLOB_MIN_FREE_MB:-1024}
 RELAY_MAX_CONNECTIONS=${RELAY_MAX_CONNECTIONS:-10000}
 EOF
 umask 022
-# Notificacoes com a app fechada (FCM): so se existir /etc/qt/fcm.json (a chave da conta
-# de servico do Firebase, posta a mao; nunca no git). O relay passa entao a poder abrir
-# ligacoes HTTPS para fora (Google), que o servico normalmente proibe (IPAddressDeny).
+# Notificacoes com a app fechada: Android (FCM) so se existir /etc/qt/fcm.json (a chave da
+# conta de servico do Firebase) e iPhone (Apple, sem Firebase) so se existir /etc/qt/apns.json
+# (team_id, key_id, topic e a chave .p8, ver server/src/apns.rs). Postos a mao, nunca no git.
+# O relay passa entao a poder abrir ligacoes HTTPS para fora (Google e Apple), que o servico
+# normalmente proibe (IPAddressDeny).
 DROPIN=/etc/systemd/system/qt-relay.service.d
+PUSH_OUT=0
 if [ -f /etc/qt/fcm.json ]; then
   chown root:qt /etc/qt/fcm.json
   chmod 640 /etc/qt/fcm.json
   echo "QT_FCM_CREDENTIALS=/etc/qt/fcm.json" >> "$ENV_FILE"
+  PUSH_OUT=1
+  log "Notificacoes Android (FCM): ativas"
+else
+  log "Notificacoes Android (FCM): desligadas (falta /etc/qt/fcm.json)"
+fi
+if [ -f /etc/qt/apns.json ]; then
+  chown root:qt /etc/qt/apns.json
+  chmod 640 /etc/qt/apns.json
+  echo "QT_APNS_CREDENTIALS=/etc/qt/apns.json" >> "$ENV_FILE"
+  PUSH_OUT=1
+  log "Notificacoes iPhone (APNs): ativas"
+else
+  log "Notificacoes iPhone (APNs): desligadas (falta /etc/qt/apns.json)"
+fi
+rm -f "$DROPIN/fcm.conf"
+if [ "$PUSH_OUT" = 1 ]; then
   mkdir -p "$DROPIN"
-  cat > "$DROPIN/fcm.conf" <<'EOF2'
-# Notificacoes (FCM): o relay precisa de falar com fcm.googleapis.com e
-# oauth2.googleapis.com (IPs da Google, que mudam). Sem isto so falava com localhost.
+  cat > "$DROPIN/notificacoes.conf" <<'EOF2'
+# Notificacoes: o relay precisa de falar com fcm.googleapis.com, oauth2.googleapis.com
+# e api.push.apple.com (IPs que mudam). Sem isto so falava com localhost.
 [Service]
 IPAddressDeny=
 IPAddressAllow=
 EOF2
-  log "Notificacoes (FCM): ativas"
 else
-  rm -f "$DROPIN/fcm.conf"
-  log "Notificacoes (FCM): desligadas (falta /etc/qt/fcm.json)"
+  rm -f "$DROPIN/notificacoes.conf"
 fi
 chown root:qt "$ENV_FILE"
 chmod 640 "$ENV_FILE"

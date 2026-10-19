@@ -684,7 +684,7 @@ como os outros. Nada é guardado em disco; o estado fica em memória (`ffi/src/p
 * O `msg_id` é sempre o mesmo: uma versão antiga da app mostra o aviso "atualiza a app" uma só
   vez por contacto. Testes: `ffi/tests/presence.rs`.
 
-## 17. Notificações com a app fechada (FCM)
+## 17. Notificações com a app fechada (FCM no Android, APNs no iPhone)
 
 Implementado em `server/src/push.rs` (relay) e `android/.../Push.kt` (app). Testes:
 `server/tests/relay_push.rs` e `server/tests/relay_push_send.rs` (servidor falso no lugar da Google).
@@ -730,6 +730,28 @@ inteiro do Android (por cima do bloqueio do telemóvel, com Atender e Recusar). 
 ativo nada se decifra: mensagens com o aviso genérico; `call` toca "Chamada SEALER" sem nome e o
 código é pedido ao atender; `call_end` para o toque. Nos primeiros 30 s em segundo plano a app
 ainda está ligada (o relay não toca) e trata tudo ela própria.
+
+**iPhone (desde a app iPhone 0.9.13): direto pela Apple, sem Firebase.** Implementado em
+`server/src/apns.rs` (relay) e `ios/SealerMessenger/Calls/Push.swift` (app). O token é
+`apns:<ambiente>:<token de alertas>:<token VoIP>`, com o ambiente `p` (App Store e TestFlight) ou `s`
+(sandbox, apps instaladas pelo Xcode) e os dois tokens em hexadecimal (qualquer um pode faltar, não os
+dois). O relay distingue-o pelo prefixo `apns:` e usa os mesmos limites de frequência do FCM.
+
+| campainha | pedido à Apple |
+|---|---|
+| mensagem | `apns-push-type: alert`, prazo 1 h, `apns-collapse-id: qt`, corpo `{"aps":{"alert":{"title":"SEALER","loc-key":"push_new"},"sound":"default","thread-id":"qt"}}` |
+| `Call` | `apns-push-type: voip` (tópico `<bundle>.voip`), prazo 60 s, corpo `{"qt":"call"}` |
+| `CallEnd` | nada: o iOS obriga cada push VoIP a mostrar uma chamada nova |
+
+O texto "Tens mensagens novas" vem do `Localizable.strings` da app (`push_new`), na língua do
+iPhone: a Apple só recebe a chave. Autenticação por JWT ES256 (chave `.p8` da conta de programador,
+renovado a cada 40 min), configurada em `QT_APNS_CREDENTIALS` (`/etc/qt/apns.json`). Uma resposta
+410, `BadDeviceToken`, `Unregistered` ou `DeviceTokenNotForTopic` apaga o token.
+
+Na app, o push VoIP mostra logo a chamada no CallKit ("Chamada SEALER") e a app abre a base de dados
+(chave "QTK3", que funciona com o iPhone bloqueado depois do primeiro desbloqueio), vai buscar a
+oferta e põe o nome do contacto (sem o bloqueio da app). Sem oferta em 20 s, termina a chamada. Com
+o bloqueio da app, toca até 45 s e o código é pedido ao abrir a app.
 
 ## 18. Chamadas de voz 1 a 1 (sinalização, cifra, relay, áudio e app Android)
 

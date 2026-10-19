@@ -33,6 +33,13 @@ struct ChatColors {
     let bubbleText: Color
     let bubbleMeta: Color
     let readTick: Color
+    /// Fundo dos icones das Definicoes (quadrados arredondados).
+    let tile: Color
+    /// A minha foto no cabecalho, quando nao ha foto: fundo e boneco.
+    let headerAvatar: Color
+    let headerAvatarInk: Color
+    let surfaceContainerLow: Color
+    let errorContainer: Color
 
     static let avatarPalette: [Color] = [
         Color(hex: 0x7E57C2), Color(hex: 0x5C6BC0), Color(hex: 0x26A69A), Color(hex: 0xEF6C00),
@@ -49,7 +56,9 @@ struct ChatColors {
         secondaryContainer: Color(hex: 0xE8DEF8), onSecondaryContainer: Color(hex: 0x1D192B),
         outlineVariant: Color(hex: 0xCAC4D0), error: Color(hex: 0xB3261E),
         chatBackground: Color(hex: 0xEFEAFB), outgoingBubble: Color(hex: 0xDCCDFF), incomingBubble: .white,
-        bubbleText: Color(hex: 0x1C1B1F), bubbleMeta: Color(hex: 0x6E6A75), readTick: Color(hex: 0x34B7F1)
+        bubbleText: Color(hex: 0x1C1B1F), bubbleMeta: Color(hex: 0x6E6A75), readTick: Color(hex: 0x34B7F1),
+        tile: Color(hex: 0xF1ECFF), headerAvatar: .white, headerAvatarInk: Color(hex: 0x4321B0),
+        surfaceContainerLow: Color(hex: 0xF6F2FC), errorContainer: Color(hex: 0xF9DEDC)
     )
 
     static let dark = ChatColors(
@@ -62,7 +71,9 @@ struct ChatColors {
         secondaryContainer: Color(hex: 0x4A4458), onSecondaryContainer: Color(hex: 0xE8DEF8),
         outlineVariant: Color(hex: 0x49454F), error: Color(hex: 0xF2B8B5),
         chatBackground: Color(hex: 0x0F0B1C), outgoingBubble: Color(hex: 0x4A24B8), incomingBubble: Color(hex: 0x231C36),
-        bubbleText: Color(hex: 0xEDE6F7), bubbleMeta: Color(hex: 0xB9B2C4), readTick: Color(hex: 0x53BDEB)
+        bubbleText: Color(hex: 0xEDE6F7), bubbleMeta: Color(hex: 0xB9B2C4), readTick: Color(hex: 0x53BDEB),
+        tile: Color(hex: 0x2A2142), headerAvatar: Color(hex: 0x2A2142), headerAvatarInk: Color(hex: 0xD9CCFF),
+        surfaceContainerLow: Color(hex: 0x1C172B), errorContainer: Color(hex: 0x8C1D18)
     )
 }
 
@@ -77,6 +88,39 @@ extension EnvironmentValues {
     }
 }
 
+/// Cor do ponto "online".
+let onlineGreen = Color(hex: 0x2EB872)
+
+/// Letra da app (desde a 0.9.11, igual ao Android): Plus Jakarta Sans (SIL Open Font License 1.1,
+/// ver Resources/PlusJakartaSans-OFL.txt). Respeita o tamanho de letra escolhido no iPhone.
+enum Jakarta {
+    static func font(_ size: CGFloat, _ weight: Font.Weight = .regular, relativeTo style: Font.TextStyle = .body) -> Font {
+        let name: String
+        switch weight {
+        case .medium: name = "PlusJakartaSans-Medium"
+        case .semibold: name = "PlusJakartaSans-SemiBold"
+        case .bold: name = "PlusJakartaSans-Bold"
+        case .heavy, .black: name = "PlusJakartaSans-ExtraBold"
+        default: name = "PlusJakartaSans-Regular"
+        }
+        return .custom(name, size: size, relativeTo: style)
+    }
+}
+
+extension Font {
+    /// Os estilos do Material 3 usados no Android, na letra da app.
+    static let sTitleLarge = Jakarta.font(22, .regular, relativeTo: .title2)
+    static let sTitleMedium = Jakarta.font(16, .medium, relativeTo: .headline)
+    static let sTitleSmall = Jakarta.font(14, .medium, relativeTo: .subheadline)
+    static let sBodyLarge = Jakarta.font(16, .regular, relativeTo: .body)
+    static let sBodyMedium = Jakarta.font(14, .regular, relativeTo: .callout)
+    static let sBodySmall = Jakarta.font(12, .regular, relativeTo: .footnote)
+    static let sLabelLarge = Jakarta.font(14, .medium, relativeTo: .subheadline)
+    static let sLabelMedium = Jakarta.font(12, .medium, relativeTo: .caption)
+    static let sLabelSmall = Jakarta.font(11, .medium, relativeTo: .caption2)
+    static let sHeadline = Jakarta.font(28, .regular, relativeTo: .title)
+}
+
 /// Equivalente ao `SealerTheme` do Android: escolhe as cores pelo modo claro/escuro do sistema.
 struct SealerTheme<Content: View>: View {
     @Environment(\.colorScheme) private var scheme
@@ -89,5 +133,6 @@ struct SealerTheme<Content: View>: View {
             .tint(c.primary)
             .background(c.background.ignoresSafeArea())
             .foregroundStyle(c.onSurface)
+            .font(.sBodyLarge)
     }
 }

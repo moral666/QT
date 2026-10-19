@@ -6,6 +6,21 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: iPhone igual ao Android (app iPhone 0.9.13, relay)
+
+- **App iPhone posta a par da Android 0.9.13** (o código do GitHub só tinha conversas a dois, fotos e
+  GIFs): grupos, voz, ficheiros, reações, bloquear, convites, online, apagar a conta também no
+  servidor, foto de perfil, termos de utilização, bloqueio da app (código e Face ID), as seis
+  línguas (geradas a partir das do Android por `scripts/strings-ios.py`), o novo design (0.9.11) e
+  as chamadas de voz (CallKit e PushKit, sem aparecer no histórico do telefone). Identificador
+  `sealer.app`, como no Android. O aviso antigo do ecrã inicial saiu.
+- **Notificações do iPhone sem Firebase:** o relay fala diretamente com a Apple
+  (`server/src/apns.rs`, token `apns:...`, `/etc/qt/apns.json` no `setup-ec2.sh`). A Apple recebe
+  um aviso vazio com o texto fixo da app; as chamadas vão por push VoIP.
+- **Núcleo:** a build do iPhone passa a incluir as chamadas (`ios = [..., "calls"]`); o
+  `build-ios.sh` pede o cmake.
+- **Site:** política de privacidade com a Apple (só no iPhone), em PT, EN e ES.
+
 ### 19 de outubro de 2026: CI reparada, texto do ecrã inicial e documentação revista (app 0.9.13)
 
 - **CI reparada.** O clippy novo do Rust (1.99) passou a recusar `chunks_exact` com um tamanho

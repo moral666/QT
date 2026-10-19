@@ -2,7 +2,8 @@ import SwiftUI
 
 @main
 struct SealerMessengerApp: App {
-    @StateObject private var model = AppModel()
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @ObservedObject private var model = AppModel.shared
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -19,7 +20,11 @@ struct SealerMessengerApp: App {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { model.becameActive() }
+            switch phase {
+            case .active: model.onAppVisible()
+            case .background: model.onAppHidden()
+            default: break   // .inactive: Face ID, centro de controlo, pedidos de permissao
+            }
         }
     }
 }
@@ -30,8 +35,8 @@ private struct PrivacyCover: View {
         ZStack {
             c.background.ignoresSafeArea()
             VStack(spacing: 16) {
-                BrandMark(size: 72)
-                Text(Config.appName).font(.title2.bold())
+                BrandLogo(size: 72)
+                Text(Config.appName).font(Jakarta.font(22, .bold))
             }
         }
     }

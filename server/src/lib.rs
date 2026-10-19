@@ -19,6 +19,7 @@ pub mod connection;
 pub mod latency;
 pub mod limits;
 pub mod protocol;
+pub mod apns;
 pub mod push;
 pub mod stats;
 pub mod store;
