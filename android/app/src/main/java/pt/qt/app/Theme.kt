@@ -7,7 +7,12 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.material3.Typography
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 
 /** Nome da app (titulo, ecra inicial). O nome no telemovel vem do AndroidManifest. */
 const val APP_NAME = "SEALER"
@@ -50,6 +55,11 @@ data class ChatColors(
     val bubbleMeta: Color,
     val readTick: Color,
     val avatarPalette: List<Color>,
+    /** Fundo dos icones das Definicoes (quadrados arredondados). */
+    val tile: Color,
+    /** A minha foto no cabecalho, quando nao ha foto: fundo e boneco. */
+    val headerAvatar: Color,
+    val headerAvatarInk: Color,
 )
 
 private val Avatars = listOf(
@@ -68,6 +78,9 @@ private val LightChat = ChatColors(
     bubbleMeta = Color(0xFF6E6A75),
     readTick = Color(0xFF34B7F1),
     avatarPalette = Avatars,
+    tile = Color(0xFFF1ECFF),
+    headerAvatar = Color.White,
+    headerAvatarInk = Color(0xFF4321B0),
 )
 
 private val DarkChat = ChatColors(
@@ -81,14 +94,42 @@ private val DarkChat = ChatColors(
     bubbleMeta = Color(0xFFB9B2C4),
     readTick = Color(0xFF53BDEB),
     avatarPalette = Avatars,
+    tile = Color(0xFF2A2142),
+    headerAvatar = Color(0xFF2A2142),
+    headerAvatarInk = Color(0xFFD9CCFF),
 )
 
 val LocalChatColors = staticCompositionLocalOf { LightChat }
+
+/**
+ * Letra da app (desde a 0.9.11): Plus Jakarta Sans (SIL Open Font License 1.1, ver
+ * assets/licencas/plus-jakarta-sans-OFL.txt), so os carateres latinos. O que nao
+ * existir nela (setas, simbolos) vem da letra do telemovel.
+ */
+val JakartaSans = FontFamily(
+    Font(R.font.plus_jakarta_sans_regular, FontWeight.Normal),
+    Font(R.font.plus_jakarta_sans_medium, FontWeight.Medium),
+    Font(R.font.plus_jakarta_sans_semibold, FontWeight.SemiBold),
+    Font(R.font.plus_jakarta_sans_bold, FontWeight.Bold),
+    Font(R.font.plus_jakarta_sans_extrabold, FontWeight.ExtraBold),
+)
+
+private fun TextStyle.jakarta() = copy(fontFamily = JakartaSans)
+
+private val SealerTypography = Typography().run {
+    Typography(
+        displayLarge = displayLarge.jakarta(), displayMedium = displayMedium.jakarta(), displaySmall = displaySmall.jakarta(),
+        headlineLarge = headlineLarge.jakarta(), headlineMedium = headlineMedium.jakarta(), headlineSmall = headlineSmall.jakarta(),
+        titleLarge = titleLarge.jakarta(), titleMedium = titleMedium.jakarta(), titleSmall = titleSmall.jakarta(),
+        bodyLarge = bodyLarge.jakarta(), bodyMedium = bodyMedium.jakarta(), bodySmall = bodySmall.jakarta(),
+        labelLarge = labelLarge.jakarta(), labelMedium = labelMedium.jakarta(), labelSmall = labelSmall.jakarta(),
+    )
+}
 
 @Composable
 fun SealerTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
     androidx.compose.runtime.CompositionLocalProvider(LocalChatColors provides if (dark) DarkChat else LightChat) {
-        MaterialTheme(colorScheme = if (dark) DarkScheme else LightScheme, content = content)
+        MaterialTheme(colorScheme = if (dark) DarkScheme else LightScheme, typography = SealerTypography, content = content)
     }
 }

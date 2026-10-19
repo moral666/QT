@@ -530,7 +530,7 @@ tipo 8 = saída do grupo:    [16 group_id]
 tipo 9 = presença: [1 estado: 1 = online, 0 = offline]  (msg_id sempre o mesmo)
 tipo 10 = sessão terminada: [vazio]
 tipo 11 = chamada de voz (ver secção 18)
-tipo 12 = foto de perfil: [1 op: 1 = foto, 0 = sem foto][foto WebP ou JPEG, máx. 10 000 bytes]
+tipo 12 = foto de perfil: [1 op: 1 = foto, 0 = sem foto][foto WebP ou JPEG, máx. 9 973 bytes]
           (msg_id sempre o mesmo)
 ```
 
@@ -838,13 +838,18 @@ a FFI.
 
 ## 19. Foto de perfil (desde a app 0.9.9)
 
-Cada pessoa escolhe uma foto (a original até 3 MB). A app corta-a ao centro e reduz para um
-quadrado em WebP (256 px, ou menos até caber) com no máximo 10 000 bytes, e o núcleo
+Cada pessoa escolhe uma foto (a original até 20 MB desde a app 0.9.11; antes 3 MB). A app
+corta-a ao centro e reduz para um quadrado em WebP (256 px, ou menos até caber) com no máximo
+9 900 bytes, mostra-a para confirmar e, com "Aplicar", o núcleo
 (`ffi/src/profile.rs`) envia-a aos contactos guardados no tipo 12, dentro do Double Ratchet.
 Com o cabeçalho cabe no maior balde do enchimento (10 240), por isso o relay vê um envelope
 do mesmo tamanho que uma mensagem de texto longa e não sabe que é uma foto. Nada vai ao
 armazenamento de anexos do relay.
 
+- **Tamanho:** o payload inteiro (27 bytes de cabeçalho mais a foto) tem de caber nos 10 000
+  bytes de plaintext, por isso o núcleo aceita fotos até 9 973 bytes (`MAX_PHOTO_BYTES`). Até à
+  0.9.10 o limite era 10 000 só para a foto: uma foto reduzida entre 9 974 e 10 000 bytes passava
+  a validação mas era recusada ao cifrar (`"plaintext"`), e a app dizia "Essa imagem não serve".
 - **72 horas:** só se escolhe uma foto nova 72 h depois da anterior (`profile_photo_set` devolve
   `InvalidInput { field: "photo_wait" }`). Tirar a foto pode-se sempre e não reinicia o prazo.
   Quem recebe não aceita uma foto nova do mesmo contacto antes de 71 h (hora local), por isso

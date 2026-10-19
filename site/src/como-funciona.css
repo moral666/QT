@@ -440,3 +440,49 @@
   border-radius: 24px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
+
+/* Ecras da app (0.9.11): quatro capturas lado a lado; num ecra estreito deslizam na horizontal.
+   As margens automaticas do primeiro e do ultimo centram a fila quando cabe. */
+.cf-ecras {
+  max-width: 64rem;
+  margin: 2.5rem auto 0;
+  text-align: center;
+}
+.cf-ecras h2 {
+  margin: 0 0 0.6rem;
+}
+.cf-ecras p {
+  max-width: 34rem;
+  margin: 0 auto 1.4rem;
+  line-height: 1.55;
+}
+.cf-ecras__lista {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding: 0.5rem 1rem 1.25rem;
+  scroll-snap-type: x mandatory;
+}
+.cf-ecras__lista > :first-child {
+  margin-left: auto;
+}
+.cf-ecras__lista > :last-child {
+  margin-right: auto;
+}
+.cf-ecras figure {
+  flex: 0 0 min(220px, 62vw);
+  margin: 0;
+  scroll-snap-align: center;
+}
+.cf-ecras img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 22px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.cf-ecras figcaption {
+  margin-top: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--lilac);
+}

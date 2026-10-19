@@ -4,7 +4,7 @@
 
 The apps are called **SEALER**; QT is the name of the protocol and of this repository.
 
-**Test version (Android 0.9.10, iPhone 0.9.3), not audited.** An E2EE messenger with post-quantum
+**Test version (Android 0.9.11, iPhone 0.9.3), not audited.** An E2EE messenger with post-quantum
 cryptography (X3DH, PQXDH, Double Ratchet, Sealed Sender, Noise Protocol),
 all implemented in Rust, with Android and iPhone apps and a cloud relay,
 already working end to end. **It is not a finished product yet and must not be
@@ -12,6 +12,14 @@ used for sensitive information.** See "Be honest with me: does this
 actually work?" below.
 
 [Ler isto em português →](README.md)
+
+<p align="center">
+  <img src="site/public/ecras/conversas-0.9.11.jpg" width="180" alt="Home screen: purple header with the logo, the profile photo and the ID, and the chat list">
+  <img src="site/public/ecras/chat-0.9.11.jpg" width="180" alt="An end-to-end encrypted chat">
+  <img src="site/public/ecras/definicoes-0.9.11.jpg" width="180" alt="Settings screen">
+  <img src="site/public/ecras/novo-contacto-0.9.11.jpg" width="180" alt="New contact screen with the QR code">
+</p>
+<p align="center"><sub>New design of the Android app (0.9.11, shown in Portuguese). Names and messages are examples.</sub></p>
 
 ## Context
 
@@ -39,7 +47,7 @@ can verify there are no hidden tricks.
 
 ## Be honest with me: does this actually work?
 
-Yes, end to end, as a test version (**Android app 0.9.10 and iPhone app 0.9.3**), in closed testing with a few people. **It has not been independently audited and must not be used for real conversations or sensitive information.**
+Yes, end to end, as a test version (**Android app 0.9.11 and iPhone app 0.9.3**), in closed testing with a few people. **It has not been independently audited and must not be used for real conversations or sensitive information.**
 
 ### What the app already does (19 October 2026)
 
@@ -48,8 +56,9 @@ Yes, end to end, as a test version (**Android app 0.9.10 and iPhone app 0.9.3**)
 - **Photos, GIFs, voice messages and files up to 25 MB** (PDFs, documents...), one-to-one and in groups. Each file is encrypted on the phone with its own key and deleted from the relay once downloaded, or after 24 hours.
 - **Push notifications with the app closed:** a generic notice ("You have new messages"), without the sender's name or the text. Since Android 0.9.6 the app decrypts in the background, on the phone, so calls can ring with the app closed; with the app lock on, nothing is decrypted without the passcode.
 - **Invites by QR code**, reactions, blocking contacts, online / offline for contacts only (encrypted) and an app lock with its own passcode, fingerprint or face (for now only on Android).
-- **Profile photo** (0.9.9): only your contacts see it, end-to-end encrypted inside the conversation (the server does not even know it is a photo). Up to 3 MB, and it can only be changed every 72 hours.
-- **Six languages** (0.9.10): Portuguese, English, French, Spanish, German and Italian. Follows the phone language, or pick one in the "Language" menu.
+- **Profile photo** (0.9.9): only your contacts see it, end-to-end encrypted inside the conversation (the server does not even know it is a photo). The original can be up to 20 MB (0.9.11), you see the photo before applying it, and it can only be changed every 72 hours.
+- **Six languages** (0.9.10): Portuguese, English, French, Spanish, German and Italian. Follows the phone language, or pick one in Settings, "Language".
+- **New design** (0.9.11): purple header with a curved bottom, the logo spinning like a top on the home screen, your photo and your ID at the top, a Settings screen (instead of the three-dot menu) and a New contact screen with your QR code. Android only for now.
 - **Delete your account** on the phone and on the server, with one tap.
 - **Protocol security (0.9.3):** PQXDH v2 (X25519 + ML-KEM-768), keys that rotate every 7 days and one-time keys served by the relay, message padding (the relay cannot tell short messages from receipts), proof of work for new accounts and per-account limits on the relay. 0.9.3 apps do not talk to earlier versions.
 
@@ -64,7 +73,7 @@ Yes, end to end, as a test version (**Android app 0.9.10 and iPhone app 0.9.3**)
 ### Still missing
 
 - **Voice calls on iPhone**, and on Android the integration with the system call framework (Bluetooth headsets, car, a regular call at the same time).
-- **Profile photo and six languages on iPhone** (Android only for now).
+- **Profile photo, six languages and the new design on iPhone** (Android only for now).
 - **Distribution through Google Play and the App Store** (today testers install the app by hand). Already prepared: account deletion, privacy policy and answers for the forms ([`docs/google-play.md`](docs/google-play.md)).
 - **Production infrastructure:** redundancy, backups and server alerts.
 - **Independent security audit.**
@@ -87,7 +96,7 @@ Yes, end to end, as a test version (**Android app 0.9.10 and iPhone app 0.9.3**)
 | `storage/` | Stores your identity and conversations on disk, encrypted | ✅ Tested, including confirming a wrong password opens nothing |
 | `cli/` | The messenger in the terminal (`messenger`), on the same core as the apps, plus a visible protocol demo (`messenger_demo`) | ✅ Tested end to end against a real relay: terminal ↔ terminal and terminal ↔ a client identical to the apps' |
 | `ffi/` | The bridge connecting all of this to Kotlin (Android), Swift (iOS) and Python: history, outbox, images, app lock | ✅ Tested in Rust (including crossed sessions and images) and from Python |
-| `android/` | Android app (Kotlin/Compose); all cryptography stays in Rust | ✅ Version 0.9.10 (voice calls, profile photo, six languages), signed release tested on real phones through the relay on AWS |
+| `android/` | Android app (Kotlin/Compose); all cryptography stays in Rust | ✅ Version 0.9.11 (voice calls, profile photo, six languages, new design), signed release tested on real phones through the relay on AWS |
 | `ios/` | iPhone app (SwiftUI), same as the Android one, on the same Rust core | ✅ Version 0.9.3 built on a Mac and tested on an iPhone, exchanging messages with the Android apps through the relay on AWS |
 | `deploy/` | Relay install on EC2: Redis on localhost only with ACLs, sandboxed systemd service, automatic TLS | ✅ Used in the current deployment |
 
@@ -235,7 +244,7 @@ cargo run --release -- eco --ws         # uses the WebSocket fallback
 
 ## Android app
 
-The Rust core is the only cryptographic backend of the Android app (Kotlin/Compose): `QtClient` API via UniFFI, SQLCipher storage with a key from the Android Keystore, PQXDH (X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, authenticated relay with *at-least-once* delivery, push notifications (FCM, generic notice), voice calls (`call/` engine) and text in six languages (`res/values*/strings.xml`). **Test version (0.9.10), not audited.**
+The Rust core is the only cryptographic backend of the Android app (Kotlin/Compose): `QtClient` API via UniFFI, SQLCipher storage with a key from the Android Keystore, PQXDH (X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, authenticated relay with *at-least-once* delivery, push notifications (FCM, generic notice), voice calls (`call/` engine) and text in six languages (`res/values*/strings.xml`). **Test version (0.9.11), not audited.**
 
 ```bash
 export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/<version>

@@ -1,6 +1,7 @@
 //! Foto de perfil (tipo 12): so contactos, cifrada, de 72 em 72 h.
 
 use qt_ffi::history::*;
+use qt_ffi::profile::MAX_PHOTO_BYTES;
 use qt_ffi::*;
 use std::sync::Arc;
 
@@ -89,6 +90,7 @@ fn formato_e_tamanho_errados_sao_recusados() {
     let (a, b) = pair();
     assert!(a.c.profile_photo_set(b"GIF89a....".to_vec(), vec![b.cid()]).is_err());
     assert!(a.c.profile_photo_set(webp(10_001, 0), vec![b.cid()]).is_err());
+    assert!(a.c.profile_photo_set(webp(MAX_PHOTO_BYTES + 1, 0), vec![b.cid()]).is_err());
     assert!(a.c.outbox().unwrap().is_empty());
 }
 
@@ -105,4 +107,15 @@ fn contacto_novo_recebe_na_sincronizacao_e_quem_nao_e_contacto_nao() {
     // Apagar o contacto apaga a foto dele.
     b.c.delete_contact(a.cid()).unwrap();
     assert_eq!(b.c.profile_photo_of(a.cid()).unwrap(), None);
+}
+
+/// A foto do tamanho maximo vai mesmo para um contacto (ate a 0.9.10 uma foto entre
+/// 9 974 e 10 000 bytes passava a validacao mas era recusada ao cifrar).
+#[test]
+fn foto_do_tamanho_maximo_chega_ao_contacto() {
+    let (a, b) = pair();
+    let foto = webp(MAX_PHOTO_BYTES, 9);
+    assert_eq!(a.c.profile_photo_set(foto.clone(), vec![b.cid()]).unwrap(), 1);
+    relay(&a, &b);
+    assert_eq!(b.c.profile_photo_of(a.cid()).unwrap(), Some(foto));
 }

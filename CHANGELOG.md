@@ -6,6 +6,28 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: novo design e foto de perfil corrigida (app 0.9.11, núcleo)
+
+- **Novo design no Android.** Cabeçalho roxo com o fundo curvo em baixo, à direita, em todos os
+  ecrãs. No ecrã inicial: o logo a rodar como um pião (só aqui; nos outros ecrãs fica parado),
+  "Sealer", a tua foto com uma engrenagem e o teu ID abreviado (tocar mostra o QR). Lista com
+  avatares maiores, hora em cima e, por baixo, as mensagens por ler ou uma seta. O botão "+"
+  volta a ser um "+". Letra nova em toda a app: Plus Jakarta Sans (licença SIL OFL, incluída em
+  `assets/licencas/`).
+- **Ecrã Definições** em vez do menu de três pontos: foto de perfil, o meu ID, bloqueio da app,
+  contactos bloqueados, "online", confirmações de leitura, notificações, idioma, versão e
+  "Destruir perfil e dados". Abre-se na engrenagem do ecrã inicial.
+- **Ecrã Novo contacto** em vez da janela: o teu código QR (Partilhar, Copiar), "Ler código QR",
+  o ID e o nome da outra pessoa, e "Novo grupo".
+- **Foto de perfil:** depois de escolher, a foto aparece já cortada com o aviso das 72 h e só
+  fica com "Aplicar" (aparece "Foto atualizada"). Antes era aplicada logo, sem se ver nada, e quem
+  tentava outra ficava preso nas 72 h. A original pode ter até 20 MB (antes 3 MB).
+- **Correção (núcleo):** uma foto reduzida entre 9 974 e 10 000 bytes era recusada com "Essa
+  imagem não serve como foto de perfil", porque com os 27 bytes do cabeçalho passava o limite de
+  10 000 bytes de uma mensagem. O núcleo aceita agora até 9 973 bytes e a app reduz até 9 900.
+  Teste novo em `ffi/tests/profile.rs`. Continua compatível com a 0.9.9 e a 0.9.10.
+- iPhone: ainda sem o novo design (o código da app iPhone está no Mac).
+
 ### 19 de outubro de 2026: app em seis línguas (app 0.9.10)
 
 - A app fala português, inglês, francês, espanhol, alemão e italiano. Segue a língua do telemóvel

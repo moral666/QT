@@ -119,6 +119,10 @@ data class UiState(
     val myPhoto: androidx.compose.ui.graphics.ImageBitmap? = null,
     /** Daqui a quantos ms posso trocar de foto (0 = ja). */
     val photoNextChangeMs: Long = 0L,
+    /** Foto escolhida e ja reduzida, a espera de "Aplicar" (0.9.11). So em memoria. */
+    val photoPreview: androidx.compose.ui.graphics.ImageBitmap? = null,
+    /** Aviso curto a mostrar uma vez (Toast), por exemplo "Foto atualizada". */
+    val notice: String? = null,
 )
 
 enum class CallPhase { CALLING, RINGING_OUT, INCOMING, ACTIVE, ENDED }
@@ -315,6 +319,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         SealerImages.clearMemory()
         AttachmentCache.clear()
         SealerFileProvider.clear()
+        pendingPhoto = null
         qt = null
         updateReceiving()
         SealerCore.close()
@@ -790,21 +795,51 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Foto escolhida na galeria: ate 3 MB, reduzida aqui e enviada aos contactos (72 h). */
-    fun setProfilePhoto(uri: android.net.Uri) = io {
-        val client = qt ?: return@io
+    /** Foto ja reduzida, a espera de "Aplicar". Nada vai para a base de dados antes disso. */
+    @Volatile private var pendingPhoto: ByteArray? = null
+
+    /**
+     * Foto escolhida na galeria (ate 20 MB): reduzida aqui e mostrada para confirmar. So
+     * "Aplicar" a guarda e envia (e conta para as 72 h). Ate a 0.9.10 era aplicada logo ao
+     * escolher, sem se ver nada, e quem tentava outra ficava preso nas 72 h.
+     */
+    fun previewProfilePhoto(uri: android.net.Uri) = io {
+        if (qt == null) return@io
         try {
             val bytes = ProfilePhoto.prepare(getApplication(), uri)
-            if (client.profilePhotoSet(bytes, _ui.value.contacts.map { it.contactId }) > 0u) flushOutbox()
+            val img = ProfilePhoto.decode(bytes) ?: throw java.io.IOException("foto ilegivel")
+            pendingPhoto = bytes
+            _ui.update { it.copy(photoPreview = img) }
         } catch (e: PhotoTooBigException) {
-            error(s(R.string.t_a_foto_tem_mais_de_3))
-        } catch (e: QtException.InvalidInput) {
-            error(if (e.field == "photo_wait") s(R.string.photo_wait) else s(R.string.photo_invalid))
+            error(s(R.string.t_a_foto_tem_mais_de_20))
         } catch (e: java.io.IOException) {
             error(s(R.string.t_nao_foi_possivel_ler_essa_imagem))
         }
+    }
+
+    /** "Aplicar": guarda a foto, envia-a aos contactos e comeca a contar as 72 h. */
+    fun applyProfilePhoto() = io {
+        val client = qt ?: return@io
+        val bytes = pendingPhoto ?: return@io
+        try {
+            if (client.profilePhotoSet(bytes, _ui.value.contacts.map { it.contactId }) > 0u) flushOutbox()
+            pendingPhoto = null
+            _ui.update { it.copy(photoPreview = null, notice = s(R.string.photo_updated)) }
+        } catch (e: QtException.InvalidInput) {
+            pendingPhoto = null
+            _ui.update { it.copy(photoPreview = null) }
+            error(if (e.field == "photo_wait") s(R.string.photo_wait) else s(R.string.photo_invalid))
+        }
         refreshPhotos(client)
     }
+
+    /** "Cancelar" (ou fechar a janela): esquece a foto escolhida. */
+    fun cancelProfilePhoto() {
+        pendingPhoto = null
+        if (_ui.value.photoPreview != null) _ui.update { it.copy(photoPreview = null) }
+    }
+
+    fun dismissNotice() = _ui.update { it.copy(notice = null) }
 
     /** Tira a minha foto (os contactos deixam de a ver). */
     fun removeProfilePhoto() = io {

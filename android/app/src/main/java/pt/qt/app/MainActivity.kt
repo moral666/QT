@@ -77,6 +77,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
@@ -361,6 +362,9 @@ fun AppRoot(
 ) {
     val ui by vm.ui.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
+    /** Ecras da 0.9.11: Definicoes (antes o menu de tres pontos) e Novo contacto (antes uma janela). */
+    var showProfileSettings by rememberSaveable { mutableStateOf(false) }
+    var showAddContact by rememberSaveable { mutableStateOf(false) }
     var showMyId by remember { mutableStateOf(false) }
     var showLockSettings by remember { mutableStateOf(false) }
     var showGroupInfo by remember { mutableStateOf(false) }
@@ -482,27 +486,45 @@ fun AppRoot(
         }
         showSettings && BuildConfig.RELAY_EDITABLE -> {
             BackHandler { showSettings = false }
-            SettingsScreen(ui, onSave = { u, k -> vm.saveRelay(u, k); showSettings = false }, onBack = { showSettings = false })
+            RelaySettingsScreen(ui, onSave = { u, k -> vm.saveRelay(u, k); showSettings = false }, onBack = { showSettings = false })
+        }
+        showAddContact -> {
+            BackHandler { showAddContact = false }
+            AddContactScreen(
+                ui, onBack = { showAddContact = false },
+                onAdd = { n, p -> showAddContact = false; vm.addContact(n, p) },
+                onCreateGroup = { n, members -> showAddContact = false; vm.createGroup(n, members) },
+            )
+        }
+        showProfileSettings -> {
+            BackHandler { showProfileSettings = false }
+            ProfileSettingsScreen(
+                ui, onBack = { showProfileSettings = false },
+                onProfilePhoto = { showPhoto = true },
+                onMyId = { showMyId = true },
+                onLockSettings = { showLockSettings = true }, onLockNow = vm::lockNow,
+                onUnblock = vm::unblockContact,
+                onPresence = vm::setPresence,
+                onReadReceipts = vm::setReadReceipts,
+                onPush = { on ->
+                    vm.setPush(on)
+                    if (on && !Push.permissionGranted(ctx) && Build.VERSION.SDK_INT >= 33) {
+                        AutoLockPause.active = true
+                        askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                },
+                onLanguage = { showLanguage = true },
+                onRelay = { showSettings = true },
+                onWipeAll = { showProfileSettings = false; vm.wipeAllData() },
+            )
         }
         else -> HomeScreen(
-            ui, onOpen = vm::openChat, onAddContact = vm::addContact,
-            onMyId = { showMyId = true }, onSettings = { showSettings = true },
-            onReadReceipts = vm::setReadReceipts,
+            ui, onOpen = vm::openChat,
+            onMyId = { showMyId = true },
+            onSettings = { showProfileSettings = true },
+            onAdd = { showAddContact = true },
             onDeleteConversation = vm::deleteConversation, onDeleteContact = vm::deleteContact,
-            onWipeAll = { vm.wipeAllData() },
-            onUnblock = vm::unblockContact,
-            onLockSettings = { showLockSettings = true }, onLockNow = vm::lockNow,
-            onCreateGroup = vm::createGroup, onDeleteGroup = vm::deleteGroup,
-            onPresence = vm::setPresence,
-            onPush = { on ->
-                vm.setPush(on)
-                if (on && !Push.permissionGranted(ctx) && Build.VERSION.SDK_INT >= 33) {
-                    AutoLockPause.active = true
-                    askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-                }
-            },
-            onProfilePhoto = { showPhoto = true },
-            onLanguage = { showLanguage = true },
+            onDeleteGroup = vm::deleteGroup,
         )
     } }
     // Por cima do bloqueio do telemovel: nenhum dialogo (so a chamada).
@@ -524,10 +546,19 @@ fun AppRoot(
     if (showPhoto && !ui.locked) {
         ProfilePhotoDialog(
             ui,
-            onPick = { uri -> vm.setProfilePhoto(uri) },
+            onPick = { uri -> vm.previewProfilePhoto(uri) },
+            onApply = vm::applyProfilePhoto,
+            onCancelPreview = vm::cancelProfilePhoto,
             onRemove = { vm.removeProfilePhoto() },
-            onDismiss = { showPhoto = false },
+            onDismiss = { vm.cancelProfilePhoto(); showPhoto = false },
         )
+    }
+    // Avisos curtos ("Foto atualizada").
+    LaunchedEffect(ui.notice) {
+        ui.notice?.let {
+            android.widget.Toast.makeText(ctx, it, android.widget.Toast.LENGTH_SHORT).show()
+            vm.dismissNotice()
+        }
     }
     ui.wipeServerFailed?.let { reason ->
         WipeServerFailedDialog(
@@ -617,7 +648,7 @@ private fun CallOverLock(
 fun LoadingScreen() {
     Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            BrandMark(72)
+            BrandLogo(72)
             Text(s(R.string.t_a_abrir_o_armazenamento_seguro), style = MaterialTheme.typography.bodyMedium)
         }
     }
@@ -626,7 +657,8 @@ fun LoadingScreen() {
 /**
  * Logotipo SEALER (bolha de vidro com o S e os tres pontos), sempre a rodar
  * devagar como um piao, a volta do eixo vertical: uma volta completa a cada 6
- * segundos.
+ * segundos. Desde a 0.9.11 so roda no cabecalho do ecra inicial (HomeHeader); nos
+ * outros ecras o logo fica parado (BrandLogo).
  *
  * Para nao parecer uma folha de papel quando fica de lado, o logo tem espessura:
  * e desenhado em varias camadas, umas atras das outras; as da frente e de tras
@@ -680,20 +712,6 @@ fun BrandMark(sizeDp: Int) {
 /** Fonte da marca: Manrope Bold (SIL Open Font License 1.1, ver assets/licencas/manrope-OFL.txt). */
 val ManropeBold = FontFamily(Font(R.font.manrope_bold, FontWeight.Bold))
 
-/** Marca na barra de topo: logo pequeno (parado) e "Sealer" em Manrope Bold. */
-@Composable
-fun SealerWordmark() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Image(
-            painter = painterResource(R.drawable.sealer_logo),
-            contentDescription = null,
-            modifier = Modifier.size(30.dp),
-        )
-        Spacer(Modifier.width(10.dp))
-        Text("Sealer", fontFamily = ManropeBold, fontWeight = FontWeight.Bold, fontSize = 22.sp)
-    }
-}
-
 // ========================================================================= entrada
 
 @Composable
@@ -706,7 +724,7 @@ fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        BrandMark(96)
+        BrandLogo(96)
         Spacer(Modifier.height(24.dp))
         Text(APP_NAME, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
@@ -737,7 +755,7 @@ fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(ui: UiState, onSave: (String, String) -> Unit, onBack: () -> Unit) {
+fun RelaySettingsScreen(ui: UiState, onSave: (String, String) -> Unit, onBack: () -> Unit) {
     var url by remember { mutableStateOf(ui.relayUrl) }
     var key by remember { mutableStateOf(ui.relayKeyHex) }
     Scaffold(topBar = { SealerTopBar(title = { Text(s(R.string.t_relay_teste)) }, onBack = onBack) }) { pad ->
@@ -759,26 +777,11 @@ fun SealerTopBar(
     actions: @Composable () -> Unit = {},
 ) {
     val c = LocalChatColors.current
-    // Estrelas: posicoes fixas (sempre as mesmas), pequenas e meio transparentes.
-    val stars = remember {
-        val r = java.util.Random(7)
-        List(28) { floatArrayOf(r.nextFloat(), r.nextFloat(), 0.6f + r.nextFloat() * 0.8f, 0.25f + r.nextFloat() * 0.45f) }
-    }
-    Box(
-        Modifier
-            .background(Brush.linearGradient(c.topBarGradient))
-            .drawBehind {
-                for (s in stars) {
-                    drawCircle(
-                        color = Color.White.copy(alpha = s[3]),
-                        radius = s[2].dp.toPx() / 2f,
-                        center = Offset(s[0] * size.width, s[1] * size.height),
-                    )
-                }
-            },
-    ) {
+    // Fundo "galaxia" com a curva em baixo a direita (0.9.11); os 14 dp de baixo sao para a curva.
+    GalaxyHeader(curve = 30.dp) {
         TopAppBar(
             title = title,
+            modifier = Modifier.padding(bottom = 14.dp),
             navigationIcon = {
                 if (onBack != null) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = s(R.string.t_voltar)) }
@@ -802,103 +805,28 @@ fun SealerTopBar(
 fun HomeScreen(
     ui: UiState,
     onOpen: (String) -> Unit,
-    onAddContact: (String, String) -> Unit,
     onMyId: () -> Unit,
     onSettings: () -> Unit,
-    onReadReceipts: (Boolean) -> Unit,
+    onAdd: () -> Unit,
     onDeleteConversation: (String) -> Unit,
     onDeleteContact: (String) -> Unit,
-    onWipeAll: () -> Unit,
-    onLockSettings: () -> Unit,
-    onLockNow: () -> Unit,
-    onUnblock: (String) -> Unit,
-    onCreateGroup: (String, List<Contact>) -> Unit = { _, _ -> },
     onDeleteGroup: (String) -> Unit = {},
-    onPresence: (Boolean) -> Unit = {},
-    onPush: (Boolean) -> Unit = {},
-    onProfilePhoto: () -> Unit = {},
-    onLanguage: () -> Unit = {},
 ) {
-    var showAdd by rememberSaveable { mutableStateOf(false) }
-    var menu by remember { mutableStateOf(false) }
-    var showBlocked by remember { mutableStateOf(false) }
-    var showNewGroup by remember { mutableStateOf(false) }
     /** Grupo escolhido com toque longo (para apagar). */
     var groupActions by remember { mutableStateOf<uniffi.qt_ffi.GroupInfo?>(null) }
     /** Conversa escolhida com toque longo: (contactId, nome). */
     var actionsFor by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var showWipe by remember { mutableStateOf(false) }
+    // Desde a 0.9.11: cabecalho com a minha foto (engrenagem = Definicoes, em vez do menu de
+    // tres pontos) e o "+" abre o ecra Novo contacto (contacto ou grupo).
     Scaffold(
-        topBar = {
-            SealerTopBar(
-                title = { SealerWordmark() },
-                actions = {
-                    Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = s(R.string.t_mais_opcoes)) }
-                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(text = { Text(s(R.string.t_o_meu_id)) }, onClick = { menu = false; onMyId() })
-                            DropdownMenuItem(text = { Text(s(R.string.t_foto_de_perfil)) }, onClick = { menu = false; onProfilePhoto() })
-                            DropdownMenuItem(text = { Text(s(R.string.lang_menu)) }, onClick = { menu = false; onLanguage() })
-                            DropdownMenuItem(text = { Text(s(R.string.t_novo_grupo)) }, onClick = { menu = false; showNewGroup = true })
-                            if (Push.available) {
-                                DropdownMenuItem(
-                                    text = { Text(s(R.string.t_notificacoes)) },
-                                    onClick = { onPush(!ui.pushOn) },
-                                    trailingIcon = { Switch(checked = ui.pushOn, onCheckedChange = { onPush(it) }) },
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text(s(R.string.t_confirmacoes_de_leitura)) },
-                                onClick = { onReadReceipts(!ui.readReceipts) },
-                                trailingIcon = { Switch(checked = ui.readReceipts, onCheckedChange = { onReadReceipts(it) }) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(s(R.string.t_mostrar_quando_estou_online)) },
-                                onClick = { onPresence(!ui.presenceOn) },
-                                trailingIcon = { Switch(checked = ui.presenceOn, onCheckedChange = { onPresence(it) }) },
-                            )
-                            DropdownMenuItem(text = { Text(s(R.string.t_bloqueio_da_app)) }, onClick = { menu = false; onLockSettings() })
-                            if (ui.lockEnabled) {
-                                DropdownMenuItem(text = { Text(s(R.string.t_bloquear_agora)) }, onClick = { menu = false; onLockNow() })
-                            }
-                            if (ui.blocked.isNotEmpty()) {
-                                DropdownMenuItem(text = { Text(s(R.string.t_contactos_bloqueados)) }, onClick = { menu = false; showBlocked = true })
-                            }
-                            if (BuildConfig.RELAY_EDITABLE) {
-                                DropdownMenuItem(text = { Text(s(R.string.t_relay_teste)) }, onClick = { menu = false; onSettings() })
-                            }
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text(s(R.string.t_destruir_perfil_e_dados), color = MaterialTheme.colorScheme.error) },
-                                onClick = { menu = false; showWipe = true },
-                            )
-                            HorizontalDivider()
-                            // Versao instalada (build.gradle.kts, versionName), so informativa.
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        s(R.string.t_versao, BuildConfig.VERSION_NAME),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                },
-                                onClick = {},
-                                enabled = false,
-                            )
-                        }
-                    }
-                },
-            )
-        },
+        topBar = { HomeHeader(ui, onSettings = onSettings, onMyId = onMyId) },
         floatingActionButton = {
-            // O logotipo a rodar como um piao, em vez do "+". O leitor de ecra continua
-            // a anunciar "Novo contacto".
             FloatingActionButton(
-                onClick = { showAdd = true },
+                onClick = onAdd,
+                shape = RoundedCornerShape(20.dp),
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.semantics { contentDescription = s(R.string.t_novo_contacto) },
-            ) { BrandMark(34) }
+            ) { Icon(Icons.Filled.Add, contentDescription = s(R.string.t_novo_contacto)) }
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
@@ -908,7 +836,7 @@ fun HomeScreen(
             if (ui.conversations.isEmpty() && idle.isEmpty() && idleGroups.isEmpty()) {
                 EmptyConversations(onMyId)
             } else {
-                LazyColumn(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 4.dp, bottom = 88.dp)) {
                     val onlineNow = ui.contacts.filter { it.contactId in ui.online && it.contactId !in ui.blocked }
                     if (onlineNow.isNotEmpty()) {
                         item(key = "online-now") { OnlineNowStrip(onlineNow, onOpen) }
@@ -954,19 +882,8 @@ fun HomeScreen(
             }
         }
     }
-    if (showAdd) AddContactDialog(onDismiss = { showAdd = false }, onAdd = { n, p -> onAddContact(n, p); showAdd = false })
-    if (showNewGroup) {
-        NewGroupDialog(ui, onDismiss = { showNewGroup = false }, onCreate = { n, members -> showNewGroup = false; onCreateGroup(n, members) })
-    }
     groupActions?.let { g ->
         GroupDeleteDialog(g.name, onDismiss = { groupActions = null }, onConfirm = { groupActions = null; onDeleteGroup(g.groupId) })
-    }
-    if (showBlocked) {
-        BlockedContactsDialog(
-            ui.blocked.map { cid -> cid to (ui.contacts.firstOrNull { it.contactId == cid }?.nickname ?: s(R.string.t_desconhecido_2, cid.take(8))) },
-            onUnblock = onUnblock,
-            onDismiss = { showBlocked = false },
-        )
     }
     actionsFor?.let { (cid, name) ->
         DeleteActions(
@@ -977,7 +894,6 @@ fun HomeScreen(
             onDeleteContact = { onDeleteContact(cid); actionsFor = null },
         )
     }
-    if (showWipe) WipeAllDialog(onDismiss = { showWipe = false }, onConfirm = { showWipe = false; onWipeAll() })
 }
 
 @Composable
@@ -987,7 +903,7 @@ fun EmptyConversations(onMyId: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        BrandMark(64)
+        BrandLogo(64)
         Spacer(Modifier.height(16.dp))
         Text(s(R.string.t_ainda_nao_tens_conversas), style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
@@ -1071,25 +987,21 @@ fun ConversationRow(
 ) {
     val last = conv?.lastMessage
     val unread = conv?.unread ?: 0u
-    Column(Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Avatar(name, contactId, online = online)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+    // 0.9.11: avatar maior, hora em cima a direita e, por baixo, as nao lidas ou uma seta.
+    Row(
+        Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(start = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Avatar(name, contactId, sizeDp = 52, online = online)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Row(Modifier.padding(end = 16.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
                     Text(
-                        name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        name, fontSize = 17.sp, fontWeight = FontWeight.Bold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
-                    if (last != null) {
-                        Text(
-                            shortTime(last.localAtMs), style = MaterialTheme.typography.labelSmall,
-                            color = if (unread > 0u) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(2.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.height(3.dp))
                     val preview = when {
                         blocked -> s(R.string.t_bloqueado)
                         invite -> s(R.string.t_quer_falar_contigo_toca_para_aceitar)
@@ -1100,22 +1012,36 @@ fun ConversationRow(
                     }
                     Text(
                         preview, style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        fontWeight = if (unread > 0u) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (unread > 0u) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (last != null) {
+                        Text(
+                            shortTime(last.localAtMs), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold,
+                            color = if (unread > 0u) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (unread > 0u) {
-                        Spacer(Modifier.width(8.dp))
                         Box(
                             Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.primary).padding(horizontal = 7.dp, vertical = 2.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(unread.toString(), color = MaterialTheme.colorScheme.onPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
+                    } else {
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp),
+                        )
                     }
                 }
             }
+            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
         }
-        HorizontalDivider(Modifier.padding(start = 78.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 
@@ -1260,6 +1186,7 @@ fun ChatScreen(
     FollowNewest(listState, msgs.firstOrNull()?.seq, msgs.firstOrNull()?.outgoing == true)
 
     Scaffold(
+        containerColor = colors.chatBackground,
         topBar = {
             SealerTopBar(
                 onBack = onBack,
@@ -1820,7 +1747,7 @@ fun LockScreen(ui: UiState, onCode: (String) -> Unit, onBio: () -> Unit, onWipe:
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        BrandMark(80)
+        BrandLogo(80)
         Spacer(Modifier.height(20.dp))
         Text(
             s(R.string.t_esta_bloqueado, APP_NAME), style = MaterialTheme.typography.titleLarge,

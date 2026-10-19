@@ -24,8 +24,12 @@ use qt_storage as st;
 use qt_storage::messages as hm;
 
 pub(crate) const T_PROFILE: u8 = 12;
-/// Tamanho maximo da foto ja reduzida (cabe no envelope de 10 240 com o cabecalho).
-pub const MAX_PHOTO_BYTES: usize = 10_000;
+/// Cabecalho do payload do tipo 12 antes da foto: versao, tipo, msg_id, sent_at e op.
+const HEADER_BYTES: usize = 1 + 1 + 16 + 8 + 1;
+/// Tamanho maximo da foto ja reduzida: o payload inteiro (cabecalho + foto) tem de caber
+/// em `MAX_PLAINTEXT_LEN` (10 000). Ate a 0.9.10 o limite era 10 000 so para a foto, e
+/// uma foto entre 9 974 e 10 000 bytes era recusada ao cifrar ("plaintext").
+pub const MAX_PHOTO_BYTES: usize = crate::client::MAX_PLAINTEXT_LEN - HEADER_BYTES;
 /// Intervalo minimo entre duas fotos novas (72 h).
 pub const CHANGE_GAP_MS: i64 = 72 * 3_600_000;
 /// Do lado de quem recebe: 71 h (uma hora de folga para relogios diferentes).
@@ -237,6 +241,7 @@ mod tests {
         let p = encode(Some(&webp), 7);
         assert_eq!((p[0], p[1], &p[2..18]), (PAYLOAD_V1, T_PROFILE, &MSG_ID[..]));
         // Uma foto do tamanho maximo cabe no maior balde do enchimento.
-        assert!(encode(Some(&vec![0; MAX_PHOTO_BYTES]), 0).len() < 10_240);
+        // A foto maior que se aceita cabe no limite do plaintext (antes nao cabia).
+        assert_eq!(encode(Some(&vec![0; MAX_PHOTO_BYTES]), 0).len(), crate::client::MAX_PLAINTEXT_LEN);
     }
 }

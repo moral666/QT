@@ -37,6 +37,8 @@ seguir.
   aberta (0.9.4) e a tocar com a app fechada (0.9.6), com toque próprio (0.9.8).
 - **Foto de perfil** só para contactos, cifrada (0.9.9), e **app em seis línguas**
   (PT, EN, FR, ES, DE, IT, 0.9.10). Por agora só no Android.
+- **Novo design** (0.9.11): cabeçalho com o fundo curvo, ecrã de Definições e ecrã Novo
+  contacto; foto de perfil com pré-visualização e "Aplicar". Por agora só no Android.
 
 ## A seguir: tornar isto usável no dia a dia
 
