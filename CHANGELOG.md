@@ -6,6 +6,20 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: chamadas de voz, fase 2 (relay das chamadas)
+
+- Novo processo `qt-call-relay` (`server/src/call_relay.rs`): reencaminha os pacotes de áudio
+  pela porta UDP 443, com salas anónimas (o pedido de entrada vai cifrado para a chave do relay,
+  Noise_N, e não diz a conta). Reserva por WebSocket sem conta em `wss://<relay>/call` para redes
+  que bloqueiam UDP. Mudança de IP a meio da chamada sem cortes. Limites por sala, por IP e por
+  segundo. Não usa o Redis e não regista IPs.
+- O código da sala passa a depender só da oferta: os dois telemóveis entram na sala enquanto
+  toca (pré-aquecimento). As chaves do áudio continuam a usar os dois segredos.
+- `deploy/aws/setup-ec2.sh` e `deploy/systemd/qt-call-relay.service`: instala o novo serviço e
+  encaminha `/call` no HAProxy. Exige a porta 443 UDP aberta no Security Group (já aberta).
+- Testes: `server/tests/call_relay_e2e.rs` (UDP, mudança de rede, um lado por UDP e outro por
+  WebSocket, relay falso) e testes dos limites em `call_relay.rs`.
+
 ### 19 de outubro de 2026: chamadas de voz, fase 1 (núcleo Rust)
 
 - Sinalização das chamadas 1 a 1 dentro do Double Ratchet (tipo 11): oferta, a tocar, resposta e

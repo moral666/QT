@@ -23,7 +23,7 @@
 
 use std::collections::VecDeque;
 
-use qt_core::call::{CallKeys, MediaSession, Role, MAX_PAD, MIN_PAD};
+use qt_core::call::{join_payload, parse_join_ok, CallKeys, MediaSession, Role, RoomKeys, JOIN_KIND, JOIN_PROLOGUE, MAX_PAD, MIN_PAD};
 use qt_storage as st;
 use qt_storage::messages as hm;
 use zeroize::Zeroizing;
@@ -131,6 +131,8 @@ struct Call {
     state: State,
     role: Role,
     offer_secret: Zeroizing<[u8; 32]>,
+    /// Sala no relay (so depende da oferta): da para entrar enquanto toca.
+    room: RoomKeys,
     pad: u16,
     since: i64,
     /// So para quem liga: o id da oferta na outbox (para a tirar se cancelar antes de sair).
@@ -275,6 +277,7 @@ pub(crate) fn on_call(
                 contact: cid.to_string(),
                 state: State::Incoming,
                 role: Role::Callee,
+                room: RoomKeys::derive(&offer_secret, &call_id),
                 offer_secret: Zeroizing::new(offer_secret),
                 pad,
                 since: now,
@@ -340,6 +343,7 @@ impl QtClient {
             contact: contact_id,
             state: State::Outgoing,
             role: Role::Caller,
+            room: RoomKeys::derive(&offer_secret, &id),
             offer_secret,
             pad: DEFAULT_PAD,
             since: now_ms(),
@@ -419,6 +423,40 @@ impl QtClient {
     pub fn call_current(&self) -> Result<Option<String>, QtError> {
         let calls = self.calls.lock().map_err(|_| QtError::Storage)?;
         Ok(calls.cur.as_ref().map(|k| hex(&k.id)))
+    }
+
+    /// Pedido para ENTRAR NA SALA do relay de chamadas (UDP 443 ou, se o UDP estiver
+    /// bloqueado, a ligacao `wss://.../call`). Cifrado para a chave estatica do relay
+    /// (`relay_public_key`, a do pin): o relay fica a saber a sala, nunca a conta. Pode
+    /// ser usado logo ao ligar e enquanto toca. Repetir a cada ~500 ms ate chegar a
+    /// resposta (`call_join_ok`) e depois a cada 10 s enquanto nao houver audio.
+    pub fn call_join_packet(&self, call_id: String, relay_public_key: Vec<u8>) -> Result<Vec<u8>, QtError> {
+        let id = parse_call_id(&call_id)?;
+        if relay_public_key.len() != 32 {
+            return Err(bad("relay_public_key"));
+        }
+        let calls = self.calls.lock().map_err(|_| QtError::Storage)?;
+        let call = match calls.cur.as_ref() {
+            Some(k) if k.id == id => k,
+            _ => return Err(bad("call_id")),
+        };
+        let payload = Zeroizing::new(join_payload(call.role, &call.room));
+        let msg = qt_transport::noise_n_seal(&relay_public_key, JOIN_PROLOGUE, &payload[..]).map_err(|_| QtError::Crypto)?;
+        let mut out = Vec::with_capacity(1 + msg.len());
+        out.push(JOIN_KIND);
+        out.extend_from_slice(&msg);
+        Ok(out)
+    }
+
+    /// Resposta do relay ao pedido de entrada. `None`: nao e a resposta desta sala
+    /// (ignorar). `Some(true)`: o outro telemovel ja esta na sala.
+    pub fn call_join_ok(&self, call_id: String, packet: Vec<u8>) -> Result<Option<bool>, QtError> {
+        let id = parse_call_id(&call_id)?;
+        let calls = self.calls.lock().map_err(|_| QtError::Storage)?;
+        match calls.cur.as_ref() {
+            Some(k) if k.id == id => Ok(parse_join_ok(&k.room, &packet)),
+            _ => Err(bad("call_id")),
+        }
     }
 
     /// Cifra um frame de audio (pode ser vazio, para abrir a sala). Todos os pacotes

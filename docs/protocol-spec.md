@@ -709,12 +709,13 @@ novas", sem abrir a base de dados nem decifrar nada em segundo plano (funciona c
 bloqueado e com o bloqueio da app). As mensagens só são buscadas quando a app abre. Nos primeiros
 30 s em segundo plano a app ainda está ligada (o relay não toca): o aviso é então criado pela app.
 
-## 18. Chamadas de voz 1 a 1 (fase 1: sinalização e cifra dos pacotes)
+## 18. Chamadas de voz 1 a 1 (fases 1 e 2: sinalização, cifra dos pacotes e relay)
 
 Desenho aprovado a 19/10/2026: só Android primeiro, sem ligação direta entre telemóveis (o áudio
-passa sempre pelo relay, o contacto nunca vê o IP). A fase 1 está no núcleo
-(`core/src/call.rs`, `ffi/src/call.rs`, testes em `ffi/tests/calls.rs`); o relay de UDP (fase 2),
-o áudio Opus (fase 3) e a app (fase 4) vêm depois.
+passa sempre pelo relay, o contacto nunca vê o IP). Fase 1 no núcleo (`core/src/call.rs`,
+`ffi/src/call.rs`, testes em `ffi/tests/calls.rs`); fase 2 no relay das chamadas
+(`server/src/call_relay.rs`, `server/src/bin/call_relay.rs`, testes em
+`server/tests/call_relay_e2e.rs`). O áudio Opus (fase 3) e a app (fase 4) vêm depois.
 
 **Sinalização (tipo 11, dentro do Double Ratchet).** Vai como as outras mensagens (envelope v3
 com enchimento): o relay não sabe que é uma chamada. `msg_id` = `call_id` (16 bytes aleatórios),
@@ -737,10 +738,12 @@ para uma versão antiga mostrar "atualiza a app" uma só vez por chamada. Corpo 
   contactos mas tem sessão pode ligar; é a app que decide se toca.
 * Tudo fica só em memória (nada em disco), como a presença.
 
-**Chaves da chamada.** `HKDF-SHA256(salt = call_id, ikm = offer_secret ‖ answer_secret)`:
-`room_id` (8 bytes, `"QT-CALL-v1 room"`), `relay_key` (32, `"QT-CALL-v1 relay"`) e uma chave
-ChaCha20-Poly1305 por sentido (`"QT-CALL-v1 caller->callee"`, `"QT-CALL-v1 callee->caller"`).
-Os dois lados contribuem com segredo. A autenticação e a proteção pós-quântica vêm do ratchet.
+**Chaves da chamada.** A sala só depende da oferta, para os dois lados entrarem enquanto o
+telemóvel toca: `HKDF-SHA256(salt = call_id, ikm = offer_secret)` dá o `room_id` (8 bytes,
+`"QT-CALL-v1 room"`) e a `relay_key` (32, `"QT-CALL-v1 relay"`). O áudio usa os dois segredos:
+`HKDF-SHA256(salt = call_id, ikm = offer_secret ‖ answer_secret)` dá uma chave ChaCha20-Poly1305
+por sentido (`"QT-CALL-v1 caller->callee"`, `"QT-CALL-v1 callee->caller"`). A autenticação e a
+proteção pós-quântica vêm do ratchet.
 
 **Pacote de áudio (estilo WireGuard, tamanho fixo).**
 `[1 0x10 | papel][8 room_id][8 contador BE][ChaCha20-Poly1305([2 tamanho][frame][zeros até pad]) + 16][8 etiqueta]`
@@ -754,10 +757,30 @@ Os dois lados contribuem com segredo. A autenticação e a proteção pós-quân
 * Etiqueta = `HMAC-SHA256(relay_key, tudo o que vem antes)[..8]`: só serve para o relay aceitar
   a mudança de IP (Wi-Fi para 4G) sem que outra pessoa desvie a sala. Não decifra nada.
 
+**Entrar na sala (salas anónimas).** `[1 0x20][Noise_N_25519_ChaChaPoly_SHA256]` cifrado para a
+chave estática do relay (a do pin), com prólogo `"QT-CALL-JOIN-v1"` e conteúdo
+`[1 versão=1][1 papel][8 room_id][32 relay_key]` (91 bytes no total). O relay fica a saber a sala,
+o papel e a chave das etiquetas; nunca a conta. Responde `[1 0x21][8 room_id][1 o outro já está][8
+etiqueta]` (18 bytes, sempre menos do que recebeu) e avisa quem já lá estava quando o outro chega.
+A app repete o pedido a cada ~500 ms até à resposta e a cada 10 s enquanto não houver áudio.
+
+**Relay das chamadas (`qt-call-relay`).** Processo à parte do relay das mensagens: recebe UDP da
+Internet na porta 443, não tem acesso ao Redis nem a `/etc/qt` (só lê a chave Noise). Reserva para
+redes que bloqueiam UDP: `wss://<relay>/call` (WebSocket sem conta, pelo HAProxy, para
+`127.0.0.1:9445`), uma mensagem binária por pacote; os dois lados podem usar transportes diferentes.
+
+* Encaminha o áudio de um lado para o outro, só com etiqueta válida. Não decifra nada.
+* Mudança de IP (Wi-Fi para 4G): um pacote com etiqueta válida e contador maior do que o último
+  desse lado, vindo de outro endereço, passa a ser o endereço desse lado. Um pacote antigo
+  repetido de outro sítio não desvia a sala. Um novo pedido de entrada também muda o endereço.
+* Limites: 2 lados por sala; a sala fecha se o segundo não entrar em 60 s ou ao fim de 30 s sem
+  nada; 2 000 salas no total e 20 por IP (redes móveis com CGNAT); 60 pedidos de entrada por IP a
+  cada 10 s; 100 pacotes/s por lado. Sem registos com IPs: uma linha por minuto só com contagens.
+
 **API (`QtClient`).** `call_start`, `call_accept`, `call_hangup` (o motivo sai do estado),
 `call_events` (Incoming, Ringing, Answered, Ended; chamar depois de cada lote recebido e de
-segundo a segundo durante uma chamada), `call_current`, `call_seal` e `call_open`. As chaves
-nunca atravessam a FFI.
+segundo a segundo durante uma chamada), `call_current`, `call_join_packet` (com a chave pública
+do relay), `call_join_ok`, `call_seal` e `call_open`. As chaves nunca atravessam a FFI.
 
 ## Documentos relacionados
 

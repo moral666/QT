@@ -2,6 +2,7 @@
 # =============================================================================
 # Instala o relay QT numa EC2 nova (Ubuntu 24.04, x86_64 ou ARM), de uma vez:
 #   Redis (so localhost, ACL)  ->  relay (systemd, so localhost)  ->  HAProxy (TLS, wss://)
+#   Relay das chamadas de voz (UDP 443 publico; reserva em wss://<nome>/call pelo HAProxy)
 #   Certificado: Let's Encrypt pelo certbot (renovacao automatica).
 #
 # Uso, na EC2:
@@ -16,7 +17,8 @@
 # Pode ser corrido de novo (atualiza o codigo e recompila); a password do Redis
 # e a chave Noise do relay sao mantidas.
 #
-# Antes: Security Group com entrada so em 22 (o teu IP), 80 e 443. Nunca 6379/9443.
+# Antes: Security Group com entrada so em 22 (o teu IP), 80 e 443 TCP, e 443 UDP (chamadas).
+# Nunca 6379/9443/9445.
 # =============================================================================
 set -euo pipefail
 
@@ -108,7 +110,7 @@ else
 fi
 
 log "A compilar o relay (release; pode demorar 5-15 min numa instancia pequena)"
-cargo build --release --manifest-path "$SRC/Cargo.toml" -p qt_server --bin relay_server
+cargo build --release --manifest-path "$SRC/Cargo.toml" -p qt_server --bin relay_server --bin call_relay
 
 # ---------- 4. Utilizador e binario ----------
 id qt >/dev/null 2>&1 || useradd --system --home /var/lib/qt --shell /usr/sbin/nologin qt
@@ -117,6 +119,7 @@ install -d -o qt -g qt -m 700 /var/lib/qt
 install -d -o qt -g qt -m 755 /var/lib/qt-estado
 install -d -o root -g qt -m 750 /etc/qt
 install -o root -g root -m 755 "$SRC/target/release/relay_server" /usr/local/bin/qt-relay
+install -o root -g root -m 755 "$SRC/target/release/call_relay" /usr/local/bin/qt-call-relay
 
 # ---------- 5. Redis: so localhost + ACL ----------
 log "A configurar o Redis (so 127.0.0.1, utilizador com ACL minima)"
@@ -178,6 +181,14 @@ cp "$SRC/deploy/systemd/qt-relay.service" /etc/systemd/system/qt-relay.service
 systemctl daemon-reload
 systemctl enable qt-relay >/dev/null 2>&1
 systemctl restart qt-relay
+
+# Relay das chamadas de voz: processo a parte (UDP publico, sem Redis). Usa a chave Noise
+# que o qt-relay criou no primeiro arranque; espera por ela.
+for _ in $(seq 1 15); do [ -s /var/lib/qt/relay_noise_key.bin ] && break; sleep 1; done
+cp "$SRC/deploy/systemd/qt-call-relay.service" /etc/systemd/system/qt-call-relay.service
+systemctl daemon-reload
+systemctl enable qt-call-relay >/dev/null 2>&1
+systemctl restart qt-call-relay
 
 # ---------- 7. HAProxy (TLS, wss://) + certificado Let's Encrypt ----------
 # Antes era o Caddy: medido a 18/10/2026, gastava ~137 KB de RAM por ligacao (o relay
@@ -310,6 +321,9 @@ frontend https
     tcp-request connection reject if { sc0_conn_cur gt 100 } || { sc0_conn_rate gt 100 }
     acl estado path /estado.json
     use_backend estado if estado
+    # Chamadas de voz quando o UDP esta bloqueado: WebSocket sem conta (qt-call-relay).
+    acl chamada path /call
+    use_backend chamada if chamada
     default_backend relay
 
 backend relay
@@ -318,6 +332,12 @@ backend relay
 backend estado
     http-response set-header Cache-Control no-store
     server estado 127.0.0.1:9444
+
+backend chamada
+    # O IP real so serve para os limites por IP (nunca e registado). "set-header"
+    # substitui o que o cliente mandar: ninguem consegue fingir outro IP.
+    http-request set-header X-Forwarded-For %[src]
+    server chamada 127.0.0.1:9445 maxconn 4000
 CFG
 } > /etc/haproxy/haproxy.cfg
 haproxy -c -q -f /etc/haproxy/haproxy.cfg || { echo "Configuracao do HAProxy invalida"; exit 1; }
@@ -331,9 +351,12 @@ systemctl is-active --quiet redis-server && echo "  Redis: ativo"   || { echo " 
 systemctl is-active --quiet qt-relay     && echo "  Relay: ativo"   || { echo "  Relay: FALHOU (journalctl -u qt-relay)"; exit 1; }
 systemctl is-active --quiet haproxy      && echo "  HAProxy: ativo" || { echo "  HAProxy: FALHOU (journalctl -u haproxy)"; exit 1; }
 systemctl is-active --quiet qt-estado    && echo "  Estado: ativo"  || echo "  Estado: FALHOU (journalctl -u qt-estado); o resto funciona"
+systemctl is-active --quiet qt-call-relay && echo "  Chamadas: ativo" || echo "  Chamadas: FALHOU (journalctl -u qt-call-relay); as mensagens funcionam"
 
 echo "  Portas abertas para fora (so devem aparecer 22, 80 e 443):"
 ss -tlnH | awk '{print $4}' | grep -v -E '^(127\.0\.0\.1|\[::1\]):' | sed 's/^/    /'
+echo "  UDP aberto para fora (so deve aparecer 443, chamadas; abrir 443 UDP no Security Group):"
+ss -ulnH | awk '{print $4}' | grep -v -E '^(127\.0\.0\.|\[::1\]|\*:|0\.0\.0\.0:68|.*%.*:)' | sed 's/^/    /'
 
 PIN=""
 for _ in $(seq 1 10); do

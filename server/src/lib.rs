@@ -13,6 +13,7 @@
 //! servidor nao precisa clonar os clientes.
 
 pub mod blobs;
+pub mod call_relay;
 pub mod client;
 pub mod connection;
 pub mod latency;
