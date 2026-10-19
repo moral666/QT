@@ -138,6 +138,22 @@ struct Call {
     /// So para quem liga: o id da oferta na outbox (para a tirar se cancelar antes de sair).
     offer_outbox: Option<[u8; 16]>,
     media: Option<MediaSession>,
+    /// O motor de audio (feature `calls`), se a app ja o arrancou: recebe as chaves do
+    /// audio quando a chamada e atendida e para quando acaba.
+    #[cfg(feature = "calls")]
+    audio: Option<std::sync::Arc<crate::call_audio::CallAudio>>,
+}
+
+impl Call {
+    /// Chamada atendida: as chaves vao para o motor de audio (se ja existir) ou ficam aqui.
+    fn set_media(&mut self, media: MediaSession) {
+        #[cfg(feature = "calls")]
+        if let Some(a) = &self.audio {
+            a.attach(media);
+            return;
+        }
+        self.media = Some(media);
+    }
 }
 
 #[derive(Default)]
@@ -162,6 +178,10 @@ impl Calls {
     }
     fn end_current(&mut self, reason: CallEndReason) {
         if let Some(call) = self.cur.take() {
+            #[cfg(feature = "calls")]
+            if let Some(a) = &call.audio {
+                a.stop();
+            }
             self.remember_ended(call.id);
             self.push(CallEvent::Ended { call_id: hex(&call.id), contact_id: call.contact, reason });
         }
@@ -258,6 +278,10 @@ pub(crate) fn on_call(
                     return Ok(no_change);
                 }
                 if let Some(old) = calls.cur.take() {
+                    #[cfg(feature = "calls")]
+                    if let Some(a) = &old.audio {
+                        a.stop();
+                    }
                     if let Some(o) = old.offer_outbox {
                         hm::outbox_take(c, &o)?;
                     }
@@ -283,6 +307,8 @@ pub(crate) fn on_call(
                 since: now,
                 offer_outbox: None,
                 media: None,
+                #[cfg(feature = "calls")]
+                audio: None,
             });
             queue(client, c, cid, &encode(OP_RINGING, &call_id, &[]), false)?;
             calls.push(CallEvent::Incoming { call_id: id_hex, contact_id: cid.to_string() });
@@ -298,7 +324,8 @@ pub(crate) fn on_call(
             if call.state != State::Outgoing {
                 return Ok(no_change);
             }
-            call.media = Some(derive_media(call, &answer)?);
+            let media = derive_media(call, &answer)?;
+            call.set_media(media);
             call.state = State::Active;
             call.since = now;
             call.offer_outbox = None;
@@ -312,6 +339,31 @@ pub(crate) fn on_call(
         _ => {}
     }
     Ok(no_change)
+}
+
+#[cfg(feature = "calls")]
+use crate::call_audio::CallAudio;
+#[cfg(feature = "calls")]
+use std::sync::Arc;
+#[cfg(feature = "calls")]
+/// Arranca o motor para a chamada `id` (chamado por `QtClient::call_audio_start`).
+pub(crate) fn start_for_call(calls: &mut Calls, id: [u8; 16], relay_url: &str, relay_public_key: &[u8]) -> Result<Arc<CallAudio>, QtError> {
+    let call = match calls.cur.as_mut() {
+        Some(k) if k.id == id => k,
+        _ => return Err(bad("call_id")),
+    };
+    if let Some(a) = &call.audio {
+        return Ok(a.clone());
+    }
+    let cfg = crate::call_audio::engine_config(relay_url)?;
+    let join = qt_call::engine::join_packet(relay_public_key, call.role, &call.room).map_err(|_| bad("relay_public_key"))?;
+    let engine = qt_call::engine::CallEngine::start_pending(cfg, call.room.clone(), join).map_err(|_| QtError::Crypto)?;
+    let audio = CallAudio::new(engine);
+    if let Some(media) = call.media.take() {
+        audio.attach(media);
+    }
+    call.audio = Some(audio.clone());
+    Ok(audio)
 }
 
 #[uniffi::export]
@@ -349,6 +401,8 @@ impl QtClient {
             since: now_ms(),
             offer_outbox: Some(outbox_id),
             media: None,
+            #[cfg(feature = "calls")]
+            audio: None,
         });
         Ok(CallStart { call_id: hex(&id), item })
     }
@@ -370,7 +424,7 @@ impl QtClient {
         let tx = c.unchecked_transaction()?;
         let item = queue(self, &tx, &call.contact.clone(), &plain, false)?;
         tx.commit()?;
-        call.media = Some(media);
+        call.set_media(media);
         call.state = State::Active;
         call.since = now_ms();
         calls.push(CallEvent::Answered { call_id });

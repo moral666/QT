@@ -14,8 +14,11 @@ pq = ["qt_core/pq", "qt_storage/pq"]
 # API ANTIGA (bytes de chaves privadas e estados de ratchet atravessam a FFI).
 # So para testes/ferramentas; a build Android NAO a deve ativar.
 legacy-api = []
+# Audio das chamadas de voz (motor qt_call: Opus 1.6 com DRED, jitter buffer, relay das
+# chamadas). Precisa do cmake para compilar o libopus. So na app Android, por agora.
+calls = ["pq", "dep:qt_call"]
 # Build Android: SQLCipher+OpenSSL embebidos (sem dependencias do sistema).
-android = ["pq", "qt_storage/bundled-sqlcipher"]
+android = ["pq", "calls", "qt_storage/bundled-sqlcipher"]
 # Build iOS: igual ao Android (SQLCipher+OpenSSL embebidos, sem dependencias do sistema).
 ios = ["pq", "qt_storage/bundled-sqlcipher"]
 
@@ -27,6 +30,7 @@ crate-type = ["cdylib", "staticlib", "lib"]
 qt_core = { path = "../core" }
 qt_transport = { path = "../transport" }
 qt_storage = { path = "../storage" }
+qt_call = { path = "../call", optional = true }
 zeroize = "1"
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }

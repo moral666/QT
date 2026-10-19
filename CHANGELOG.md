@@ -6,6 +6,21 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: chamadas de voz na app Android, fase 4a (app 0.9.4)
+
+- Ligar a um contacto pelo botão de telefone na conversa; ecrã de chamada (a chamar, a tocar,
+  a chegar, atendida com contador, terminada), atender, recusar, desligar, silenciar e
+  altifalante. Só funciona com a app aberta (tocar com a app fechada é a fase 4b).
+- Microfone com a fonte `VOICE_COMMUNICATION` (cancelamento de eco e de ruído do telemóvel),
+  48 kHz mono; serviço em primeiro plano durante a chamada, para o microfone continuar com a app
+  fora do ecrã; toque e vibração ao chegar, sinal de chamada ao ligar.
+- Só tocam os contactos guardados: as chamadas de quem não está nos contactos são recusadas em
+  silêncio.
+- Núcleo: `CallAudio` (feature `calls` do `qt_ffi`, ligada na build Android) com o motor da
+  fase 3; o motor entra na sala logo ao ligar ou quando toca, e as chaves do áudio chegam ao
+  atender. A build Android passa a precisar do `cmake`.
+- Teste de ponta a ponta como na app: `server/tests/call_audio_ffi.rs`.
+
 ### 19 de outubro de 2026: chamadas de voz, fase 3 (motor de áudio)
 
 - Novo crate `call/` (`qt_call`): o motor das chamadas, que a app vai usar na fase 4.

@@ -7,6 +7,12 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Notificacoes (Android 13+): "Tens mensagens novas", sem conteudo. Pedida uma vez. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Chamadas de voz: servico em primeiro plano com o microfone (sem ele, o Android corta o
+         microfone quando a app sai do ecra), altifalante/auricular e vibracao ao tocar. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- allowBackup=false + dataExtractionRules: o ficheiro SQLCipher so abre com a chave
          do Keystore deste aparelho; nem backup na nuvem nem copia entre aparelhos
@@ -38,6 +44,11 @@
             android:authorities="${applicationId}.ficheiros"
             android:exported="false"
             android:grantUriPermissions="true" />
+        <!-- Chamada de voz em curso (Calls.kt): mantem o microfone com a app fora do ecra. -->
+        <service
+            android:name=".CallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
         <!-- Notificacoes (FCM, ver Push.kt): so recebe a campainha vazia do relay. -->
         <service
             android:name=".SealerPushService"

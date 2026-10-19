@@ -24,6 +24,8 @@ pub mod applock;
 pub mod attachments;
 #[cfg(feature = "pq")]
 pub mod call;
+#[cfg(feature = "calls")]
+pub mod call_audio;
 #[cfg(feature = "pq")]
 pub mod client;
 #[cfg(feature = "pq")]

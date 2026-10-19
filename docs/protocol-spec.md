@@ -800,7 +800,12 @@ CMake), com o DRED e o PLC neural (os modelos vêm no pacote).
 **API (`QtClient`).** `call_start`, `call_accept`, `call_hangup` (o motivo sai do estado),
 `call_events` (Incoming, Ringing, Answered, Ended; chamar depois de cada lote recebido e de
 segundo a segundo durante uma chamada), `call_current`, `call_join_packet` (com a chave pública
-do relay), `call_join_ok`, `call_seal` e `call_open`. As chaves nunca atravessam a FFI.
+do relay), `call_join_ok`, `call_seal` e `call_open`. Com a feature `calls` (app Android):
+`call_audio_start(call_id, relay_url, relay_public_key)` devolve um `CallAudio` (motor da fase 3,
+já na sala, mesmo antes de atender) com `push_capture` e `pull_playback` (20 ms de PCM 16 bits,
+48 kHz, mono, 1920 bytes little-endian), `stats`, `active` e `stop`; ao atender, as chaves do
+áudio passam para o motor, e ao terminar a chamada ele para sozinho. As chaves nunca atravessam
+a FFI.
 
 ## Documentos relacionados
 

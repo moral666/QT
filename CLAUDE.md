@@ -32,7 +32,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
 - O **site nunca menciona "sem auditoria externa"**.
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.9.3**, `versionCode` 10), em
+- Versões da app: série 0.x (agora **0.9.4**, `versionCode` 11), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
   0.9.3...) e o `versionCode` mais 1, no mesmo commit. Só se passa a **1.0.0** quando o Nuno disser.
 - Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
@@ -96,9 +96,13 @@ anónimas e reserva por WebSocket sem conta (**feita**, processo à parte `qt-ca
 `server/src/call_relay.rs`; porta 443 UDP aberta no Security Group a 19/10/2026; testado em
 produção a partir de casa do Nuno: ida e volta PC-relay-PC-relay-PC de 128 ms); 3) motor de áudio
 (**feita**, crate `call/` = `qt_call`: libopus 1.6.1 com DRED e PLC neural pelo `opusic-sys`, jitter
-buffer adaptativo, rede com reserva WebSocket; ferramenta `tools/call-demo`); 4) Android
-(ConnectionService, FCM, `VOICE_COMMUNICATION`; decidir aí se a reserva WebSocket fica no Rust com
-rustls ou no OkHttp). Ver `docs/protocol-spec.md`, secção 18.
+buffer adaptativo, rede com reserva WebSocket; ferramenta `tools/call-demo`); 4) Android, decidido a 19/10/2026: 1B (a chave da
+base de dados passa a funcionar com o telemóvel bloqueado, para tocar com a app fechada; ainda NÃO
+feito), 2A (reserva WebSocket no Rust, com rustls), 3A (ConnectionService), só tocam contactos
+guardados, e em duas partes: **4a feita** (app 0.9.4: chamadas com a app aberta, `Calls.kt`,
+`CallScreen.kt`, `CallAudio` no `ffi/src/call_audio.rs`, feature `calls`; serviço em primeiro plano
+do tipo microphone) e 4b por fazer (tocar com a app fechada/bloqueada, ConnectionService, chave 1B).
+Ver `docs/protocol-spec.md`, secção 18.
 
 ### Funcionalidades da 0.9.0
 
@@ -137,7 +141,7 @@ gera os bindings, `gradle :app:testDebugUnitTest`, `:app:assembleDebug`,
 
 ### Build e instalação no PC do Nuno (pasta `~/QT-repo`)
 
-Se o Rust mudou (núcleo, ffi, storage):
+Se o Rust mudou (núcleo, ffi, storage, call). Precisa do `cmake` (Opus das chamadas):
 ```
 cd ~/QT-repo && git pull
 export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/30.0.16248370

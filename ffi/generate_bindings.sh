@@ -23,18 +23,24 @@ bindgen() { # $1=features $2=language $3=outdir
 }
 
 # ---------- 1) Perfil de producao: Kotlin + Swift ----------
-echo ">>> [producao] a compilar qt_ffi --features pq ..."
-cargo build -p qt_ffi --features pq
+# Android: com o audio das chamadas (feature `calls`, precisa do cmake). iOS: sem ele, por
+# agora (os bindings Swift a serio sao gerados pelo scripts/build-ios.sh).
+echo ">>> [producao] a compilar qt_ffi --features pq,calls ..."
+cargo build -p qt_ffi --features pq,calls
 rm -rf ffi/bindings/kotlin ffi/bindings/swift
 mkdir -p ffi/bindings
 echo ">>> A gerar bindings Kotlin (Android)..."
-bindgen pq kotlin ffi/bindings/kotlin
+bindgen pq,calls kotlin ffi/bindings/kotlin
+echo ">>> [producao] a compilar qt_ffi --features pq (iOS) ..."
+cargo build -p qt_ffi --features pq
 echo ">>> A gerar bindings Swift (iOS)..."
 bindgen pq swift ffi/bindings/swift
 
 KT=ffi/bindings/kotlin/uniffi/qt_ffi/qt_ffi.kt
 grep -q "class QtClient" "$KT" \
     || { echo "ERRO: QtClient nao encontrado nos bindings Kotlin (feature pq?)"; exit 1; }
+grep -q "class CallAudio" "$KT" \
+    || { echo "ERRO: CallAudio nao encontrado nos bindings Kotlin (feature calls?)"; exit 1; }
 # Nenhuma funcao que exponha chaves privadas / estado de ratchet pode existir no Kotlin.
 for sym in generateDhKeypair generateSigningKeypair generateNoiseStaticKeypair x3dhInitiate x3dhRespond \
            ratchetInitAsInitiator ratchetInitAsResponder ratchetEncrypt ratchetDecrypt unsealSender sealSender \

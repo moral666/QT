@@ -28,6 +28,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.qt_ffi.AttachmentRef
+import uniffi.qt_ffi.CallAudio
+import uniffi.qt_ffi.CallEndReason
+import uniffi.qt_ffi.CallEvent
 import uniffi.qt_ffi.AttachmentState
 import uniffi.qt_ffi.ChatMessage
 import uniffi.qt_ffi.ConversationSummary
@@ -107,6 +110,25 @@ data class UiState(
     val presenceOn: Boolean = true,
     /** Contactos com a app aberta agora (contactId). So em memoria. */
     val online: Set<String> = emptySet(),
+    /** Chamada de voz a decorrer (a chamar, a tocar, atendida ou acabada de terminar). */
+    val call: CallUi? = null,
+)
+
+enum class CallPhase { CALLING, RINGING_OUT, INCOMING, ACTIVE, ENDED }
+
+data class CallUi(
+    val callId: String,
+    val contactId: String,
+    val name: String,
+    val phase: CallPhase,
+    /** Quando foi atendida (SystemClock.elapsedRealtime), para o contador. */
+    val answeredAt: Long = 0L,
+    val muted: Boolean = false,
+    val speaker: Boolean = false,
+    /** Linha tecnica pequena (ligacao e atraso), para os testes. */
+    val info: String = "",
+    /** Porque acabou (no ecra durante uns segundos). */
+    val endText: String = "",
 )
 
 /** O grupo de uma conversa ("g:..."), se for de um grupo. */
@@ -171,6 +193,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val deletedNotified = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     /** Batimento da presenca e atualizacao de quem esta online (com a app aberta). */
     @Volatile private var presenceJob: Job? = null
+    // ------------------------------------------------------------- chamadas de voz
+    /** Motor de audio da chamada (Rust) e microfone/altifalante (Android). */
+    @Volatile private var callAudio: CallAudio? = null
+    @Volatile private var callIO: CallAudioIO? = null
+    /** De segundo a segundo durante uma chamada: eventos, expiracao e a linha tecnica. */
+    @Volatile private var callTicker: Job? = null
+    private val callSounds = CallSounds(app)
     private val bioChannel = Channel<BioRequest>(Channel.BUFFERED)
     /** Pedidos de autenticacao do sistema; a Activity mostra o BiometricPrompt. */
     val bioRequests: Flow<BioRequest> = bioChannel.receiveAsFlow()
@@ -258,6 +287,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Fecha a base de dados e a ligacao ao relay; apaga as chaves da memoria. */
     private fun closeSession() {
+        stopCallMedia()
+        _ui.update { it.copy(call = null) }
         poller?.cancel()
         poller = null
         transferJob?.cancel()
@@ -284,6 +315,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Bloqueia ja (so se o bloqueio estiver ativo). */
     fun lockNow() {
         if (!_ui.value.lockEnabled || _ui.value.locked) return
+        // Durante uma chamada nao se fecha a base de dados (a chamada precisa dela).
+        if (_ui.value.call != null) return
         closeSession()
         showLocked()
     }
@@ -302,6 +335,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Presenca: "offline" a quem me via online (o seletor de fotos nao conta como sair).
         if (!AutoLockPause.active) io { presenceAnnounce(false) }
         pauseJob?.cancel()
+        // Chamada a decorrer: as ligacoes ficam abertas (o servico da chamada mantem a app viva).
+        if (_ui.value.call != null) return
         pauseJob = viewModelScope.launch(Dispatchers.IO) {
             delay(BACKGROUND_GRACE_MS)
             // Anexos a meio (enviar ou descarregar): deixa-os acabar, ate BACKGROUND_TRANSFER_MAX_MS.
@@ -330,7 +365,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val grace = if (AutoLockPause.active) AutoLockPause.GRACE_MS else 0L
             AutoLockPause.active = false
             val st = _ui.value
-            if (!authInProgress && st.lockEnabled && !st.locked && SystemClock.elapsedRealtime() - t - grace >= st.lockTimeoutMs) {
+            if (!authInProgress && st.lockEnabled && !st.locked && st.call == null && SystemClock.elapsedRealtime() - t - grace >= st.lockTimeoutMs) {
                 lockNow()
             }
         }
@@ -342,8 +377,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Fecha as ligacoes ao relay e para a rececao e as transferencias (app em segundo plano). */
     private fun pauseLinks() {
         synchronized(pauseLock) {
-            // Voltou ao ecra entretanto; ou bloqueada, sem identidade ou ja fechadas.
-            if (visible || qt == null || link == null) return
+            // Voltou ao ecra entretanto; ou bloqueada, sem identidade ou ja fechadas; ou em chamada.
+            if (visible || qt == null || link == null || _ui.value.call != null) return
             poller?.cancel()
             poller = null
             transferJob?.cancel()
@@ -1583,6 +1618,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (ackIds.isNotEmpty()) l.request(client.relayRequestAck(ackIds))   // so DEPOIS de guardar
             }
             restartSessions(client)
+            handleCallEvents(client)
             if (received) {
                 transferKick.trySend(Unit)   // imagens recebidas: descarregar ja
                 client.prepareDeliveryReceipts()
@@ -1594,6 +1630,221 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             status("Sem ligacao ao relay: ${e.safeMsg()}")
         }
+    }
+
+    // ---------------------------------------------------------------- chamadas de voz
+
+    private fun relayPin(): ByteArray? {
+        val hex = _ui.value.relayKeyHex.trim()
+        if (hex.length != 64) return null
+        return ByteArray(32) { i -> hex.substring(i * 2, i * 2 + 2).toInt(16).toByte() }
+    }
+
+    /** Arranca o motor de audio e entra ja na sala do relay das chamadas (enquanto toca). */
+    private fun startCallAudio(client: QtClient, callId: String) {
+        if (callAudio != null) return
+        val pin = relayPin() ?: run { Log.w(TAG, "chamada: sem a chave do relay"); return }
+        callAudio = client.callAudioStart(callId, _ui.value.relayUrl, pin)
+    }
+
+    /** Liga o microfone e o altifalante (a chamada foi atendida). */
+    private fun startCallIO() {
+        if (callIO != null) return
+        val a = callAudio ?: return
+        val app = getApplication<Application>()
+        try {
+            callIO = CallAudioIO(app, a).also {
+                it.start()
+                it.muted = _ui.value.call?.muted == true
+            }
+        } catch (e: Exception) {
+            callIO = null
+            error("Não foi possível usar o microfone: ${e.safeMsg()}")
+        }
+    }
+
+    private fun stopCallMedia() {
+        callSounds.stop()
+        callIO?.stop()
+        callIO = null
+        callAudio?.stop()
+        callAudio?.destroy()
+        callAudio = null
+        callTicker?.cancel()
+        callTicker = null
+        CallControl.hangup = null
+        val app = getApplication<Application>()
+        CallService.stop(app)
+        CallNotify.clear(app)
+    }
+
+    private fun ensureCallTicker() {
+        if (callTicker?.isActive == true) return
+        callTicker = viewModelScope.launch(Dispatchers.IO) {
+            while (isActive && _ui.value.call != null) {
+                delay(1_000L)
+                val client = qt ?: break
+                try {
+                    handleCallEvents(client)
+                    callAudio?.stats()?.let { st ->
+                        val net = if (st.transport == "udp") "UDP" else if (st.transport == "websocket") "WebSocket" else st.transport
+                        val rtt = st.relayRttMs?.let { " · ${it} ms ao servidor" } ?: ""
+                        val loss = if (st.lost > 0uL) " · ${st.lost} perdidos (${st.dredFrames} recuperados)" else ""
+                        val info = "$net$rtt$loss"
+                        _ui.update { u -> u.call?.let { c -> u.copy(call = c.copy(info = info)) } ?: u }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "chamada: ${e.safeMsg()}")
+                }
+            }
+        }
+    }
+
+    /** LIGAR a um contacto. A permissao do microfone ja foi dada (MainActivity). */
+    fun startCall(contact: Contact) = io {
+        val client = qt ?: return@io
+        if (_ui.value.call != null) return@io
+        if (contact.contactId in _ui.value.blocked) return@io
+        try {
+            ensureSession(client, contact)
+            val start = client.callStart(contact.contactId)
+            _ui.update { it.copy(call = CallUi(start.callId, contact.contactId, contact.nickname, CallPhase.CALLING)) }
+            CallControl.hangup = { hangupCall() }
+            flushOutbox()
+            startCallAudio(client, start.callId)
+            CallService.start(getApplication())
+            ensureCallTicker()
+        } catch (e: Exception) {
+            stopCallMedia()
+            _ui.update { it.copy(call = null) }
+            error("Não foi possível ligar: ${e.safeMsg()}")
+        }
+    }
+
+    /** ATENDER a chamada que esta a tocar. */
+    fun acceptCall() = io {
+        val client = qt ?: return@io
+        val c = _ui.value.call ?: return@io
+        if (c.phase != CallPhase.INCOMING) return@io
+        callSounds.stop()
+        CallNotify.clear(getApplication())
+        try {
+            client.callAccept(c.callId)
+            flushOutbox()
+            startCallAudio(client, c.callId)
+            CallService.start(getApplication())
+            _ui.update { it.copy(call = c.copy(phase = CallPhase.ACTIVE, answeredAt = SystemClock.elapsedRealtime())) }
+            startCallIO()
+            handleCallEvents(client)
+        } catch (e: Exception) {
+            endCallLocal("A chamada já não está disponível")
+        }
+    }
+
+    /** RECUSAR (a tocar), CANCELAR (a chamar) ou DESLIGAR (atendida): o motivo sai do estado. */
+    fun hangupCall() = io {
+        val c = _ui.value.call ?: return@io
+        if (c.phase == CallPhase.ENDED) return@io
+        try {
+            qt?.callHangup(c.callId)
+            flushOutbox()
+        } catch (e: Exception) {
+            Log.w(TAG, "desligar: ${e.safeMsg()}")
+        }
+        endCallLocal(if (c.phase == CallPhase.INCOMING) "Chamada recusada" else "Chamada terminada")
+    }
+
+    fun toggleMute() {
+        val c = _ui.value.call ?: return
+        val m = !c.muted
+        callIO?.muted = m
+        _ui.update { it.copy(call = c.copy(muted = m)) }
+    }
+
+    fun toggleSpeaker() {
+        val c = _ui.value.call ?: return
+        val on = !c.speaker
+        runCatching { callIO?.setSpeaker(on) }
+        _ui.update { it.copy(call = c.copy(speaker = on)) }
+    }
+
+    /** A chamada acabou: para o audio e mostra o motivo durante uns segundos. */
+    private fun endCallLocal(text: String) {
+        val c = _ui.value.call ?: return
+        stopCallMedia()
+        _ui.update { it.copy(call = c.copy(phase = CallPhase.ENDED, endText = text)) }
+        viewModelScope.launch {
+            delay(ENDED_SHOW_MS)
+            _ui.update { u ->
+                val cur = u.call
+                if (cur != null && cur.callId == c.callId && cur.phase == CallPhase.ENDED) u.copy(call = null) else u
+            }
+        }
+    }
+
+    private fun endText(reason: CallEndReason, incoming: Boolean): String = when (reason) {
+        CallEndReason.HANGUP -> "Chamada terminada"
+        CallEndReason.REJECTED -> "Chamada recusada"
+        CallEndReason.BUSY -> "Ocupado noutra chamada"
+        CallEndReason.NO_ANSWER -> if (incoming) "Chamada perdida" else "Sem resposta"
+        CallEndReason.CANCELLED -> if (incoming) "Chamada perdida" else "Chamada cancelada"
+        CallEndReason.EXPIRED -> "Chamada perdida"
+    }
+
+    /** Eventos das chamadas (vem do Rust, depois de receber mensagens e de segundo a segundo). */
+    private suspend fun handleCallEvents(client: QtClient) {
+        val events = client.callEvents()
+        if (events.isEmpty()) return
+        val app = getApplication<Application>()
+        for (ev in events) {
+            when (ev) {
+                is CallEvent.Incoming -> {
+                    val contact = _ui.value.contacts.firstOrNull { it.contactId == ev.contactId }
+                    // So tocam os contactos guardados (e nao bloqueados). Os outros: recusa em
+                    // silencio, sem lhes enviar nada (o aviso fica fora da outbox).
+                    if (contact == null || ev.contactId in _ui.value.blocked) {
+                        runCatching { client.callHangup(ev.callId)?.let { client.outboxSent(it.outboxId) } }
+                        continue
+                    }
+                    // Ja ha outra chamada no ecra (o Rust so deixa uma de cada vez): recusa.
+                    val shown = _ui.value.call
+                    if (shown != null && shown.phase != CallPhase.ENDED) {
+                        runCatching { client.callHangup(ev.callId) }
+                        continue
+                    }
+                    _ui.update { it.copy(call = CallUi(ev.callId, ev.contactId, contact.nickname, CallPhase.INCOMING)) }
+                    CallControl.hangup = { hangupCall() }
+                    callSounds.ringIncoming()
+                    if (!visible) CallNotify.incoming(app)
+                    runCatching { startCallAudio(client, ev.callId) }
+                    ensureCallTicker()
+                }
+                is CallEvent.Ringing -> _ui.update { u ->
+                    val c = u.call
+                    if (c != null && c.callId == ev.callId && c.phase == CallPhase.CALLING) {
+                        callSounds.ringback()
+                        u.copy(call = c.copy(phase = CallPhase.RINGING_OUT))
+                    } else u
+                }
+                is CallEvent.Answered -> {
+                    val c = _ui.value.call
+                    if (c != null && c.callId == ev.callId && c.phase != CallPhase.ACTIVE && c.phase != CallPhase.INCOMING) {
+                        callSounds.stop()
+                        _ui.update { it.copy(call = c.copy(phase = CallPhase.ACTIVE, answeredAt = SystemClock.elapsedRealtime())) }
+                        startCallIO()
+                    }
+                }
+                is CallEvent.Ended -> {
+                    val c = _ui.value.call
+                    if (c != null && c.callId == ev.callId && c.phase != CallPhase.ENDED) {
+                        endCallLocal(endText(ev.reason, c.phase == CallPhase.INCOMING))
+                    }
+                }
+            }
+        }
+        flushOutbox()
     }
 
     // ------------------------------------------------------------------ utilitarios
@@ -1653,6 +1904,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val RETRY_MS = 15_000L
         /** De quanto em quanto tempo se atualiza quem esta online (com a app aberta). */
         private const val PRESENCE_TICK_MS = 60_000L
+        /** Quanto tempo fica no ecra "Chamada terminada". */
+        private const val ENDED_SHOW_MS = 2_000L
         fun minCodeLen(): Int = uniffi.qt_ffi.appLockMinCodeLen().toInt()
     }
 }
