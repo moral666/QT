@@ -160,10 +160,12 @@ pub(crate) fn one_time_prekeys_to_upload(c: &st::rusqlite::Connection) -> Result
     let keys = new_one_time_prekeys(c, OPK_BATCH)?;
     let start = keys.first().map(|k| k.0).unwrap_or(1);
     // Lotes: [4 primeiro numero BE][8 hora BE] por lote, do mais antigo ao mais novo.
-    let mut batches: Vec<(u32, u64)> = st::kv_get(c, KV_OPK_BATCHES)?
-        .unwrap_or_default()
-        .chunks_exact(12)
-        .map(|b| (u32::from_be_bytes([b[0], b[1], b[2], b[3]]), u64::from_be_bytes(b[4..12].try_into().unwrap_or([0; 8]))))
+    let stored = st::kv_get(c, KV_OPK_BATCHES)?.unwrap_or_default();
+    let mut batches: Vec<(u32, u64)> = stored
+        .as_chunks::<12>()
+        .0
+        .iter()
+        .map(|b| (u32::from_be_bytes([b[0], b[1], b[2], b[3]]), u64::from_be_bytes([b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11]])))
         .collect();
     batches.push((start, t));
     batches.retain(|(_, at)| t.saturating_sub(*at) < KEEP_OPK_SECS);

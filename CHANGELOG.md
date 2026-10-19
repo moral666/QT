@@ -6,6 +6,23 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: CI reparada, texto do ecrã inicial e documentação revista (app 0.9.13)
+
+- **CI reparada.** O clippy novo do Rust (1.99) passou a recusar `chunks_exact` com um tamanho
+  fixo (`ffi/src/prekeys.rs`). Trocado por `as_chunks`, que faz o mesmo e é verificado pelo
+  compilador; também em `ffi/src/call_audio.rs` e `server/tests/call_audio_ffi.rs`. O núcleo
+  passa a pedir Rust 1.88 ou mais recente.
+- **App:** o aviso do ecrã de criação do ID passa a dizer "Versão de testes. Até à versão 1.0, a app
+  continua a ser melhorada." (nas seis línguas), em cinzento em vez de vermelho.
+- **Documentação:** READMEs (português e inglês) reorganizados e mais curtos: o que a app faz, como
+  protege a privacidade, estado, arquitetura, números e, no fim, os comandos para programadores.
+  Versões atualizadas (Android 0.9.13). Removidos dois documentos antigos (`docs/final-report.md`,
+  registo da fase de 13/10, e `docs/revisao-arquitetura.md`, pedido de revisão cancelado).
+  Revistos o roadmap, o modelo de ameaças, as limitações conhecidas, os testes de campo e o README
+  da app Android (estava desatualizado sobre notificações e testes feitos).
+- **Site:** versão 0.9.12 no topo, e os textos "O que é a versão de testes" e "O aspeto da app"
+  deixam de depender do número da versão (PT, EN e ES).
+
 ### 19 de outubro de 2026: melhorias dos testes da 0.9.11 (app 0.9.12, núcleo)
 
 Nada muda no aspeto nem no que a app faz.

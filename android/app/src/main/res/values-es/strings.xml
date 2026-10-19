@@ -102,7 +102,7 @@
     <string name="t_a_abrir_o_armazenamento_seguro">Abriendo el almacenamiento seguro…</string>
     <string name="t_mensagens_cifradas_ponta_a_ponta_com">Mensajes cifrados de extremo a extremo, con criptografía poscuántica. Sin número de teléfono, sin email.</string>
     <string name="t_comecar">Empezar</string>
-    <string name="t_versao_alpha_ainda_nao_auditada_nao">Versión alfa, aún no auditada. No la uses para información sensible.</string>
+    <string name="t_versao_de_testes">Versión de pruebas. Hasta la versión 1.0, la app se sigue mejorando.</string>
     <string name="t_esconder_opcoes_de_teste">Ocultar opciones de prueba</string>
     <string name="t_opcoes_de_teste">Opciones de prueba</string>
     <string name="t_url_do_relay">URL del relay</string>

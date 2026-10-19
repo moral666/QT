@@ -30,9 +30,9 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
   barras de estado): se houver problemas, só no registo (`adb logcat -s SealerRelay`).
 - A build de release **não mostra opções de teste do relay** (URL, chave).
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
-- O **site nunca menciona "sem auditoria externa"**.
+- O **site, a documentação e a app nunca mencionam auditorias em falta** ("sem auditoria", "não auditada", 19/10/2026). Falta mudar o aviso do ecrã inicial no iPhone (`ios/.../RootViews.swift`), quando o código Swift estiver no GitHub.
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.9.12**, `versionCode` 19), em
+- Versões da app: série 0.x (agora **0.9.13**, `versionCode` 20), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
   0.9.3...) e o `versionCode` mais 1, no mesmo commit. Só se passa a **1.0.0** quando o Nuno disser.
 - Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
@@ -178,6 +178,9 @@ cargo run --release -- eco --tom                                     # som de te
 gera os bindings, `gradle :app:testDebugUnitTest`, `:app:assembleDebug`,
 `:app:minifyReleaseWithR8` e `:app:lintDebug`. Ver com `gh run list -w Android` e
 `gh run view <id> --log-failed`. É a forma de apanhar erros de Kotlin antes da build do Nuno.
+O `ci.yml` corre `cargo clippy --workspace -- -D warnings` com o Rust **stable** mais recente: cada
+versão nova do clippy pode trazer avisos novos que partem a CI (19/10/2026: `chunks_exact` com
+tamanho fixo, trocado por `as_chunks`). O núcleo precisa de Rust 1.88+.
 
 ### Build e instalação no PC do Nuno (pasta `~/QT-repo`)
 

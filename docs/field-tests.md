@@ -5,8 +5,8 @@ automáticos. Cada entrada diz o que foi testado, em que condições, o que
 correu bem, o que falhou e o que ficou por testar.
 
 Um teste de campo bem sucedido mostra que o sistema **funciona e é fiável no
-uso real**. Não mostra que é **seguro contra um atacante determinado**: isso
-continua a exigir uma auditoria externa (ver `known-limitations.md`).
+uso real**. A resistência a um atacante está descrita à parte, em
+`threat-model.md` e `known-limitations.md`.
 
 ---
 

@@ -1,10 +1,7 @@
-# Modelo de Ameaças (v0.2: fase Android)
+# Modelo de Ameaças
 
-> **Estado: protótipo técnico, NÃO auditado.** Nada neste documento é uma
-> alegação de segurança de produção. Descreve o que o código faz hoje, o que
+> Descreve o que o código faz hoje (versão de testes, app Android 0.9.13), o que
 > os testes demonstram e, com igual peso, o que **não** está protegido.
-> Uma auditoria criptográfica externa continua a ser necessária antes de o QT
-> ser apresentado como sistema de comunicação seguro.
 
 ## 1. Ativos
 
@@ -77,8 +74,8 @@ e depois alimenta a root key do Double Ratchet.
   * **Sealed Sender** usa X25519: a identidade do remetente protege-se contra
     adversários clássicos, **não** contra harvest-now-decrypt-later quântico.
   * **O transporte Noise é clássico.** Só o E2EE (conteúdo) é híbrido.
-  * ML-KEM é uma implementação (`ml-kem 0.2.3`) **sem auditoria independente**
-    e sem garantias de tempo constante verificadas por nós.
+  * ML-KEM usa a implementação `ml-kem 0.2.3` (RustCrypto); as garantias de
+    tempo constante não foram verificadas por nós.
   * Desde a app 0.9.3 (PQXDH v2) o HKDF inclui a transcrição (todas as chaves
     públicas e o ciphertext KEM). Sessões iniciadas antes continuam com o v1.
 
@@ -132,9 +129,8 @@ e depois alimenta a root key do Double Ratchet.
 * **`ws://` só em testes locais** (builds de debug). As builds de release só
   aceitam `wss://`; o Noise protege o conteúdo e o TLS evita expor o padrão
   Noise.
-* **Sem auditoria externa**, sem análise de canais laterais, sem fuzzing
-  contínuo; o código foi escrito e revisto por um único autor (e assistido por
-  IA).
+* **Sem análise de canais laterais nem fuzzing contínuo** (os testes de
+  entradas inválidas e por propriedades estão na secção 3).
 * **Legacy:** a feature `legacy-api` da FFI expõe chaves privadas e estados
   em bytes. Nunca deve ser ativada na build Android (o script de bindings
   falha se aparecer no Kotlin).
@@ -143,13 +139,13 @@ e depois alimenta a root key do Double Ratchet.
 
 | Componente | Confiado para… | Não confiado para… |
 |---|---|---|
-| Rust `core` (+ dependências) | Toda a criptografia | - (sem auditoria) |
+| Rust `core` (+ dependências) | Toda a criptografia | - |
 | Android Keystore / Secure Enclave do iPhone | Proteger a chave que cifra o storage | Resistir a um dispositivo comprometido |
 | Relay + Redis | Entregar o que recebe, quando quiser | Confidencialidade, autenticidade de bundles, ordem, disponibilidade |
 | Rede | Nada | Tudo |
 | Apps Kotlin e Swift | Mover bytes, UI, ciclo de vida, preparar imagens antes de as cifrar | Qualquer criptografia (proibido) |
 
-## 6. Auditoria interna realizada nesta fase
+## 6. Revisão de segurança interna
 
 * Procuradas: passwords/chaves/segredos fixos (nenhum), RNG (só `OsRng`),
   `unwrap`/`expect`/`panic` em rede/cripto (removidos de `core`, `storage`,

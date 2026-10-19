@@ -58,7 +58,7 @@ fn voice(frame: usize) -> Vec<u8> {
 }
 
 fn energy(pcm: &[u8]) -> f64 {
-    pcm.chunks_exact(2).map(|b| (i16::from_le_bytes([b[0], b[1]]) as f64).powi(2)).sum::<f64>() / (pcm.len() / 2) as f64
+    pcm.as_chunks::<2>().0.iter().map(|b| (i16::from_le_bytes(*b) as f64).powi(2)).sum::<f64>() / (pcm.len() / 2) as f64
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
