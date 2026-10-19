@@ -6,6 +6,27 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: segurança do protocolo (app 0.9.3)
+
+Quatro pontos da revisão de desenho, todos no núcleo Rust e no relay (o Kotlin não mudou):
+
+- **PQXDH v2:** a derivação do segredo inicial passa a seguir a especificação PQXDH do Signal
+  e inclui a transcrição (todas as chaves públicas e o ciphertext ML-KEM). As sessões que já
+  existem continuam a funcionar; as novas usam o v2. `core/src/pqxdh.rs`.
+- **Chaves que rodam e chaves de uso único:** bundle v4 com número e data da signed pre-key
+  (assinados); a signed pre-key e a prekey ML-KEM rodam a cada 7 dias (as anteriores ficam
+  ~35 dias); bundles com mais de 90 dias são recusados. O relay guarda um lote diário de 100
+  one-time prekeys por conta e entrega uma (e apaga-a) por pedido de bundle.
+  `ffi/src/prekeys.rs`, `core/src/identity.rs`, `server/src/store.rs`.
+- **Enchimento:** envelope v3; o texto é arredondado a 256, 1024, 4096 ou 10 240 bytes antes de
+  ser cifrado, para o relay não distinguir recibos, presença e mensagens curtas.
+- **Contas em massa:** prova de trabalho Argon2id (8 MiB, 7 bits, uns segundos num telemóvel,
+  uma vez por conta) exigida pelo relay a contas novas; limites por conta de 300 envelopes e
+  60 pedidos de bundle por minuto. Redis: comando `LPOP` acrescentado ao ACL.
+- **Compatibilidade:** o relay aceita apps antigas e novas, mas as apps 0.9.3 e 0.9.2 não
+  conversam entre si (envelope e bundle novos). Atualizar o relay primeiro e depois todos os
+  telemóveis.
+
 ### 19 de outubro de 2026: fim do sslip.io, documentação e um aviso do compilador
 
 - O site (`site/wrangler.jsonc`) e a configuração da app iPhone passam a usar `relay.sealer.pt`. O

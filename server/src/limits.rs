@@ -142,3 +142,69 @@ mod tests {
         assert!(with(|m| !m.contains_key(&user)), "a conta sai do mapa quando fecha tudo");
     }
 }
+
+// ---------------------------------------------------------------- pedidos por conta
+//
+// Limite de pedidos por conta e por minuto (balde de fichas): cada conta pode fazer
+// ate `burst` pedidos seguidos e ganha `per_minute` fichas por minuto. So em memoria,
+// so contagens: o relay nao guarda a quem cada um escreve.
+
+/// Tipo de pedido limitado.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Limited {
+    /// `SendMessage` (cada envelope conta: uma mensagem de grupo sao ate 9).
+    Send,
+    /// `FetchPreKeyBundle` (cada um gasta uma one-time prekey do contacto).
+    FetchBundle,
+}
+
+/// `burst = 0` desliga o limite.
+#[derive(Clone, Copy, Debug)]
+pub struct Rate {
+    pub burst: u32,
+    pub per_minute: u32,
+}
+
+type Buckets = HashMap<(Limited, String), (f64, std::time::Instant)>;
+static BUCKETS: Mutex<Option<Buckets>> = Mutex::new(None);
+/// Acima disto, as contas com o balde cheio (paradas) saem do mapa.
+const MAX_TRACKED: usize = 50_000;
+
+/// Gasta uma ficha da conta. `false`: passou o limite (o pedido e recusado).
+pub fn allow(kind: Limited, user_id: &str, rate: Rate) -> bool {
+    if rate.burst == 0 {
+        return true;
+    }
+    let now = std::time::Instant::now();
+    let (burst, per_sec) = (rate.burst as f64, rate.per_minute as f64 / 60.0);
+    let mut guard = BUCKETS.lock().unwrap_or_else(|e| e.into_inner());
+    let map = guard.get_or_insert_with(HashMap::new);
+    if map.len() > MAX_TRACKED {
+        map.retain(|_, (tokens, at)| *tokens + now.duration_since(*at).as_secs_f64() * per_sec < burst);
+    }
+    let entry = map.entry((kind, user_id.to_string())).or_insert((burst, now));
+    let tokens = (entry.0 + now.duration_since(entry.1).as_secs_f64() * per_sec).min(burst);
+    if tokens < 1.0 {
+        *entry = (tokens, now);
+        return false;
+    }
+    *entry = (tokens - 1.0, now);
+    true
+}
+
+#[cfg(test)]
+mod rate_tests {
+    use super::*;
+
+    #[test]
+    fn balde_deixa_rajada_e_depois_recusa() {
+        let user = "cd".repeat(32);
+        let rate = Rate { burst: 3, per_minute: 1 };
+        assert!((0..3).all(|_| allow(Limited::Send, &user, rate)));
+        assert!(!allow(Limited::Send, &user, rate));
+        // Outro tipo de pedido e outra conta tem baldes proprios.
+        assert!(allow(Limited::FetchBundle, &user, rate));
+        assert!(allow(Limited::Send, &"ef".repeat(32), rate));
+        assert!(allow(Limited::Send, &user, Rate { burst: 0, per_minute: 0 }), "0 = sem limite");
+    }
+}

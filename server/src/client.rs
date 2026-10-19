@@ -198,12 +198,17 @@ impl RelayClient {
 
     pub async fn register_bundle(&mut self, bundle_bytes: Vec<u8>) -> Result<(), RelayError> {
         let uid = self.user_id.clone();
-        Self::expect_ack(self.request(ClientMessage::RegisterPreKeyBundle { user_id: uid, bundle_bytes }).await?)
+        // Prova de trabalho (exigida a contas novas): calculada aqui, com a chave da conta.
+        let pow = qt_core::pow::pow_solve(&self.signing.verifying_key.to_bytes(), qt_core::pow::POW_BITS);
+        Self::expect_ack(
+            self.request(ClientMessage::RegisterPreKeyBundle { user_id: uid, bundle_bytes, pow, one_time_pre_keys: None })
+                .await?,
+        )
     }
 
     pub async fn fetch_bundle(&mut self, user_id: &str) -> Result<Option<Vec<u8>>, RelayError> {
         match self.request(ClientMessage::FetchPreKeyBundle { user_id: user_id.to_string() }).await? {
-            ServerMessage::PreKeyBundle { bundle_bytes } => Ok(Some(bundle_bytes)),
+            ServerMessage::PreKeyBundle { bundle_bytes, .. } => Ok(Some(bundle_bytes)),
             ServerMessage::PreKeyBundleNotFound => Ok(None),
             ServerMessage::Error { reason } => Err(RelayError::Rejected(reason)),
             _ => Err(RelayError::Protocol),

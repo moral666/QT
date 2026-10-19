@@ -8,17 +8,18 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
    de um único autor, assistido por IA. Não usar para proteger pessoas em risco.
 2. **Autenticação e Sealed Sender são clássicos** (Ed25519/X25519). Só o segredo
    inicial é híbrido pós-quântico. O transporte Noise é clássico.
-3. **HKDF do PQXDH sem *transcript binding*** e com salt vazio (mantido por
-   compatibilidade com o formato v0.1). Não é uma falha conhecida, mas é mais
-   fraco que o recomendado para novos desenhos.
+3. ~~**HKDF do PQXDH sem *transcript binding***~~ (resolvido na 0.9.3): PQXDH v2 com
+   transcrição, prefixo 0xFF e salt de zeros, como na especificação do Signal. As sessões
+   iniciadas antes continuam com o v1 até serem reiniciadas.
 4. ~~**Ratchet sem `pn` no cabeçalho**~~ (resolvido): o cabeçalho leva `PN` e as mensagens
    atrasadas da cadeia DH anterior decifram-se com as chaves puladas
    (`fora_de_ordem_entre_cadeias_dh_recupera_com_pn`).
 5. **Chaves de mensagens puladas** ficam no estado até serem usadas (quem roubar o estado nesse
    momento obtém-nas); no máximo 1000 por cadeia e 2000 no total (as mais antigas são descartadas).
-6. **Sem one-time prekeys servidas pelo relay** (bundle único para todos).
-7. **Bundles sem validade e sem rotação** da signed pre-key / prekey ML-KEM;
-   um relay pode servir um bundle antigo.
+6. ~~**Sem one-time prekeys servidas pelo relay**~~ (resolvido na 0.9.3): lotes diários de
+   100, uma por pedido. Podem esgotar-se se alguém pedir muitos bundles (há limite por conta).
+7. ~~**Bundles sem validade e sem rotação**~~ (resolvido na 0.9.3): signed pre-key e prekey
+   ML-KEM rodam a cada 7 dias; o bundle tem data assinada e é recusado com mais de 90 dias.
 8. **Rollback do ficheiro SQLCipher** não é detetado (sem contador monotónico).
 9. **Zeroização incompleta** de chaves nas dependências e na JVM.
 10. **Reinício de sessão incompleto.** Já existem *safety numbers* e a adoção
@@ -29,11 +30,15 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
 11. **Sem verificação de tempo constante / canais laterais** das dependências.
 
 ## Relay / rede
-12. **Sem rate limiting de mensagens, anti-spam nem consentimento de contacto**; fila ≤ 1000.
+12. **Sem consentimento de contacto**; fila ≤ 1000. Desde a 0.9.3: 300 envelopes por minuto e
+    60 pedidos de bundle por minuto por conta, e prova de trabalho (Argon2id, uns segundos)
+    para criar conta. Um atacante com muitas máquinas continua a conseguir criar contas.
     Desde 19/10/2026 há limites de ligações (100 por IP no HAProxy, 2 000 por autenticar e 8 por
     conta no relay), mas criar contas não custa nada, por isso os limites por conta contornam-se
     com contas novas.
-13. **Metadados visíveis ao relay:** destinatário, tamanho, instante, IP.
+13. **Metadados visíveis ao relay:** destinatário, instante, IP e o tamanho arredondado
+    (desde a 0.9.3 o texto leva enchimento até 256, 1024, 4096 ou 10 240 bytes). Ainda sem
+    atraso aleatório (*jitter*).
 14. **Sem federação:** ponto único de falha e de pressão legal.
 15. **`ws://` nos testes.** Produção: `wss://` + pinning da chave Noise.
 16. **A chave estática Noise do relay está em ficheiro** (0600), sem HSM.

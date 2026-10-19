@@ -10,11 +10,10 @@ ka, kb = bytes([1]) * 32, bytes([2]) * 32
 pa, pb = os.path.join(d, "a.db"), os.path.join(d, "b.db")
 alice, bob = q.QtClient.open(pa, ka), q.QtClient.open(pb, kb)
 ida, idb = alice.create_identity(), bob.create_identity()
-b = bob.generate_prekey_bundle(3)
-peer = q.PeerBundle(identity_public=b.identity_public, signing_public=b.signing_public,
-    signed_pre_key_public=b.signed_pre_key_public, signed_pre_key_signature=b.signed_pre_key_signature,
-    pq_pre_key_id=b.pq_pre_key_id, pq_pre_key_public=b.pq_pre_key_public,
-    one_time_pre_key=b.one_time_pre_keys[0])
+# Bundle v4 publicado + uma one-time prekey (como o relay o entrega).
+otpk = bob.generate_prekey_bundle(3).one_time_pre_keys[0]
+peer = q.peer_bundle_from_relay_bytes(bob.publishable_bundle())
+peer.one_time_pre_key = otpk
 bob_id = alice.start_session(idb.public_id, peer)
 alice_id = ida.identity_public.hex()
 

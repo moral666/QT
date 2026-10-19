@@ -31,7 +31,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
 - O **site nunca menciona "sem auditoria externa"**.
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.9.2**, `versionCode` 9), em
+- Versões da app: série 0.x (agora **0.9.3**, `versionCode` 10), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
   0.9.3...) e o `versionCode` mais 1, no mesmo commit. Só se passa a **1.0.0** quando o Nuno disser.
 - Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
@@ -75,6 +75,16 @@ pessoas com 3 administradores (envio a cada membro, `ffi/src/groups.rs`; criar
 não exige pessoas nem nome), online / offline só para contactos e cifrado
 (`ffi/src/presence.rs`, interruptor no menu), ecrã do ID só com QR (em
 maiúsculas, menos denso) e ID abreviado.
+
+### Segurança da 0.9.3 (só núcleo Rust e relay; o Kotlin não mudou)
+
+PQXDH v2 (transcrição no HKDF), bundle v4 (spk_id + data assinada, recusado com mais de 90
+dias), rotação da signed pre-key e da prekey ML-KEM a cada 7 dias (`ffi/src/prekeys.rs`),
+one-time prekeys servidas pelo relay (lote diário de 100 no `RegisterPreKeyBundle`, uma por
+`FetchPreKeyBundle`), envelope v3 com enchimento (256/1024/4096/10 240), prova de trabalho
+Argon2id para contas novas (`core/src/pow.rs`, 7 bits) e limites por conta no relay (300
+envios/min, 60 bundles/min). As apps 0.9.3 não falam com apps 0.9.2: atualizar todos os
+telemóveis e o relay primeiro.
 
 ### Funcionalidades da 0.9.0
 
@@ -149,6 +159,10 @@ o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo
 - Não usar `pkill -f` (mata a própria shell).
 - Às vezes o crates.io e o push para o GitHub estão bloqueados na nuvem: aí o Rust não compila
   aqui (só `rustfmt --check` para a sintaxe) e o Nuno faz o commit e o push no PC; a CI compila e testa.
+  O Nuno ligou "Allow network egress" a 19/10/2026: com isso o crates.io funciona.
+- Na nuvem não há `libsqlcipher`: compilar e testar com o SQLCipher embutido, por exemplo
+  `cargo test -p qt_ffi --features "pq qt_storage/bundled-sqlcipher"` e
+  `cargo test -p qt_server -p qt_storage --features qt_storage/bundled-sqlcipher`.
 
 ## Por decidir (perguntar quando fizer sentido)
 

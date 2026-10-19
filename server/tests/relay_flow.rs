@@ -215,6 +215,8 @@ async fn registo_e_consulta_de_prekey_bundle() {
         ClientMessage::RegisterPreKeyBundle {
             user_id: uid(&alice_signing),
             bundle_bytes: bundle_falso.clone(),
+            pow: qt_core::pow::pow_solve(&alice_signing.verifying_key.to_bytes(), qt_core::pow::POW_BITS),
+            one_time_pre_keys: None,
         },
     )
     .await;
@@ -227,7 +229,7 @@ async fn registo_e_consulta_de_prekey_bundle() {
     )
     .await;
     match response {
-        ServerMessage::PreKeyBundle { bundle_bytes } => assert_eq!(bundle_bytes, bundle_falso),
+        ServerMessage::PreKeyBundle { bundle_bytes, .. } => assert_eq!(bundle_bytes, bundle_falso),
         other => panic!("esperava PreKeyBundle, recebi {other:?}"),
     }
 

@@ -24,10 +24,22 @@ pub enum ClientMessage {
     Authenticate { signing_public: Vec<u8>, signature: Vec<u8> },
 
     /// Publica o bundle de pre-keys publicas do proprio utilizador, para
-    /// que outros possam iniciar uma sessao X3DH/PQXDH mesmo offline.
-    /// `bundle_bytes` e uma serializacao opaca do `PreKeyBundle` de
-    /// `core/` (formato de serializacao ainda a definir - TODO).
-    RegisterPreKeyBundle { user_id: UserId, bundle_bytes: Vec<u8> },
+    /// que outros possam iniciar uma sessao PQXDH mesmo offline (formato em
+    /// `qt_core::identity`: v4, ou v3 das apps ate a 0.9.2).
+    ///
+    /// - `pow`: prova de trabalho da conta (`qt_core::pow`). Obrigatoria quando o
+    ///   relay ainda nao tem bundle desta conta (conta nova ou expirada).
+    /// - `one_time_pre_keys`: se vier, SUBSTITUI as one-time prekeys guardadas
+    ///   (`[4 numero BE][32 publica]` cada, ate `MAX_OTPKS`). O relay entrega uma
+    ///   por cada `FetchPreKeyBundle` e apaga-a.
+    RegisterPreKeyBundle {
+        user_id: UserId,
+        bundle_bytes: Vec<u8>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pow: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        one_time_pre_keys: Option<Vec<Vec<u8>>>,
+    },
 
     /// Pede o bundle de pre-keys publicado por outro utilizador.
     FetchPreKeyBundle { user_id: UserId },
@@ -104,6 +116,15 @@ pub enum ClientMessage {
     RegisterPushToken { user_id: UserId, token: String },
 }
 
+/// One-time prekeys guardadas por conta, no maximo.
+pub const MAX_OTPKS: usize = 200;
+/// Tamanho de uma one-time prekey guardada: `[4 numero BE][32 publica]`.
+pub const OTPK_LEN: usize = 36;
+/// Motivo do `Error` a um registo de conta nova sem prova de trabalho valida.
+pub const POW_REQUIRED: &str = "prova de trabalho em falta ou invalida";
+/// Motivo do `Error` quando uma conta passa o limite de pedidos.
+pub const RATE_LIMITED: &str = "demasiados pedidos, tenta daqui a pouco";
+
 /// Tamanho maximo de um token FCM (na pratica ~160 a 200 caracteres).
 pub const MAX_PUSH_TOKEN: usize = 4096;
 
@@ -140,7 +161,14 @@ pub struct DeliveredMessage {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ServerMessage {
     Ack,
-    PreKeyBundle { bundle_bytes: Vec<u8> },
+    /// `one_time_pre_key`: uma one-time prekey do dono do bundle (`[4 numero][32
+    /// publica]`), ja apagada do relay. Ausente se ja nao houver (clientes antigos
+    /// ignoram o campo).
+    PreKeyBundle {
+        bundle_bytes: Vec<u8>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        one_time_pre_key: Option<Vec<u8>>,
+    },
     PreKeyBundleNotFound,
     Messages { messages: Vec<DeliveredMessage> },
     Error { reason: String },

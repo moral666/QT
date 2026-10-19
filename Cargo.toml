@@ -11,3 +11,10 @@ members = ["core", "transport", "server", "demo", "cli", "storage", "ffi"]
 strip = true
 lto = true
 codegen-units = 1
+
+# A prova de trabalho (Argon2id, qt_core::pow) e muito lenta sem otimizacao: nos
+# testes (perfil dev) estas bibliotecas compilam otimizadas, o resto nao.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

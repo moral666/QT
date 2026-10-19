@@ -44,6 +44,12 @@ pub struct ServerConfig {
     pub max_unauthenticated: usize,
     /// Ligacoes autenticadas por conta; acima disto fecha-se a mais antiga (0 = sem limite).
     pub max_connections_per_user: usize,
+    /// Exigir prova de trabalho (`qt_core::pow`) ao primeiro bundle de uma conta.
+    pub require_pow: bool,
+    /// Envelopes enviados por conta (`SendMessage`).
+    pub send_rate: crate::limits::Rate,
+    /// Pedidos de bundle por conta (`FetchPreKeyBundle`).
+    pub fetch_bundle_rate: crate::limits::Rate,
 }
 
 impl Default for ServerConfig {
@@ -56,6 +62,11 @@ impl Default for ServerConfig {
             idle_timeout: Duration::from_secs(300),
             max_unauthenticated: 2000,
             max_connections_per_user: 8,
+            require_pow: true,
+            // 300 seguidos e 300 por minuto: chega para conversas e grupos muito ativos
+            // (e para avisar todos os contactos ao abrir a app), nao para spam em massa.
+            send_rate: crate::limits::Rate { burst: 300, per_minute: 300 },
+            fetch_bundle_rate: crate::limits::Rate { burst: 60, per_minute: 60 },
         }
     }
 }
@@ -158,7 +169,7 @@ pub async fn handle_connection_with(
                 }
                 Ok(m) => {
                     sent_message = matches!(m, ClientMessage::SendMessage { .. });
-                    handle_client_message(&store, &user_id, m).await
+                    handle_client_message(&store, &user_id, m, cfg).await
                 }
                 Err(_) => {
                     stats::inc(&STATS.invalid_requests);
@@ -363,10 +374,10 @@ fn internal(_e: StoreError) -> ServerMessage {
     err("erro interno")
 }
 
-async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> ServerMessage {
+async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg: &ServerConfig) -> ServerMessage {
     match msg {
         ClientMessage::Authenticate { .. } => err("ja autenticado"),
-        ClientMessage::RegisterPreKeyBundle { user_id, bundle_bytes } => {
+        ClientMessage::RegisterPreKeyBundle { user_id, bundle_bytes, pow, one_time_pre_keys } => {
             if user_id != me {
                 return err("so podes registar o teu proprio bundle");
             }
@@ -384,9 +395,34 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
                     qt_core::identity::IdentityError::BadFormat => "bundle com formato invalido",
                 });
             }
+            if let Some(keys) = &one_time_pre_keys {
+                if keys.len() > crate::protocol::MAX_OTPKS
+                    || keys.iter().any(|k| k.len() != crate::protocol::OTPK_LEN || k[..4] == [0; 4])
+                {
+                    return err("one-time prekeys invalidas");
+                }
+            }
+            // Conta nova (ou que expirou): so com prova de trabalho valida.
+            if cfg.require_pow {
+                match store.get_bundle(me).await {
+                    Ok(Some(_)) => {}
+                    Ok(None) => {
+                        if !pow.is_some_and(|n| qt_core::pow::pow_verify(&signing, n, qt_core::pow::POW_BITS)) {
+                            stats::inc(&STATS.pow_rejected);
+                            return err(crate::protocol::POW_REQUIRED);
+                        }
+                    }
+                    Err(e) => return internal(e),
+                }
+            }
             match store.register_bundle(user_id, bundle_bytes).await {
                 Ok(()) => {
                     stats::inc(&STATS.bundles_registered);
+                    if let Some(keys) = one_time_pre_keys {
+                        if let Err(e) = store.replace_one_time_prekeys(me, &keys).await {
+                            return internal(e);
+                        }
+                    }
                     ServerMessage::Ack
                 }
                 Err(e) => internal(e),
@@ -396,10 +432,23 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
             if !is_valid_user_id(&user_id) {
                 return err("user_id invalido");
             }
+            // Cada pedido gasta uma one-time prekey do contacto: sem limite, alguem
+            // podia esvazia-las de proposito.
+            if !crate::limits::allow(crate::limits::Limited::FetchBundle, me, cfg.fetch_bundle_rate) {
+                stats::inc(&STATS.rate_limited);
+                return err(crate::protocol::RATE_LIMITED);
+            }
             match store.get_bundle(&user_id).await {
                 Ok(Some(bundle_bytes)) => {
                     stats::inc(&STATS.bundles_fetched);
-                    ServerMessage::PreKeyBundle { bundle_bytes }
+                    let one_time_pre_key = match store.pop_one_time_prekey(&user_id).await {
+                        Ok(k) => k.filter(|k| k.len() == crate::protocol::OTPK_LEN),
+                        Err(e) => return internal(e),
+                    };
+                    if one_time_pre_key.is_some() {
+                        stats::inc(&STATS.otpks_served);
+                    }
+                    ServerMessage::PreKeyBundle { bundle_bytes, one_time_pre_key }
                 }
                 Ok(None) => {
                     stats::inc(&STATS.bundles_not_found);
@@ -414,6 +463,10 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage) -> S
             }
             if sealed_from.len() > MAX_SEALED_FROM || ciphertext.is_empty() || ciphertext.len() > MAX_CIPHERTEXT {
                 return err("mensagem com tamanho invalido");
+            }
+            if !crate::limits::allow(crate::limits::Limited::Send, me, cfg.send_rate) {
+                stats::inc(&STATS.rate_limited);
+                return err(crate::protocol::RATE_LIMITED);
             }
             let recipient = to.clone();
             match store.enqueue_message(to, sealed_from, ciphertext).await {

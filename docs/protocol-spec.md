@@ -332,10 +332,16 @@ Três peças, em camadas:
    DH1 = X25519(IK_A_priv, SPK_B)      DH2 = X25519(EK_A, IK_B)
    DH3 = X25519(EK_A,       SPK_B)     DH4 = X25519(EK_A, OPK_B)   (opcional)
    (ct, ss_pq) = ML-KEM-768.Encaps(PQPK_B)
-   SK = HKDF-SHA256(ikm = DH1‖DH2‖DH3[‖DH4]‖ss_pq, salt = vazio, info = "PQXDH_v1", 32 bytes)
+   T  = SHA-256("QT-PQXDH-v2-transcript" ‖ IK_A ‖ IK_B ‖ SPK_B ‖ EK_A ‖ (OPK_B ou 32 zeros) ‖ PQPK_B ‖ ct)
+   SK = HKDF-SHA256(ikm = 0xFF×32 ‖ DH1‖DH2‖DH3[‖DH4]‖ss_pq, salt = 0x00×32, info = "QT-PQXDH-v2" ‖ T, 32 bytes)
    ```
    Bob calcula o mesmo `SK` com as chaves privadas e `Decaps(ct)`. O iniciador
-   só prossegue se a assinatura Ed25519 do bundle for válida (ver §9).
+   só prossegue se a assinatura Ed25519 do bundle for válida e o bundle tiver
+   menos de 90 dias (ver §9). **PQXDH v2, desde a app 0.9.3:** a derivação segue a
+   especificação PQXDH do Signal e liga o segredo a todas as chaves públicas e ao
+   ciphertext ML-KEM usados (transcrição `T`). O v1 (`ikm` sem o prefixo 0xFF, salt
+   vazio, info `PQXDH_v1`, sem transcrição) só é usado para receber primeiras
+   mensagens de apps antigas ou de sessões iniciadas antes da 0.9.3.
 3. **Double Ratchet** (`core/src/ratchet.rs`): `SK` é a root key inicial
    (Alice: `init_as_initiator(SK, SPK_B)`; Bob: `init_as_responder(SK, SPK_B_keypair)`).
    Daí em diante cada mensagem usa uma chave de mensagem de uso único
@@ -351,9 +357,30 @@ Bob:   relay.fetch → decryptSealed → (sessão criada) → relay.ack
 Propriedades PQ exatas: ver `threat-model.md` §3.1 (híbrido para
 confidencialidade do segredo inicial; autenticação, cura e transporte são clássicos).
 
-## 9. Bundle de chaves públicas (v3)
+## 9. Bundle de chaves públicas (v4, desde a app 0.9.3)
 
-Binário (1349 bytes), usado entre cliente e relay:
+Binário (1361 bytes):
+`[4][IK 32][IK_sign 32][spk_id u32 BE][SPK 32][criado_em u64 BE][sig 64][pq_prekey_id u32 BE][ML-KEM-768 pub 1184]`,
+com `sig = Ed25519(IK_sign, "QT-PQXDH-v4-bundle" ‖ IK ‖ spk_id ‖ SPK ‖ criado_em ‖ pq_prekey_id ‖ ML-KEM pub)`.
+`criado_em` é a hora (segundos unix) em que a signed pre-key foi criada.
+
+* **Rotação:** ao publicar (sempre que a app abre), se a signed pre-key tiver mais de
+  7 dias, o telemóvel cria uma nova (`spk_id` seguinte) e uma prekey ML-KEM nova. As 5
+  anteriores de cada ficam guardadas (cerca de 35 dias) para primeiras mensagens ainda
+  a caminho; o cabeçalho PQXDH v2 diz qual foi usada (§10).
+* **Validade:** quem inicia recusa um bundle com mais de 90 dias ou com data mais de
+  um dia no futuro. Um relay não consegue servir uma signed pre-key velha como
+  recente (a data está assinada).
+* **One-time prekeys:** não estão no bundle. Uma vez por dia o telemóvel envia um
+  lote de 100 no `RegisterPreKeyBundle` (§11); o relay entrega uma, e apaga-a, a cada
+  `FetchPreKeyBundle`. As privadas ficam no telemóvel até serem usadas ou até 35 dias
+  depois do lote. Não são assinadas (como no Signal): um relay que as troque só
+  consegue que a sessão comece sem essa proteção extra.
+
+O relay ainda aceita o **bundle v3** (1349 bytes, apps até à 0.9.2), descrito a seguir;
+as apps 0.9.3 já não iniciam sessões com ele (o contacto tem de atualizar).
+
+Binário v3 (1349 bytes):
 `[3][IK 32][IK_sign 32][SPK 32][sig 64][pq_prekey_id u32 BE][ML-KEM-768 pub 1184]`.
 `sig = Ed25519(IK_sign, "QT-PQXDH-v2-bundle" ‖ IK ‖ SPK ‖ ML-KEM pub)`. A
 assinatura cobre a identidade X25519 (`IK`), por isso a chave Ed25519 **atesta**
@@ -372,7 +399,24 @@ a X25519 e nenhuma das duas pode ser trocada isoladamente.
 **QT Public ID:** `"qt1:" + hex(IK ‖ IK_sign)` (64 bytes → 128 hex).
 **contactId:** `hex(IK)`. **Caixa no relay (`user_id`):** `hex(IK_sign)`.
 
-## 10. Envelope v2 (o que o relay transporta)
+## 10. Envelope v3 (o que o relay transporta, desde a app 0.9.3)
+
+```
+Envelope v3   = [1: versão=3][1: tipo][se tipo=2: Cabeçalho v2][Mensagem de ratchet]
+tipo          = 0 mensagem normal | 2 mensagem com cabeçalho PQXDH v2
+Cabeçalho v2  = [32: EK_A pública][4: opk_id BE (0 = nenhuma)][4: pq_prekey_id BE][4: spk_id BE][1088: ct ML-KEM]
+```
+* **Enchimento:** antes de cifrar, o plaintext leva um byte `0x80` e zeros até ao
+  primeiro destes tamanhos que caiba: 256, 1024, 4096 ou 10 240 bytes. Quem vê o
+  tamanho dos envelopes (o relay) só distingue esses 4 tamanhos: um recibo, uma
+  presença e uma mensagem curta ficam iguais. Quem recebe retira o enchimento
+  depois de decifrar; um formato errado conta como envelope inválido.
+* O resto (mensagem de ratchet, AD, deduplicação, envelope selado) é igual ao v2
+  abaixo. A caixa selada continua com versão 2.
+* As apps 0.9.3 ainda **recebem** o v2 (tipos 0 e 1, sem enchimento), e enviam-no só
+  para a primeira mensagem de uma sessão iniciada antes da atualização.
+
+### Envelope v2 (apps até à 0.9.2)
 
 ```
 Envelope      = [1: versão=2][1: tipo][se tipo=1: Cabeçalho][Mensagem de ratchet]
@@ -413,14 +457,22 @@ Um pedido ↔ uma resposta, sequenciais.
    `signature = Ed25519(IK_sign, "QT-RELAY-AUTH-v1" ‖ hash_do_handshake_Noise)`.
    O `user_id` passa a ser `hex(signing_public)`. Sem autenticação válida → erro
    e fecho. A assinatura liga-se à sessão (channel binding): não é reutilizável.
-2. `RegisterPreKeyBundle{user_id, bundle_bytes}`: só para o próprio `user_id`; ≤ 24 000 bytes.
+2. `RegisterPreKeyBundle{user_id, bundle_bytes, pow?, one_time_pre_keys?}`: só para o próprio
+   `user_id`; ≤ 24 000 bytes. **Conta nova** (o relay ainda não tem bundle dela): exige `pow`,
+   um `nonce` tal que `Argon2id(m = 8 MiB, t = 1, p = 1, "QT-POW-v1" ‖ signing_public ‖ nonce)`
+   comece por 7 bits a zero (`core/src/pow.rs`; uns segundos num telemóvel, uma vez por conta).
+   `one_time_pre_keys` (até 200, `[4 número BE][32 pública]` cada) substitui as guardadas.
    O bundle expira ao fim de 90 dias; as apps voltam a publicá-lo sempre que abrem
    (arranque, desbloqueio ou ID novo), por isso só expira para quem não abre a app há 90 dias.
-3. `FetchPreKeyBundle{user_id}`: qualquer utilizador autenticado.
+3. `FetchPreKeyBundle{user_id}`: qualquer utilizador autenticado. A resposta
+   `PreKeyBundle{bundle_bytes, one_time_pre_key?}` leva uma one-time prekey do dono (já
+   apagada do relay), se ainda houver. Limite: 60 pedidos seguidos e 60 por minuto por conta.
 4. `SendMessage{to, sealed_from, ciphertext, silent}`: `to` = 64 hex minúsculos;
    `ciphertext` 1…14 000 bytes; `sealed_from` ≤ 1024 (vazio no modo `QtClient`,
    que envia o blob selado inteiro em `ciphertext`); fila ≤ 1000 mensagens.
    `silent` (opcional, `false` se faltar): entregue igual, mas sem campainha (secção 17).
+   Limite: 300 envelopes seguidos e 300 por minuto por conta (`Error{"demasiados pedidos…"}`;
+   as apps deixam o envelope na outbox e voltam a tentar).
 5. `FetchMessages{user_id}`: só a própria fila; **não apaga**; devolve uma
    página (≈ 40 kB de JSON) de `{id, sealed_from, ciphertext}`.
    `WaitMessages{user_id, timeout_secs}`: igual a `FetchMessages`, mas, com a

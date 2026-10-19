@@ -11,8 +11,10 @@
 //! Compilado e testado com sucesso com rustc 1.91.1 - ver
 //! core/tests/pqxdh_flow.rs (teste completo Alice<->Bob passando).
 
-use crate::identity::bundle_signed_message;
+use crate::identity::{bundle_signed_message, verify_bundle_v4, BundleV4};
 use crate::primitives::{dh, hkdf_derive, verify_signature, DhKeyPair, SigningKeyPair};
+use sha2::{Digest, Sha256};
+use zeroize::Zeroize;
 use ed25519_dalek::{Signature, VerifyingKey};
 use ml_kem::kem::{Decapsulate, Encapsulate};
 use ml_kem::{Ciphertext, Encoded, EncodedSizeUser, KemCore, MlKem768};
@@ -236,4 +238,150 @@ pub fn pqxdh_respond(
     let mut shared_secret = [0u8; 32];
     shared_secret.copy_from_slice(&derived);
     Ok(shared_secret)
+}
+
+// ------------------------------------------------------------------ PQXDH v2
+//
+// Desde a app 0.9.3. Igual ao v1 nas trocas de chaves (DH1..DH4 + ML-KEM-768), mas a
+// derivacao do segredo segue a especificacao PQXDH do Signal e acrescenta a
+// "transcricao" do aperto de mao:
+//
+//   IKM  = 0xFF x 32 || DH1 || DH2 || DH3 [|| DH4] || ss_ML-KEM
+//   salt = 0x00 x 32
+//   info = "QT-PQXDH-v2" || SHA-256("QT-PQXDH-v2-transcript" || IK_A || IK_B || SPK_B
+//                                   || EK_A || (OPK_B ou 32 zeros) || PQPK_B || ct)
+//
+// O segredo fica assim ligado a todas as chaves publicas e ao ciphertext ML-KEM
+// usados: trocar qualquer um (por exemplo, um relay a servir outra prekey) da um
+// segredo diferente dos dois lados. O v1 continua acima so para sessoes antigas.
+
+const KDF_V2_INFO: &[u8] = b"QT-PQXDH-v2";
+const TRANSCRIPT_V2: &[u8] = b"QT-PQXDH-v2-transcript";
+
+#[allow(clippy::too_many_arguments)]
+fn transcript_v2(
+    ik_a: &PublicKey,
+    ik_b: &PublicKey,
+    spk_b: &PublicKey,
+    ek_a: &PublicKey,
+    opk_b: Option<&PublicKey>,
+    pq_pk_b: &[u8],
+    ct: &[u8],
+) -> [u8; 32] {
+    let mut h = Sha256::new();
+    h.update(TRANSCRIPT_V2);
+    h.update(ik_a.as_bytes());
+    h.update(ik_b.as_bytes());
+    h.update(spk_b.as_bytes());
+    h.update(ek_a.as_bytes());
+    h.update(opk_b.map(|k| k.to_bytes()).unwrap_or([0u8; 32]));
+    h.update(pq_pk_b);
+    h.update(ct);
+    h.finalize().into()
+}
+
+fn kdf_v2(dhs: &[[u8; 32]], pq_shared_secret: &[u8], transcript: &[u8; 32]) -> Result<[u8; 32], PqxdhError> {
+    let mut ikm = Vec::with_capacity(32 * 6);
+    ikm.extend_from_slice(&[0xFFu8; 32]);
+    for d in dhs {
+        ikm.extend_from_slice(d);
+    }
+    ikm.extend_from_slice(pq_shared_secret);
+    let mut info = KDF_V2_INFO.to_vec();
+    info.extend_from_slice(transcript);
+    let mut derived = hkdf_derive(&ikm, &[0u8; 32], &info, 32);
+    ikm.zeroize();
+    let out: [u8; 32] = derived.as_slice().try_into().map_err(|_| PqxdhError::KemFailure)?;
+    derived.zeroize();
+    Ok(out)
+}
+
+pub struct PqxdhV2Init {
+    pub shared_secret: [u8; 32],
+    pub ephemeral_public: PublicKey,
+    pub pq_ciphertext: Ciphertext<MlKem768>,
+    pub signed_pre_key: PublicKey,
+    pub signed_pre_key_id: u32,
+    pub pq_pre_key_id: u32,
+}
+
+/// Inicia uma sessao PQXDH v2 com um bundle v4. Verifica primeiro a assinatura do
+/// bundle (com a chave Ed25519 nele contida; o chamador confirma que essa chave e a
+/// do contacto, pelo QT Public ID).
+pub fn pqxdh_initiate_v2(
+    my_identity: &DhKeyPair,
+    bundle: &BundleV4,
+    one_time_pre_key: Option<&PublicKey>,
+) -> Result<PqxdhV2Init, PqxdhError> {
+    verify_bundle_v4(bundle).map_err(|_| crate::primitives::CryptoError::SignatureInvalid)?;
+    let pq_pre_key = pq_public_key_from_bytes(&bundle.pq_pre_key)?;
+    let their_identity = PublicKey::from(bundle.identity);
+    let spk = PublicKey::from(bundle.signed_pre_key);
+    let ephemeral = DhKeyPair::generate();
+
+    let mut dhs = vec![
+        dh(&my_identity.private, &spk),
+        dh(&ephemeral.private, &their_identity),
+        dh(&ephemeral.private, &spk),
+    ];
+    if let Some(opk) = one_time_pre_key {
+        dhs.push(dh(&ephemeral.private, opk));
+    }
+    let (pq_ciphertext, pq_shared_secret) =
+        pq_pre_key.encapsulate(&mut OsRng).map_err(|_| PqxdhError::KemFailure)?;
+    let t = transcript_v2(
+        &my_identity.public,
+        &their_identity,
+        &spk,
+        &ephemeral.public,
+        one_time_pre_key,
+        &bundle.pq_pre_key,
+        pq_ciphertext.as_slice(),
+    );
+    let shared_secret = kdf_v2(&dhs, pq_shared_secret.as_slice(), &t);
+    dhs.iter_mut().for_each(|d| d.zeroize());
+    Ok(PqxdhV2Init {
+        shared_secret: shared_secret?,
+        ephemeral_public: ephemeral.public,
+        pq_ciphertext,
+        signed_pre_key: spk,
+        signed_pre_key_id: bundle.signed_pre_key_id,
+        pq_pre_key_id: bundle.pq_pre_key_id,
+    })
+}
+
+/// Lado de quem recebe a primeira mensagem (PQXDH v2).
+pub fn pqxdh_respond_v2(
+    my_identity: &DhKeyPair,
+    my_signed_pre_key: &DhKeyPair,
+    my_pq_pre_key: &PqPreKeyPair,
+    my_one_time_pre_key: Option<&DhKeyPair>,
+    their_identity_pub: &PublicKey,
+    their_ephemeral_pub: &PublicKey,
+    pq_ciphertext: &Ciphertext<MlKem768>,
+) -> Result<[u8; 32], PqxdhError> {
+    let mut dhs = vec![
+        dh(&my_signed_pre_key.private, their_identity_pub),
+        dh(&my_identity.private, their_ephemeral_pub),
+        dh(&my_signed_pre_key.private, their_ephemeral_pub),
+    ];
+    if let Some(opk) = my_one_time_pre_key {
+        dhs.push(dh(&opk.private, their_ephemeral_pub));
+    }
+    let pq_shared_secret = my_pq_pre_key
+        .decapsulation_key
+        .decapsulate(pq_ciphertext)
+        .map_err(|_| PqxdhError::KemFailure)?;
+    let t = transcript_v2(
+        their_identity_pub,
+        &my_identity.public,
+        &my_signed_pre_key.public,
+        their_ephemeral_pub,
+        my_one_time_pre_key.map(|k| &k.public),
+        &my_pq_pre_key.public_key_bytes(),
+        pq_ciphertext.as_slice(),
+    );
+    let out = kdf_v2(&dhs, pq_shared_secret.as_slice(), &t);
+    dhs.iter_mut().for_each(|d| d.zeroize());
+    out
 }

@@ -360,6 +360,18 @@ pub fn delete_pq_prekey(conn: &Connection, id: u32) -> Result<(), StorageError> 
     Ok(())
 }
 
+/// Maior numero de prekey PQ guardado (0 se nao houver nenhuma).
+#[cfg(feature = "pq")]
+pub fn max_pq_prekey_id(conn: &Connection) -> Result<u32, StorageError> {
+    Ok(conn.query_row("SELECT COALESCE(MAX(id), 0) FROM pq_prekeys", [], |r| r.get::<_, u32>(0))?)
+}
+
+/// Apaga as prekeys PQ criadas antes de `before_unix`, exceto `keep_id` (a atual).
+#[cfg(feature = "pq")]
+pub fn delete_pq_prekeys_before(conn: &Connection, before_unix: i64, keep_id: u32) -> Result<usize, StorageError> {
+    Ok(conn.execute("DELETE FROM pq_prekeys WHERE created_at < ?1 AND id != ?2", rusqlite::params![before_unix, keep_id])?)
+}
+
 // ---------------------------------------------------------------------------
 // Chave estatica Noise do cliente
 // ---------------------------------------------------------------------------
@@ -553,6 +565,12 @@ pub fn load_one_time_prekey(conn: &Connection, id: u32) -> Result<DhKeyPair, Sto
 pub fn delete_one_time_prekey(conn: &Connection, id: u32) -> Result<(), StorageError> {
     conn.execute("DELETE FROM one_time_prekeys WHERE id = ?1", [id])?;
     Ok(())
+}
+
+/// Apaga as one-time prekeys com numero abaixo de `id` (lotes antigos que ja nao
+/// estao no relay e cujo prazo para uma primeira mensagem passou).
+pub fn delete_one_time_prekeys_below(conn: &Connection, id: u32) -> Result<usize, StorageError> {
+    Ok(conn.execute("DELETE FROM one_time_prekeys WHERE id < ?1", [id])?)
 }
 
 /// Consulta (sem registar) se um envelope ja foi processado.

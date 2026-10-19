@@ -135,6 +135,8 @@ impl Store {
         redis::pipe()
             .del(format!("{p}:bundle:{user_id}"))
             .ignore()
+            .del(format!("{p}:otpk:{user_id}"))
+            .ignore()
             .del(format!("{p}:queue:{user_id}"))
             .ignore()
             .del(format!("{p}:push:{user_id}"))
@@ -174,6 +176,32 @@ impl Store {
     pub async fn get_push_token(&self, user_id: &str) -> Result<Option<String>, StoreError> {
         let mut conn = self.connection().await?;
         Ok(conn.get(format!("{}:push:{}", self.key_prefix, user_id)).await?)
+    }
+
+    /// Substitui as one-time prekeys do utilizador (lista no Redis, com o TTL do bundle).
+    pub async fn replace_one_time_prekeys(&self, user_id: &str, keys: &[Vec<u8>]) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let key = format!("{}:otpk:{}", self.key_prefix, user_id);
+        let mut pipe = redis::pipe();
+        pipe.atomic().del(&key).ignore();
+        if !keys.is_empty() {
+            pipe.rpush(&key, keys).ignore().expire(&key, BUNDLE_TTL_SECONDS as i64).ignore();
+        }
+        pipe.query_async::<_, ()>(&mut conn).await?;
+        Ok(())
+    }
+
+    /// Tira (e apaga) uma one-time prekey do utilizador, se houver. LPOP e atomico:
+    /// dois pedidos ao mesmo tempo nunca recebem a mesma.
+    pub async fn pop_one_time_prekey(&self, user_id: &str) -> Result<Option<Vec<u8>>, StoreError> {
+        let mut conn = self.connection().await?;
+        Ok(conn.lpop(format!("{}:otpk:{}", self.key_prefix, user_id), None).await?)
+    }
+
+    /// Quantas one-time prekeys restam (testes e estatisticas).
+    pub async fn count_one_time_prekeys(&self, user_id: &str) -> Result<usize, StoreError> {
+        let mut conn = self.connection().await?;
+        Ok(conn.llen(format!("{}:otpk:{}", self.key_prefix, user_id)).await?)
     }
 
     pub async fn get_bundle(&self, user_id: &str) -> Result<Option<Vec<u8>>, StoreError> {
