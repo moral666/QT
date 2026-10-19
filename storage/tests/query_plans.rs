@@ -24,13 +24,21 @@ fn consultas_frequentes_usam_indices() {
     let p2 = plan(&c, "SELECT msg_id FROM messages WHERE contact_id = 'a' AND outgoing = 0 AND status = 10 ORDER BY seq");
     assert!(p2.contains("messages_unread"), "{p2}");
 
-    // Lista de conversas: nenhuma leitura da tabela inteira.
+    // Lista de conversas: nenhuma leitura da tabela inteira nem do indice inteiro
+    // (desde a 0.9.12 os contactos sao percorridos aos saltos no indice).
     let p3 = plan(
         &c,
-        "SELECT seq, (SELECT COUNT(*) FROM messages u WHERE u.contact_id = m.contact_id AND u.outgoing = 0 AND u.status = 10)
-         FROM messages m WHERE m.seq IN (SELECT MAX(seq) FROM messages GROUP BY contact_id) ORDER BY m.seq DESC",
+        "WITH RECURSIVE k(cid) AS (
+             SELECT MIN(contact_id) FROM messages
+             UNION ALL
+             SELECT (SELECT MIN(contact_id) FROM messages WHERE contact_id > k.cid) FROM k WHERE k.cid IS NOT NULL
+         )
+         SELECT seq, (SELECT COUNT(*) FROM messages u WHERE u.contact_id = m.contact_id AND u.outgoing = 0 AND u.status = 10)
+         FROM k JOIN messages m ON m.seq = (SELECT MAX(seq) FROM messages WHERE contact_id = k.cid)
+         WHERE k.cid IS NOT NULL ORDER BY m.seq DESC",
     );
     assert!(!p3.contains("SCAN m ") && !p3.ends_with("SCAN m"), "{p3}");
+    assert!(!p3.contains("SCAN messages"), "{p3}");
     assert!(p3.contains("messages_unread"), "{p3}");
 
     drop(c);

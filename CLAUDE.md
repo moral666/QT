@@ -32,7 +32,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
 - O **site nunca menciona "sem auditoria externa"**.
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.9.11**, `versionCode` 18), em
+- Versões da app: série 0.x (agora **0.9.12**, `versionCode` 19), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
   0.9.3...) e o `versionCode` mais 1, no mesmo commit. Só se passa a **1.0.0** quando o Nuno disser.
 - Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
@@ -220,7 +220,8 @@ o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo
   sem SETEX nem EXISTS (usar SET + EXPIRE e GET).
 - Estado e tempos públicos: `https://sealer.pt/api/estado` (Worker em `site/worker/`).
 - TLS no servidor: **HAProxy + certbot** (desde 18/10/2026; antes Caddy, que gastava ~137 KB por
-  ligação). Sem registos de acesso. Limite medido com o Caddy: ~8 000 ligações (2 por app aberta).
+  ligação). Sem registos de acesso. Limite medido com o Caddy: ~8 000 ligações. Cada app aberta usa **3 ligações** (pedidos, espera e
+  anexos, `MainViewModel.startLink`), mais 1 de curta duração quando a campainha acorda o segundo plano.
 
 ## Ambiente do Claude (nuvem)
 

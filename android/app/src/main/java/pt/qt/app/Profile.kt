@@ -59,6 +59,8 @@ object ProfilePhoto {
     private const val MAX_OUT_BYTES = 9_900
     /** Fotos recebidas maiores do que isto nao se mostram (defesa contra imagens estranhas). */
     private const val MAX_SHOWN_SIDE = 1024
+    /** Lado minimo depois de reduzir uma foto recebida maior do que as da app. */
+    private const val DECODE_SIDE = 256
 
     /** Le a foto escolhida (ate 20 MB), corta ao centro em quadrado e comprime. */
     fun prepare(ctx: Context, uri: Uri): ByteArray {
@@ -88,7 +90,12 @@ object ProfilePhoto {
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
         if (o.outWidth <= 0 || o.outHeight <= 0 || max(o.outWidth, o.outHeight) > MAX_SHOWN_SIDE) return null
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        // As fotos da app tem 256 px; uma maior (ate 1024) e reduzida ao descodificar (0.9.12):
+        // ocupa ate 16 vezes menos memoria e no ecra (ate 160 dp) fica igual.
+        var sample = 1
+        while (min(o.outWidth, o.outHeight) / (sample * 2) >= DECODE_SIDE) sample *= 2
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+            ?.asImageBitmap()
     }.getOrNull()
 
     @Suppress("DEPRECATION")

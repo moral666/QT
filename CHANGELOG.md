@@ -6,6 +6,21 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: melhorias dos testes da 0.9.11 (app 0.9.12, núcleo)
+
+Nada muda no aspeto nem no que a app faz.
+
+- **Chamadas:** se o Android der erro a ler o microfone, a app espera 10 ms antes de tentar de
+  novo (antes repetia sem pausa e gastava 100% de um núcleo até desligar). Se o microfone morrer
+  (outra app ficou com ele), deixa de o ler.
+- **Lista de conversas (núcleo):** a consulta percorre os contactos aos saltos no índice em vez de
+  ler uma entrada por mensagem. O tempo deixa de crescer com o histórico (medido no PC com 300 000
+  mensagens: de ~33 ms para ~0,2 ms). Teste novo que compara com a consulta antiga
+  (`storage/tests/messages_history.rs`) e o teste dos índices atualizado.
+- **Fotos de perfil recebidas** maiores do que as da app (até 1024 px) são reduzidas ao abrir: até
+  16 vezes menos memória, iguais no ecrã.
+- **APK mais pequena:** só leva as 6 línguas da app (antes também as ~80 traduções das bibliotecas).
+
 ### 19 de outubro de 2026: novo design e foto de perfil corrigida (app 0.9.11, núcleo)
 
 - **Novo design no Android.** Cabeçalho roxo com o fundo curvo em baixo, à direita, em todos os
