@@ -216,7 +216,7 @@ impl RelayClient {
     }
 
     pub async fn send_message(&mut self, to: &str, sealed_from: Vec<u8>, ciphertext: Vec<u8>) -> Result<(), RelayError> {
-        Self::expect_ack(self.request(ClientMessage::SendMessage { to: to.to_string(), sealed_from, ciphertext, silent: false }).await?)
+        Self::expect_ack(self.request(ClientMessage::SendMessage { to: to.to_string(), sealed_from, ciphertext, silent: false, wake: None }).await?)
     }
 
     /// Proxima pagina de mensagens (sem as apagar do relay). Processar,

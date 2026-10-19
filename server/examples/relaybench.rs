@@ -146,7 +146,7 @@ async fn main() {
                     let t = start.elapsed().as_nanos() as u64;
                     body[..8].copy_from_slice(&seq.to_be_bytes());
                     body[8..16].copy_from_slice(&t.to_be_bytes());
-                    let m = ClientMessage::SendMessage { to: to.clone(), sealed_from: vec![], ciphertext: body.clone(), silent: false };
+                    let m = ClientMessage::SendMessage { to: to.clone(), sealed_from: vec![], ciphertext: body.clone(), silent: false, wake: None };
                     let t0 = Instant::now();
                     match req(&mut ws_s, &mut n_s, &m).await {
                         Ok(ServerMessage::Ack) => {

@@ -47,7 +47,7 @@ Yes, end to end, as a test version (**Android app 0.9.4 and iPhone app 0.9.3**),
 
 - **One-to-one and group chats** (up to 10 people, 3 admins), between Android and iPhone, with encrypted history on the phone and *Sent / Delivered / Seen* indicators.
 - **Photos, GIFs, voice messages and files up to 25 MB** (PDFs, documents...), one-to-one and in groups. Each file is encrypted on the phone with its own key and deleted from the relay once downloaded, or after 24 hours.
-- **Push notifications with the app closed:** a generic notice ("You have new messages"), without the sender's name or the text. The message is only decrypted when you open the app.
+- **Push notifications with the app closed:** a generic notice ("You have new messages"), without the sender's name or the text. Since Android 0.9.6 the app decrypts in the background, on the phone, so calls can ring with the app closed; with the app lock on, nothing is decrypted without the passcode.
 - **Invites by QR code**, reactions, blocking contacts, online / offline for contacts only (encrypted) and an app lock with its own passcode, fingerprint or face (for now only on Android).
 - **Delete your account** on the phone and on the server, with one tap.
 - **Protocol security (0.9.3):** PQXDH v2 (X25519 + ML-KEM-768), keys that rotate every 7 days and one-time keys served by the relay, message padding (the relay cannot tell short messages from receipts), proof of work for new accounts and per-account limits on the relay. 0.9.3 apps do not talk to earlier versions.

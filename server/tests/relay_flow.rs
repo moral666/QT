@@ -118,6 +118,7 @@ async fn entrega_assincrona_atraves_do_relay() {
             sealed_from: sealed_from.clone(),
             ciphertext: wire_bytes.clone(),
             silent: false,
+            wake: None,
         },
     )
     .await;

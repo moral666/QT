@@ -166,7 +166,7 @@ async fn main() {
     let resp = enviar_ao_servidor(
         &server_url,
         alice_signing.to_bytes(),
-        ClientMessage::SendMessage { to: bob_uid.clone(), sealed_from, ciphertext: wire_bytes, silent: false },
+        ClientMessage::SendMessage { to: bob_uid.clone(), sealed_from, ciphertext: wire_bytes, silent: false, wake: None },
     )
     .await;
     println!("    servidor respondeu: {resp:?}");

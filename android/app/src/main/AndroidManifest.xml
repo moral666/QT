@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Chamadas com a app fechada ou o telemovel bloqueado (fase 4b): o ecra da chamada
+         abre por cima do bloqueio (notificacao de ecra inteiro, so para chamadas). -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <!-- allowBackup=false + dataExtractionRules: o ficheiro SQLCipher so abre com a chave
          do Keystore deste aparelho; nem backup na nuvem nem copia entre aparelhos
@@ -49,7 +52,11 @@
             android:name=".CallService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
-        <!-- Notificacoes (FCM, ver Push.kt): so recebe a campainha vazia do relay. -->
+        <!-- "Recusar" na notificacao da chamada a chegar (Calls.kt). -->
+        <receiver
+            android:name=".CallActionReceiver"
+            android:exported="false" />
+        <!-- Notificacoes (FCM, ver Push.kt): a campainha do relay (vazia, ou marcada como chamada). -->
         <service
             android:name=".SealerPushService"
             android:exported="false">

@@ -14,6 +14,13 @@ use serde::{Deserialize, Serialize};
 /// telefone/email de ninguem, apenas este identificador.
 pub type UserId = String;
 
+/// Marca da campainha de uma chamada de voz (`ClientMessage::SendMessage::wake`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WakeKind {
+    Call,
+    CallEnd,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ClientMessage {
     /// PRIMEIRA mensagem de qualquer ligacao. `signature` e uma assinatura
@@ -62,6 +69,11 @@ pub enum ClientMessage {
         ciphertext: Vec<u8>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         silent: bool,
+        /// Chamadas de voz: oferta (`Call`) ou cancelada antes de atender (`CallEnd`). A
+        /// campainha vai marcada, para uma app fechada com o bloqueio ativo (que nao
+        /// consegue decifrar) tocar ou parar. Ausente = mensagem normal.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        wake: Option<WakeKind>,
     },
 
     /// Pede todas as mensagens em fila destinadas ao proprio utilizador

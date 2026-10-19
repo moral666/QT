@@ -6,6 +6,27 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: chamadas a tocar com a app fechada, fase 4b (app 0.9.6, relay)
+
+- As chamadas tocam com a app fechada ou o telemóvel bloqueado: notificação de ecrã inteiro do
+  Android, por cima do bloqueio, com Atender e Recusar e o toque do telemóvel. Atender abre só o
+  ecrã da chamada por cima do bloqueio; quando a chamada acaba, a app fecha. Sem atender: "Chamada
+  perdida" (sem o nome no ecrã bloqueado).
+- A campainha (FCM) passa a abrir a base de dados em segundo plano: vai buscar o que chegou,
+  decifra, envia os recibos e trata as chamadas. A notificação das mensagens continua genérica.
+  Um só `QtClient` por processo (`SealerCore`, `Core.kt`), partilhado pelo ecrã e pelo segundo
+  plano.
+- A chave da base de dados e a camada exterior da lista de contactos passam para uma chave do
+  Keystore que funciona com o telemóvel bloqueado (depois do primeiro desbloqueio); os ficheiros
+  antigos passam ao formato novo da primeira vez que a app abre. Com o bloqueio da app ativo, nada
+  abre sem o código.
+- Com o bloqueio da app ativo: a oferta e o cancelamento vão com a campainha marcada como chamada
+  (`wake`), o relay toca `"call"` / `"call_end"` e a app toca "Chamada SEALER" sem nome, pedindo o
+  código ao atender. O relay e a Google ficam a saber o momento de uma chamada (aprovado).
+- Relay: campo `wake` no `SendMessage`, limites próprios para as campainhas das chamadas.
+- O ConnectionService do Android (auricular Bluetooth, carro, chamadas normais ao mesmo tempo)
+  fica para um passo à parte.
+
 ### 19 de outubro de 2026: chamadas, jitter buffer mais tolerante (app 0.9.5)
 
 - O jitter buffer espera até 200 ms por um pacote atrasado (antes 100 ms), contados no relógio e

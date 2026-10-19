@@ -457,7 +457,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 Err(e) => internal(e),
             }
         }
-        ClientMessage::SendMessage { to, sealed_from, ciphertext, silent } => {
+        ClientMessage::SendMessage { to, sealed_from, ciphertext, silent, wake } => {
             if !is_valid_user_id(&to) {
                 return err("destinatario invalido");
             }
@@ -476,9 +476,9 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                     // Entrega imediata: acorda o destinatario se estiver a espera (WaitMessages).
                     crate::waiters::wake(&recipient);
                     // App fechada (ninguem a espera): campainha pela Google (FCM), vazia.
-                    // Recibos, reacoes e presenca (`silent`) nao tocam.
-                    if !silent {
-                        crate::push::after_enqueue(store, &recipient).await;
+                    // Recibos, reacoes e presenca (`silent`) nao tocam. Chamadas: campainha marcada.
+                    if !silent || wake.is_some() {
+                        crate::push::after_enqueue(store, &recipient, wake).await;
                     }
                     ServerMessage::Ack
                 }

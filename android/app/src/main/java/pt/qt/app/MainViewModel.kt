@@ -23,7 +23,6 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -112,6 +111,8 @@ data class UiState(
     val online: Set<String> = emptySet(),
     /** Chamada de voz a decorrer (a chamar, a tocar, atendida ou acabada de terminar). */
     val call: CallUi? = null,
+    /** "Atender" carregado na notificacao: o ecra atende (pedindo o microfone, se faltar). */
+    val answerNow: String? = null,
 )
 
 enum class CallPhase { CALLING, RINGING_OUT, INCOMING, ACTIVE, ENDED }
@@ -151,10 +152,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val ui: StateFlow<UiState> = _ui
 
     private val prefs = app.getSharedPreferences("qt_prefs", 0)   // so URL do relay e chave PUBLICA (nao secretos)
-    private val box = KeystoreBox()
-    private val contactStore = ContactStore(app, box)
-    private val dbFile: File = app.noBackupFilesDir.resolve("qt.db")
-    private val storageKeys = StorageKeyProvider(app, box, dbFile)
+    // A base de dados e as chaves sao do processo (SealerCore): o segundo plano tambem as usa.
+    private val contactStore = SealerCore.contactStore(app)
+    private val dbFile: File = SealerCore.dbFile(app)
+    private val storageKeys = SealerCore.storageKeys(app)
     private val bio = BioUnlock(app)
     @Volatile private var qt: QtClient? = null
     @Volatile private var link: RelayLink? = null
@@ -170,10 +171,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var transferJob: Job? = null
     /** "Ha anexos para enviar/descarregar": acorda o ciclo de transferencias. */
     private val transferKick = Channel<Unit>(Channel.CONFLATED)
-    /** Chave da lista de contactos; so existe em memoria com a app desbloqueada. */
-    @Volatile private var contactsKey: ByteArray? = null
+    /** Chave da lista de contactos; so existe em memoria com a base de dados aberta. */
+    private val contactsKey: ByteArray? get() = SealerCore.contactsKey()
     /** Chave do armazenamento a espera do BiometricPrompt para ativar a biometria. */
     @Volatile private var pendingBioKey: ByteArray? = null
+    /** Bloquear quando a chamada acabar (o tempo do bloqueio passou durante ela). */
+    @Volatile private var lockAfterCall = false
     /** Quando a app foi para segundo plano (relogio desde o arranque do telemovel). */
     @Volatile private var hiddenAt: Long? = null
     /** Fecha as ligacoes ao relay depois de BACKGROUND_GRACE_MS em segundo plano (ver onAppHidden). */
@@ -187,8 +190,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile var authInProgress = false
     /** Para que serve o BiometricPrompt aberto (no ViewModel para sobreviver a rodar o ecra). */
     @Volatile var bioPurpose: BioPurpose? = null
-    /** Um so envio da outbox de cada vez (declarado ANTES do init, que ja usa a rede). */
-    private val flushLock = Mutex()
+    /** Um so envio da outbox de cada vez, partilhado com o segundo plano. */
+    private val flushLock get() = SealerCore.flushLock
     /** Contactos que ja se avisou nesta sessao que apagaram a conta (tambem ANTES do init). */
     private val deletedNotified = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     /** Batimento da presenca e atualizacao de quem esta online (com a app aberta). */
@@ -218,6 +221,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 showLocked()
                 return
             }
+            // Ja aberta pelo segundo plano (uma chamada acordou a app): usa a mesma.
+            SealerCore.client?.let { setupClient(it); return }
             openClient(storageKeys.storageKey())
         } catch (e: AppLockedException) {
             showLocked()
@@ -231,15 +236,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Abre o QtClient com a chave do armazenamento. Apaga `key` da memoria no fim. */
     private suspend fun openClient(key: ByteArray) {
-        val client = try {
-            contactsKey?.fill(0)
-            contactsKey = contactsKeyFrom(key)
-            QtClient.open(dbFile.path, key)
-        } finally {
-            key.fill(0)
-        }
+        setupClient(SealerCore.open(getApplication(), key))
+    }
+
+    /** O ecra passa a usar a base de dados aberta (por ele ou pelo segundo plano). */
+    private suspend fun setupClient(client: QtClient) {
         qt = client
-        val ck = contactsKey!!
+        val ck = contactsKey ?: throw IllegalStateException("sem a chave dos contactos")
         // Lista de contactos no formato antigo: passa ja a ter a segunda camada.
         if (contactStore.isLegacy()) {
             val old = contactStore.load(ck)
@@ -270,6 +273,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
         syncPresence(client)
+        updateReceiving()
+        adoptRinging(client)
         if (has) startLink()
     }
 
@@ -303,11 +308,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         SealerImages.clearMemory()
         AttachmentCache.clear()
         SealerFileProvider.clear()
-        val c = qt
         qt = null
-        c?.close()
-        contactsKey?.fill(0)
-        contactsKey = null
+        updateReceiving()
+        SealerCore.close()
+    }
+
+    /** O ecra esta visivel e com a base de dados aberta: ele recebe tudo (o segundo plano nao mexe). */
+    private fun updateReceiving() {
+        SealerCore.uiReceiving = visible && qt != null
     }
 
     // -------------------------------------------------------------- bloqueio da app
@@ -332,6 +340,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (authInProgress) return
         hiddenAt = SystemClock.elapsedRealtime()
         synchronized(pauseLock) { visible = false }
+        updateReceiving()
         // Presenca: "offline" a quem me via online (o seletor de fotos nao conta como sair).
         if (!AutoLockPause.active) io { presenceAnnounce(false) }
         pauseJob?.cancel()
@@ -358,6 +367,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             pauseJob?.cancel()
             pauseJob = null
         }
+        updateReceiving()
+        CallNotify.clearMissed(getApplication())
         val t = hiddenAt
         hiddenAt = null
         if (t != null) {
@@ -365,13 +376,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val grace = if (AutoLockPause.active) AutoLockPause.GRACE_MS else 0L
             AutoLockPause.active = false
             val st = _ui.value
-            if (!authInProgress && st.lockEnabled && !st.locked && st.call == null && SystemClock.elapsedRealtime() - t - grace >= st.lockTimeoutMs) {
-                lockNow()
+            if (!authInProgress && st.lockEnabled && !st.locked && SystemClock.elapsedRealtime() - t - grace >= st.lockTimeoutMs) {
+                // Com uma chamada (no ecra ou a tocar no segundo plano), fechar a base perdia-a:
+                // bloqueia quando acabar.
+                if (st.call == null && SealerCore.ringing == null) lockNow() else lockAfterCall = true
             }
         }
         resumeLinks()
         // Ligacoes ainda abertas (voltou antes de 30 s): "online" ja. Senao, startLink trata.
         io { if (link != null && !_ui.value.locked) presenceAnnounce(true) }
+        // O segundo plano pode ter recebido mensagens ou estar a tocar uma chamada.
+        io {
+            val c = qt ?: return@io
+            if (_ui.value.locked) return@io
+            refreshViews(c)
+            adoptRinging(c)
+            // O toque do segundo plano ja tinha acabado: bloqueia como devia.
+            if (lockAfterCall && _ui.value.call == null) {
+                lockAfterCall = false
+                lockNow()
+            }
+        }
     }
 
     /** Fecha as ligacoes ao relay e para a rececao e as transferencias (app em segundo plano). */
@@ -1571,7 +1596,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Busca, guarda e confirma as mensagens em fila. `first`: mensagens que ja chegaram pela
      * ligacao de espera; sao tratadas logo (antes de enviar a outbox), para entregar depressa.
      */
-    private suspend fun pollOnce(first: List<RelayDelivered>? = null) {
+    private suspend fun pollOnce(first: List<RelayDelivered>? = null) = SealerCore.receiveLock.withLock {
+        pollOnceLocked(first)
+    }
+
+    private suspend fun pollOnceLocked(first: List<RelayDelivered>?) {
         val client = qt ?: return
         val l = link ?: return
         try {
@@ -1776,7 +1805,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun endCallLocal(text: String) {
         val c = _ui.value.call ?: return
         stopCallMedia()
-        _ui.update { it.copy(call = c.copy(phase = CallPhase.ENDED, endText = text)) }
+        _ui.update { it.copy(call = c.copy(phase = CallPhase.ENDED, endText = text), answerNow = null) }
+        // O bloqueio automatico que ficou adiado por causa da chamada.
+        if (lockAfterCall) {
+            lockAfterCall = false
+            viewModelScope.launch {
+                delay(ENDED_SHOW_MS + 300L)   // depois de o ecra "Chamada terminada" sair
+                if (_ui.value.call == null) lockNow()
+            }
+        }
         viewModelScope.launch {
             delay(ENDED_SHOW_MS)
             _ui.update { u ->
@@ -1795,9 +1832,53 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         CallEndReason.EXPIRED -> "Chamada perdida"
     }
 
+    /**
+     * Uma chamada a tocar no segundo plano (app fechada, ver SealerCore) passa para o ecra.
+     * Com o bloqueio da app nao se sabia qual era: aparece quando chegar a oferta (pollOnce).
+     */
+    private fun adoptRinging(client: QtClient) {
+        // Ainda a mostrar outra chamada (que nao acabou): o toque fica no segundo plano.
+        val shown = _ui.value.call
+        if (shown != null && shown.phase != CallPhase.ENDED) return
+        val r = SealerCore.takeRinging(getApplication()) ?: return
+        val id = r.callId ?: return
+        // Entretanto acabou (desligou, ou passou o tempo): fica so como perdida.
+        if (runCatching { client.callCurrent() }.getOrNull() != id) {
+            SealerCore.clearAnswer()
+            return
+        }
+        // Nome: o do segundo plano, ou o dos contactos (com o bloqueio da app ele nao o sabia).
+        val name = r.name ?: _ui.value.contacts.firstOrNull { it.contactId == r.contactId }?.nickname.orEmpty()
+        _ui.update { it.copy(call = CallUi(id, r.contactId.orEmpty(), name, CallPhase.INCOMING)) }
+        CallControl.hangup = { hangupCall() }
+        if (!SealerCore.answerRequested(id)) callSounds.ringIncoming()
+        runCatching { startCallAudio(client, id) }
+        ensureCallTicker()
+        checkAutoAnswer()
+    }
+
+    /** "Atender" na notificacao (a Activity abriu com essa acao). */
+    fun answerFromNotification() {
+        // A chamada a que se carregou (com o bloqueio da app ainda nao se sabe: null).
+        SealerCore.answerCallId = SealerCore.ringing?.callId ?: _ui.value.call?.callId
+        SealerCore.answerRequestedAt = SystemClock.elapsedRealtime()
+        checkAutoAnswer()
+    }
+
+    /** Ha um "Atender" da notificacao por usar e a chamada esta a tocar: o ecra atende (com a permissao do microfone). */
+    private fun checkAutoAnswer() {
+        val c = _ui.value.call ?: return
+        if (c.phase != CallPhase.INCOMING || !SealerCore.answerRequested(c.callId)) return
+        SealerCore.clearAnswer()
+        callSounds.stop()
+        _ui.update { it.copy(answerNow = c.callId) }
+    }
+
+    fun answerConsumed() = _ui.update { it.copy(answerNow = null) }
+
     /** Eventos das chamadas (vem do Rust, depois de receber mensagens e de segundo a segundo). */
     private suspend fun handleCallEvents(client: QtClient) {
-        val events = client.callEvents()
+        val events = SealerCore.callEvents(client)
         if (events.isEmpty()) return
         val app = getApplication<Application>()
         for (ev in events) {
@@ -1819,9 +1900,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     _ui.update { it.copy(call = CallUi(ev.callId, ev.contactId, contact.nickname, CallPhase.INCOMING)) }
                     CallControl.hangup = { hangupCall() }
                     callSounds.ringIncoming()
-                    if (!visible) CallNotify.incoming(app)
+                    // Fora do ecra: notificacao de ecra inteiro (sem som: o toque e o de cima).
+                    if (!visible) CallNotify.ringing(app, contact.nickname, sound = false)
                     runCatching { startCallAudio(client, ev.callId) }
                     ensureCallTicker()
+                    checkAutoAnswer()
                 }
                 is CallEvent.Ringing -> _ui.update { u ->
                     val c = u.call

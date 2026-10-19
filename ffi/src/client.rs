@@ -571,13 +571,24 @@ impl QtClient {
     /// Como `relay_request_send`, para um item da outbox: recibos, reacoes, convites e
     /// presenca vao com `silent` (o relay nao toca a campainha a uma app fechada; so as
     /// mensagens tocam). Um relay antigo ignora o campo e toca sempre, como antes.
+    ///
+    /// Chamadas de voz: a oferta e o cancelamento levam `wake` ("Call" / "CallEnd"); o relay
+    /// manda a campainha marcada, para a app fechada tocar mesmo com o bloqueio ativo. Um
+    /// relay antigo ignora o campo e toca como numa mensagem.
     pub fn relay_request_send_item(&self, to_relay_id: String, item: OutboxItem) -> Result<Vec<u8>, QtError> {
-        json_bytes(serde_json::json!({"SendMessage": {
+        let mut m = serde_json::json!({
             "to": to_relay_id,
             "sealed_from": Vec::<u8>::new(),
             "ciphertext": item.blob,
             "silent": item.silent,
-        }}))
+        });
+        if let Some(w) = item.wake {
+            m["wake"] = serde_json::json!(match w {
+                crate::history::CallWake::Call => "Call",
+                crate::history::CallWake::CallEnd => "CallEnd",
+            });
+        }
+        json_bytes(serde_json::json!({ "SendMessage": m }))
     }
 
     pub fn relay_request_fetch(&self) -> Result<Vec<u8>, QtError> {

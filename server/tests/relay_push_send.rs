@@ -188,7 +188,7 @@ async fn toca_so_com_a_app_fechada_e_sem_nada_da_mensagem() {
 
     // 3b) Erin com a app fechada, mas o envio e `silent` (recibo/presenca): fica na fila, sem campainha.
     let r = a
-        .request(ClientMessage::SendMessage { to: uid(&erin), sealed_from: vec![], ciphertext: vec![9], silent: true })
+        .request(ClientMessage::SendMessage { to: uid(&erin), sealed_from: vec![], ciphertext: vec![9], silent: true, wake: None })
         .await
         .unwrap();
     assert!(matches!(r, ServerMessage::Ack), "{r:?}");
@@ -197,9 +197,42 @@ async fn toca_so_com_a_app_fechada_e_sem_nada_da_mensagem() {
     let r = e.request(ClientMessage::FetchMessages { user_id: uid(&erin) }).await.unwrap();
     assert!(matches!(r, ServerMessage::Messages { ref messages } if messages.len() == 1), "{r:?}");
 
+    // 3c) Chamada para o Bob (app fechada): campainha marcada, mesmo logo depois da do 1).
+    let call = |silent| ClientMessage::SendMessage {
+        to: uid(&bob),
+        sealed_from: vec![],
+        ciphertext: vec![7],
+        silent,
+        wake: Some(qt_server::protocol::WakeKind::Call),
+    };
+    let r = a.request(call(false)).await.unwrap();
+    assert!(matches!(r, ServerMessage::Ack), "{r:?}");
+    assert!(wait_for(&log, 2).await, "a chamada devia tocar");
+    let ring = sends(&log)[1].clone();
+    assert!(ring.contains("\"qt\":\"call\"") && ring.contains("tok-bob:APA91"), "{ring}");
+    for leak in ["secreto", &uid(&bob), &uid(&alice), "notification"] {
+        assert!(!ring.contains(leak), "a Google nao pode ver {leak:?}: {ring}");
+    }
+    // Cancelada antes de atender: "parar de tocar".
+    let end = ClientMessage::SendMessage {
+        to: uid(&bob),
+        sealed_from: vec![],
+        ciphertext: vec![8],
+        silent: false,
+        wake: Some(qt_server::protocol::WakeKind::CallEnd),
+    };
+    let r = a.request(end.clone()).await.unwrap();
+    assert!(matches!(r, ServerMessage::Ack), "{r:?}");
+    assert!(wait_for(&log, 3).await, "o cancelamento devia tocar");
+    assert!(sends(&log)[2].contains("\"qt\":\"call_end\""));
+    // Um segundo "parar" (sem chamada a tocar) nao toca.
+    a.request(end).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(sends(&log).len(), 3, "parar sem chamada nao toca");
+
     // 4) Token que ja nao existe (app desinstalada): apagado do Redis.
     a.send_message(&uid(&dave), vec![1], vec![2]).await.unwrap();
-    assert!(wait_for(&log, 2).await);
+    assert!(wait_for(&log, 4).await);
     for _ in 0..40 {
         if store.get_push_token(&uid(&dave)).await.unwrap().is_none() {
             break;
