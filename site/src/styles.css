@@ -1044,7 +1044,7 @@ p {
 }
 
 .status-pill__ms::before {
-  content: "envio ";
+  content: "entre telemóveis ";
   color: var(--mist);
   font-weight: 500;
 }

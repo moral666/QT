@@ -12,9 +12,10 @@
  *   O navegador do visitante nunca fala com a AWS: só com o próprio site.
  *
  *   Também lê https://<relay>/estado.json (escrito pelo relay a cada minuto, ver
- *   server/src/latency.rs): o tempo médio de envio (do telemóvel de quem envia até ao
- *   servidor) e o tempo médio de entrega (do servidor até o destinatário confirmar), na
- *   última hora.
+ *   server/src/latency.rs): o tempo de envio (do telemóvel de quem envia até ao servidor) e
+ *   o tempo de entrega (do servidor até o destinatário confirmar), na última hora: média e
+ *   mediana. O site mostra a mediana (a mensagem típica), que umas poucas mensagens lentas
+ *   (telemóvel a dormir até chegar a notificação) quase não mexem.
  *
  *   Resposta: {
  *     "estado": "on" | "off", "verificado": "<data ISO>",
@@ -25,6 +26,9 @@
  *     "entrega_media_ms": número | null,   (servidor -> destinatário confirmar)
  *     "mensagens": número, "janela_minutos": número,
  *     "ultima_media_ms": número | null, "ultima_medicao": número | null  (última entrega conhecida)
+ *     "envio_mediana_ms", "entrega_mediana_ms": número | null  (medianas da última hora)
+ *     "ultimo_envio_mediana_ms", "ultima_mediana_ms": número | null  (últimas medianas conhecidas;
+ *       null com um relay anterior a 19/10/2026, que só publicava a média)
  *   }
  */
 
@@ -66,6 +70,10 @@ async function estado(request, env, ctx) {
     janela_minutos: on && delivery ? delivery.minutes : 0,
     ultima_media_ms: delivery ? delivery.lastAvg : null,
     ultima_medicao: delivery ? delivery.lastAt : null,
+    envio_mediana_ms: on && delivery ? delivery.idaMedian : null,
+    entrega_mediana_ms: on && delivery ? delivery.median : null,
+    ultimo_envio_mediana_ms: delivery ? delivery.lastIdaMedian : null,
+    ultima_mediana_ms: delivery ? delivery.lastMedian : null,
   };
   const response = json(body, 200, `public, max-age=${CACHE_SECONDS}`);
   ctx.waitUntil(cache.put(key, response.clone()));
@@ -90,7 +98,7 @@ async function relayOnline(relayUrl) {
   }
 }
 
-/** Lê os tempos médios publicados pelo relay (envio e entrega, atuais e últimas medições); null se não conseguir. */
+/** Lê os tempos (médias e medianas) publicados pelo relay (envio e entrega, atuais e últimas medições); null se não conseguir. */
 async function relayDelivery(relayUrl) {
   if (!relayUrl) return null;
   try {
@@ -116,6 +124,10 @@ async function relayDelivery(relayUrl) {
       minutes: fresh ? num(d.janela_minutos) ?? 0 : 0,
       lastAvg,
       lastAt,
+      idaMedian: fresh ? num(d.ida_mediana_ms) : null,
+      median: fresh ? num(d.entrega_mediana_ms) : null,
+      lastIdaMedian: lastIda == null ? null : num(d.ultima_ida_mediana_ms),
+      lastMedian: lastAvg == null ? null : num(d.ultima_mediana_ms),
     };
   } catch {
     return null;

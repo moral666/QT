@@ -32,25 +32,31 @@ export function initStatus(el) {
   const fmt = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 0 });
   let timer = 0;
 
-  const HOW = 'o tempo que uma mensagem demora do telemóvel de quem a envia até o telemóvel de quem a recebe confirmar que a tem (envio até ao servidor mais entrega)';
+  const HOW = 'o tempo que uma mensagem típica demora do telemóvel de quem a envia até o telemóvel de quem a recebe confirmar que a tem (envio até ao servidor mais entrega)';
 
   /** Envio (telemóvel -> servidor) + entrega (servidor -> destinatário confirmar), em ms. */
   function sum(a, b) {
     return Number.isFinite(a) && Number.isFinite(b) ? a + b : null;
   }
 
-  /** Média da última hora (só com o serviço a funcionar e as duas partes medidas). */
+  /** A mediana (a mensagem típica) quando existe; senão a média (relay antigo). */
+  function pick(median, avg) {
+    return Number.isFinite(median) ? median : avg;
+  }
+
+  /** Mensagem típica da última hora (só com o serviço a funcionar e as duas partes medidas). */
   function currentValue(data) {
     if (!data || data.estado !== 'on') return null;
-    return sum(data.envio_media_ms, data.entrega_media_ms);
+    return sum(pick(data.envio_mediana_ms, data.envio_media_ms), pick(data.entrega_mediana_ms, data.entrega_media_ms));
   }
 
   /** Última medição conhecida, mesmo antiga. */
   function lastValue(data) {
-    return data ? sum(data.ultimo_envio_ms, data.ultima_media_ms) : null;
+    if (!data) return null;
+    return sum(pick(data.ultimo_envio_mediana_ms, data.ultimo_envio_ms), pick(data.ultima_mediana_ms, data.ultima_media_ms));
   }
 
-  /** Valor a mostrar: a média da última hora ou, sem mensagens recentes, a última medição. */
+  /** Valor a mostrar: a mensagem típica da última hora ou, sem mensagens recentes, a última medição. */
   function totalValue(data) {
     return currentValue(data) ?? lastValue(data);
   }
@@ -70,13 +76,13 @@ export function initStatus(el) {
     const now = currentValue(data);
     if (now != null) {
       const n = data.mensagens === 1 ? '1 mensagem' : `${fmt.format(data.mensagens)} mensagens`;
-      return ` Tempo médio entre telemóveis na última hora: ${fmt.format(now)} ms (${n}), ${HOW}.`;
+      return ` Tempo entre telemóveis na última hora: ${fmt.format(now)} ms (${n}), ${HOW}.`;
     }
     const last = lastValue(data);
     if (last != null) {
       const at = Math.max(data.ultimo_envio_medicao || 0, data.ultima_medicao || 0);
       const when = at > 0 ? ` (medido ${ago(at)})` : '';
-      return ` Último tempo médio entre telemóveis: ${fmt.format(last)} ms${when}, ${HOW}.`;
+      return ` Último tempo entre telemóveis: ${fmt.format(last)} ms${when}, ${HOW}.`;
     }
     return '';
   }
