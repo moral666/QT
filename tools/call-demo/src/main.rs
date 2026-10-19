@@ -287,7 +287,7 @@ fn line(a: &EngineStats, b: &EngineStats) -> String {
     // volta ao relay) + jitter buffer + ~30 ms das placas de som.
     let total = 20 + 7 + rtt + j.depth_ms + 30;
     format!(
-        "{} | relay {} ms | jitter buffer {} ms (alvo {}, variacao {} ms) | recebidos {} | perdidos {} -> DRED {}, PLC {} | esperas {} | saltos {} | atrasados {} | Opus {} B | boca->ouvido ~{} ms",
+        "{} | relay {} ms | jitter buffer {} ms (alvo {}, variacao {} ms) | recebidos {} | perdidos {} -> DRED {}, PLC {} | esperas {} | desistencias {} | saltos {} | atrasados {} | Opus {} B | boca->ouvido ~{} ms",
         transport(b.transport),
         rtt,
         j.depth_ms,
@@ -298,6 +298,7 @@ fn line(a: &EngineStats, b: &EngineStats) -> String {
         b.dred_frames,
         b.plc_frames,
         j.holds,
+        j.gave_up,
         j.skips,
         j.late,
         a.avg_opus_bytes,

@@ -5,9 +5,11 @@
 //!   1. O frame seguinte chegou: toca-o.
 //!   2. Nao chegou, mas ja ha um pacote mais a frente: foi perdido. Reconstroi-se com
 //!      o DRED desse pacote (`Slot::Lost`), que traz o audio anterior comprimido.
-//!   3. Nao chegou e nao ha nada a frente (a rede atrasou-se): espera ate `MAX_HOLD`
-//!      frames, preenchendo com PLC SEM avancar (`Slot::Conceal`). Cada espera aumenta
-//!      o atraso em 20 ms; e assim que o atraso cresce quando a rede piora.
+//!   3. Nao chegou e nao ha nada a frente (a rede ou o microfone do outro lado
+//!      pararam): espera ate `MAX_HOLD` (200 ms, contados no relogio e nao em `pop`,
+//!      porque o altifalante as vezes pede varios frames seguidos), preenchendo com PLC
+//!      SEM avancar (`Slot::Conceal`). Cada espera aumenta o atraso em 20 ms; e assim
+//!      que o atraso cresce quando a rede piora.
 //!   4. Se continuar sem nada (rede cortada), desiste desse frame e avanca (PLC).
 //!
 //! O atraso alvo segue a variacao medida das chegadas (percentil 95 dos ultimos 3 s):
@@ -26,8 +28,9 @@ pub const MIN_TARGET: u32 = 2;
 pub const MAX_TARGET: u32 = 10;
 /// Atraso no inicio da chamada, antes de haver medidas.
 pub const START_TARGET: u32 = 3;
-/// Quantos frames se espera (com PLC) por um pacote atrasado antes de desistir.
-pub const MAX_HOLD: u32 = 5;
+/// Quanto tempo se espera (com PLC) por um pacote atrasado antes de desistir. Cobre o
+/// arranque lento do microfone e da rede do outro lado sem dar frames por perdidos.
+pub const MAX_HOLD: Duration = Duration::from_millis(200);
 /// Chegadas usadas para medir a variacao (3 s).
 const WINDOW: usize = 150;
 /// Frames a mais que o alvo, durante quantos `pop`, ate se saltar um frame.
@@ -53,10 +56,15 @@ pub enum Slot {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct JitterStats {
     pub received: u64,
+    /// Chegaram depois de se ter desistido deles (ja nao servem).
     pub late: u64,
     pub duplicates: u64,
-    /// Frames que se perderam (reconstruidos com DRED ou PLC).
+    /// Perdidos na rede: faltou o frame mas chegou um pacote mais a frente
+    /// (reconstruidos com o DRED desse pacote ou com PLC).
     pub lost: u64,
+    /// Nao chegaram a tempo: nada chegou durante `MAX_HOLD` (a rede ou o microfone do
+    /// outro lado pararam) e avancou-se sem eles (PLC).
+    pub gave_up: u64,
     /// Vezes que se esperou por um pacote atrasado (cada uma acrescenta 20 ms).
     pub holds: u64,
     /// Frames saltados para baixar o atraso.
@@ -73,7 +81,8 @@ pub struct JitterBuffer {
     start_at: Option<Instant>,
     newest: Option<u64>,
     target: u32,
-    hold: u32,
+    /// Desde quando se espera pelo frame `next` (sem nada a frente).
+    hold_since: Option<Instant>,
     excess_pops: u32,
     origin: Option<(Instant, u64)>,
     transits: VecDeque<f64>,
@@ -95,7 +104,7 @@ impl JitterBuffer {
             start_at: None,
             newest: None,
             target: START_TARGET,
-            hold: 0,
+            hold_since: None,
             excess_pops: 0,
             origin: None,
             transits: VecDeque::with_capacity(WINDOW + 1),
@@ -109,7 +118,7 @@ impl JitterBuffer {
         self.next = Some(counter);
         self.newest = None;
         self.start_at = Some(now + FRAME * self.target);
-        self.hold = 0;
+        self.hold_since = None;
         self.excess_pops = 0;
         self.origin = None;
         self.transits.clear();
@@ -187,23 +196,25 @@ impl JitterBuffer {
         }
         if let Some(f) = self.packets.remove(&next) {
             self.next = Some(next + 1);
-            self.hold = 0;
+            self.hold_since = None;
             return Slot::Frame(f);
         }
         if let Some((&m, p)) = self.packets.range(next + 1..).next() {
             let slot = Slot::Lost { ahead_counter: m, ahead: p.clone(), frames_back: (m - next) as u32 };
             self.next = Some(next + 1);
-            self.hold = 0;
+            self.hold_since = None;
             self.stats.lost += 1;
             return slot;
         }
-        if self.hold < MAX_HOLD {
-            self.hold += 1;
+        // Sem nada a frente: espera (PLC sem avancar) ate MAX_HOLD. Depois de desistir,
+        // `hold_since` fica antigo e avanca-se a cada pop ate voltar a chegar alguma coisa.
+        let since = *self.hold_since.get_or_insert(now);
+        if now.saturating_duration_since(since) < MAX_HOLD {
             self.stats.holds += 1;
             return Slot::Conceal;
         }
         self.next = Some(next + 1);
-        self.stats.lost += 1;
+        self.stats.gave_up += 1;
         Slot::Conceal
     }
 
@@ -310,14 +321,60 @@ mod tests {
         let t0 = Instant::now();
         let mut j = JitterBuffer::new();
         feed(&mut j, t0, &[0], 0);
-        let s = pops(&mut j, t0, 60, 1 + MAX_HOLD as u64 + 3);
+        // Toca o 0 (60 ms), espera 200 ms (10 pops, 80 a 260 ms) e desiste de 3 frames.
+        let s = pops(&mut j, t0, 60, 1 + 10 + 3);
         assert!(s[1..].iter().all(|x| *x == Slot::Conceal));
-        // Depois de esperar MAX_HOLD, avancou 3 frames: o 1 e o 2 ja nao servem.
+        let st = j.stats();
+        assert_eq!((st.holds, st.gave_up, st.lost), (10, 3, 0));
+        // O 1 e o 2 ja nao servem.
         j.push(1, f(1), at(t0, 400));
         j.push(2, f(2), at(t0, 401));
         assert_eq!(j.stats().late, 2);
         j.push(4, f(4), at(t0, 402));
         assert_eq!(j.pop(at(t0, 420)), Slot::Frame(f(4)));
+    }
+
+    #[test]
+    fn espera_conta_o_tempo_e_nao_os_pops() {
+        // O altifalante as vezes pede varios frames de seguida (buffer a encher): isso
+        // nao pode gastar a espera de 200 ms.
+        let t0 = Instant::now();
+        let mut j = JitterBuffer::new();
+        feed(&mut j, t0, &[0, 1], 0);
+        pops(&mut j, t0, 60, 2);
+        for _ in 0..8 {
+            assert_eq!(j.pop(at(t0, 100)), Slot::Conceal);
+        }
+        j.push(2, f(2), at(t0, 105));
+        assert_eq!(j.pop(at(t0, 110)), Slot::Frame(f(2)));
+        let st = j.stats();
+        assert_eq!((st.gave_up, st.lost, st.late), (0, 0, 0));
+    }
+
+    #[test]
+    fn microfone_lento_no_arranque_nao_perde_nada() {
+        // O caso da chamada do Nuno (0.9.4): o outro telemovel envia 3 frames, o
+        // microfone para ~200 ms e depois os frames retidos chegam de uma vez.
+        let t0 = Instant::now();
+        let mut j = JitterBuffer::new();
+        let mut tocados = Vec::new();
+        for ms in (0..2000u64).step_by(20) {
+            for c in 0..100u64 {
+                let enviado = c * 20;
+                let chega = if c < 3 || enviado >= 260 { enviado + 30 } else { 290 };
+                if chega >= ms && chega < ms + 20 {
+                    j.push(c, f(c), at(t0, chega));
+                }
+            }
+            if let Slot::Frame(v) = j.pop(at(t0, ms + 19)) {
+                tocados.push(v[0] as u64);
+            }
+        }
+        let st = j.stats();
+        assert_eq!((st.lost, st.gave_up, st.late), (0, 0, 0), "{st:?}");
+        assert!(tocados.windows(2).all(|w| w[1] > w[0]), "por ordem");
+        assert!((0..=20).all(|c| tocados.contains(&c)), "o inicio toca todo: {tocados:?}");
+        assert!(tocados.len() >= 85, "{}", tocados.len());
     }
 
     #[test]
