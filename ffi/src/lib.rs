@@ -23,6 +23,8 @@ pub mod applock;
 #[cfg(feature = "pq")]
 pub mod attachments;
 #[cfg(feature = "pq")]
+pub mod call;
+#[cfg(feature = "pq")]
 pub mod client;
 #[cfg(feature = "pq")]
 pub(crate) mod prekeys;

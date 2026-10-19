@@ -64,8 +64,8 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 
 `[1 versão=0x01][1 tipo][16 msg_id][8 sent_at]` e o corpo. Tipos: 1 texto,
 2 recibo, 3 anexo (imagem, GIF ou voz `audio/mp4`), 4 convite, 5 reação,
-6 mensagem de grupo, 7 info do grupo, 8 saída do grupo, 9 presença, 10 sessão terminada. O próximo
-tipo livre é o 11. Uma versão antiga mostra "atualiza a app" para tipos novos.
+6 mensagem de grupo, 7 info do grupo, 8 saída do grupo, 9 presença, 10 sessão terminada, 11 chamada
+de voz. O próximo tipo livre é o 12. Uma versão antiga mostra "atualiza a app" para tipos novos.
 Ficheiros: tipo 3 com o corpo na versão 2 (com o nome); imagens e voz na versão 1.
 
 ### Funcionalidades da 0.8.0
@@ -86,6 +86,14 @@ one-time prekeys servidas pelo relay (lote diário de 100 no `RegisterPreKeyBund
 Argon2id para contas novas (`core/src/pow.rs`, 7 bits) e limites por conta no relay (300
 envios/min, 60 bundles/min). As apps 0.9.3 não falam com apps 0.9.2: atualizar todos os
 telemóveis e o relay primeiro.
+
+### Chamadas de voz (em curso, aprovado a 19/10/2026)
+
+Só Android primeiro, 1 a 1, áudio sempre pelo relay (sem P2P). Quatro fases, cada uma aprovada
+antes: 1) núcleo, sinalização (tipo 11) e cifra dos pacotes estilo WireGuard (**feita**,
+`core/src/call.rs`, `ffi/src/call.rs`, `ffi/tests/calls.rs`); 2) relay UDP 443 com salas
+anónimas e reserva por TCP; 3) Opus 1.5 (DRED, PLC neural), jitter buffer, CBR sem DTX;
+4) Android (ConnectionService, FCM, `VOICE_COMMUNICATION`). Ver `docs/protocol-spec.md`, secção 18.
 
 ### Funcionalidades da 0.9.0
 
