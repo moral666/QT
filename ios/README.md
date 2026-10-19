@@ -25,7 +25,7 @@ apps falam entre si pelo mesmo relay.
 ## O que precisas
 
 * Um **Mac** com **Xcode 15 ou mais recente** (o SDK do iOS só existe no macOS).
-* **Rust**: `curl https://sh.rustup.rs -sSf | sh`
+* **Rust 1.88 ou mais recente**: `curl https://sh.rustup.rs -sSf | sh` (ou `rustup update`, se já tiveres).
 * **XcodeGen**: `brew install xcodegen` (gera o projeto Xcode a partir de `project.yml`).
 * Um iPhone com **iOS 17+** e o cabo.
 * Conta Apple:
@@ -35,9 +35,14 @@ apps falam entre si pelo mesmo relay.
 
 ## Passos (no Mac)
 
+O código Swift da 0.9.3 (grupos, voz, ficheiros e notificações push) foi feito no Mac. Se ainda não
+estiver no GitHub, envia-o primeiro (ver "Enviar o código do Mac para o GitHub", mais abaixo), senão a
+app compilada a partir do GitHub fica mais antiga do que a que está no iPhone.
+
+
 ```bash
 git clone https://github.com/moral666/QT.git && cd QT
-git checkout security-hardening
+git checkout site-sealer
 
 ./scripts/build-ios.sh          # compila o Rust para iPhone + simulador (demora na 1.ª vez)
 cd ios && xcodegen              # cria SealerMessenger.xcodeproj
@@ -101,3 +106,23 @@ não tiver 64 hex.
 * **Sem bloqueio da app** (código próprio e Face ID), que já existe no Android.
 * Exportação: a app usa criptografia. Ao enviar para TestFlight/App Store a Apple pergunta pela
   conformidade de exportação (responde que usa encriptação; ver a documentação da Apple).
+
+## Enviar o código do Mac para o GitHub
+
+Na pasta do QT no Mac. O `GoogleService-Info.plist` (Firebase) e as chaves da Apple (`.p8`, `.p12`,
+perfis) ficam fora do git pelo `.gitignore`: confirma na lista do `git status` que não aparecem.
+
+```bash
+git fetch origin
+git status --short                       # o que mudou no Mac
+git checkout -b iphone-mac               # um ramo só para isto (as mudanças vêm atrás)
+git checkout origin/site-sealer -- .gitignore   # .gitignore novo, que esconde os segredos
+git add ios scripts .gitignore
+git status --short                       # NÃO pode aparecer GoogleService-Info.plist nem .p8
+git commit -m "iPhone 0.9.3: codigo do Mac (grupos, voz, ficheiros, notificacoes)"
+git rebase origin/site-sealer            # põe-no por cima do núcleo atual
+git push origin iphone-mac
+```
+
+Depois de rever o ramo `iphone-mac`, junta-se à `site-sealer` (`git checkout site-sealer && git merge
+--ff-only iphone-mac && git push origin site-sealer`).

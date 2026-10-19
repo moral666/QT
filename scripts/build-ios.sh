@@ -9,7 +9,7 @@
 #
 # Requisitos (num Mac):
 #   * Xcode (com as Command Line Tools: xcode-select --install)
-#   * Rust >= 1.81 via rustup            https://rustup.rs
+#   * Rust >= 1.88 via rustup            https://rustup.rs  (rustup update)
 #   * perl + make (vem com o macOS; usados para compilar o OpenSSL/SQLCipher embebidos)
 #
 # Uso:  ./scripts/build-ios.sh
@@ -22,6 +22,9 @@ cd "$(dirname "$0")/.."
 
 [ "$(uname -s)" = "Darwin" ] || { echo "Este script tem de correr num Mac (o SDK do iOS so existe no macOS)."; exit 1; }
 command -v xcodebuild >/dev/null || { echo "Falta o Xcode (xcodebuild)."; exit 1; }
+# O nucleo usa `as_chunks` (Rust 1.88+). Com um Rust mais antigo o erro do cargo e confuso.
+RUST_MINOR=$(rustc --version | sed -E 's/^rustc 1\.([0-9]+).*/\1/')
+[ "$RUST_MINOR" -ge 88 ] || { echo "Rust $(rustc --version | cut -d' ' -f2) e antigo: corre 'rustup update' (precisa de 1.88+)."; exit 1; }
 
 export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-17.0}"
 FEATURES="--no-default-features --features ios"

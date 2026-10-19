@@ -25,7 +25,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 
 - **App iPhone 0.9.3** compilada e testada num iPhone pelo Nuno (19/10/2026): mensagens, grupos,
   voz, fotos, ficheiros e notificações push. O código Swift dessa versão está no Mac do Nuno
-  (confirmar que foi para o GitHub antes de mexer em `ios/`). Falta o bloqueio da app.
+  (confirmar que foi para o GitHub antes de mexer em `ios/`; passos em `ios/README.md`, "Enviar o código do Mac", ramo `iphone-mac`). Falta o bloqueio da app. O `GoogleService-Info.plist` e as chaves da Apple ficam fora do git.
 - **Sem avisos de ligação na app** ("A ligar ao relay", "Sem ligação",
   barras de estado): se houver problemas, só no registo (`adb logcat -s SealerRelay`).
 - A build de release **não mostra opções de teste do relay** (URL, chave).
