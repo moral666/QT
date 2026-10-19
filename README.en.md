@@ -60,6 +60,7 @@ Yes, end to end, as a test version (**app 0.9.3**, Android and iPhone), in close
 
 ### Still missing
 
+- **Encrypted one-to-one voice calls:** the protocol, the call server and the audio engine are built and tested; they still have to be wired into the app (Android first). See "Voice calls" below.
 - **Distribution through Google Play and the App Store** (today testers install the app by hand). Already prepared: account deletion, privacy policy and answers for the forms ([`docs/google-play.md`](docs/google-play.md)).
 - **Production infrastructure:** redundancy, backups and server alerts.
 - **Independent security audit.**
@@ -77,7 +78,8 @@ Yes, end to end, as a test version (**app 0.9.3**, Android and iPhone), in close
 |---|---|---|
 | `core/` | Session establishment (X3DH + post-quantum variant) and continuous encryption (Double Ratchet), the same design used by Signal | ✅ Tested (over 40 automated tests, including cases designed to fail) |
 | `transport/` | Network connection protection (Noise Protocol) over WebSocket | ✅ Tested with real WebSocket connections, not simulated |
-| `server/` | The "mailman": delivers messages without ever seeing the content or knowing who sent them, and keeps encrypted images for 24 hours at most | ✅ Tested, including surviving being force-killed (`kill -9`) and against the production Redis command list |
+| `server/` | The "mailman": delivers messages without ever seeing the content or knowing who sent them, and keeps encrypted images for 24 hours at most. Also includes, separately, the voice call relay (UDP, anonymous rooms) | ✅ Tested, including surviving being force-killed (`kill -9`) and against the production Redis command list; the call relay is in production |
+| `call/` | The voice call engine: Opus 1.6 with DRED and neural PLC, adaptive jitter buffer and the connection to the call relay (UDP, with a WebSocket fallback) | ✅ Tested in Rust, with end-to-end calls through a local relay and simulated packet loss; not in the app yet |
 | `storage/` | Stores your identity and conversations on disk, encrypted | ✅ Tested, including confirming a wrong password opens nothing |
 | `cli/` | The messenger in the terminal (`messenger`), on the same core as the apps, plus a visible protocol demo (`messenger_demo`) | ✅ Tested end to end against a real relay: terminal ↔ terminal and terminal ↔ a client identical to the apps' |
 | `ffi/` | The bridge connecting all of this to Kotlin (Android), Swift (iOS) and Python: history, outbox, images, app lock | ✅ Tested in Rust (including crossed sessions and images) and from Python |
@@ -112,6 +114,34 @@ The numbers above are for the relay alone. With real phones (three Samsung phone
 
 The apps wait on an open connection and the relay delivers each message the moment it arrives. The few slow messages go to phones that were asleep: the notification wakes them up and the message arrives when the app opens.
 
+## Voice calls (in development)
+
+One-to-one voice calls are being built in four phases. The first three are done and tested; they still have to be wired into the Android app and, later, the iPhone app. **The 0.9.3 app does not have calls yet.**
+
+| Phase | What it is | Status |
+|---|---|---|
+| 1. Signalling and encryption | Calling, ringing, answering and hanging up travel as encrypted messages inside the Double Ratchet. Each side contributes a random secret, and the audio keys come from both | ✅ Done (`core/src/call.rs`, `ffi/src/call.rs`) |
+| 2. Call relay | A separate service on the server (UDP 443) that only forwards encrypted audio packets | ✅ In production, tested from home |
+| 3. Audio engine | Opus 1.6 with DRED and neural PLC, adaptive jitter buffer and the connection to the relay | ✅ Done and tested in Rust (`call/`) |
+| 4. Android app | Call screen, incoming-call alert with the app closed, and the microphone with the phone's echo cancellation | ⏳ Next |
+
+**How it protects privacy:**
+
+- **Audio always goes through the server and never directly between phones.** The person calling you never learns your IP address, and you never learn theirs.
+- **The server does not know who is talking to whom.** Each phone joins a "room" with a request encrypted to the server's key, without saying which account it is. The server only sees two addresses exchanging encrypted packets it cannot open.
+- **Every packet has the same size and the same rhythm** (one every 20 ms, silence included). With variable sizes, it has been shown that phrases can be guessed from packet sizes alone, even when encrypted.
+- **A call starts as an ordinary message**, so the server does not even know it is a call, and the encryption inherits PQXDH's post-quantum protection.
+- **No logs:** the call server keeps no IP addresses or times, only per-minute counts. The remaining limit: while a call lasts, the server could, in theory, match the room's IP address with the IP address connected to receive messages.
+
+**How it copes with bad networks:**
+
+- **DRED (Opus 1.6):** every packet carries a heavily compressed copy of roughly the previous 200 ms. When packets are lost, the next one rebuilds what was missing. In a test with 15% of packets lost, all of them were rebuilt.
+- **Neural PLC:** when there is nothing to rebuild from, a model fills the gap instead of a hard cut.
+- **Adaptive jitter buffer:** holds between 40 and 200 ms of audio, depending on how much the network varies.
+- **Moving from Wi-Fi to mobile data does not drop the call**, and there is a fallback over `wss://relay.sealer.pt/call` for networks that block UDP.
+
+**Measured on 19 October 2026**, from home in Portugal to the server in Stockholm: joining a room in 66 ms and a PC → server → PC → server → PC round trip of 128 ms, which means about **64 ms of network time one way** between two phones. A call uses about 35 MB per hour in each direction. The formats are in section 18 of [`docs/protocol-spec.md`](docs/protocol-spec.md).
+
 ## What's missing, plainly
 
 Beyond the list above ("Still missing"), longer term:
@@ -131,10 +161,10 @@ cargo run -p qt_cli --bin messenger_demo
 ### Requirements to build
 
 ```bash
-sudo apt install redis-server libsqlcipher-dev
+sudo apt install redis-server libsqlcipher-dev cmake
 redis-server --daemonize yes
 ```
-Rust 1.81 or newer, via [rustup](https://rustup.rs) (the post-quantum part requires it).
+Rust 1.82 or newer, via [rustup](https://rustup.rs). `cmake` builds Opus for the voice calls.
 
 ### Running the tests
 
@@ -177,6 +207,18 @@ $M remove --db me.sqlite Ana               # deletes the contact, its messages a
 
 The passphrase is always asked for in the terminal, hidden (or read from one line of stdin with `--passphrase-stdin`, for scripts). Argon2id turns it into the database key and the key for the contact list, which is encrypted too.
 
+### Hearing a call on your PC (echo)
+
+The `tools/call-demo` tool uses the same call engine: your voice goes to the call server and back, and you hear yourself with the real delay of the network, the jitter buffer and Opus. Use headphones (there is no echo cancellation on the PC).
+
+```bash
+sudo apt install cmake libasound2-dev
+cd tools/call-demo
+cargo run --release -- eco              # microphone -> server -> headphones
+cargo run --release -- eco --perda 15   # drops 15% of packets: hear DRED rebuilding them
+cargo run --release -- eco --ws         # uses the WebSocket fallback
+```
+
 ### Generating Android/iOS/Python bindings
 
 ```bash
@@ -198,7 +240,7 @@ The *release* build requires your own keystore and the production relay (`qtRela
 
 * Integration and build guide: [`docs/android-integration.md`](docs/android-integration.md)
 * API reference: [`docs/ffi-api.md`](docs/ffi-api.md)
-* Protocol (§8–14 = current formats): [`docs/protocol-spec.md`](docs/protocol-spec.md)
+* Protocol (§8–18 = current formats, including calls): [`docs/protocol-spec.md`](docs/protocol-spec.md)
 * Threats and limitations: [`docs/threat-model.md`](docs/threat-model.md), [`docs/known-limitations.md`](docs/known-limitations.md)
 
 (These documents are in Portuguese.)
@@ -216,14 +258,14 @@ Step by step, Apple accounts and the differences from Android in [`ios/README.md
 
 ## Relay on AWS
 
-On a fresh EC2 instance with Ubuntu 24.04 (Security Group with only 22, 80 and 443):
+On a fresh EC2 instance with Ubuntu 24.04 (Security Group with only 22, 80 and 443 TCP, plus 443 UDP for calls):
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/moral666/QT/site-sealer/deploy/aws/setup-ec2.sh
 sudo bash setup-ec2.sh
 ```
 
-It installs Redis (`127.0.0.1` only, minimal-ACL user), the relay as a sandboxed systemd service and HAProxy with a TLS certificate (certbot, automatic renewal), and prints the `wss://` URL and pinning key for the app. Encrypted images are kept in `/var/lib/qt/anexos` (2 GB in total and 24 hours each at most, by default).
+It installs Redis (`127.0.0.1` only, minimal-ACL user), the relay as a sandboxed systemd service, the voice call relay (UDP 443, a separate service with no access to Redis) and HAProxy with a TLS certificate (certbot, automatic renewal), and prints the `wss://` URL and pinning key for the app. Encrypted images are kept in `/var/lib/qt/anexos` (2 GB in total and 24 hours each at most, by default).
 
 To update a relay that is already installed, run the same script again: it fetches the new code and rebuilds, but keeps the Noise key (the apps' pin does not change) and the Redis password. The build runs on the instance itself and needs room: an 8 GB disk ended up almost full, the current relay uses 20 GB. Details in [`docs/deploy-wss.md`](docs/deploy-wss.md).
 
@@ -237,12 +279,14 @@ storage/     Stores everything on disk, encrypted
 cli/         The messenger in the terminal (same core and relay as the apps)
 demo/        Combines core+transport into a single test, to see it all in action
 ffi/         The bridge to Kotlin, Swift and Python
+call/        The voice call engine (Opus, jitter buffer, network)
 android/     The Android app (Kotlin/Compose)
 ios/         The iPhone app (SwiftUI)
 branding/    Logo, icons and font of the SEALER brand
 site/        The sealer.pt website (static page on Cloudflare)
 deploy/      Relay server install (AWS, Redis, systemd)
 scripts/     Builds for Android and iPhone, and measurements (relay and phone)
+tools/       Test tools (voice call echo on the PC)
 docs/        The full technical specification, and the design history
 ```
 
