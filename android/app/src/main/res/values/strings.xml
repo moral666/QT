@@ -238,7 +238,6 @@
     <string name="t_nao_foi_possivel_ativar">Não foi possível ativar: %1$s</string>
     <string name="t_demasiadas_tentativas_tenta_de_novo_daqui">Demasiadas tentativas. Tenta de novo daqui a %1$s s.</string>
     <string name="t_o_relay_tem_de_usar_wss">O relay tem de usar wss:// (ws:// só na build debug)</string>
-    <string name="t_a_foto_tem_mais_de_3">A foto tem mais de 3 MB. Escolhe uma mais pequena.</string>
     <string name="t_nao_foi_possivel_ler_essa_imagem">Não foi possível ler essa imagem.</string>
     <string name="t_contacto">Contacto</string>
     <string name="t_esse_e_o_teu_proprio_id">Esse é o teu próprio ID</string>
@@ -288,7 +287,7 @@
     <string name="t_daqui_a_d">daqui a %1$s d</string>
     <string name="t_daqui_a_d_e_h">daqui a %1$s d e %2$s h</string>
     <string name="t_a_tua_foto">A tua foto</string>
-    <string name="t_so_os_teus_contactos_a_veem">Só os teus contactos a veem, cifrada de ponta a ponta. Máximo 3 MB. Podes mudar de 72 em 72 horas.</string>
+    <string name="t_so_os_teus_contactos_a_veem">Só os teus contactos a veem, cifrada de ponta a ponta. Máximo 20 MB. Podes mudar de 72 em 72 horas.</string>
     <string name="t_proxima_mudanca">Próxima mudança %1$s.</string>
     <string name="t_tirar">Tirar</string>
     <string name="t_escolher_foto">Escolher foto</string>
@@ -306,4 +305,16 @@
     <string name="photo_invalid">Essa imagem não serve como foto de perfil.</string>
     <string name="att_daily_limit">Atingiste o limite diário de anexos. Tenta amanhã.</string>
     <string name="att_no_space">O servidor está sem espaço para anexos. Tenta mais tarde.</string>
+    <!-- 0.9.11: novo design (Definicoes, Novo contacto) e foto de perfil com confirmacao -->
+    <string name="t_definicoes">Definições</string>
+    <string name="t_conversas">Conversas</string>
+    <string name="t_sec_conta">Conta</string>
+    <string name="t_sec_privacidade">Privacidade</string>
+    <string name="t_sec_app">Aplicação</string>
+    <string name="t_ou">ou</string>
+    <string name="t_mostra_este_codigo">Mostra este código a quem te quer adicionar.</string>
+    <string name="t_aplicar">Aplicar</string>
+    <string name="photo_preview_note">Depois de aplicar, só podes voltar a mudar a foto daqui a 72 horas.</string>
+    <string name="photo_updated">Foto atualizada</string>
+    <string name="t_a_foto_tem_mais_de_20">A foto tem mais de 20 MB. Escolhe uma mais pequena.</string>
 </resources>

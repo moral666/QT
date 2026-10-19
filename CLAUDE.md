@@ -32,7 +32,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
 - O **site nunca menciona "sem auditoria externa"**.
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.9.10**, `versionCode` 17), em
+- Versões da app: série 0.x (agora **0.9.11**, `versionCode` 18), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
   0.9.3...) e o `versionCode` mais 1, no mesmo commit. Só se passa a **1.0.0** quando o Nuno disser.
 - Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
@@ -78,8 +78,8 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 `[1 versão=0x01][1 tipo][16 msg_id][8 sent_at]` e o corpo. Tipos: 1 texto,
 2 recibo, 3 anexo (imagem, GIF ou voz `audio/mp4`), 4 convite, 5 reação,
 6 mensagem de grupo, 7 info do grupo, 8 saída do grupo, 9 presença, 10 sessão terminada, 11 chamada
-de voz, 12 foto de perfil (`ffi/src/profile.rs`, 0.9.9: até 10 000 bytes WebP, de 72 em 72 h, só
-contactos). O próximo tipo livre é o 13. Uma versão antiga mostra "atualiza a app" para tipos novos.
+de voz, 12 foto de perfil (`ffi/src/profile.rs`, 0.9.9: WebP de 72 em 72 h, só contactos; desde a 0.9.11
+até 9 973 bytes, para o payload caber nos 10 000). O próximo tipo livre é o 13. Uma versão antiga mostra "atualiza a app" para tipos novos.
 Ficheiros: tipo 3 com o corpo na versão 2 (com o nome); imagens e voz na versão 1.
 
 ### Funcionalidades da 0.8.0
@@ -122,6 +122,18 @@ foco e o altifalante, e isso choca com o áudio atual; fazer à parte, com teste
 buffer espera até 200 ms por tempo e recomeça depois de uma paragem do outro lado (antes ficava
 mudo); modo de chamada pedido antes de criar o microfone.
 Ver `docs/protocol-spec.md`, secção 18.
+
+### Design (desde a 0.9.11, aprovado pelo Nuno a 19/10/2026)
+
+Maqueta no canvas "Sealer: novo design" (claude.ai). Cabeçalhos com o fundo curvo
+(`CurvedBottomShape` e `GalaxyHeader` em `Design.kt`; a `SealerTopBar` usa-o em todos os ecrãs).
+**O logo só roda (pião, `BrandMark`) no cabeçalho do ecrã inicial**; nos outros ecrãs fica parado
+(`BrandLogo`). Ecrã inicial sem menu de três pontos: engrenagem na minha foto abre as Definições
+(`ProfileSettingsScreen`) e o "+" abre o Novo contacto (`AddContactScreen`, também "Novo grupo").
+A app não tem nome próprio do utilizador: o cabeçalho mostra "Conversas" e o ID abreviado. Letra:
+Plus Jakarta Sans (`res/font/`, `JakartaSans` no `Theme.kt`); "Sealer" continua em Manrope Bold.
+Foto de perfil: escolher, ver e só depois "Aplicar" (`previewProfilePhoto` / `applyProfilePhoto`);
+original até 20 MB. Imagens do design no site em `site/public/ecras/` (geradas da maqueta).
 
 ### Idiomas (desde a 0.9.10)
 

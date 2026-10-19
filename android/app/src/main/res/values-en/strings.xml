@@ -233,7 +233,6 @@
     <string name="t_nao_foi_possivel_ativar">Could not turn on: %1$s</string>
     <string name="t_demasiadas_tentativas_tenta_de_novo_daqui">Too many attempts. Try again in %1$s s.</string>
     <string name="t_o_relay_tem_de_usar_wss">The relay must use wss:// (ws:// only in debug builds)</string>
-    <string name="t_a_foto_tem_mais_de_3">The photo is larger than 3 MB. Choose a smaller one.</string>
     <string name="t_nao_foi_possivel_ler_essa_imagem">Could not read that image.</string>
     <string name="t_contacto">Contact</string>
     <string name="t_esse_e_o_teu_proprio_id">That is your own ID</string>
@@ -283,7 +282,7 @@
     <string name="t_daqui_a_d">in %1$s d</string>
     <string name="t_daqui_a_d_e_h">in %1$s d and %2$s h</string>
     <string name="t_a_tua_foto">Your photo</string>
-    <string name="t_so_os_teus_contactos_a_veem">Only your contacts can see it, end-to-end encrypted. Maximum 3 MB. You can change it every 72 hours.</string>
+    <string name="t_so_os_teus_contactos_a_veem">Only your contacts can see it, end-to-end encrypted. Maximum 20 MB. You can change it every 72 hours.</string>
     <string name="t_proxima_mudanca">Next change %1$s.</string>
     <string name="t_tirar">Remove</string>
     <string name="t_escolher_foto">Choose photo</string>
@@ -301,4 +300,16 @@
     <string name="photo_invalid">That image cannot be used as a profile photo.</string>
     <string name="att_daily_limit">You reached the daily attachment limit. Try tomorrow.</string>
     <string name="att_no_space">The server is out of space for attachments. Try later.</string>
+    <!-- 0.9.11: novo design (Definicoes, Novo contacto) e foto de perfil com confirmacao -->
+    <string name="t_definicoes">Settings</string>
+    <string name="t_conversas">Chats</string>
+    <string name="t_sec_conta">Account</string>
+    <string name="t_sec_privacidade">Privacy</string>
+    <string name="t_sec_app">App</string>
+    <string name="t_ou">or</string>
+    <string name="t_mostra_este_codigo">Show this code to someone who wants to add you.</string>
+    <string name="t_aplicar">Apply</string>
+    <string name="photo_preview_note">After applying, you can only change your photo again in 72 hours.</string>
+    <string name="photo_updated">Photo updated</string>
+    <string name="t_a_foto_tem_mais_de_20">The photo is larger than 20 MB. Choose a smaller one.</string>
 </resources>

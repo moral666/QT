@@ -42,20 +42,25 @@ import kotlin.math.roundToInt
 /** Fotos de perfil ja decifradas e prontas a mostrar, por contactId (os Avatar leem daqui). */
 val LocalPhotos = compositionLocalOf<Map<String, ImageBitmap>> { emptyMap() }
 
-class PhotoTooBigException : Exception("foto maior que 3 MB")
+class PhotoTooBigException : Exception("foto maior que 20 MB")
 
 /**
- * Foto de perfil: a original pode ter ate 3 MB; vai para os contactos um quadrado pequeno
- * em WebP que caiba no limite do Rust (`MAX_PHOTO_BYTES`, 10 000 bytes), dentro de um
- * envelope do tamanho normal. Tudo em memoria: nada em claro no disco.
+ * Foto de perfil: a original pode ter ate 20 MB (as fotos da camara passam muitas vezes dos
+ * 3 MB do limite antigo); vai para os contactos um quadrado pequeno em WebP que caiba no
+ * limite do Rust (`MAX_PHOTO_BYTES`, 9 973 bytes desde a 0.9.11), dentro de um envelope do
+ * tamanho normal. Tudo em memoria: nada em claro no disco.
  */
 object ProfilePhoto {
-    const val MAX_INPUT_BYTES = 3 * 1024 * 1024
-    private const val MAX_OUT_BYTES = 10_000
+    const val MAX_INPUT_BYTES = 20 * 1024 * 1024
+    /**
+     * Com folga em relacao ao Rust. Ate a 0.9.10 era 10 000: uma foto reduzida entre 9 974 e
+     * 10 000 bytes nao cabia na mensagem (mais 27 bytes de cabecalho) e era recusada.
+     */
+    private const val MAX_OUT_BYTES = 9_900
     /** Fotos recebidas maiores do que isto nao se mostram (defesa contra imagens estranhas). */
     private const val MAX_SHOWN_SIDE = 1024
 
-    /** Le a foto escolhida (ate 3 MB), corta ao centro em quadrado e comprime. */
+    /** Le a foto escolhida (ate 20 MB), corta ao centro em quadrado e comprime. */
     fun prepare(ctx: Context, uri: Uri): ByteArray {
         val raw = readLimited(ctx, uri)
         val bmp = decodeSquare(raw, 512)
@@ -160,11 +165,37 @@ fun waitText(ms: Long): String {
     }
 }
 
-/** Menu "Foto de perfil": ver, escolher (de 72 em 72 h) ou tirar a foto. */
+/**
+ * Menu "Foto de perfil": ver, escolher (de 72 em 72 h) ou tirar a foto. Desde a 0.9.11 a foto
+ * escolhida aparece primeiro ja cortada, com o aviso das 72 h, e so fica com "Aplicar".
+ */
 @Composable
-fun ProfilePhotoDialog(ui: UiState, onPick: (Uri) -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit) {
+fun ProfilePhotoDialog(
+    ui: UiState,
+    onPick: (Uri) -> Unit,
+    onApply: () -> Unit,
+    onCancelPreview: () -> Unit,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) onPick(uri)
+    }
+    val preview = ui.photoPreview
+    if (preview != null) {
+        AlertDialog(
+            onDismissRequest = onCancelPreview,
+            title = { Text(s(R.string.t_foto_de_perfil)) },
+            text = {
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Image(preview, contentDescription = s(R.string.t_a_tua_foto), modifier = Modifier.size(160.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                    Text(s(R.string.photo_preview_note), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                }
+            },
+            confirmButton = { TextButton(onClick = onApply) { Text(s(R.string.t_aplicar)) } },
+            dismissButton = { TextButton(onClick = onCancelPreview) { Text(s(R.string.t_cancelar)) } },
+        )
+        return
     }
     val canChange = ui.photoNextChangeMs <= 0L
     AlertDialog(

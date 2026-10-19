@@ -233,7 +233,6 @@
     <string name="t_nao_foi_possivel_ativar">Aktivieren fehlgeschlagen: %1$s</string>
     <string name="t_demasiadas_tentativas_tenta_de_novo_daqui">Zu viele Versuche. Versuche es in %1$s s erneut.</string>
     <string name="t_o_relay_tem_de_usar_wss">Das Relay muss wss:// verwenden (ws:// nur im Debug-Build)</string>
-    <string name="t_a_foto_tem_mais_de_3">Das Foto ist größer als 3 MB. Wähle ein kleineres.</string>
     <string name="t_nao_foi_possivel_ler_essa_imagem">Dieses Bild konnte nicht gelesen werden.</string>
     <string name="t_contacto">Kontakt</string>
     <string name="t_esse_e_o_teu_proprio_id">Das ist deine eigene ID</string>
@@ -283,7 +282,7 @@
     <string name="t_daqui_a_d">in %1$s T.</string>
     <string name="t_daqui_a_d_e_h">in %1$s T. und %2$s Std.</string>
     <string name="t_a_tua_foto">Dein Foto</string>
-    <string name="t_so_os_teus_contactos_a_veem">Nur deine Kontakte sehen es, Ende-zu-Ende-verschlüsselt. Maximal 3 MB. Du kannst es alle 72 Stunden ändern.</string>
+    <string name="t_so_os_teus_contactos_a_veem">Nur deine Kontakte sehen es, Ende-zu-Ende-verschlüsselt. Maximal 20 MB. Du kannst es alle 72 Stunden ändern.</string>
     <string name="t_proxima_mudanca">Nächste Änderung %1$s.</string>
     <string name="t_tirar">Entfernen</string>
     <string name="t_escolher_foto">Foto wählen</string>
@@ -301,4 +300,16 @@
     <string name="photo_invalid">Dieses Bild kann nicht als Profilfoto verwendet werden.</string>
     <string name="att_daily_limit">Du hast das tägliche Limit für Anhänge erreicht. Versuche es morgen.</string>
     <string name="att_no_space">Der Server hat keinen Platz mehr für Anhänge. Versuche es später.</string>
+    <!-- 0.9.11: novo design (Definicoes, Novo contacto) e foto de perfil com confirmacao -->
+    <string name="t_definicoes">Einstellungen</string>
+    <string name="t_conversas">Chats</string>
+    <string name="t_sec_conta">Konto</string>
+    <string name="t_sec_privacidade">Datenschutz</string>
+    <string name="t_sec_app">App</string>
+    <string name="t_ou">oder</string>
+    <string name="t_mostra_este_codigo">Zeig diesen Code der Person, die dich hinzufügen möchte.</string>
+    <string name="t_aplicar">Übernehmen</string>
+    <string name="photo_preview_note">Danach kannst du dein Foto erst in 72 Stunden wieder ändern.</string>
+    <string name="photo_updated">Foto aktualisiert</string>
+    <string name="t_a_foto_tem_mais_de_20">Das Foto ist größer als 20 MB. Wähle ein kleineres.</string>
 </resources>

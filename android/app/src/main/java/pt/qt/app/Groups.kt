@@ -104,6 +104,7 @@ fun GroupChatScreen(
     }
     FollowNewest(listState, msgs.firstOrNull()?.seq, msgs.firstOrNull()?.outgoing == true)
     Scaffold(
+        containerColor = colors.chatBackground,
         topBar = {
             SealerTopBar(
                 onBack = onBack,
