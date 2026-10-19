@@ -583,7 +583,7 @@ def test_responsive(browser):
 def test_accessibility(browser):
     ctx = browser.new_context(viewport={"width": 1280, "height": 860}, reduced_motion="reduce")
     page = ctx.new_page()
-    page.goto(BASE)
+    page.goto(BASE + "?lang=pt")  # sem ?lang a página segue a língua do navegador
     poll(page, "window.__sealerLayout.field.state.cells > 0", timeout_s=10)
     data = page.evaluate(
         """(() => ({

@@ -55,6 +55,13 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 
 - QT é o protocolo e o repositório; as apps chamam-se **SEALER**. Site em
   `site/` (sealer.pt, Cloudflare Worker com deploy automático a partir do git).
+- **Site em PT, EN e ES** (19/10/2026, escolha do Nuno: trocar o texto com JavaScript, uma só página).
+  O português fica no HTML; cada texto tem `data-i18n="pagina.n"` (atributos: `data-i18n-alt`,
+  `-aria-label`, `-content`) e as traduções estão em `site/src/i18n/en.js` e `es.js` (carregadas só
+  nessas línguas). Textos criados em JS: `L({ pt, en, es })` de `src/i18n.js`. Língua: `?lang=` no
+  endereço (seletor PT · EN · ES) ou a do navegador (outra qualquer: inglês). **Nada é guardado no
+  navegador** (a política de cookies diz que não há armazenamento). Ao mudar um texto do site,
+  mudar também em `en.js` e `es.js`. As páginas legais traduzidas dizem que vale a versão portuguesa.
 - Núcleo Rust: `core` (PQXDH + Double Ratchet + Sealed Sender), `storage`
   (SQLCipher), `ffi` (UniFFI para Kotlin/Swift), `transport` (WebSocket + Noise),
   `server` (relay, Redis). Nenhuma criptografia em Kotlin.

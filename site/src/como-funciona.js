@@ -11,27 +11,65 @@
  *
  * Com "reduzir movimento" ligado no sistema, não avança sozinho e não há animações.
  */
+import { L, translatePage } from './i18n.js';
+
 const SCENES = [
-  { title: 'A Ana escreve ao Rui', text: 'Escreve «Olá, Rui!» e carrega em enviar.', ms: 4500 },
   {
-    title: 'A mensagem é trancada',
-    text: 'Ainda no telemóvel da Ana, a mensagem fica ilegível e leva um cadeado. Só a chave do Rui o abre.',
+    title: L({ pt: 'A Ana escreve ao Rui', en: 'Ana writes to Rui', es: 'Ana le escribe a Rui' }),
+    text: L({
+      pt: 'Escreve «Olá, Rui!» e carrega em enviar.',
+      en: 'She types “Hi, Rui!” and taps send.',
+      es: 'Escribe «¡Hola, Rui!» y pulsa enviar.',
+    }),
+    ms: 4500,
+  },
+  {
+    title: L({ pt: 'A mensagem é trancada', en: 'The message is locked', es: 'El mensaje se cierra con llave' }),
+    text: L({
+      pt: 'Ainda no telemóvel da Ana, a mensagem fica ilegível e leva um cadeado. Só a chave do Rui o abre.',
+      en: 'Still on Ana’s phone, the message becomes unreadable and gets a padlock. Only Rui’s key opens it.',
+      es: 'Todavía en el móvil de Ana, el mensaje se vuelve ilegible y lleva un candado. Solo la llave de Rui lo abre.',
+    }),
     ms: 6000,
   },
   {
-    title: 'O servidor só a transporta',
-    text: 'O servidor da SEALER entrega o envelope trancado. Não consegue ler o que está lá dentro, e o envelope não diz quem o enviou.',
+    title: L({ pt: 'O servidor só a transporta', en: 'The server only carries it', es: 'El servidor solo lo transporta' }),
+    text: L({
+      pt: 'O servidor da SEALER entrega o envelope trancado. Não consegue ler o que está lá dentro, e o envelope não diz quem o enviou.',
+      en: 'The SEALER server delivers the locked envelope. It cannot read what is inside, and the envelope does not say who sent it.',
+      es: 'El servidor de SEALER entrega el sobre cerrado. No puede leer lo que hay dentro, y el sobre no dice quién lo envió.',
+    }),
     ms: 6800,
   },
-  { title: 'O Rui abre com a sua chave', text: 'A chave está só no telemóvel do Rui. Nem a SEALER a tem.', ms: 6500 },
   {
-    title: 'Protegida também para o futuro',
-    text: 'A SEALER usa também uma proteção pensada para os computadores quânticos, que um dia poderão quebrar a criptografia de hoje.',
+    title: L({ pt: 'O Rui abre com a sua chave', en: 'Rui opens it with his key', es: 'Rui lo abre con su llave' }),
+    text: L({
+      pt: 'A chave está só no telemóvel do Rui. Nem a SEALER a tem.',
+      en: 'The key is only on Rui’s phone. Not even SEALER has it.',
+      es: 'La llave está solo en el móvil de Rui. Ni siquiera SEALER la tiene.',
+    }),
+    ms: 6500,
+  },
+  {
+    title: L({ pt: 'Protegida também para o futuro', en: 'Protected for the future too', es: 'Protegido también para el futuro' }),
+    text: L({
+      pt: 'A SEALER usa também uma proteção pensada para os computadores quânticos, que um dia poderão quebrar a criptografia de hoje.',
+      en: 'SEALER also uses protection designed for quantum computers, which may one day break today’s cryptography.',
+      es: 'SEALER también usa una protección pensada para los ordenadores cuánticos, que algún día podrían romper la criptografía de hoy.',
+    }),
     ms: 6500,
   },
 ];
 
-const PLAIN = 'Olá, Rui!';
+const PLAIN = L({ pt: 'Olá, Rui!', en: 'Hi, Rui!', es: '¡Hola, Rui!' });
+const T = {
+  step: (n, m) => L({ pt: `Passo ${n} de ${m}`, en: `Step ${n} of ${m}`, es: `Paso ${n} de ${m}` }),
+  stepLabel: (n, t) => L({ pt: `Passo ${n}: ${t}`, en: `Step ${n}: ${t}`, es: `Paso ${n}: ${t}` }),
+  pause: L({ pt: 'Pausar', en: 'Pause', es: 'Pausa' }),
+  play: L({ pt: 'Reproduzir', en: 'Play', es: 'Reproducir' }),
+  locked: L({ pt: 'Trancada', en: 'Locked', es: 'Cerrado' }),
+  opened: L({ pt: 'Aberta', en: 'Opened', es: 'Abierto' }),
+};
 const CIPHER = '7Fq#9zK@';
 const GLYPHS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghkmnpqrstuvwxyz0123456789#%&@$';
 
@@ -198,7 +236,7 @@ async function animate(n, id) {
     await scramble(PLAIN, CIPHER, 1600, id);
     if (!alive(id)) return;
     envLock.setAttribute('opacity', '1');
-    tag('Trancada', 'key');
+    tag(T.locked, 'key');
   } else if (n === 3) {
     setEnv(true, true, CIPHER, P.ana);
     await wait(500);
@@ -221,7 +259,7 @@ async function animate(n, id) {
     place(rkey, P.key);
     await scramble(CIPHER, PLAIN, 1300, id);
     if (!alive(id)) return;
-    tag('Aberta', 'ok');
+    tag(T.opened, 'ok');
     svg.classList.add('got');
     await wait(900);
     if (alive(id)) env.setAttribute('opacity', '0');
@@ -236,7 +274,7 @@ const dots = SCENES.map((scene, i) => {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'cf-dot';
-  b.setAttribute('aria-label', `Passo ${i + 1}: ${scene.title}`);
+  b.setAttribute('aria-label', T.stepLabel(i + 1, scene.title));
   b.addEventListener('click', () => {
     setPlaying(false);
     go(i);
@@ -259,7 +297,7 @@ function go(i) {
   const scene = SCENES[current];
   run += 1;
   svg.dataset.scene = String(n);
-  $('cap-step').textContent = `Passo ${n} de ${SCENES.length}`;
+  $('cap-step').textContent = T.step(n, SCENES.length);
   $('cap-title').textContent = scene.title;
   $('cap-text').textContent = scene.text;
   dots.forEach((d, j) => (j === current ? d.setAttribute('aria-current', 'step') : d.removeAttribute('aria-current')));
@@ -279,7 +317,7 @@ function schedule() {
 function setPlaying(p) {
   if (playing && !p) remaining = Math.max(0, remaining - (performance.now() - started));
   playing = p;
-  playBtn.textContent = p ? 'Pausar' : 'Reproduzir';
+  playBtn.textContent = p ? T.pause : T.play;
   progress.classList.toggle('paused', !p);
   schedule();
 }
@@ -316,5 +354,8 @@ document.addEventListener('visibilitychange', () => {
 });
 
 applyLayout();
-playBtn.textContent = playing ? 'Pausar' : 'Reproduzir';
+playBtn.textContent = playing ? T.pause : T.play;
+anaText.textContent = PLAIN;
+envText.textContent = PLAIN;
+translatePage();
 go(0);

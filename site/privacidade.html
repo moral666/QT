@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-PT">
+<html lang="pt-PT" data-page="priv">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -7,7 +7,7 @@
     <meta
       name="description"
       content="Que dados a app SEALER e o seu servidor tratam, durante quanto tempo, e como apagar tudo. Sem telefone, sem email, sem publicidade."
-    />
+     data-i18n-content="priv.@0"/>
     <meta name="theme-color" content="#05060d" />
     <meta name="color-scheme" content="dark" />
     <meta name="referrer" content="no-referrer" />
@@ -25,137 +25,137 @@
     <header class="legal-bar">
       <a class="legal-bar__brand" href="./">
         <img src="./src/assets/logo/logo-96.webp" width="96" height="96" alt="" />
-        <span>SEALER</span>
+        <span data-i18n="priv.0">SEALER</span>
       </a>
     </header>
 
     <main class="legal">
-      <p class="legal__label">Última atualização: 19 de outubro de 2026</p>
-      <h1>Política de privacidade</h1>
-      <p class="legal__lede">
+      <p class="legal__label" data-i18n="priv.1">Última atualização: 19 de outubro de 2026</p>
+      <h1 data-i18n="priv.2">Política de privacidade</h1>
+      <p class="legal__lede" data-i18n="priv.3">
         Resumindo: não pedimos o teu número de telefone, nem email, nem nome. As tuas mensagens são cifradas no teu
         telemóvel e nós não as conseguimos ler. O nosso servidor guarda só o mínimo para as entregar, durante pouco tempo.
       </p>
 
-      <h2>Quem é responsável</h2>
-      <p>
+      <h2 data-i18n="priv.4">Quem é responsável</h2>
+      <p data-i18n="priv.5">
         A SEALER (app e servidor) é um projeto de Nuno Gonzalez, em Portugal, responsável pelo tratamento dos dados
         descritos aqui. Contacto: <a href="mailto:privacidade@sealer.pt">privacidade@sealer.pt</a>.
       </p>
-      <p>
+      <p data-i18n="priv.6">
         A app está em testes fechados: por agora, só testadores convidados têm acesso ao serviço.
       </p>
 
-      <h2>O que fica só no teu telemóvel</h2>
-      <p>
+      <h2 data-i18n="priv.7">O que fica só no teu telemóvel</h2>
+      <p data-i18n="priv.8">
         As tuas mensagens, imagens, mensagens de voz, contactos, a lista de pessoas que bloqueaste, a tua identidade (as
         tuas chaves) e as
         definições ficam guardados apenas no
         teu telemóvel, numa base de dados cifrada (SQLCipher) cuja chave está protegida pelo próprio telemóvel. Nós nunca
         recebemos estes dados. Se perderes o telemóvel ou desinstalares a app, não os conseguimos recuperar.
       </p>
-      <p>
+      <p data-i18n="priv.9">
         As chamadas de voz não são gravadas, nem no telemóvel nem no servidor. A app só usa o microfone quando gravas uma
         mensagem de voz ou estás numa chamada, depois de lhe dares permissão.
       </p>
-      <p>
+      <p data-i18n="priv.10">
         Os grupos funcionam da mesma forma: cada mensagem é cifrada para cada membro e o servidor não sabe que o grupo
         existe. O estado "online" (podes desligá-lo no menu) é enviado só aos teus contactos, cifrado como uma mensagem,
         quando abres e fechas a app. Não fica guardado em lado nenhum, nem no servidor nem no telemóvel de quem o recebe.
       </p>
-      <p>
+      <p data-i18n="priv.11">
         A foto de perfil, se escolheres uma, é reduzida no teu telemóvel e enviada só aos teus contactos, cifrada como uma
         mensagem. O servidor não sabe que é uma foto e não a guarda. Fica no telemóvel de cada contacto até ele te apagar dos
         contactos, ou até a tirares.
       </p>
 
-      <h2>O que passa pelo nosso servidor</h2>
-      <p>
+      <h2 data-i18n="priv.12">O que passa pelo nosso servidor</h2>
+      <p data-i18n="priv.13">
         Para as mensagens chegarem a quem não está ligado no momento, passam por um servidor da SEALER (o "relay"),
         alojado na Amazon Web Services, num centro de dados na Suécia (União Europeia). O servidor trata:
       </p>
       <ul>
-        <li>
+        <li data-i18n="priv.14">
           <strong>O teu ID</strong>: uma chave pública criada no teu telemóvel, que não diz quem és. Não está ligado a
           nenhum telefone, email ou nome.
         </li>
-        <li>
+        <li data-i18n="priv.15">
           <strong>As tuas chaves públicas</strong>: servem para outra pessoa poder começar uma conversa contigo de forma
           cifrada. São públicas por natureza.
         </li>
-        <li>
+        <li data-i18n="priv.16">
           <strong>Mensagens, imagens e mensagens de voz à tua espera</strong>: chegam já cifrados. O servidor não consegue ler o conteúdo e
           também não sabe quem os enviou (o remetente vai dentro da parte cifrada). Sabe só para que ID são.
         </li>
-        <li>
+        <li data-i18n="priv.17">
           <strong>O endereço de notificações do teu telemóvel</strong> (se tiveres as notificações ligadas): um código
           dado pela Google ao telemóvel. Serve só para o servidor pedir à Google que acorde o telemóvel quando te chega
           uma mensagem e tens a app fechada. Esse pedido vai vazio: não leva a mensagem, quem a enviou nem o teu ID.
           Nas chamadas de voz vai marcado como chamada, para o telemóvel tocar mesmo com o bloqueio da app ativo.
         </li>
-        <li>
+        <li data-i18n="priv.18">
           <strong>Chamadas de voz</strong>: o som passa pelo servidor das chamadas já cifrado no teu telemóvel, por isso o
           servidor não o consegue ouvir. Também não sabe que contas estão a falar: vê só um código de sala aleatório e os
           endereços de rede dos dois telemóveis, que guarda em memória apenas enquanto a chamada dura.
         </li>
-        <li>
+        <li data-i18n="priv.19">
           <strong>O endereço de rede (IP) do teu telemóvel</strong>: é necessário para manter a ligação. Só é usado em
           memória enquanto estás ligado e não fica registado.
         </li>
       </ul>
-      <p>
+      <p data-i18n="priv.20">
         O servidor guarda também contagens anónimas (por exemplo, quantas mensagens passaram num minuto e quanto tempo
         demoraram), sem IDs, IPs nem conteúdo. Servem para ver se o serviço está a funcionar bem.
       </p>
 
-      <h2>Durante quanto tempo</h2>
+      <h2 data-i18n="priv.21">Durante quanto tempo</h2>
       <ul>
-        <li>Mensagens à tua espera: até as recebes; se nunca as fores buscar, são apagadas ao fim de 30 dias.</li>
-        <li>Imagens, GIFs e mensagens de voz à tua espera: apagados quando os descarregas, ou ao fim de 24 horas.</li>
-        <li>
+        <li data-i18n="priv.22">Mensagens à tua espera: até as recebes; se nunca as fores buscar, são apagadas ao fim de 30 dias.</li>
+        <li data-i18n="priv.23">Imagens, GIFs e mensagens de voz à tua espera: apagados quando os descarregas, ou ao fim de 24 horas.</li>
+        <li data-i18n="priv.24">
           As tuas chaves públicas: enquanto usares a app. Se não a abrires durante 90 dias, são apagadas sozinhas.
         </li>
-        <li>
+        <li data-i18n="priv.25">
           O endereço de notificações: enquanto as notificações estiverem ligadas. É renovado sempre que abres a app e
           apagado ao fim de 90 dias sem a abrires, quando desligas as notificações ou quando apagas a conta.
         </li>
-        <li>Chamadas de voz: nada fica guardado. A sala desaparece do servidor quando a chamada acaba.</li>
-        <li>Quanto enviaste em anexos por dia (só um número, para evitar abusos): 2 dias.</li>
-        <li>
+        <li data-i18n="priv.26">Chamadas de voz: nada fica guardado. A sala desaparece do servidor quando a chamada acaba.</li>
+        <li data-i18n="priv.27">Quanto enviaste em anexos por dia (só um número, para evitar abusos): 2 dias.</li>
+        <li data-i18n="priv.28">
           Depois de apagares a conta: durante 30 dias, o servidor lembra-se só de que aquele ID foi apagado, para avisar
           quem te tentar escrever. Depois, nada.
         </li>
       </ul>
 
-      <h2>Para que usamos estes dados</h2>
-      <p>
+      <h2 data-i18n="priv.29">Para que usamos estes dados</h2>
+      <p data-i18n="priv.30">
         Só para entregar as tuas mensagens e manter o serviço a funcionar e protegido contra abusos. A base legal é a
         prestação do serviço que pedes ao usar a app. Não usamos os dados para publicidade, não criamos perfis e não os
         vendemos nem partilhamos com ninguém.
       </p>
 
-      <h2>Quem mais está envolvido</h2>
+      <h2 data-i18n="priv.31">Quem mais está envolvido</h2>
       <ul>
-        <li>Amazon Web Services: aloja o servidor (na Suécia). Só vê dados cifrados e técnicos.</li>
-        <li>Cloudflare: aloja este site (ver a <a href="./politica-de-cookies">política de cookies</a>).</li>
-        <li>
+        <li data-i18n="priv.32">Amazon Web Services: aloja o servidor (na Suécia). Só vê dados cifrados e técnicos.</li>
+        <li data-i18n="priv.33">Cloudflare: aloja este site (ver a <a href="./politica-de-cookies">política de cookies</a>).</li>
+        <li data-i18n="priv.34">
           Google (Firebase Cloud Messaging): entrega o aviso que acorda o telemóvel quando tens a app fechada. A Google
           fica a saber que aquele telemóvel recebeu um aviso, a que horas e se é uma chamada, mas não o conteúdo, quem
           enviou nem o teu ID. A notificação que vês ("Tens mensagens novas", ou a chamada a tocar) é criada pela
           própria app, no teu telemóvel. Podes desligar as notificações no menu da app.
         </li>
       </ul>
-      <p>A app não tem publicidade, estatísticas de utilização nem relatórios de falhas de outras empresas.</p>
+      <p data-i18n="priv.35">A app não tem publicidade, estatísticas de utilização nem relatórios de falhas de outras empresas.</p>
 
-      <h2>Apagar os teus dados</h2>
-      <p>
+      <h2 data-i18n="priv.36">Apagar os teus dados</h2>
+      <p data-i18n="priv.37">
         Na app, no menu, escolhe <strong>Destruir perfil e dados</strong>: apaga primeiro o que está no servidor e
         depois tudo do teu telemóvel. Se já desinstalaste a app, vê a página
         <a href="./apagar-conta">Apagar a conta</a>.
       </p>
 
-      <h2>Os teus direitos</h2>
-      <p>
+      <h2 data-i18n="priv.38">Os teus direitos</h2>
+      <p data-i18n="priv.39">
         Tens direito a aceder aos teus dados, a corrigi-los, a apagá-los, a limitar ou a opor-te ao seu tratamento e a
         recebê-los num formato portátil. Como não sabemos quem és (não há telefone, email nem nome), a forma mais segura
         de exercer estes direitos é na própria app, que prova que és o dono do ID. Para outras questões, escreve para
@@ -163,16 +163,18 @@
         Nacional de Proteção de Dados (CNPD), em <a href="https://www.cnpd.pt" rel="noopener">cnpd.pt</a>.
       </p>
 
-      <h2>Alterações a esta política</h2>
-      <p>
+      <h2 data-i18n="priv.40">Alterações a esta política</h2>
+      <p data-i18n="priv.41">
         Se mudarmos a forma como tratamos os dados, atualizamos esta página antes de a mudança chegar à app. A data no topo mostra quando foi a última alteração.
       </p>
 
-      <p class="legal__back"><a href="./">Voltar ao início</a></p>
+      <p class="legal__back" data-i18n="priv.42"><a href="./">Voltar ao início</a></p>
     </main>
 
     <footer class="legal-footer">
-      <p>© 2026 SEALER, um projeto QT. <a href="./termos">Termos de utilização</a> · <a href="./politica-de-cookies">Política de cookies</a></p>
+      <p class="lang" aria-label="Idioma / Language / Idioma"><a data-lang="pt" lang="pt-PT" href="?lang=pt">PT</a> · <a data-lang="en" lang="en" href="?lang=en">EN</a> · <a data-lang="es" lang="es" href="?lang=es">ES</a></p>
+      <p data-i18n="priv.43">© 2026 SEALER, um projeto QT. <a href="./termos">Termos de utilização</a> · <a href="./politica-de-cookies">Política de cookies</a></p>
     </footer>
+      <script type="module" src="/src/legal.js"></script>
   </body>
 </html>

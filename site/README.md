@@ -141,6 +141,8 @@ Todo o conteúdo das janelas está no `index.html`, dentro de `<main class="list
 - Mantenha o texto curto: cerca de 120 caracteres no máximo. Os testes verificam, em 8 tamanhos de ecrã, se o texto cabe em todas as janelas.
 - Os pictogramas são SVG com traço (`viewBox="0 0 48 48"`), sem cor própria: a cor vem do CSS.
 
+- **Línguas (PT, EN, ES):** cada texto tem `data-i18n="index.n"` (e `data-i18n-alt`, `-aria-label`, `-content` nos atributos). O português fica no HTML; o inglês e o espanhol estão em `src/i18n/en.js` e `src/i18n/es.js`, com as mesmas chaves. Ao mudar ou acrescentar um texto, mudar também nesses dois ficheiros (uma chave que falte fica em português). A língua vem de `?lang=pt|en|es` (seletor PT · EN · ES) ou do navegador; nada é guardado no navegador. Textos criados em JavaScript usam `L({ pt, en, es })` de `src/i18n.js`.
+
 Depois de editar: `npm run build` e `python3 tests/run_tests.py`.
 
 ## 5. Publicar
