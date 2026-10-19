@@ -338,7 +338,14 @@ impl Store {
         let removed: u64 = conn.del(self.blob_key(id)).await?;
         let _ = std::fs::remove_file(blobs.path(id));
         if let (Some(size), 1) = (size, removed) {
-            let _ = blobs.used.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |u| Some(u.saturating_sub(size)));
+            // Subtrai sem passar abaixo de zero (ciclo compare-and-swap: igual em
+            // qualquer versao do Rust, sem o `fetch_update` que o Rust novo da como antiquado).
+            let mut current = blobs.used.load(Ordering::SeqCst);
+            while let Err(actual) =
+                blobs.used.compare_exchange_weak(current, current.saturating_sub(size), Ordering::SeqCst, Ordering::SeqCst)
+            {
+                current = actual;
+            }
         }
         Ok(())
     }

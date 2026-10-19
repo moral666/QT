@@ -124,9 +124,12 @@ o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo
 - `wss://relay.sealer.pt` (desde a app 0.9.2, 19/10/2026), pin `f018d46b67d2437571cefc86827dec0dc3b0fd586bd22c664d3839f6a1c67f1a`
   (a build lê `qtRelayUrl` / `qtRelayPin` das propriedades do Gradle). O nome é um registo A na
   Cloudflare **só DNS (nuvem cinzenta, sem proxy, por privacidade)**, TTL 1 dia, a apontar para o IP
-  elástico 13.51.46.213. Antes de mudar de servidor, baixar o TTL um dia antes. As apps até à 0.9.1
-  usam `wss://13-51-46-213.sslip.io`: o servidor serve os dois nomes até todos terem a 0.9.2
-  (os nomes ficam em `/etc/qt/domains`; deixar de servir o sslip.io só com aprovação do Nuno).
+  elástico 13.51.46.213. Antes de mudar de servidor, baixar o TTL um dia antes. Desde 19/10/2026 o
+  servidor só serve `relay.sealer.pt` (o `13-51-46-213.sslip.io` das apps até à 0.9.1 foi desligado,
+  com aprovação do Nuno); o site e a configuração do iPhone também usam o nome novo. Nomes em
+  `/etc/qt/domains`.
+- **Chave do relay:** cópia no PC do Nuno (`~/Documentos/SENSIVEL /`), nunca no git nem no projeto.
+  Passou pela conversa a 19/10/2026: trocar por uma nova (pin novo na app) antes da Play Store.
 - Atualizar o servidor (no EC2):
   ```
   sudo git -C /opt/qt-src fetch --depth 1 origin site-sealer && sudo git -C /opt/qt-src reset --hard FETCH_HEAD && sudo QT_BRANCH=site-sealer bash /opt/qt-src/deploy/aws/setup-ec2.sh

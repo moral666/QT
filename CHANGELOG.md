@@ -6,6 +6,15 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: fim do sslip.io, documentação e um aviso do compilador
+
+- O site (`site/wrangler.jsonc`) e a configuração da app iPhone passam a usar `relay.sealer.pt`. O
+  servidor deixa de servir `13-51-46-213.sslip.io` (as apps Android de teste já têm a 0.9.2).
+- `server/src/blobs.rs`: deixa de usar `fetch_update`, que o Rust novo dá como antiquado (era o único
+  aviso na compilação do relay). O comportamento é igual.
+- Documentação: o HAProxy no lugar do Caddy (diagramas, serviço e exemplo de configuração), as
+  medições com o HAProxy em `docs/performance.md`, e o pedido de revisão atualizado.
+
 ### 19 de outubro de 2026: relay em relay.sealer.pt (app 0.9.2)
 
 - As apps passam a usar **`wss://relay.sealer.pt`** em vez de `13-51-46-213.sslip.io` (um serviço de
