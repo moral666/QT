@@ -11,6 +11,10 @@
 //!      SEM avancar (`Slot::Conceal`). Cada espera aumenta o atraso em 20 ms; e assim
 //!      que o atraso cresce quando a rede piora.
 //!   4. Se continuar sem nada (rede cortada), desiste desse frame e avanca (PLC).
+//!   5. Depois de desistir, se o que volta a chegar e mais antigo do que o frame
+//!      seguinte (o outro telemovel parou e retomou atrasado em relacao ao tempo real),
+//!      recomeca nesse pacote e corta o excesso ate ao atraso alvo. Sem isto, todos os
+//!      pacotes seguintes chegavam "atrasados" e esse lado ficava mudo ate ao fim.
 //!
 //! O atraso alvo segue a variacao medida das chegadas (percentil 95 dos ultimos 3 s):
 //! entre 40 e 200 ms. Quando ha frames a mais do que o alvo durante meio segundo,
@@ -69,6 +73,8 @@ pub struct JitterStats {
     pub holds: u64,
     /// Frames saltados para baixar o atraso.
     pub skips: u64,
+    /// Vezes que se recomecou depois de o outro lado parar e retomar atrasado.
+    pub resyncs: u64,
     pub target_ms: u32,
     pub depth_ms: u32,
     /// Variacao das chegadas (percentil 95), em ms.
@@ -83,6 +89,10 @@ pub struct JitterBuffer {
     target: u32,
     /// Desde quando se espera pelo frame `next` (sem nada a frente).
     hold_since: Option<Instant>,
+    /// Desistiu-se e avanca-se as cegas (nada chegou durante `MAX_HOLD`).
+    stalled: bool,
+    /// Recomecou depois de uma paragem: no primeiro pop corta o excesso ate ao alvo.
+    trim: bool,
     excess_pops: u32,
     origin: Option<(Instant, u64)>,
     transits: VecDeque<f64>,
@@ -105,6 +115,8 @@ impl JitterBuffer {
             newest: None,
             target: START_TARGET,
             hold_since: None,
+            stalled: false,
+            trim: false,
             excess_pops: 0,
             origin: None,
             transits: VecDeque::with_capacity(WINDOW + 1),
@@ -119,9 +131,25 @@ impl JitterBuffer {
         self.newest = None;
         self.start_at = Some(now + FRAME * self.target);
         self.hold_since = None;
+        self.stalled = false;
+        self.trim = false;
         self.excess_pops = 0;
         self.origin = None;
         self.transits.clear();
+    }
+
+    /// O outro lado parou e retomou atrasado em relacao ao tempo real: recomeca neste
+    /// pacote (com o atraso alvo de antes) em vez de deitar fora tudo o que vier.
+    fn resync(&mut self, counter: u64, now: Instant) {
+        self.packets.clear();
+        self.next = Some(counter);
+        self.newest = None;
+        self.start_at = Some(now + FRAME * self.target);
+        self.hold_since = None;
+        self.stalled = false;
+        self.trim = true;
+        self.excess_pops = 0;
+        self.stats.resyncs += 1;
     }
 
     /// Chegou o frame com este contador (do pacote decifrado).
@@ -130,8 +158,11 @@ impl JitterBuffer {
             None => self.restart(counter, now),
             Some(n) if counter > n + RESYNC_FRAMES => self.restart(counter, now),
             Some(n) if counter < n => {
-                self.stats.late += 1;
-                return;
+                if !(self.stalled && self.packets.range(n..).next().is_none()) {
+                    self.stats.late += 1;
+                    return;
+                }
+                self.resync(counter, now);
             }
             _ => {}
         }
@@ -139,7 +170,10 @@ impl JitterBuffer {
             self.stats.duplicates += 1;
             return;
         }
-        self.measure(counter, now);
+        // A recomecar (rajada do que estava retido): as chegadas nao dizem nada da rede.
+        if !self.trim {
+            self.measure(counter, now);
+        }
         self.packets.insert(counter, frame);
         self.newest = Some(self.newest.map_or(counter, |x| x.max(counter)));
         self.stats.received += 1;
@@ -180,6 +214,19 @@ impl JitterBuffer {
             }
             self.start_at = None;
         }
+        // Recomecou depois de uma paragem: fica so com o atraso alvo (os mais recentes),
+        // de uma vez, e volta a medir as chegadas do zero.
+        if self.trim {
+            self.trim = false;
+            while self.depth() > self.target {
+                self.packets.remove(&next);
+                next += 1;
+                self.next = Some(next);
+                self.stats.skips += 1;
+            }
+            self.origin = None;
+            self.transits.clear();
+        }
         // Atraso a mais durante meio segundo: salta um frame (so com os dois seguintes
         // presentes, para nao saltar por cima de uma perda).
         if self.depth() > self.target + EXCESS_FRAMES {
@@ -197,12 +244,14 @@ impl JitterBuffer {
         if let Some(f) = self.packets.remove(&next) {
             self.next = Some(next + 1);
             self.hold_since = None;
+            self.stalled = false;
             return Slot::Frame(f);
         }
         if let Some((&m, p)) = self.packets.range(next + 1..).next() {
             let slot = Slot::Lost { ahead_counter: m, ahead: p.clone(), frames_back: (m - next) as u32 };
             self.next = Some(next + 1);
             self.hold_since = None;
+            self.stalled = false;
             self.stats.lost += 1;
             return slot;
         }
@@ -214,6 +263,7 @@ impl JitterBuffer {
             return Slot::Conceal;
         }
         self.next = Some(next + 1);
+        self.stalled = true;
         self.stats.gave_up += 1;
         Slot::Conceal
     }
@@ -317,7 +367,7 @@ mod tests {
     }
 
     #[test]
-    fn rede_cortada_desiste_e_os_atrasados_ficam_de_fora() {
+    fn rede_cortada_desiste_e_retoma() {
         let t0 = Instant::now();
         let mut j = JitterBuffer::new();
         feed(&mut j, t0, &[0], 0);
@@ -326,12 +376,74 @@ mod tests {
         assert!(s[1..].iter().all(|x| *x == Slot::Conceal));
         let st = j.stats();
         assert_eq!((st.holds, st.gave_up, st.lost), (10, 3, 0));
-        // O 1 e o 2 ja nao servem.
-        j.push(1, f(1), at(t0, 400));
-        j.push(2, f(2), at(t0, 401));
-        assert_eq!(j.stats().late, 2);
-        j.push(4, f(4), at(t0, 402));
-        assert_eq!(j.pop(at(t0, 420)), Slot::Frame(f(4)));
+        // A rede volta (o outro lado continuou no tempo real): toca o que chega.
+        j.push(4, f(4), at(t0, 330));
+        assert_eq!(j.pop(at(t0, 340)), Slot::Frame(f(4)));
+        assert_eq!(j.stats().resyncs, 0);
+    }
+
+    #[test]
+    fn atrasado_com_a_chamada_a_correr_fica_de_fora() {
+        let t0 = Instant::now();
+        let mut j = JitterBuffer::new();
+        feed(&mut j, t0, &[0, 1, 2, 3, 4], 0);
+        pops(&mut j, t0, 60, 3);
+        // Um repetido muito atrasado do 1, com a chamada a correr: ignorado.
+        j.push(1, f(1), at(t0, 125));
+        assert_eq!(j.pop(at(t0, 130)), Slot::Frame(f(3)));
+        let st = j.stats();
+        assert_eq!((st.late, st.resyncs), (1, 0));
+    }
+
+    /// O outro telemovel envia ao ritmo do tempo real, mas o microfone para `stall` ms e
+    /// essas amostras perdem-se: o contador fica atrasado em relacao ao tempo real.
+    /// Devolve (frames tocados nos ultimos 3 s de 6 s, estatisticas).
+    fn microfone_parado(stall: u64) -> (usize, JitterStats) {
+        let t0 = Instant::now();
+        let mut j = JitterBuffer::new();
+        let (mut c, mut tocados) = (0u64, 0);
+        for ms in (0..6000u64).step_by(20) {
+            if !(60..60 + stall).contains(&ms) {
+                j.push(c, f(c), at(t0, ms + 30));
+                c += 1;
+            }
+            if matches!(j.pop(at(t0, ms + 35)), Slot::Frame(_)) && ms >= 3000 {
+                tocados += 1;
+            }
+        }
+        (tocados, j.stats())
+    }
+
+    #[test]
+    fn microfone_parado_sem_acumular_nao_deixa_o_lado_mudo() {
+        for stall in [100, 200, 400, 600, 2000] {
+            let (tocados, st) = microfone_parado(stall);
+            assert!(tocados >= 148, "paragem de {stall} ms: so {tocados}/150 tocados, {st:?}");
+            // Depois de recomecar, o atraso volta ao alvo.
+            assert!(st.depth_ms <= st.target_ms + 40, "paragem de {stall} ms: {st:?}");
+        }
+    }
+
+    #[test]
+    fn rajada_retida_recomeca_com_o_atraso_alvo() {
+        // O outro lado retem 600 ms (30 frames) e despeja tudo de uma vez.
+        let t0 = Instant::now();
+        let mut j = JitterBuffer::new();
+        feed(&mut j, t0, &[0, 1, 2], 30);
+        pops(&mut j, t0, 95, 3);
+        // Espera 200 ms e desiste ate a rajada chegar.
+        pops(&mut j, t0, 155, 25);
+        assert!(j.stats().gave_up > 0);
+        for c in 3..33 {
+            j.push(c, f(c), at(t0, 660));
+        }
+        let s = pops(&mut j, t0, 665, 20);
+        let st = j.stats();
+        assert_eq!(st.resyncs, 1, "{st:?}");
+        let fr = frames(&s);
+        assert!(fr.windows(2).all(|w| w[1] == w[0] + 1), "{fr:?}");
+        // Cortou o excesso: toca os mais recentes, nao os 600 ms retidos.
+        assert!(fr[0] >= 33 - 1 - st.target_ms as u64 / 20, "{fr:?} {st:?}");
     }
 
     #[test]
