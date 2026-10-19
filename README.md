@@ -4,7 +4,7 @@
 
 As apps chamam-se **SEALER**; QT é o nome do protocolo e deste repositório.
 
-**Versão de testes (0.9.3), não auditada.** Um mensageiro E2EE com criptografia
+**Versão de testes (Android 0.9.4, iPhone 0.9.3), não auditada.** Um mensageiro E2EE com criptografia
 pós-quântica (X3DH, PQXDH, Double Ratchet, Sealed Sender, Noise Protocol),
 tudo implementado em Rust, com apps Android e iPhone e relay na nuvem, já
 a funcionar de ponta a ponta. **Ainda não é um produto acabado nem deve ser
@@ -32,9 +32,11 @@ O QT tenta responder a isto com engenharia, não só com uma política de privac
 
 ## Sê honesto comigo: isto já funciona?
 
-Sim, de ponta a ponta, em versão de testes (**app 0.9.3**, Android e iPhone), com testes fechados entre poucas pessoas. Não foi auditado de forma independente e não deve ser usado para conversas reais ou informação sensível.
+Sim, de ponta a ponta, em versão de testes (**app Android 0.9.4 e app iPhone 0.9.3**), com testes fechados entre poucas pessoas. Não foi auditado de forma independente e não deve ser usado para conversas reais ou informação sensível.
 
-### O que a app 0.9.3 já faz (19 de outubro de 2026)
+### O que a app já faz (19 de outubro de 2026)
+
+- **Chamadas de voz cifradas ponta a ponta** (novo na Android 0.9.4), testadas entre dois telemóveis com muito boa qualidade. Por agora, as duas pessoas têm de ter a app aberta. Ver "Chamadas de voz" mais abaixo.
 
 - **Conversas a dois e em grupo** (até 10 pessoas, 3 administradores), entre Android e iPhone, com histórico cifrado no telemóvel e avisos de *Enviado / Entregue / Visto*.
 - **Fotos, GIFs, mensagens de voz e ficheiros até 25 MB** (PDF, documentos...), a dois e nos grupos. Cada ficheiro é cifrado no telemóvel com uma chave própria e apagado do relay quando é descarregado, ou ao fim de 24 horas.
@@ -76,7 +78,7 @@ Sim, de ponta a ponta, em versão de testes (**app 0.9.3**, Android e iPhone), c
 | `storage/` | Guarda a tua identidade e conversas no disco, cifradas | ✅ Testado, incluindo confirmar que uma password errada não abre nada |
 | `cli/` | O mensageiro no terminal (`messenger`), com o mesmo núcleo das apps, e uma demonstração visível do protocolo (`messenger_demo`) | ✅ Testado de ponta a ponta com um relay real: terminal ↔ terminal e terminal ↔ cliente igual ao das apps |
 | `ffi/` | A ponte que liga tudo isto a Kotlin (Android), Swift (iOS) e Python: histórico, fila de saída, imagens, bloqueio da app | ✅ Testado em Rust (incluindo sessões cruzadas e imagens) e a partir do Python |
-| `android/` | App Android (Kotlin/Compose); toda a criptografia continua no Rust | ✅ Versão 0.9.3, release assinada testada em três telemóveis reais através do relay na AWS |
+| `android/` | App Android (Kotlin/Compose); toda a criptografia continua no Rust | ✅ Versão 0.9.4 (com chamadas de voz), release assinada testada em telemóveis reais através do relay na AWS |
 | `ios/` | App iPhone (SwiftUI), igual à Android, com o mesmo núcleo Rust | ✅ Versão 0.9.3 compilada num Mac e testada num iPhone, a trocar mensagens com as apps Android através do relay na AWS |
 | `deploy/` | Instalação do relay numa EC2: Redis só em localhost com ACL, serviço systemd isolado, TLS automático | ✅ Usado no deploy atual |
 
@@ -109,14 +111,17 @@ As apps ficam à espera numa ligação aberta e o relay entrega cada mensagem no
 
 ## Chamadas de voz (em desenvolvimento)
 
-As chamadas de voz a dois estão a ser feitas em quatro fases. As três primeiras estão feitas e testadas; falta ligá-las à app Android e, depois, ao iPhone. **A app 0.9.3 ainda não tem chamadas.**
+**As chamadas de voz a dois já funcionam na app Android 0.9.4**, testadas a 19 de outubro de 2026 entre dois telemóveis, com muito boa qualidade. Por agora, as duas pessoas têm de ter a app aberta; tocar com a app fechada é a próxima fase. O iPhone vem depois.
+
+<p align="center"><img src="docs/img/chamada-0.9.4.jpg" width="260" alt="Ecrã de uma chamada de voz na SEALER 0.9.4: contador, cifrada ponta a ponta, ligação por UDP a 64 ms do servidor, e os botões Silenciar, Altifalante e Desligar."></p>
 
 | Fase | O que é | Estado |
 |---|---|---|
 | 1. Sinalização e cifra | Ligar, tocar, atender e desligar vão como mensagens cifradas dentro do Double Ratchet. Cada lado contribui com um segredo aleatório, e daí saem as chaves do áudio | ✅ Feita (`core/src/call.rs`, `ffi/src/call.rs`) |
 | 2. Relay das chamadas | Serviço à parte no servidor (UDP 443) que só reencaminha pacotes de áudio cifrados | ✅ Em produção, testado a partir de casa |
 | 3. Motor de áudio | Opus 1.6 com DRED e PLC neural, jitter buffer adaptativo e ligação ao relay | ✅ Feita e testada em Rust (`call/`) |
-| 4. App Android | Ecrã de chamada, aviso de chamada com a app fechada e microfone com o cancelamento de eco do telemóvel | ⏳ A seguir |
+| 4a. App Android, com a app aberta | Botão de ligar, ecrã de chamada, microfone com o cancelamento de eco do telemóvel, altifalante e silenciar | ✅ Feita (Android 0.9.4), testada em telemóveis reais |
+| 4b. Tocar com a app fechada | Aviso de chamada com a app fechada ou o telemóvel bloqueado, com o ecrã de chamada do Android | ⏳ A seguir |
 
 **Como protege a privacidade:**
 
@@ -219,7 +224,7 @@ cargo run --release -- eco --ws         # usa a reserva por WebSocket
 
 ## App Android
 
-O core Rust é o único backend criptográfico da app Android (Kotlin/Compose): API `QtClient` via UniFFI, storage SQLCipher com chave do Android Keystore, PQXDH (X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, relay autenticado com entrega *at-least-once* e notificações push (FCM, aviso genérico). **Versão de testes (0.9.3), não auditada.**
+O core Rust é o único backend criptográfico da app Android (Kotlin/Compose): API `QtClient` via UniFFI, storage SQLCipher com chave do Android Keystore, PQXDH (X25519 + ML-KEM-768) + Double Ratchet + Sealed Sender, relay autenticado com entrega *at-least-once*, notificações push (FCM, aviso genérico) e chamadas de voz (motor `call/`). **Versão de testes (0.9.4), não auditada.**
 
 ```bash
 export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/<versao>

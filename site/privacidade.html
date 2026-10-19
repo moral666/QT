@@ -30,7 +30,7 @@
     </header>
 
     <main class="legal">
-      <p class="legal__label">Última atualização: 17 de outubro de 2026</p>
+      <p class="legal__label">Última atualização: 19 de outubro de 2026</p>
       <h1>Política de privacidade</h1>
       <p class="legal__lede">
         Resumindo: não pedimos o teu número de telefone, nem email, nem nome. As tuas mensagens são cifradas no teu
@@ -53,6 +53,10 @@
         definições ficam guardados apenas no
         teu telemóvel, numa base de dados cifrada (SQLCipher) cuja chave está protegida pelo próprio telemóvel. Nós nunca
         recebemos estes dados. Se perderes o telemóvel ou desinstalares a app, não os conseguimos recuperar.
+      </p>
+      <p>
+        As chamadas de voz não são gravadas, nem no telemóvel nem no servidor. A app só usa o microfone quando gravas uma
+        mensagem de voz ou estás numa chamada, depois de lhe dares permissão.
       </p>
       <p>
         Os grupos funcionam da mesma forma: cada mensagem é cifrada para cada membro e o servidor não sabe que o grupo
@@ -84,6 +88,11 @@
           uma mensagem e tens a app fechada. Esse pedido vai vazio: não leva a mensagem, quem a enviou nem o teu ID.
         </li>
         <li>
+          <strong>Chamadas de voz</strong>: o som passa pelo servidor das chamadas já cifrado no teu telemóvel, por isso o
+          servidor não o consegue ouvir. Também não sabe que contas estão a falar: vê só um código de sala aleatório e os
+          endereços de rede dos dois telemóveis, que guarda em memória apenas enquanto a chamada dura.
+        </li>
+        <li>
           <strong>O endereço de rede (IP) do teu telemóvel</strong>: é necessário para manter a ligação. Só é usado em
           memória enquanto estás ligado e não fica registado.
         </li>
@@ -104,6 +113,7 @@
           O endereço de notificações: enquanto as notificações estiverem ligadas. É renovado sempre que abres a app e
           apagado ao fim de 90 dias sem a abrires, quando desligas as notificações ou quando apagas a conta.
         </li>
+        <li>Chamadas de voz: nada fica guardado. A sala desaparece do servidor quando a chamada acaba.</li>
         <li>Quanto enviaste em anexos por dia (só um número, para evitar abusos): 2 dias.</li>
         <li>
           Depois de apagares a conta: durante 30 dias, o servidor lembra-se só de que aquele ID foi apagado, para avisar
