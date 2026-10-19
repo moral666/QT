@@ -113,6 +113,12 @@ data class UiState(
     val call: CallUi? = null,
     /** "Atender" carregado na notificacao: o ecra atende (pedindo o microfone, se faltar). */
     val answerNow: String? = null,
+    /** Fotos de perfil dos contactos (contactId), ja prontas a mostrar. So em memoria. */
+    val photos: Map<String, androidx.compose.ui.graphics.ImageBitmap> = emptyMap(),
+    /** A minha foto de perfil (null = sem foto). */
+    val myPhoto: androidx.compose.ui.graphics.ImageBitmap? = null,
+    /** Daqui a quantos ms posso trocar de foto (0 = ja). */
+    val photoNextChangeMs: Long = 0L,
 )
 
 enum class CallPhase { CALLING, RINGING_OUT, INCOMING, ACTIVE, ENDED }
@@ -201,6 +207,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** De segundo a segundo durante uma chamada: eventos, expiracao e a linha tecnica. */
     @Volatile private var callTicker: Job? = null
     private val callSounds = CallSounds(app)
+    /** Bytes da ultima foto decifrada de cada contacto (para nao voltar a descodificar). */
+    private val photoCache = HashMap<String, Pair<Int, androidx.compose.ui.graphics.ImageBitmap>>()
     private val bioChannel = Channel<BioRequest>(Channel.BUFFERED)
     /** Pedidos de autenticacao do sistema; a Activity mostra o BiometricPrompt. */
     val bioRequests: Flow<BioRequest> = bioChannel.receiveAsFlow()
@@ -278,6 +286,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Ecra de bloqueio, sem nenhum dado das conversas no estado. */
     private fun showLocked(message: String? = null) {
+        synchronized(photoCache) { photoCache.clear() }
         _ui.update {
             UiState(
                 loading = false, locked = true, lockEnabled = true,
@@ -746,6 +755,62 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             Log.w(TAG, "presenca: ${e.safeMsg()}")
         }
+        syncPhotos(client)
+    }
+
+    // ------------------------------------------------------------------- foto de perfil
+
+
+    /** Envia a minha foto a quem ainda nao a tem (contactos novos) e recarrega as fotos. */
+    private suspend fun syncPhotos(client: QtClient) {
+        try {
+            if (client.profilePhotoSync(_ui.value.contacts.map { it.contactId }) > 0u) flushOutbox()
+        } catch (e: Exception) {
+            Log.w(TAG, "foto: ${e.safeMsg()}")
+        }
+        refreshPhotos(client)
+    }
+
+    private fun refreshPhotos(client: QtClient) = synchronized(photoCache) {
+        try {
+            fun show(key: String, bytes: ByteArray?): androidx.compose.ui.graphics.ImageBitmap? {
+                if (bytes == null) return null
+                val h = bytes.contentHashCode()
+                photoCache[key]?.let { if (it.first == h) return it.second }
+                return ProfilePhoto.decode(bytes)?.also { photoCache[key] = h to it }
+            }
+            val map = HashMap<String, androidx.compose.ui.graphics.ImageBitmap>()
+            for (c in _ui.value.contacts) show(c.contactId, client.profilePhotoOf(c.contactId))?.let { map[c.contactId] = it }
+            val mine = show(MY_PHOTO, client.profilePhotoMine())
+            photoCache.keys.retainAll(map.keys + (if (mine != null) setOf(MY_PHOTO) else emptySet()))
+            val wait = client.profilePhotoNextChangeMs()
+            _ui.update { it.copy(photos = map, myPhoto = mine, photoNextChangeMs = wait) }
+        } catch (e: Exception) {
+            Log.w(TAG, "foto: ${e.safeMsg()}")
+        }
+    }
+
+    /** Foto escolhida na galeria: ate 3 MB, reduzida aqui e enviada aos contactos (72 h). */
+    fun setProfilePhoto(uri: android.net.Uri) = io {
+        val client = qt ?: return@io
+        try {
+            val bytes = ProfilePhoto.prepare(getApplication(), uri)
+            if (client.profilePhotoSet(bytes, _ui.value.contacts.map { it.contactId }) > 0u) flushOutbox()
+        } catch (e: PhotoTooBigException) {
+            error("A foto tem mais de 3 MB. Escolhe uma mais pequena.")
+        } catch (e: QtException.InvalidInput) {
+            error(if (e.field == "photo_wait") "Só podes mudar a foto de 72 em 72 horas." else "Essa imagem não serve como foto de perfil.")
+        } catch (e: java.io.IOException) {
+            error("Não foi possível ler essa imagem.")
+        }
+        refreshPhotos(client)
+    }
+
+    /** Tira a minha foto (os contactos deixam de a ver). */
+    fun removeProfilePhoto() = io {
+        val client = qt ?: return@io
+        if (client.profilePhotoRemove(_ui.value.contacts.map { it.contactId }) > 0u) flushOutbox()
+        refreshPhotos(client)
     }
 
     /** Interruptor "Mostrar quando estou online". Desligado: nao mostro o meu nem vejo o dos outros. */
@@ -1647,6 +1712,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             restartSessions(client)
             handleCallEvents(client)
             if (received) {
+                syncPhotos(client)          // fotos recebidas e contactos com sessao nova
                 transferKick.trySend(Unit)   // imagens recebidas: descarregar ja
                 client.prepareDeliveryReceipts()
                 val open = _ui.value.openChatId
@@ -1975,6 +2041,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val WAIT_RETRY_MS = 5 * 60_000L
         /** Etiqueta dos registos (adb logcat -s SealerRelay). Nunca regista conteudo nem chaves. */
         private const val TAG = "SealerRelay"
+        private const val MY_PHOTO = "\u0000eu"
         /** Resposta de um relay a um pedido que nao conhece (relay sem entrega imediata). */
         private const val RELAY_UNKNOWN_REQUEST = "mensagem invalida"
         private const val MAX_PAGES = 20

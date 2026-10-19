@@ -6,6 +6,19 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 19 de outubro de 2026: foto de perfil (app 0.9.9, núcleo)
+
+- Menu "Foto de perfil": escolher uma foto da galeria (até 3 MB), ver e tirar. A app corta ao
+  centro e reduz para um quadrado WebP de até 10 000 bytes; só se pode mudar de 72 em 72 horas
+  (tirar pode-se sempre).
+- A foto vai cifrada aos contactos guardados no tipo 12 do payload, dentro do Double Ratchet,
+  num envelope do tamanho normal: o relay não sabe que é uma foto. Quem recebe também recusa
+  fotos novas do mesmo contacto antes de 71 h.
+- Aparece no lugar das iniciais em todo o lado: lista de conversas, conversa, grupos (foto de
+  cada membro que seja contacto) e ecrã da chamada.
+- Núcleo: `ffi/src/profile.rs` (`profile_photo_set`, `_remove`, `_sync`, `_mine`, `_of`,
+  `_next_change_ms`), testes em `ffi/tests/profile.rs`. Ver `docs/protocol-spec.md`, secção 19.
+
 ### 19 de outubro de 2026: toque próprio da SEALER (app 0.9.8)
 
 - As chamadas a chegar tocam um som próprio da SEALER (`res/raw/sealer_toque.ogg`, original,

@@ -41,6 +41,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
@@ -404,7 +406,8 @@ fun AppRoot(
     }
 
     val call = ui.call
-    when {
+    var showPhoto by remember { mutableStateOf(false) }
+    CompositionLocalProvider(LocalPhotos provides ui.photos) { when {
         overLock -> CallOverLock(ui, vm, withMic, keyguardLocked, onLeaveLock, onDone)
         ui.loading -> LoadingScreen()
         call != null && !ui.locked -> {
@@ -492,11 +495,20 @@ fun AppRoot(
                     askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
             },
+            onProfilePhoto = { showPhoto = true },
         )
-    }
+    } }
     // Por cima do bloqueio do telemovel: nenhum dialogo (so a chamada).
     if (overLock) return
     if (showMyId && !ui.locked) MyIdDialog(ui.publicId, onDismiss = { showMyId = false })
+    if (showPhoto && !ui.locked) {
+        ProfilePhotoDialog(
+            ui,
+            onPick = { uri -> vm.setProfilePhoto(uri) },
+            onRemove = { vm.removeProfilePhoto() },
+            onDismiss = { showPhoto = false },
+        )
+    }
     ui.wipeServerFailed?.let { reason ->
         WipeServerFailedDialog(
             reason,
@@ -785,6 +797,7 @@ fun HomeScreen(
     onDeleteGroup: (String) -> Unit = {},
     onPresence: (Boolean) -> Unit = {},
     onPush: (Boolean) -> Unit = {},
+    onProfilePhoto: () -> Unit = {},
 ) {
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
@@ -804,6 +817,7 @@ fun HomeScreen(
                         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text("O meu ID") }, onClick = { menu = false; onMyId() })
+                            DropdownMenuItem(text = { Text("Foto de perfil") }, onClick = { menu = false; onProfilePhoto() })
                             DropdownMenuItem(text = { Text("Novo grupo") }, onClick = { menu = false; showNewGroup = true })
                             if (Push.available) {
                                 DropdownMenuItem(
@@ -993,15 +1007,20 @@ fun OnlineNowStrip(contacts: List<Contact>, onOpen: (String) -> Unit) {
     }
 }
 
-/** Avatar com as iniciais, numa cor estavel por contacto. */
+/** Avatar: a foto de perfil do contacto (se houver) ou as iniciais, numa cor estavel por contacto. */
 @Composable
 fun Avatar(name: String, seed: String, sizeDp: Int = 48, online: Boolean = false) {
     val palette = LocalChatColors.current.avatarPalette
     val color = palette[(seed.hashCode() and 0x7fffffff) % palette.size]
     val initials = name.trim().split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase() }.ifBlank { "?" }
+    val photo = LocalPhotos.current[seed]
     Box(Modifier.size(sizeDp.dp)) {
-        Box(Modifier.matchParentSize().clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
-            Text(initials, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = (sizeDp / 2.6).sp)
+        if (photo != null) {
+            Image(photo, contentDescription = name, modifier = Modifier.matchParentSize().clip(CircleShape), contentScale = ContentScale.Crop)
+        } else {
+            Box(Modifier.matchParentSize().clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+                Text(initials, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = (sizeDp / 2.6).sp)
+            }
         }
         // Ponto verde: o contacto tem a app aberta agora (presenca).
         if (online) {

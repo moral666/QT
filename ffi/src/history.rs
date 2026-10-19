@@ -303,6 +303,8 @@ enum Payload {
     SessionEnd,
     /// Chamada de voz (tipo 11, ver `call.rs`): o corpo comeca pela operacao.
     Call { body: Vec<u8>, sent_at: i64 },
+    /// Foto de perfil (tipo 12, ver `profile.rs`).
+    Profile { body: Vec<u8> },
     /// Mensagem de controlo invalida: ignora-se, sem aviso.
     Ignored,
 }
@@ -368,6 +370,10 @@ fn decode(plain: &[u8], legacy_id: &[u8]) -> Payload {
         T_SESSION_END => Payload::SessionEnd,
         crate::call::T_CALL => match plain.len() - HDR {
             17..=128 => Payload::Call { body: plain[HDR..].to_vec(), sent_at },
+            _ => Payload::Ignored,
+        },
+        crate::profile::T_PROFILE => match plain.len() - HDR {
+            1..=10_001 => Payload::Profile { body: plain[HDR..].to_vec() },
             _ => Payload::Ignored,
         },
         T_INTRO => match std::str::from_utf8(&plain[HDR..]) {
@@ -672,6 +678,7 @@ impl QtClient {
                 Payload::Presence { online, sent_at } => crate::presence::on_presence(self, tx, contact_id, online, sent_at)?,
                 Payload::SessionEnd => on_session_end(tx, contact_id)?,
                 Payload::Call { body, sent_at } => crate::call::on_call(self, tx, contact_id, &body, sent_at)?,
+                Payload::Profile { body } => crate::profile::on_profile(tx, contact_id, &body)?,
                 Payload::Ignored => ReceiveResult::NoChange { contact_id: contact_id.to_string() },
                 Payload::Unsupported { id, sent_at } => {
                     match hm::insert_message(tx, &id, contact_id, false, hm::KIND_TEXT, UNSUPPORTED_TEXT, sent_at, now, hm::ST_RECEIVED)? {
@@ -847,6 +854,7 @@ impl QtClient {
         st::kv_delete(&tx, &format!("{}{contact_id}", crate::client::KV_PEER_EPH))?;
         st::kv_delete(&tx, &format!("{KV_INTRO}{contact_id}"))?;
         st::kv_delete(&tx, &format!("{KV_SEND_INTRO}{contact_id}"))?;
+        crate::profile::forget_contact(&tx, &contact_id)?;
         st::delete_session(&tx, &contact_id)?;
         tx.commit()?;
         Ok(())

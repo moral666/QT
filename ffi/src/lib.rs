@@ -32,6 +32,7 @@ pub mod client;
 pub(crate) mod prekeys;
 pub mod groups;
 pub mod presence;
+pub mod profile;
 pub mod history;
 #[cfg(feature = "pq")]
 pub use client::*;
