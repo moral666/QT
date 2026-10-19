@@ -92,7 +92,8 @@ telemóveis e o relay primeiro.
 Só Android primeiro, 1 a 1, áudio sempre pelo relay (sem P2P). Quatro fases, cada uma aprovada
 antes: 1) núcleo, sinalização (tipo 11) e cifra dos pacotes estilo WireGuard (**feita**,
 `core/src/call.rs`, `ffi/src/call.rs`, `ffi/tests/calls.rs`); 2) relay UDP 443 com salas
-anónimas e reserva por TCP; 3) Opus 1.5 (DRED, PLC neural), jitter buffer, CBR sem DTX;
+anónimas e reserva por WebSocket sem conta (**feita**, processo à parte `qt-call-relay`,
+`server/src/call_relay.rs`; porta 443 UDP aberta no Security Group a 19/10/2026); 3) Opus 1.5 (DRED, PLC neural), jitter buffer, CBR sem DTX;
 4) Android (ConnectionService, FCM, `VOICE_COMMUNICATION`). Ver `docs/protocol-spec.md`, secção 18.
 
 ### Funcionalidades da 0.9.0
@@ -153,6 +154,9 @@ o `adb` não está no PATH (usar o caminho completo); não há `gradlew` no repo
   ```
   sudo git -C /opt/qt-src fetch --depth 1 origin site-sealer && sudo git -C /opt/qt-src reset --hard FETCH_HEAD && sudo QT_BRANCH=site-sealer bash /opt/qt-src/deploy/aws/setup-ec2.sh
   ```
+- **Relay das chamadas** (`qt-call-relay`, desde a fase 2): UDP 443 público e reserva em
+  `wss://relay.sealer.pt/call` (HAProxy para 127.0.0.1:9445). Usa a mesma chave Noise (o pin),
+  não tem acesso ao Redis nem a `/etc/qt`. Registo: `sudo journalctl -u qt-call-relay -f`.
 - O Redis de produção tem uma ACL com poucos comandos (ver `server/tests/redis_acl.rs`):
   sem SETEX nem EXISTS (usar SET + EXPIRE e GET).
 - Estado e tempos públicos: `https://sealer.pt/api/estado` (Worker em `site/worker/`).

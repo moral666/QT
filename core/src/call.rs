@@ -5,12 +5,14 @@
 //! e e pos-quantico (PQXDH). Cada lado manda 32 bytes aleatorios (`offer_secret`
 //! e `answer_secret`); daqui sai tudo o que a chamada precisa, por HKDF-SHA256:
 //!
-//!   * `room_id` (8 bytes): o codigo da sala no relay. Nao identifica contas.
-//!   * `relay_key` (32 bytes): so autentica pacotes perante o relay (etiqueta de
-//!     8 bytes no fim), para ele aceitar a mudanca de IP (Wi-Fi para 4G) sem que
-//!     outra pessoa consiga desviar a sala. NAO decifra nada.
-//!   * uma chave ChaCha20-Poly1305 por sentido (quem liga -> quem atende, e o
-//!     contrario): um pacote refletido de volta nunca e aceite.
+//!   * SO da oferta (os dois lados ja os tem enquanto o telemovel toca, para entrar
+//!     na sala antes de atender, o "pre-aquecimento"):
+//!     - `room_id` (8 bytes): o codigo da sala no relay. Nao identifica contas.
+//!     - `relay_key` (32 bytes): so autentica pacotes perante o relay (etiqueta de
+//!       8 bytes no fim), para ele aceitar a mudanca de IP (Wi-Fi para 4G) sem que
+//!       outra pessoa consiga desviar a sala. NAO decifra nada.
+//!   * Da oferta E da resposta: uma chave ChaCha20-Poly1305 por sentido (quem liga ->
+//!     quem atende, e o contrario). Um pacote refletido de volta nunca e aceite.
 //!
 //! PACOTE DE AUDIO (tamanho FIXO durante a chamada, igual para todos):
 //!   [1 tipo = 0x10 | papel][8 room_id][8 contador BE]
@@ -19,8 +21,13 @@
 //! O cabecalho (17 bytes) e dado adicional do AEAD. Nonce = [4 zeros][8 contador LE],
 //! como no WireGuard; o contador nunca se repete com a mesma chave. A rececao tem
 //! uma janela anti-repeticao de 1024 pacotes (aceita pacotes fora de ordem, recusa
-//! repetidos e muito antigos). Frames vazios (tamanho 0) servem para o
-//! pre-aquecimento: abrem a sala enquanto o telemovel toca.
+//! repetidos e muito antigos). Frames vazios (tamanho 0) mantem a sala aberta.
+//!
+//! ENTRAR NA SALA (relay): `[1 0x20][Noise_N para a chave estatica do relay]` com o
+//! conteudo `[1 versao=1][1 papel][8 room_id][32 relay_key]` (ver `join_payload`). O
+//! relay fica a saber a sala e a chave das etiquetas, nunca a conta. Responde
+//! `[1 0x21][8 room_id][1 o outro ja esta na sala][8 etiqueta]` (`join_ok`), mais
+//! pequeno que o pedido (nao serve para amplificar ataques).
 
 use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
@@ -38,6 +45,13 @@ pub const ROOM_ID_LEN: usize = 8;
 pub const RELAY_TAG_LEN: usize = 8;
 /// Tipo do pacote de audio; o bit 0 e o papel de quem envia (0 liga, 1 atende).
 pub const MEDIA_KIND: u8 = 0x10;
+/// Pedido para entrar na sala (cifrado para o relay) e a resposta do relay.
+pub const JOIN_KIND: u8 = 0x20;
+pub const JOIN_OK_KIND: u8 = 0x21;
+pub const JOIN_PAYLOAD_LEN: usize = 1 + 1 + ROOM_ID_LEN + 32;
+pub const JOIN_OK_LEN: usize = 1 + ROOM_ID_LEN + 1 + RELAY_TAG_LEN;
+/// Prologo do Noise_N do pedido de entrada (separa este uso da chave do relay).
+pub const JOIN_PROLOGUE: &[u8] = b"QT-CALL-JOIN-v1";
 pub const HEADER_LEN: usize = 1 + ROOM_ID_LEN + 8;
 const AEAD_TAG_LEN: usize = 16;
 /// Bytes que cada pacote tem a mais que o `pad` (cabecalho, tag do AEAD, etiqueta do relay).
@@ -85,6 +99,31 @@ impl Role {
     fn bit(self) -> u8 {
         self as u8
     }
+    pub fn from_bit(b: u8) -> Option<Role> {
+        match b {
+            0 => Some(Role::Caller),
+            1 => Some(Role::Callee),
+            _ => None,
+        }
+    }
+}
+
+/// Codigo da sala e chave das etiquetas: so dependem da oferta.
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
+pub struct RoomKeys {
+    pub room_id: [u8; ROOM_ID_LEN],
+    pub relay_key: [u8; 32],
+}
+
+impl RoomKeys {
+    pub fn derive(offer_secret: &[u8; SECRET_LEN], call_id: &[u8; CALL_ID_LEN]) -> Self {
+        let hk = Hkdf::<Sha256>::new(Some(call_id), offer_secret);
+        let mut room_id = [0u8; ROOM_ID_LEN];
+        let mut relay_key = [0u8; 32];
+        hk.expand(b"QT-CALL-v1 room", &mut room_id).expect("hkdf room");
+        hk.expand(b"QT-CALL-v1 relay", &mut relay_key).expect("hkdf relay");
+        RoomKeys { room_id, relay_key }
+    }
 }
 
 /// Chaves de uma chamada (apagadas da memoria quando saem de uso).
@@ -100,21 +139,19 @@ pub struct CallKeys {
 
 impl CallKeys {
     /// Deriva as chaves a partir dos dois segredos trocados dentro do ratchet.
-    /// Os dois lados obtem o mesmo `room_id` e `relay_key`, e chaves de envio e
-    /// rececao trocadas entre si.
+    /// Os dois lados obtem o mesmo `room_id` e `relay_key` (os de `RoomKeys`), e
+    /// chaves de envio e rececao trocadas entre si.
     pub fn derive(offer_secret: &[u8; SECRET_LEN], answer_secret: &[u8; SECRET_LEN], call_id: &[u8; CALL_ID_LEN], role: Role) -> Self {
         let mut ikm = [0u8; 2 * SECRET_LEN];
         ikm[..SECRET_LEN].copy_from_slice(offer_secret);
         ikm[SECRET_LEN..].copy_from_slice(answer_secret);
         let hk = Hkdf::<Sha256>::new(Some(call_id), &ikm);
         ikm.zeroize();
-        let mut room_id = [0u8; ROOM_ID_LEN];
-        let mut relay_key = [0u8; 32];
+        let room = RoomKeys::derive(offer_secret, call_id);
+        let (room_id, relay_key) = (room.room_id, room.relay_key);
         let mut to_callee = [0u8; 32];
         let mut to_caller = [0u8; 32];
         // Os tamanhos pedidos sao sempre validos para HKDF-SHA256 (<= 255 x 32).
-        hk.expand(b"QT-CALL-v1 room", &mut room_id).expect("hkdf room");
-        hk.expand(b"QT-CALL-v1 relay", &mut relay_key).expect("hkdf relay");
         hk.expand(b"QT-CALL-v1 caller->callee", &mut to_callee).expect("hkdf send");
         hk.expand(b"QT-CALL-v1 callee->caller", &mut to_caller).expect("hkdf recv");
         let (send_key, recv_key) = match role {
@@ -187,13 +224,58 @@ pub fn parse_header(packet: &[u8]) -> Option<MediaHeader> {
 /// O relay confirma que o pacote veio de alguem da chamada (para aceitar um IP novo).
 /// Comparacao em tempo constante.
 pub fn relay_tag_valid(relay_key: &[u8; 32], packet: &[u8]) -> bool {
-    if packet.len() < MEDIA_OVERHEAD {
+    if packet.len() <= RELAY_TAG_LEN {
         return false;
     }
     let (data, tag) = packet.split_at(packet.len() - RELAY_TAG_LEN);
     let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(relay_key).expect("hmac aceita qualquer chave");
     mac.update(data);
     mac.verify_truncated_left(tag).is_ok()
+}
+
+/// Conteudo do pedido para entrar na sala (vai cifrado para o relay com Noise_N).
+pub fn join_payload(role: Role, room: &RoomKeys) -> [u8; JOIN_PAYLOAD_LEN] {
+    let mut p = [0u8; JOIN_PAYLOAD_LEN];
+    p[0] = 1;
+    p[1] = role.bit();
+    p[2..2 + ROOM_ID_LEN].copy_from_slice(&room.room_id);
+    p[2 + ROOM_ID_LEN..].copy_from_slice(&room.relay_key);
+    p
+}
+
+/// O relay le o pedido (ja decifrado).
+pub fn parse_join_payload(p: &[u8]) -> Option<(Role, RoomKeys)> {
+    if p.len() != JOIN_PAYLOAD_LEN || p[0] != 1 {
+        return None;
+    }
+    let role = Role::from_bit(p[1])?;
+    let mut room_id = [0u8; ROOM_ID_LEN];
+    let mut relay_key = [0u8; 32];
+    room_id.copy_from_slice(&p[2..2 + ROOM_ID_LEN]);
+    relay_key.copy_from_slice(&p[2 + ROOM_ID_LEN..]);
+    Some((role, RoomKeys { room_id, relay_key }))
+}
+
+/// Resposta do relay ao pedido de entrada.
+pub fn join_ok(room: &RoomKeys, peer_present: bool) -> [u8; JOIN_OK_LEN] {
+    let mut p = [0u8; JOIN_OK_LEN];
+    p[0] = JOIN_OK_KIND;
+    p[1..1 + ROOM_ID_LEN].copy_from_slice(&room.room_id);
+    p[1 + ROOM_ID_LEN] = peer_present as u8;
+    let tag = relay_tag(&room.relay_key, &p[..JOIN_OK_LEN - RELAY_TAG_LEN]);
+    p[JOIN_OK_LEN - RELAY_TAG_LEN..].copy_from_slice(&tag);
+    p
+}
+
+/// O telemovel confirma a resposta do relay. `Some(o outro ja esta na sala)`.
+pub fn parse_join_ok(room: &RoomKeys, p: &[u8]) -> Option<bool> {
+    if p.len() != JOIN_OK_LEN || p[0] != JOIN_OK_KIND || p[1..1 + ROOM_ID_LEN] != room.room_id {
+        return None;
+    }
+    if !relay_tag_valid(&room.relay_key, p) || p[1 + ROOM_ID_LEN] > 1 {
+        return None;
+    }
+    Some(p[1 + ROOM_ID_LEN] == 1)
 }
 
 /// Janela anti-repeticao (RFC 6479, como no WireGuard): `top` e o proximo contador
@@ -439,12 +521,42 @@ mod tests {
     }
 
     #[test]
+    fn sala_so_depende_da_oferta() {
+        let a = CallKeys::derive(&[1; 32], &[2; 32], &[3; 16], Role::Caller);
+        let b = CallKeys::derive(&[1; 32], &[9; 32], &[3; 16], Role::Callee);
+        let r = RoomKeys::derive(&[1; 32], &[3; 16]);
+        assert_eq!((a.room_id(), a.relay_key()), (r.room_id, r.relay_key));
+        assert_eq!(b.room_id(), r.room_id);
+    }
+
+    #[test]
+    fn pedido_e_resposta_de_entrada() {
+        let r = RoomKeys::derive(&[1; 32], &[3; 16]);
+        let p = join_payload(Role::Callee, &r);
+        let (role, back) = parse_join_payload(&p).unwrap();
+        assert_eq!((role, back.room_id, back.relay_key), (Role::Callee, r.room_id, r.relay_key));
+        assert!(parse_join_payload(&p[1..]).is_none());
+        let ok = join_ok(&r, true);
+        assert_eq!(parse_join_ok(&r, &ok), Some(true));
+        assert_eq!(parse_join_ok(&r, &join_ok(&r, false)), Some(false));
+        let mut bad = ok;
+        bad[9] = 0;
+        assert_eq!(parse_join_ok(&r, &bad), None);
+        let other = RoomKeys::derive(&[2; 32], &[3; 16]);
+        assert_eq!(parse_join_ok(&other, &ok), None);
+        assert!(JOIN_OK_LEN < 1 + 32 + JOIN_PAYLOAD_LEN + 16, "resposta menor que o pedido");
+    }
+
+    #[test]
     fn segredos_diferentes_dao_chaves_diferentes() {
         let k1 = CallKeys::derive(&[1; 32], &[2; 32], &[3; 16], Role::Caller);
-        let k2 = CallKeys::derive(&[1; 32], &[4; 32], &[3; 16], Role::Caller);
+        let k2 = CallKeys::derive(&[4; 32], &[2; 32], &[3; 16], Role::Caller);
         let k3 = CallKeys::derive(&[1; 32], &[2; 32], &[5; 16], Role::Caller);
         assert_ne!(k1.room_id(), k2.room_id());
         assert_ne!(k1.room_id(), k3.room_id());
         assert_ne!(k1.relay_key(), k2.relay_key());
+        // A resposta muda as chaves do audio (o outro lado tambem contribui).
+        let k4 = CallKeys::derive(&[1; 32], &[7; 32], &[3; 16], Role::Caller);
+        assert_ne!(k1.send_key, k4.send_key);
     }
 }
