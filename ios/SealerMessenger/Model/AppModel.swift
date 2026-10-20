@@ -1723,30 +1723,59 @@ final class AppModel: ObservableObject {
         guard callAudio == nil else { return }
         guard let pin = relayPin() else { log("SealerCall", "chamada: sem a chave do relay"); return }
         let url = ui.relayUrl
-        callAudio = try? await background { try client.callAudioStart(callId: callId, relayUrl: url, relayPublicKey: pin) }
+        do {
+            callAudio = try await background { try client.callAudioStart(callId: callId, relayUrl: url, relayPublicKey: pin) }
+            log("SealerCall", "motor de audio a correr (\(url))")
+        } catch {
+            log("SealerCall", "motor de audio nao arrancou: \(safeMessage(error))")
+        }
     }
 
     /// O CallKit ativou o audio: liga o microfone e o altifalante.
     func callAudioSessionActivated() {
+        log("SealerCall", "CallKit ativou o audio")
         audioSessionActive = true
         startCallIOIfReady()
     }
 
+    /// Ha casos em que o CallKit nao chega a avisar que ativou o audio (por exemplo, a sessao
+    /// de audio ja estava ativa por uma mensagem de voz). Ao fim de 1,5 s ativa-se aqui.
+    private func activateAudioFallback() {
+        let id = ui.call?.callId
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self, !self.audioSessionActive, self.callIO == nil, let c = self.ui.call, c.callId == id,
+                  c.phase != .ended, c.phase != .incoming else { return }
+            log("SealerCall", "CallKit nao ativou o audio: a ativar na app")
+            CallKitBridge.configureAudioSession()
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+                self.callAudioSessionActivated()
+            } catch {
+                log("SealerCall", "sessao de audio: \(safeMessage(error))")
+            }
+        }
+    }
+
     private func startCallIOIfReady() {
-        guard audioSessionActive, callIO == nil, let a = callAudio, let c = ui.call, c.phase != .ended, c.phase != .incoming else { return }
+        guard callIO == nil, let a = callAudio, let c = ui.call, c.phase != .ended, c.phase != .incoming else { return }
+        guard audioSessionActive else { activateAudioFallback(); return }
         let io = CallAudioIO(audio: a)
         do {
             try io.start()
+            log("SealerCall", "microfone e altifalante ligados (\(io.inputDescription))")
             io.muted = c.muted
             io.ringback = c.phase == .calling || c.phase == .ringingOut
             if c.speaker { io.setSpeaker(true) }
             callIO = io
         } catch {
+            log("SealerCall", "microfone: \(safeMessage(error))")
             showError(s("t_nao_foi_possivel_usar_o_microfone_2", safeMessage(error)))
         }
     }
 
     func callAudioSessionDeactivated() {
+        log("SealerCall", "CallKit desativou o audio")
         audioSessionActive = false
         callIO?.stop()
         callIO = nil
@@ -1774,7 +1803,8 @@ final class AppModel: ObservableObject {
                     self.callStatsTick += 1
                     if self.callStatsTick % 5 == 0 {
                         let rtt = st.relayRttMs.map { " · \($0) ms ao servidor" } ?? ""
-                        log("SealerCall", "chamada: \(st.transport)\(rtt) · \(st.lost) perdidos (\(st.dredFrames) recuperados) · \(st.late) atrasados")
+                        let io = self.callIO.map { " · micro \($0.stats.sent) / altifalante \($0.stats.pulled) blocos" } ?? " · sem microfone/altifalante"
+                        log("SealerCall", "chamada: \(st.transport), sala \(st.joined ? "sim" : "nao"), outro lado \(st.peerPresent ? "sim" : "nao")\(rtt) · recebidos \(st.received) · \(st.lost) perdidos (\(st.dredFrames) recuperados) · \(st.late) atrasados\(io)")
                     }
                 }
             }

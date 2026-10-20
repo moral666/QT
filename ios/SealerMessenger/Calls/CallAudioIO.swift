@@ -46,43 +46,55 @@ final class CallAudioIO: @unchecked Sendable {
         self.audio = audio
     }
 
-    /// Liga o microfone e o altifalante. A sessao de audio ja foi ativada pelo CallKit.
+    /// Diagnostico (so para o registo): blocos de 20 ms entregues ao Rust e pedidos ao Rust.
+    private let counters = OSAllocatedUnfairLock(initialState: (sent: 0, pulled: 0))
+    var stats: (sent: Int, pulled: Int) { counters.withLock { $0 } }
+    /// Formato do microfone (para o registo).
+    private(set) var inputDescription = ""
+
+    /// Liga o microfone e o altifalante. A sessao de audio ja foi ativada (CallKit).
     func start() throws {
         guard !running else { return }
         let input = engine.inputNode
+        let output = engine.outputNode
+        // O modo de voz liga-se nos dois lados (entrada e saida) antes de ligar os nos.
         try input.setVoiceProcessingEnabled(true)
         let inFormat = input.outputFormat(forBus: 0)
         guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else {
             throw SecureStoreError(message: "microfone indisponivel")
         }
         inputRate = inFormat.sampleRate
+        inputDescription = "\(Int(inFormat.sampleRate)) Hz, \(inFormat.channelCount) canal(is), saida \(Int(output.outputFormat(forBus: 0).sampleRate)) Hz"
         let ring = capture
         let sem = wake
-        let sink = AVAudioSinkNode { _, frameCount, list -> OSStatus in
-            // Tempo real: so copia o canal 0 para o anel.
-            let abl = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: list))
-            if let buf = abl.first, let p = buf.mData?.assumingMemoryBound(to: Float.self) {
-                ring.write(p, Int(frameCount))
-                sem.signal()
-            }
-            return noErr
+        // Microfone: "tap" no no de entrada (o caminho mais testado com o modo de voz).
+        input.installTap(onBus: 0, bufferSize: 480, format: inFormat) { buffer, _ in
+            guard let ch = buffer.floatChannelData else { return }
+            ring.write(ch[0], Int(buffer.frameLength))
+            sem.signal()
         }
         let outFormat = AVAudioFormat(standardFormatWithSampleRate: Self.rate, channels: 1)!
         let out = playback
         let source = AVAudioSourceNode(format: outFormat) { _, _, frameCount, list -> OSStatus in
             let abl = UnsafeMutableAudioBufferListPointer(list)
-            guard let buf = abl.first, let p = buf.mData?.assumingMemoryBound(to: Float.self) else { return noErr }
             let n = Int(frameCount)
-            let got = out.read(p, n)
-            if got < n { (p + got).update(repeating: 0, count: n - got) }   // falta: silencio
+            for buf in abl {
+                guard let p = buf.mData?.assumingMemoryBound(to: Float.self) else { continue }
+                let got = out.read(p, n)
+                if got < n { (p + got).update(repeating: 0, count: n - got) }   // falta: silencio
+            }
             return noErr
         }
-        engine.attach(sink)
         engine.attach(source)
-        engine.connect(input, to: sink, format: inFormat)
         engine.connect(source, to: engine.mainMixerNode, format: outFormat)
+        engine.connect(engine.mainMixerNode, to: output, format: nil)
         engine.prepare()
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            input.removeTap(onBus: 0)
+            throw error
+        }
         running = true
         let mic = Thread { [weak self] in self?.captureLoop() }
         mic.name = "sealer-call-mic"
@@ -125,6 +137,7 @@ final class CallAudioIO: @unchecked Sendable {
                     } else {
                         pcm = frame.withUnsafeBufferPointer { Data(buffer: $0) }
                     }
+                    counters.withLock { $0.sent += 1 }
                     do { try audio.pushCapture(pcm: pcm) } catch {
                         log("SealerCall", "microfone: \(safeMessage(error))")
                     }
@@ -161,6 +174,7 @@ final class CallAudioIO: @unchecked Sendable {
             } else {
                 toneSample = 0
                 let pcm = audio.pullPlayback()
+                counters.withLock { $0.pulled += 1 }
                 pcm.withUnsafeBytes { raw in
                     let s16 = raw.bindMemory(to: Int16.self)
                     let n = min(s16.count, Self.frame)
@@ -182,6 +196,7 @@ final class CallAudioIO: @unchecked Sendable {
         guard running else { return }
         running = false
         wake.signal()
+        engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         try? engine.inputNode.setVoiceProcessingEnabled(false)
         threads.removeAll()
