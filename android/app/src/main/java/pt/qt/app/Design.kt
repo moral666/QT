@@ -184,7 +184,11 @@ fun MyAvatar(ui: UiState, badge: ImageVector, label: String, onClick: () -> Unit
                 Icon(Icons.Filled.Person, contentDescription = s(R.string.t_a_tua_foto), tint = c.headerAvatarInk, modifier = Modifier.size((sizeDp * 0.55f).dp))
             }
         }
-        if (ringed) BadgeRing(ui.myBadge, Modifier.size(sizeDp.dp))
+        if (ringed) {
+            BadgeRing(ui.myBadge, Modifier.size(sizeDp.dp))
+            // A minha medalha: canto de baixo, a esquerda (a engrenagem fica a direita).
+            BadgeCoin(ui.myBadge, Modifier.align(Alignment.BottomStart).offset(x = (-6).dp, y = 4.dp).size((sizeDp * 0.45f).dp))
+        }
         IconButton(onClick = onClick, modifier = Modifier.align(Alignment.BottomEnd).offset(x = 6.dp, y = 6.dp).size(44.dp)) {
             Box(
                 Modifier.size(32.dp).shadow(4.dp, CircleShape).clip(CircleShape).background(MaterialTheme.colorScheme.surface),

@@ -9,6 +9,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.unit.dp
 
 /**
  * Badges (aro colorido a volta da foto). O certificado e verificado no nucleo Rust
@@ -38,6 +41,19 @@ object Badges {
         else -> null
     }
 
+    /** A medalha do badge (canto da foto); null = nenhuma. */
+    fun coin(badge: Int): Int? = when (badge) {
+        1 -> R.drawable.badge_coin_founder
+        2 -> R.drawable.badge_coin_cofounder
+        3 -> R.drawable.badge_coin_dev
+        4 -> R.drawable.badge_coin_tester
+        5 -> R.drawable.badge_coin_contributor
+        else -> null
+    }
+
+    /** Medalha: 40% do avatar (45% na minha foto do cabecalho). */
+    const val COIN = 0.40f
+
     /** Parte do aro ocupada pela foto (o buraco do desenho tem 83% do diametro). */
     const val INNER = 0.84f
 
@@ -63,4 +79,11 @@ fun BadgeRing(badge: Int, modifier: Modifier) {
     val (shadow, light) = Badges.colors(badge) ?: return
     val filter = remember(badge) { Badges.filter(shadow, light) }
     Image(painterResource(R.drawable.badge_ring), contentDescription = Badges.name(badge), modifier = modifier, colorFilter = filter)
+}
+
+/** A medalha do badge (moeda com o simbolo), do tamanho do `modifier`. */
+@Composable
+fun BadgeCoin(badge: Int, modifier: Modifier) {
+    val res = Badges.coin(badge) ?: return
+    Image(painterResource(res), contentDescription = null, modifier = modifier.shadow(3.dp, CircleShape))
 }

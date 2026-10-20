@@ -963,11 +963,15 @@ fun Avatar(name: String, seed: String, sizeDp: Int = 48, online: Boolean = false
                 Text(initials, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = (sizeDp / 2.6).sp)
             }
         }
-        if (ringed) BadgeRing(badge, Modifier.matchParentSize())
-        // Ponto verde: o contacto tem a app aberta agora (presenca).
+        if (ringed) {
+            BadgeRing(badge, Modifier.matchParentSize())
+            // Medalha no canto de baixo, a direita, um pouco por fora do aro.
+            BadgeCoin(badge, Modifier.align(Alignment.BottomEnd).offset(x = (sizeDp * 0.06f).dp, y = (sizeDp * 0.04f).dp).size((sizeDp * Badges.COIN).dp))
+        }
+        // Ponto verde: o contacto tem a app aberta agora (presenca). Com medalha vai para cima.
         if (online) {
             Box(
-                Modifier.align(Alignment.BottomEnd).size((sizeDp / 4).coerceAtLeast(10).dp)
+                Modifier.align(if (ringed) Alignment.TopEnd else Alignment.BottomEnd).size((sizeDp / 4).coerceAtLeast(10).dp)
                     .clip(CircleShape).background(MaterialTheme.colorScheme.surface).padding(2.dp)
                     .clip(CircleShape).background(OnlineGreen)
                     .semantics { contentDescription = s(R.string.t_online) },
