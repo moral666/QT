@@ -36,7 +36,7 @@ struct ProfileSettingsScreen: View {
                         }
                         .padding(.top, 6)
                         Spacer()
-                        MyAvatar(photo: ui.myPhoto, badge: "pencil", label: s("t_foto_de_perfil"), action: onProfilePhoto)
+                        MyAvatar(photo: ui.myPhoto, ring: ui.myBadge, badge: "pencil", label: s("t_foto_de_perfil"), action: onProfilePhoto)
                     }
                     Spacer().frame(height: 12)
                     IdChip(publicId: ui.publicId, action: onMyId).padding(.leading, 16)

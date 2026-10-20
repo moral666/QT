@@ -6,6 +6,16 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 20 de outubro de 2026: badges (apps Android e iPhone 0.9.14)
+
+- **Badges:** Founder, Co-founder, Dev, Tester e Contributor. Quem tem um aparece com um aro da cor
+  do badge à volta da foto (lista de conversas, conversa, chamadas, grupos e a minha foto).
+- **Sem nada no servidor e sem P2P:** o badge é um certificado assinado pelo emissor
+  (`core/src/badge.rs`), entregue cifrado pela ferramenta `server/examples/badge.rs` e enviado pela
+  app aos seus contactos (tipo 13). Só vale para a identidade de quem o tem; retirar é um
+  certificado novo com o badge 0.
+- **Aro:** um só desenho (o aro dourado em tons de cinza), pintado em cada cor no telemóvel.
+
 ### 19 de outubro de 2026: iPhone igual ao Android (app iPhone 0.9.13, relay)
 
 - **App iPhone posta a par da Android 0.9.13** (o código do GitHub só tinha conversas a dois, fotos e

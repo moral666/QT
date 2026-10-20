@@ -886,6 +886,36 @@ armazenamento de anexos do relay.
 
 Testes: `ffi/tests/profile.rs`.
 
+## 20. Badges (desde a app 0.9.14)
+
+Badges: Founder, Co-founder, Dev, Tester e Contributor. Quem tem um badge aparece com um aro
+colorido à volta da foto. O servidor não guarda nada: o badge é um certificado assinado pelo
+emissor, que segue cifrado como qualquer mensagem.
+
+- **Certificado** (`core/src/badge.rs`, 106 bytes): `[1 versão=1][1 badge][8 emitido_em ms]
+  [32 identidade X25519][64 assinatura Ed25519]`. A assinatura (verificação estrita) cobre
+  `SEALER-BADGE-v1` seguido dos primeiros 42 bytes. Badges: 0 nenhum, 1 Founder, 2 Co-founder,
+  3 Dev, 4 Tester, 5 Contributor. A chave pública do emissor está fixa no núcleo
+  (`ISSUER_PUBLIC_KEY`, igual no Android e no iPhone); a privada fica só com o emissor.
+- **Atribuir:** a ferramenta do emissor (`server/examples/badge.rs`, no PC do Nuno) tem uma
+  identidade própria, abre sessão com a pessoa pelo ID e envia o certificado no tipo 13, dentro do
+  Double Ratchet. O relay vê um envelope normal. A app guarda o certificado se a assinatura for
+  válida e ele for para a sua identidade (vem de quem vier, só a assinatura conta). O emissor não
+  aparece como conversa.
+- **Mostrar aos outros:** `badge_sync` manda o certificado aos contactos guardados (tipo 13), uma
+  vez por versão, junto com a foto de perfil. Quem recebe só o aceita se a identidade do
+  certificado for a de quem o enviou: copiar o badge de outra pessoa não serve.
+- **Mudar ou retirar:** vale sempre o certificado mais recente (`emitido_em`). Retirar é um
+  certificado novo com o badge 0, que também segue para os contactos. Limitação: uma app
+  alterada pode não enviar o certificado novo; quem já tinha o antigo continua a ver o aro até
+  receber um mais recente.
+- **Aro:** um só desenho em tons de cinza (`badge_ring`), pintado com uma cor de sombra e outra de
+  brilho (Android `ColorMatrix`, iPhone `CIFalseColor`).
+- Versões antigas não conhecem o tipo 13: mostram "atualiza a app" no máximo uma vez por contacto
+  (`msg_id` fixo).
+
+Testes: `ffi/tests/badges.rs` e `core/src/badge.rs`.
+
 ## Documentos relacionados
 
 - [`threat-model.md`](threat-model.md): modelo de ameaças formal (quem

@@ -1,6 +1,11 @@
 /* Gerado por scripts/strings-ios.py a partir do Android. Nao editar a mao. */
 "att_daily_limit" = "Has alcanzado el límite diario de adjuntos. Inténtalo mañana.";
 "att_no_space" = "El servidor no tiene espacio para adjuntos. Inténtalo más tarde.";
+"badge_cofounder" = "Co-founder";
+"badge_contributor" = "Contributor";
+"badge_dev" = "Dev";
+"badge_founder" = "Founder";
+"badge_tester" = "Tester";
 "confirm_word" = "BORRAR";
 "core_unsupported" = "Este mensaje usa una función que esta versión de la app aún no admite. Actualiza SEALER para verlo.";
 "core_voice_message" = "Mensaje de voz";

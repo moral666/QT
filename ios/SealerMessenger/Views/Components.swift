@@ -189,6 +189,8 @@ struct TopBarIcon: View {
 /// (engrenagem para as Definicoes, lapis para a foto). Tocar em qualquer dos dois faz o mesmo.
 struct MyAvatar: View {
     let photo: UIImage?
+    /// O meu badge (aro colorido); 0 = o aro claro de sempre.
+    var ring: Int = Badges.none
     let badge: String
     let label: String
     let action: () -> Void
@@ -198,14 +200,18 @@ struct MyAvatar: View {
     var body: some View {
         Button(action: action) {
             ZStack(alignment: .bottomTrailing) {
+                // Com badge, o aro do badge substitui o aro claro.
+                let ringed = Badges.colors(ring) != nil
+                let pad = ringed ? size * (1 - Badges.inner) / 2 : 4
                 ZStack {
-                    Circle().fill(Color.white.opacity(0.22))
-                    Circle().fill(c.headerAvatar).padding(4)
+                    if !ringed { Circle().fill(Color.white.opacity(0.22)) }
+                    Circle().fill(c.headerAvatar).padding(pad)
                     if let photo {
-                        Image(uiImage: photo).resizable().scaledToFill().clipShape(Circle()).padding(4)
+                        Image(uiImage: photo).resizable().scaledToFill().clipShape(Circle()).padding(pad)
                     } else {
                         Image(systemName: "person.fill").font(.system(size: size * 0.45)).foregroundStyle(c.headerAvatarInk)
                     }
+                    if ringed { BadgeRing(badge: ring, size: size) }
                 }
                 .frame(width: size, height: size)
                 Circle().fill(c.surface).frame(width: 32, height: 32).shadow(color: .black.opacity(0.2), radius: 3, y: 1)
@@ -264,21 +270,30 @@ struct Avatar: View {
     var size: CGFloat = 48
     var online = false
     @Environment(\.photos) private var photos
+    @Environment(\.badges) private var badges
     @Environment(\.chat) private var c
 
     var body: some View {
         let palette = ChatColors.avatarPalette
         let color = palette[Int(javaHashCode(seed) & 0x7fffffff) % palette.count]
+        // Badge: a foto encolhe para caber dentro do aro (o tamanho total fica igual).
+        let badge = badges[seed] ?? Badges.none
+        let ringed = Badges.colors(badge) != nil
+        let inner = ringed ? size * Badges.inner : size
         ZStack(alignment: .bottomTrailing) {
-            if let photo = photos[seed] {
-                Image(uiImage: photo).resizable().scaledToFill().frame(width: size, height: size).clipShape(Circle())
-            } else {
-                ZStack {
-                    Circle().fill(color)
-                    Text(initials(name)).font(Jakarta.font(size / 2.6, .semibold)).foregroundStyle(.white)
+            ZStack {
+                if let photo = photos[seed] {
+                    Image(uiImage: photo).resizable().scaledToFill().frame(width: inner, height: inner).clipShape(Circle())
+                } else {
+                    ZStack {
+                        Circle().fill(color)
+                        Text(initials(name)).font(Jakarta.font(size / 2.6, .semibold)).foregroundStyle(.white)
+                    }
+                    .frame(width: inner, height: inner)
                 }
-                .frame(width: size, height: size)
+                if ringed { BadgeRing(badge: badge, size: size) }
             }
+            .frame(width: size, height: size)
             if online {
                 let d = max(10, size / 4)
                 Circle().fill(onlineGreen).frame(width: d - 4, height: d - 4)

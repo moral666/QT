@@ -117,6 +117,10 @@ data class UiState(
     val photos: Map<String, androidx.compose.ui.graphics.ImageBitmap> = emptyMap(),
     /** A minha foto de perfil (null = sem foto). */
     val myPhoto: androidx.compose.ui.graphics.ImageBitmap? = null,
+    /** Badges dos contactos (contactId -> numero, so os que tem). Verificados no Rust. */
+    val badges: Map<String, Int> = emptyMap(),
+    /** O meu badge (0 = nenhum). */
+    val myBadge: Int = 0,
     /** Daqui a quantos ms posso trocar de foto (0 = ja). */
     val photoNextChangeMs: Long = 0L,
     /** Foto escolhida e ja reduzida, a espera de "Aplicar" (0.9.11). So em memoria. */
@@ -773,7 +777,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             Log.w(TAG, "foto: ${e.safeMsg()}")
         }
+        try {
+            if (client.badgeSync(_ui.value.contacts.map { it.contactId }) > 0u) flushOutbox()
+        } catch (e: Exception) {
+            Log.w(TAG, "badge: ${e.safeMsg()}")
+        }
         refreshPhotos(client)
+        refreshBadges(client)
+    }
+
+    /** Badges (o meu e os dos contactos), ja verificados pelo nucleo. */
+    private fun refreshBadges(client: QtClient) {
+        try {
+            val map = HashMap<String, Int>()
+            for (c in _ui.value.contacts) {
+                val b = client.badgeOf(c.contactId).toInt()
+                if (b != Badges.NONE) map[c.contactId] = b
+            }
+            val mine = client.badgeMine().toInt()
+            if (map != _ui.value.badges || mine != _ui.value.myBadge) _ui.update { it.copy(badges = map, myBadge = mine) }
+        } catch (e: Exception) {
+            Log.w(TAG, "badge: ${e.safeMsg()}")
+        }
     }
 
     private fun refreshPhotos(client: QtClient) = synchronized(photoCache) {

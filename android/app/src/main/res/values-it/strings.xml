@@ -312,4 +312,10 @@
     <string name="photo_preview_note">Dopo averla applicata, potrai cambiare di nuovo la foto solo tra 72 ore.</string>
     <string name="photo_updated">Foto aggiornata</string>
     <string name="t_a_foto_tem_mais_de_20">La foto supera i 20 MB. Scegline una più piccola.</string>
+    <!-- Badges (nomes proprios, iguais em todas as linguas) -->
+    <string name="badge_founder">Founder</string>
+    <string name="badge_cofounder">Co-founder</string>
+    <string name="badge_dev">Dev</string>
+    <string name="badge_tester">Tester</string>
+    <string name="badge_contributor">Contributor</string>
 </resources>

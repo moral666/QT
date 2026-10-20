@@ -417,7 +417,7 @@ fun AppRoot(
     val call = ui.call
     var showPhoto by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
-    CompositionLocalProvider(LocalPhotos provides ui.photos) { when {
+    CompositionLocalProvider(LocalPhotos provides ui.photos, LocalBadges provides ui.badges) { when {
         overLock -> CallOverLock(ui, vm, withMic, keyguardLocked, onLeaveLock, onDone)
         ui.loading -> LoadingScreen()
         call != null && !ui.locked -> {
@@ -951,14 +951,19 @@ fun Avatar(name: String, seed: String, sizeDp: Int = 48, online: Boolean = false
     val color = palette[(seed.hashCode() and 0x7fffffff) % palette.size]
     val initials = name.trim().split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase() }.ifBlank { "?" }
     val photo = LocalPhotos.current[seed]
+    // Badge: a foto encolhe para caber dentro do aro (o tamanho total fica igual).
+    val badge = LocalBadges.current[seed] ?: Badges.NONE
+    val ringed = Badges.colors(badge) != null
+    val inner = if (ringed) (sizeDp * Badges.INNER).dp else sizeDp.dp
     Box(Modifier.size(sizeDp.dp)) {
         if (photo != null) {
-            Image(photo, contentDescription = name, modifier = Modifier.matchParentSize().clip(CircleShape), contentScale = ContentScale.Crop)
+            Image(photo, contentDescription = name, modifier = Modifier.size(inner).align(Alignment.Center).clip(CircleShape), contentScale = ContentScale.Crop)
         } else {
-            Box(Modifier.matchParentSize().clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(inner).align(Alignment.Center).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
                 Text(initials, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = (sizeDp / 2.6).sp)
             }
         }
+        if (ringed) BadgeRing(badge, Modifier.matchParentSize())
         // Ponto verde: o contacto tem a app aberta agora (presenca).
         if (online) {
             Box(

@@ -37,7 +37,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
 - O **site, a documentação e a app nunca mencionam auditorias em falta** ("sem auditoria", "não auditada", 19/10/2026).
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.9.13**, `versionCode` 20), em
+- Versões da app: série 0.x (agora **0.9.14**, `versionCode` 21), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
   0.9.3...) e o `versionCode` mais 1, no mesmo commit. Só se passa a **1.0.0** quando o Nuno disser.
 - Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
@@ -88,7 +88,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 2 recibo, 3 anexo (imagem, GIF ou voz `audio/mp4`), 4 convite, 5 reação,
 6 mensagem de grupo, 7 info do grupo, 8 saída do grupo, 9 presença, 10 sessão terminada, 11 chamada
 de voz, 12 foto de perfil (`ffi/src/profile.rs`, 0.9.9: WebP de 72 em 72 h, só contactos; desde a 0.9.11
-até 9 973 bytes, para o payload caber nos 10 000). O próximo tipo livre é o 13. Uma versão antiga mostra "atualiza a app" para tipos novos.
+até 9 973 bytes, para o payload caber nos 10 000). 13 badge (`ffi/src/badges.rs`, 0.9.14: certificado do emissor, ver `docs/protocol-spec.md` secção 20). O próximo tipo livre é o 14. Uma versão antiga mostra "atualiza a app" para tipos novos.
 Ficheiros: tipo 3 com o corpo na versão 2 (com o nome); imagens e voz na versão 1.
 
 ### Funcionalidades da 0.8.0
@@ -152,6 +152,16 @@ notificações) e acrescentar a chave nas seis línguas. Segue a língua do tele
 nenhuma) e há o menu "Idioma" (Android 13+: `LocaleManager`, também nas definições da app; antes,
 `Lang.localized` e `recreate()`). Textos que vêm do Rust (📷 Foto, voz, "atualiza a app") passam
 por `coreText()`. Registos (`Log`) e mensagens de exceções continuam em português.
+
+### Badges (desde a 0.9.14, aprovado pelo Nuno a 20/10/2026)
+
+Aro colorido à volta da foto (Founder dourado, Co-founder rosa, Dev preto, Tester ciano,
+Contributor verde), sem nada guardado no servidor e sem P2P. Certificado Ed25519 do emissor
+(`core/src/badge.rs`), entregue pela ferramenta `cargo run --release -p qt_server --example badge`
+(no PC do Nuno, chave do emissor fora do git e do servidor) e enviado pela app aos contactos no tipo 13.
+Um só desenho (`res/drawable-nodpi/badge_ring.png`, `Assets.xcassets/BadgeRing`) pintado com duas
+cores (`Badges.kt`, `Views/Badges.swift`). Enquanto `ISSUER_PUBLIC_KEY` estiver a zeros, nenhum badge
+é aceite.
 
 ### Funcionalidades da 0.9.0
 

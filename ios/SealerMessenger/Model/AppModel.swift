@@ -59,6 +59,10 @@ struct UiState {
     /// Fotos de perfil dos contactos (contactId). So em memoria.
     var photos: [String: UIImage] = [:]
     var myPhoto: UIImage?
+    /// Badges dos contactos (contactId -> numero, so os que tem). Verificados no Rust.
+    var badges: [String: Int] = [:]
+    /// O meu badge (0 = nenhum).
+    var myBadge: Int = 0
     /// Daqui a quantos ms posso trocar de foto (0 = ja).
     var photoNextChangeMs: Int64 = 0
     /// Foto escolhida e ja reduzida, a espera de "Aplicar". So em memoria.
@@ -758,7 +762,25 @@ final class AppModel: ObservableObject {
     private func syncPhotos(_ client: QtClient) async {
         let ids = ui.contacts.map(\.contactId)
         if let n = try? await background({ try client.profilePhotoSync(contactIds: ids) }), n > 0 { await flushOutbox() }
+        if let n = try? await background({ try client.badgeSync(contactIds: ids) }), n > 0 { await flushOutbox() }
         await refreshPhotos(client)
+        await refreshBadges(client)
+    }
+
+    /// Badges (o meu e os dos contactos), ja verificados pelo nucleo.
+    private func refreshBadges(_ client: QtClient) async {
+        let ids = ui.contacts.map(\.contactId)
+        struct Raw: Sendable { let theirs: [String: Int]; let mine: Int }
+        guard let raw = try? await background({ () -> Raw in
+            var m: [String: Int] = [:]
+            for id in ids {
+                let b = Int(try client.badgeOf(contactId: id))
+                if b != Badges.none { m[id] = b }
+            }
+            return Raw(theirs: m, mine: Int(try client.badgeMine()))
+        }) else { return }
+        if raw.theirs != ui.badges { ui.badges = raw.theirs }
+        if raw.mine != ui.myBadge { ui.myBadge = raw.mine }
     }
 
     private func refreshPhotos(_ client: QtClient) async {
