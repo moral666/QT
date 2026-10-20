@@ -79,12 +79,11 @@ QT_ENTITLEMENTS = SealerMessenger/SealerMessenger.entitlements
 
 | | Debug (▶ normal) | Release (Product → Archive) |
 |---|---|---|
-| Relay | editável em "Opções de teste"; por omissão `ws://127.0.0.1:9443` | **fixo**: `Configs/Relay.xcconfig` |
+| Relay | editável em "Opções de teste"; por omissão o de produção (`wss://relay.sealer.pt`) | **fixo**: `Configs/Relay.xcconfig` |
 | `ws://` sem TLS | permitido | recusado (no código e no ATS) |
 | Botão "Relay (teste)" | visível | escondido |
 
-Para testar no iPhone com o relay da AWS em Debug: "Opções de teste" → `wss://relay.sealer.pt` e a
-chave do relay. Ou usa o esquema **Release** (Product → Scheme → Edit Scheme → Run → Release).
+Para um relay no próprio Mac (simulador): "Opções de teste" → `ws://127.0.0.1:9443` e a chave dele.
 
 ## Notificações e chamadas (sem Firebase)
 
