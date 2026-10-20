@@ -85,7 +85,8 @@ extension RelayResponse {
 /// nem chaves, so estados e motivos de erro.
 func log(_ tag: String, _ msg: @autoclosure () -> String) {
     let text = msg()
-    Logger(subsystem: "sealer", category: tag).notice("\(text, privacy: .public)")
+    // A etiqueta tambem no texto: o filtro da consola do Xcode procura no texto da mensagem.
+    Logger(subsystem: "sealer", category: tag).notice("[\(tag, privacy: .public)] \(text, privacy: .public)")
 }
 
 /// Mensagem curta e SEGURA para mostrar: nunca inclui conteudo nem chaves.

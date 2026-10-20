@@ -114,6 +114,8 @@ final class AppModel: ObservableObject {
     static let shared = AppModel()
 
     @Published private(set) var ui = UiState()
+    /// So na build de testes (Debug): as ultimas linhas do registo da chamada, no ecra da chamada.
+    @Published private(set) var callDiag: [String] = []
 
     private let prefs = UserDefaults.standard   // so URL do relay, chave PUBLICA e opcoes (nao secretos)
     private var qt: QtClient?
@@ -1727,19 +1729,19 @@ final class AppModel: ObservableObject {
     /// Arranca o motor de audio e entra ja na sala do relay das chamadas.
     private func startCallAudio(_ client: QtClient, _ callId: String) async {
         guard callAudio == nil else { return }
-        guard let pin = relayPin() else { log("SealerCall", "chamada: sem a chave do relay"); return }
+        guard let pin = relayPin() else { diag("chamada: sem a chave do relay"); return }
         let url = ui.relayUrl
         do {
             callAudio = try await background { try client.callAudioStart(callId: callId, relayUrl: url, relayPublicKey: pin) }
-            log("SealerCall", "motor de audio a correr (\(url))")
+            diag("motor de audio a correr (\(url))")
         } catch {
-            log("SealerCall", "motor de audio nao arrancou: \(safeMessage(error))")
+            diag("motor de audio nao arrancou: \(safeMessage(error))")
         }
     }
 
     /// O CallKit ativou o audio: liga o microfone e o altifalante.
     func callAudioSessionActivated() {
-        log("SealerCall", "CallKit ativou o audio")
+        diag("CallKit ativou o audio")
         audioSessionActive = true
         startCallIOIfReady()
     }
@@ -1752,13 +1754,13 @@ final class AppModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard let self, !self.audioSessionActive, self.callIO == nil, let c = self.ui.call, c.callId == id,
                   c.phase != .ended, c.phase != .incoming else { return }
-            log("SealerCall", "CallKit nao ativou o audio: a ativar na app")
+            self.diag("CallKit nao ativou o audio: a ativar na app")
             CallKitBridge.configureAudioSession()
             do {
                 try AVAudioSession.sharedInstance().setActive(true)
                 self.callAudioSessionActivated()
             } catch {
-                log("SealerCall", "sessao de audio: \(safeMessage(error))")
+                self.diag("sessao de audio: \(safeMessage(error))")
             }
         }
     }
@@ -1769,19 +1771,19 @@ final class AppModel: ObservableObject {
         let io = CallAudioIO(audio: a)
         do {
             try io.start()
-            log("SealerCall", "microfone e altifalante ligados (\(io.inputDescription))")
+            diag("microfone e altifalante ligados (\(io.inputDescription))")
             io.muted = c.muted
             io.ringback = c.phase == .calling || c.phase == .ringingOut
             if c.speaker { io.setSpeaker(true) }
             callIO = io
         } catch {
-            log("SealerCall", "microfone: \(safeMessage(error))")
+            diag("microfone: \(safeMessage(error))")
             showError(s("t_nao_foi_possivel_usar_o_microfone_2", safeMessage(error)))
         }
     }
 
     func callAudioSessionDeactivated() {
-        log("SealerCall", "CallKit desativou o audio")
+        diag("CallKit desativou o audio")
         audioSessionActive = false
         callIO?.stop()
         callIO = nil
@@ -1810,7 +1812,7 @@ final class AppModel: ObservableObject {
                     if self.callStatsTick % 5 == 0 {
                         let rtt = st.relayRttMs.map { " · \($0) ms ao servidor" } ?? ""
                         let io = self.callIO.map { " · micro \($0.stats.sent) / altifalante \($0.stats.pulled) blocos" } ?? " · sem microfone/altifalante"
-                        log("SealerCall", "chamada: \(st.transport), sala \(st.joined ? "sim" : "nao"), outro lado \(st.peerPresent ? "sim" : "nao")\(rtt) · recebidos \(st.received) · \(st.lost) perdidos (\(st.dredFrames) recuperados) · \(st.late) atrasados\(io)")
+                        self.diag("chamada: \(st.transport), sala \(st.joined ? "sim" : "nao"), outro lado \(st.peerPresent ? "sim" : "nao")\(rtt) · recebidos \(st.received) · \(st.lost) perdidos (\(st.dredFrames) recuperados) · \(st.late) atrasados\(io)")
                     }
                 }
             }
@@ -1825,6 +1827,8 @@ final class AppModel: ObservableObject {
             do {
                 try await ensureSession(client, contact)
                 let start = try await background { try client.callStart(contactId: contact.contactId) }
+                callDiag = []
+                diag("a ligar")
                 ui.call = CallUi(callId: start.callId, contactId: contact.contactId, name: contact.nickname, phase: .calling)
                 let uuid = UUID()
                 callKitIds[start.callId] = uuid
@@ -1846,6 +1850,7 @@ final class AppModel: ObservableObject {
         guard let client = qt, let c = ui.call, c.phase == .incoming else { return }
         Task {
             do {
+                diag("atendida no iPhone")
                 _ = try await background { try client.callAccept(callId: c.callId) }
                 await flushOutbox()
                 await startCallAudio(client, c.callId)
@@ -1968,6 +1973,8 @@ final class AppModel: ObservableObject {
                     _ = try? await background { try client.callHangup(callId: callId) }   // ja ha outra: ocupado
                     continue
                 }
+                callDiag = []
+                diag("chamada a chegar")
                 ui.call = CallUi(callId: callId, contactId: contactId, name: contact.nickname, phase: .incoming)
                 if let pr = pendingRing {
                     // A chamada que o PushKit ja mostrou no CallKit (sem nome): passa a ter o nome.
@@ -1995,6 +2002,7 @@ final class AppModel: ObservableObject {
                 }
             case .answered(let callId):
                 if var c = ui.call, c.callId == callId, c.phase != .active, c.phase != .incoming {
+                    diag("o outro lado atendeu")
                     c.phase = .active
                     c.answeredAt = monotonicSeconds()
                     ui.call = c
@@ -2073,6 +2081,16 @@ final class AppModel: ObservableObject {
     }
 
     // ================================================================ utilitarios
+
+    /// Registo das chamadas (SealerCall). Na build de testes tambem aparece no ecra da chamada.
+    private func diag(_ m: String) {
+        log("SealerCall", m)
+        guard Config.relayEditable else { return }
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        callDiag.append(f.string(from: Date()) + " " + m)
+        if callDiag.count > 10 { callDiag.removeFirst(callDiag.count - 10) }
+    }
 
     func dismissError() { ui.error = nil }
     private func status(_ s: String) {

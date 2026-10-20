@@ -80,7 +80,7 @@ struct AppRoot: View {
             LoadingScreen()
         } else if let call = ui.call, !ui.locked {
             CallScreen(call: call, onAccept: { withMic { model.acceptCall() } }, onHangup: model.hangupCall,
-                       onMute: model.toggleMute, onSpeaker: model.toggleSpeaker)
+                       onMute: model.toggleMute, onSpeaker: model.toggleSpeaker, diag: model.callDiag)
         } else if ui.locked {
             LockScreen(ui: ui, onCode: model.unlockWithCode, onBio: model.requestBioUnlock, onWipe: model.wipeLockedData)
         } else if !ui.termsAccepted {
