@@ -926,7 +926,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val list = (_ui.value.contacts.filter { it.contactId != c.contactId }) + c
             contactStore.save(list, contactsKey ?: return@io)
             _ui.update { it.copy(contacts = list, error = null) }
-            qt?.let { syncPresence(it) }
+            qt?.let { client ->
+                // Escreveu-me antes (convite) e eu adicionei-o a mao: o convite fica resolvido.
+                // Antes ficava pendente e a conversa escondia o botao de ligar.
+                runCatching { client.dismissIntro(c.contactId) }
+                syncPresence(client)
+                refreshViews(client)
+            }
             flushOutbox()   // recibos que estavam a espera de saber o endereco deste contacto
         } catch (e: QtException) {
             error(s(R.string.t_public_id_invalido))

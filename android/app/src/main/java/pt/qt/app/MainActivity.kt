@@ -471,7 +471,7 @@ fun AppRoot(
                 onDeleteConversation = vm::deleteConversation, onDeleteContact = vm::deleteContact,
                 onSendImage = vm::sendImage, loadAttachment = vm::attachmentBytes,
                 blocked = chatId in ui.blocked, onBlock = vm::blockContact, onUnblock = vm::unblockContact,
-                invite = chatId in ui.invites, onAcceptInvite = vm::acceptInvite, onDeclineInvite = vm::declineInvite,
+                invite = chatId in ui.invites && ui.contacts.none { it.contactId == chatId }, onAcceptInvite = vm::acceptInvite, onDeclineInvite = vm::declineInvite,
                 onReact = vm::react, onSendVoice = vm::sendVoice, onSendFile = vm::sendFile,
                 onCall = { c -> withMic { vm.startCall(c) } },
             )

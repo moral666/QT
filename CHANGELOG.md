@@ -6,6 +6,14 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 20 de outubro de 2026: botão de ligar e convites (app 0.9.15, Android e iPhone)
+
+- Quem me escreveu primeiro (convite) e eu adicionei à mão pelo ID ou pelo QR ficava com o convite
+  pendente: a conversa escondia o botão de ligar. Agora adicionar resolve o convite, e a conversa só
+  conta como convite se a pessoa não estiver nos contactos.
+- iPhone: áudio das chamadas mais robusto (microfone por "tap", o áudio é ativado pela app se o
+  CallKit não avisar) e registo das chamadas na consola do Xcode (`SealerCall`).
+
 ### 20 de outubro de 2026: badges (apps Android e iPhone 0.9.14)
 
 - **Badges:** Founder, Co-founder, Dev, Tester e Contributor. Quem tem um aparece com um aro da cor
