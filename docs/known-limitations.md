@@ -118,8 +118,8 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     depois). Cada mensagem sai uma vez por membro (até 9 envelopes), por isso gasta mais
     dados do que uma conversa a dois. Os membros veem os Public IDs uns dos outros (estão na
     info do grupo, cifrada).
-38. **App iPhone (0.9.13, 19/10/2026, ainda por testar no iPhone):** as mesmas funcionalidades da
-    Android. Diferenças: com a app fechada não envia os recibos de entregue (só ao abrir); com o
+38. **App iPhone (desde a 0.9.13; a 0.9.15 foi testada com a Android 0.9.16 a 20/10/2026, sem erros):**
+    as mesmas funcionalidades da Android. Diferenças: com a app fechada não envia os recibos de entregue (só ao abrir); com o
     bloqueio da app ativo, uma chamada cancelada continua a tocar até 45 s (o iOS não deixa um push
     VoIP sem chamada nova); sem a conta paga da Apple não há notificações nem chamadas com a app
     fechada; o CallKit não é aceite na App Store da China continental.

@@ -1,10 +1,14 @@
-# SEALER para iPhone (0.9.13)
+# SEALER para iPhone (0.9.16)
+
+**Testada a 0.9.15** (20/10/2026) com a app Android 0.9.16, sem erros: contactos, QR, partilha do
+ID, menus, mensagens de texto e voz, GIFs, ficheiros, bloquear, apagar conversas e chamadas
+(iPhone com iPhone e com Android). Ver `docs/field-tests.md`.
 
 O projeto Xcode continua a chamar-se `SealerMessenger` por dentro (pastas, alvo e ficheiro
 `.xcodeproj`); o nome que aparece no iPhone é **SEALER**. Identificador: **`sealer.app`**, o mesmo da
 app Android.
 
-A mesma app que a versão Android 0.9.13, com o **mesmo núcleo Rust** (PQXDH + ML-KEM-768, Double
+A mesma app que a versão Android (posta a par na 0.9.13), com o **mesmo núcleo Rust** (PQXDH + ML-KEM-768, Double
 Ratchet, Sealed Sender, Noise com pinning, SQLCipher, grupos, presença, fotos de perfil, chamadas com
 Opus) e o **mesmo ecrã** (design 0.9.11: cabeçalho com a curva, logo a rodar só no ecrã inicial,
 Definições, Novo contacto, letra Plus Jakarta Sans). Só a interface é escrita em SwiftUI. As duas apps

@@ -23,7 +23,8 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 
 ## Decisões que não se mudam sem ele pedir
 
-- **App iPhone 0.9.13** (19/10/2026, a testar no Mac do amigo do Nuno): posta a par da Android 0.9.13
+- **App iPhone** (posta a par na 0.9.13, 19/10/2026; **iPhone 0.9.15 + Android 0.9.16 testados juntos a 20/10/2026, sem erros**,
+  incluindo chamadas Android/iPhone/iPhone): posta a par da Android 0.9.13
   pelo Claude (o código Swift da 0.9.3 do Mac nunca chegou ao GitHub). Identificador `sealer.app`.
   Decisões tomadas pelo Claude com as regras do Nuno (privacidade e desempenho), a confirmar com ele:
   **notificações direto pela Apple, sem Firebase** (`server/src/apns.rs`, `/etc/qt/apns.json`, token

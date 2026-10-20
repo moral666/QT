@@ -10,6 +10,26 @@ uso real**. A resistência a um atacante está descrita à parte, em
 
 ---
 
+## 20 de outubro de 2026: Android 0.9.16 e iPhone 0.9.15
+
+**Resultado:** tudo funcional, **sem erros**, entre clientes Android e iPhone.
+
+| Testado | Resultado |
+| --- | --- |
+| Adicionar, apagar e voltar a adicionar contactos | OK |
+| Código QR e botão de partilhar o ID | OK |
+| Todos os menus | OK |
+| Mensagens de texto e de voz | OK |
+| GIFs e envio de ficheiros | OK |
+| Bloquear contacto e apagar conversas | OK |
+| Chamadas de voz Android com Android | OK |
+| Chamadas de voz Android com iPhone | OK |
+| Chamadas de voz iPhone com iPhone | OK |
+
+- **Relay:** produção, `wss://relay.sealer.pt` (AWS EC2, Estocolmo); chamadas pelo `qt-call-relay`.
+
+---
+
 ## 15 de outubro de 2026: cinco aparelhos, três plataformas
 
 **Resultado:** troca contínua de mensagens entre todos os aparelhos, incluindo
