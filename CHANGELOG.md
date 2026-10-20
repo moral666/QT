@@ -6,6 +6,12 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 20 de outubro de 2026: medalha dos badges (apps 0.9.16)
+
+- Além do aro, quem tem badge mostra a medalha (moeda com o símbolo) no canto da foto: lista de
+  conversas, cabeçalho da conversa, chamadas, grupos e a minha foto no ecrã inicial. Com medalha,
+  o ponto "online" passa para o canto de cima.
+
 ### 20 de outubro de 2026: botão de ligar e convites (app 0.9.15, Android e iPhone)
 
 - Quem me escreveu primeiro (convite) e eu adicionei à mão pelo ID ou pelo QR ficava com o convite

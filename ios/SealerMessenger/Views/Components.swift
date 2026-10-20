@@ -214,6 +214,12 @@ struct MyAvatar: View {
                     if ringed { BadgeRing(badge: ring, size: size) }
                 }
                 .frame(width: size, height: size)
+                // A minha medalha: canto de baixo, a esquerda (a engrenagem fica a direita).
+                if ringed {
+                    BadgeCoin(badge: ring, size: size * 0.45)
+                        .frame(width: size, height: size, alignment: .bottomLeading)
+                        .offset(x: -6, y: 4)
+                }
                 Circle().fill(c.surface).frame(width: 32, height: 32).shadow(color: .black.opacity(0.2), radius: 3, y: 1)
                     .overlay(Image(systemName: badge).font(.system(size: 15, weight: .semibold)).foregroundStyle(c.primary))
                     .offset(x: 6, y: 6)
@@ -294,11 +300,17 @@ struct Avatar: View {
                 if ringed { BadgeRing(badge: badge, size: size) }
             }
             .frame(width: size, height: size)
+            if ringed {
+                // Medalha no canto de baixo, a direita, um pouco por fora do aro.
+                BadgeCoin(badge: badge, size: size * Badges.coinScale).offset(x: size * 0.06, y: size * 0.04)
+            }
             if online {
                 let d = max(10, size / 4)
                 Circle().fill(onlineGreen).frame(width: d - 4, height: d - 4)
                     .padding(2).background(Circle().fill(c.surface))
                     .accessibilityLabel(s("t_online"))
+                    // Com medalha, o ponto verde vai para cima.
+                    .frame(width: size, height: size, alignment: ringed ? .topTrailing : .bottomTrailing)
             }
         }
         .frame(width: size, height: size)

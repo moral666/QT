@@ -10,6 +10,8 @@ enum Badges {
     static let none = 0
     /// Parte do aro ocupada pela foto (o buraco do desenho tem 83% do diametro).
     static let inner: CGFloat = 0.84
+    /// Medalha: 40% do avatar (45% na minha foto do cabecalho).
+    static let coinScale: CGFloat = 0.40
 
     /// (sombra, brilho) em RGB 0...255; nil = sem aro.
     static func colors(_ badge: Int) -> (UInt32, UInt32)? {
@@ -77,6 +79,20 @@ struct BadgeRing: View {
         if let img = Badges.ring(badge) {
             Image(uiImage: img).resizable().interpolation(.high).frame(width: size, height: size)
                 .accessibilityLabel(Badges.name(badge) ?? "")
+        }
+    }
+}
+
+/// A medalha do badge (moeda com o simbolo), `BadgeCoin1`...`BadgeCoin5` no Assets.
+struct BadgeCoin: View {
+    let badge: Int
+    let size: CGFloat
+
+    var body: some View {
+        if Badges.colors(badge) != nil, let img = UIImage(named: "BadgeCoin\(badge)") {
+            Image(uiImage: img).resizable().interpolation(.high).frame(width: size, height: size)
+                .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                .accessibilityHidden(true)
         }
     }
 }

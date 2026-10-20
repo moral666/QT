@@ -37,7 +37,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
 - O **site, a documentação e a app nunca mencionam auditorias em falta** ("sem auditoria", "não auditada", 19/10/2026).
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.9.15**, `versionCode` 22), em
+- Versões da app: série 0.x (agora **0.9.16**, `versionCode` 23), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
   0.9.3...) e o `versionCode` mais 1, no mesmo commit. Só se passa a **1.0.0** quando o Nuno disser.
 - Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
@@ -161,7 +161,9 @@ Contributor verde), sem nada guardado no servidor e sem P2P. Certificado Ed25519
 (no PC do Nuno, chave do emissor fora do git e do servidor) e enviado pela app aos contactos no tipo 13.
 Um só desenho (`res/drawable-nodpi/badge_ring.png`, `Assets.xcassets/BadgeRing`) pintado com duas
 cores (`Badges.kt`, `Views/Badges.swift`). Enquanto `ISSUER_PUBLIC_KEY` estiver a zeros, nenhum badge
-é aceite.
+é aceite. Desde a 0.9.16 há também a medalha do badge no canto da foto (`badge_coin_*.png`,
+`BadgeCoin1..5`, recortadas da folha de badges do Nuno): em baixo à direita nos contactos (o ponto
+online passa para cima) e em baixo à esquerda na minha foto do cabeçalho.
 
 ### Funcionalidades da 0.9.0
 
