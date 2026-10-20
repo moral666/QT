@@ -51,31 +51,93 @@ final class CallAudioIO: @unchecked Sendable {
     var stats: (sent: Int, pulled: Int) { counters.withLock { $0 } }
     /// Formato do microfone (para o registo).
     private(set) var inputDescription = ""
+    /// Chamadas das callbacks de tempo real (microfone e altifalante). So contadores: escrita
+    /// sem trinco, lidos pelo vigia (um valor atrasado nao faz mal).
+    private let rtCounts: UnsafeMutablePointer<Int> = {
+        let p = UnsafeMutablePointer<Int>.allocate(capacity: 2)
+        p.initialize(repeating: 0, count: 2)
+        return p
+    }()
+    private var source: AVAudioSourceNode?
+    private var voiceProcessing = true
+    private var restarts = 0
+    private var configObserver: NSObjectProtocol?
+
+    deinit {
+        if let o = configObserver { NotificationCenter.default.removeObserver(o) }
+        rtCounts.deallocate()
+    }
+
+    /// Linha para o registo: o motor de audio do iPhone esta mesmo a trabalhar?
+    var debugLine: String {
+        "motor \(engine.isRunning ? "sim" : "nao"), voz \(voiceProcessing ? "sim" : "nao"), "
+            + "callbacks micro \(rtCounts[0]) / altifalante \(rtCounts[1]), reinicios \(restarts)"
+    }
 
     /// Liga o microfone e o altifalante. A sessao de audio ja foi ativada (CallKit).
     func start() throws {
         guard !running else { return }
+        try buildGraph(voiceProcessing: true)
+        do {
+            try engine.start()
+        } catch {
+            // Sem o modo de voz do iPhone (sem cancelamento de eco), mas com som.
+            log("SealerCall", "audio com modo de voz falhou (\(safeMessage(error))): sem modo de voz")
+            teardownGraph()
+            try buildGraph(voiceProcessing: false)
+            try engine.start()
+        }
+        running = true
+        // O iOS para o motor quando a configuracao do audio muda (CallKit, Bluetooth, auricular):
+        // volta a arrancar.
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { [weak self] _ in
+            // Fora da notificacao (pode chegar durante um reinicio) e so se o motor parou mesmo.
+            self?.restartQueue.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self, self.running, !self.engine.isRunning else { return }
+                self.restart(reason: "configuracao do audio mudou")
+            }
+        }
+        let mic = Thread { [weak self] in self?.captureLoop() }
+        mic.name = "sealer-call-mic"
+        mic.qualityOfService = .userInteractive
+        let spk = Thread { [weak self] in self?.playbackLoop() }
+        spk.name = "sealer-call-spk"
+        spk.qualityOfService = .userInteractive
+        let dog = Thread { [weak self] in self?.watchdog() }
+        dog.name = "sealer-call-vigia"
+        threads = [mic, spk, dog]
+        mic.start()
+        spk.start()
+        dog.start()
+    }
+
+    private func buildGraph(voiceProcessing vp: Bool) throws {
         let input = engine.inputNode
         let output = engine.outputNode
         // O modo de voz liga-se nos dois lados (entrada e saida) antes de ligar os nos.
-        try input.setVoiceProcessingEnabled(true)
+        try input.setVoiceProcessingEnabled(vp)
+        voiceProcessing = vp
         let inFormat = input.outputFormat(forBus: 0)
         guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else {
             throw SecureStoreError(message: "microfone indisponivel")
         }
         inputRate = inFormat.sampleRate
-        inputDescription = "\(Int(inFormat.sampleRate)) Hz, \(inFormat.channelCount) canal(is), saida \(Int(output.outputFormat(forBus: 0).sampleRate)) Hz"
+        inputDescription = "\(Int(inFormat.sampleRate)) Hz, \(inFormat.channelCount) canal(is), saida \(Int(output.outputFormat(forBus: 0).sampleRate)) Hz, voz \(vp ? "sim" : "nao")"
         let ring = capture
         let sem = wake
-        // Microfone: "tap" no no de entrada (o caminho mais testado com o modo de voz).
+        let counts = rtCounts
         input.installTap(onBus: 0, bufferSize: 480, format: inFormat) { buffer, _ in
+            counts[0] &+= 1
             guard let ch = buffer.floatChannelData else { return }
             ring.write(ch[0], Int(buffer.frameLength))
             sem.signal()
         }
         let outFormat = AVAudioFormat(standardFormatWithSampleRate: Self.rate, channels: 1)!
         let out = playback
-        let source = AVAudioSourceNode(format: outFormat) { _, _, frameCount, list -> OSStatus in
+        let node = AVAudioSourceNode(format: outFormat) { _, _, frameCount, list -> OSStatus in
+            counts[1] &+= 1
             let abl = UnsafeMutableAudioBufferListPointer(list)
             let n = Int(frameCount)
             for buf in abl {
@@ -85,31 +147,67 @@ final class CallAudioIO: @unchecked Sendable {
             }
             return noErr
         }
-        engine.attach(source)
-        engine.connect(source, to: engine.mainMixerNode, format: outFormat)
+        engine.attach(node)
+        engine.connect(node, to: engine.mainMixerNode, format: outFormat)
         engine.connect(engine.mainMixerNode, to: output, format: nil)
+        source = node
         engine.prepare()
+    }
+
+    private func teardownGraph() {
+        engine.stop()
+        engine.inputNode.removeTap(onBus: 0)
+        if let s = source {
+            engine.disconnectNodeOutput(s)
+            engine.detach(s)
+        }
+        source = nil
+    }
+
+    private let restartLock = NSLock()
+    private let restartQueue = DispatchQueue(label: "sealer-call-audio-restart")
+
+    /// Volta a montar o audio. Ao 2.o reinicio sem som, desiste do modo de voz do iPhone.
+    private func restart(reason: String) {
+        restartLock.lock(); defer { restartLock.unlock() }
+        guard running, restarts < 6 else { return }
+        restarts += 1
+        let vp = voiceProcessing && restarts < 2
+        log("SealerCall", "a reiniciar o audio (\(reason)), modo de voz \(vp ? "sim" : "nao")")
+        teardownGraph()
         do {
+            try buildGraph(voiceProcessing: vp)
             try engine.start()
         } catch {
-            input.removeTap(onBus: 0)
-            throw error
+            log("SealerCall", "reinicio falhou: \(safeMessage(error))")
+            if vp {
+                teardownGraph()
+                try? buildGraph(voiceProcessing: false)
+                try? engine.start()
+            }
         }
-        running = true
-        let mic = Thread { [weak self] in self?.captureLoop() }
-        mic.name = "sealer-call-mic"
-        mic.qualityOfService = .userInteractive
-        let spk = Thread { [weak self] in self?.playbackLoop() }
-        spk.name = "sealer-call-spk"
-        spk.qualityOfService = .userInteractive
-        threads = [mic, spk]
-        mic.start()
-        spk.start()
+    }
+
+    /// Vigia: se o altifalante ou o microfone deixarem de ser chamados pelo iOS durante 1,5 s,
+    /// o audio esta parado (motor parado ou preso): reinicia (ate 3 vezes).
+    private func watchdog() {
+        var last = (rtCounts[0], rtCounts[1])
+        var stuckFor = 0
+        while running {
+            usleep(500_000)
+            let now = (rtCounts[0], rtCounts[1])
+            let stuck = now.0 == last.0 || now.1 == last.1 || !engine.isRunning
+            last = now
+            stuckFor = stuck ? stuckFor + 1 : 0
+            if stuckFor >= 3 && restarts < 3 {
+                stuckFor = 0
+                restartQueue.sync { restart(reason: "sem callbacks (micro \(now.0), altifalante \(now.1), motor \(engine.isRunning ? "sim" : "nao"))") }
+            }
+        }
     }
 
     /// Junta as amostras do microfone em blocos de 20 ms a 48 kHz e entrega-os ao Rust.
     private func captureLoop() {
-        let step = inputRate / Self.rate   // amostras de entrada por amostra de saida
         var src = [Float](repeating: 0, count: 4096)
         var pending: [Float] = []
         pending.reserveCapacity(8192)
@@ -121,6 +219,8 @@ final class CallAudioIO: @unchecked Sendable {
             let n = src.withUnsafeMutableBufferPointer { capture.read($0.baseAddress!, $0.count) }
             if n == 0 { continue }
             pending.append(contentsOf: src[0..<n])
+            // Amostras de entrada por amostra de saida (o formato pode mudar num reinicio).
+            let step = inputRate / Self.rate
             // Reamostragem linear (a voz do modo de chamada vem muitas vezes a 48 kHz: passo 1).
             while pos + 1 < Double(pending.count) {
                 let i = Int(pos)
@@ -196,9 +296,12 @@ final class CallAudioIO: @unchecked Sendable {
         guard running else { return }
         running = false
         wake.signal()
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        if let o = configObserver { NotificationCenter.default.removeObserver(o) }
+        configObserver = nil
+        restartLock.lock()
+        teardownGraph()
         try? engine.inputNode.setVoiceProcessingEnabled(false)
+        restartLock.unlock()
         threads.removeAll()
         setSpeaker(false)
     }

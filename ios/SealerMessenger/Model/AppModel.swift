@@ -1811,7 +1811,7 @@ final class AppModel: ObservableObject {
                     self.callStatsTick += 1
                     if self.callStatsTick % 5 == 0 {
                         let rtt = st.relayRttMs.map { " · \($0) ms ao servidor" } ?? ""
-                        let io = self.callIO.map { " · micro \($0.stats.sent) / altifalante \($0.stats.pulled) blocos" } ?? " · sem microfone/altifalante"
+                        let io = self.callIO.map { " · micro \($0.stats.sent) / altifalante \($0.stats.pulled) blocos · \($0.debugLine)" } ?? " · sem microfone/altifalante"
                         self.diag("chamada: \(st.transport), sala \(st.joined ? "sim" : "nao"), outro lado \(st.peerPresent ? "sim" : "nao")\(rtt) · recebidos \(st.received) · \(st.lost) perdidos (\(st.dredFrames) recuperados) · \(st.late) atrasados\(io)")
                     }
                 }
