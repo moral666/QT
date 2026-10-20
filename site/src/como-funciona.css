@@ -585,3 +585,47 @@
   font-size: 0.9rem;
   color: var(--lilac);
 }
+
+/* Medalhas (badges, apps 0.9.16): as cinco moedas da app, em fila; num ecra estreito passam a duas linhas. */
+.cf-badges {
+  max-width: 44rem;
+  margin: 2.5rem auto 0;
+  text-align: center;
+}
+.cf-badges h2 {
+  margin: 0 0 0.6rem;
+}
+.cf-badges p {
+  max-width: 34rem;
+  margin: 0 auto 1.4rem;
+  line-height: 1.55;
+}
+.cf-badges__lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.25rem 1.5rem;
+}
+.cf-badges__lista li {
+  width: 6.5rem;
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
+}
+.cf-badges__lista img {
+  width: 5rem;
+  height: 5rem;
+  margin-bottom: 0.35rem;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.4));
+}
+.cf-badges__lista strong {
+  color: var(--ice);
+  font-size: 0.95rem;
+}
+.cf-badges__lista span {
+  color: var(--mist);
+  font-size: 0.85rem;
+}
