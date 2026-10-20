@@ -42,6 +42,15 @@
 
       <div class="cf-stage">
         <svg id="scene" viewBox="0 0 800 450" data-scene="1" role="img" aria-labelledby="cap-title cap-text">
+          <defs>
+            <linearGradient id="hdr-grad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#0e0828" />
+              <stop offset="0.55" stop-color="#22105e" />
+              <stop offset="1" stop-color="#3a1c96" />
+            </linearGradient>
+            <clipPath id="clip-g-ana"><rect x="48" y="78" width="154" height="294" rx="21" /></clipPath>
+            <clipPath id="clip-g-rui"><rect x="598" y="78" width="154" height="294" rx="21" /></clipPath>
+          </defs>
           <path id="route" class="route" d="M210 245 H 590" />
 
           <!-- Servidor -->
@@ -56,33 +65,65 @@
             <text class="label" x="400" y="170" data-i18n="como.3">Servidor SEALER</text>
           </g>
           <g id="g-sees" class="fade sees">
-            <text class="tag tag--cold" x="400" y="24" data-i18n="como.4">Não consegue ler. Só vê o envelope.</text>
+            <rect class="note" x="300" y="318" width="200" height="60" rx="12" />
+            <text class="note-1" x="400" y="342" data-i18n="como.4">ENVELOPE FECHADO.</text>
+            <text class="note-2" x="400" y="365" data-i18n="como.29">SERVIDOR NÃO LÊ</text>
           </g>
 
           <!-- Ana -->
           <g id="g-ana" class="actor">
             <rect class="phone" x="40" y="70" width="170" height="310" rx="28" />
+            <g clip-path="url(#clip-g-ana)">
+              <rect class="scr" x="48" y="78" width="154" height="294" />
+              <path class="hdr" fill="url(#hdr-grad)" d="M48 78 H202 V122 Q176 142 48 134 Z" />
+              <rect class="bar" x="48" y="332" width="154" height="40" />
+            </g>
             <rect class="notch" x="100" y="82" width="50" height="7" rx="3.5" />
-            <rect class="bubble" x="56" y="110" width="138" height="46" rx="16" />
-            <text id="ana-text" class="bubble-text" x="125" y="134">Olá, Rui!</text>
-            <path id="ana-tick" class="tick" d="M160 172 l6 6 l11 -12" opacity="0" />
+            <circle class="av av--rui" cx="68" cy="108" r="11" />
+            <text class="av-txt" x="68" y="108">R</text>
+            <text class="hdr-name" x="86" y="105">Rui</text>
+            <path class="hdr-lock" d="M87 114 h7 v5 h-7 z M88.5 114 v-2 a2 2 0 0 1 4 0 v2" />
+            <text class="hdr-sub" x="97" y="118" data-i18n="como.30">cifrada ponta a ponta</text>
+            <rect class="field" x="56" y="338" width="106" height="28" rx="14" />
+            <rect class="send" x="167" y="338" width="28" height="28" rx="14" />
+            <path class="send-ico" d="M188 345 l-6 15 l-2.5 -6 l-6 -2.5 z" />
+            <text id="ana-field" class="field-txt" x="66" y="352" data-i18n="como.28">Mensagem</text>
+            <g id="ana-msg" class="ana-msg">
+              <rect class="bubble" x="70" y="146" width="124" height="40" rx="14" />
+              <text id="ana-text" class="bubble-text" x="132" y="166">Olá, Rui!</text>
+            </g>
+            <path id="ana-tick" class="tick" d="M164 196 l5 5 l9 -10 M173 199 l2 2 l9 -10" opacity="0" />
             <text class="who" x="125" y="420" data-i18n="como.6">Ana</text>
           </g>
 
           <!-- Rui -->
           <g id="g-rui" class="actor">
             <rect class="phone" x="590" y="70" width="170" height="310" rx="28" />
+            <g clip-path="url(#clip-g-rui)">
+              <rect class="scr" x="598" y="78" width="154" height="294" />
+              <path class="hdr" fill="url(#hdr-grad)" d="M598 78 H752 V122 Q726 142 598 134 Z" />
+              <rect class="bar" x="598" y="332" width="154" height="40" />
+            </g>
             <rect class="notch" x="650" y="82" width="50" height="7" rx="3.5" />
+            <circle class="av av--ana" cx="618" cy="108" r="11" />
+            <text class="av-txt" x="618" y="108">A</text>
+            <text class="hdr-name" x="636" y="105">Ana</text>
+            <path class="hdr-lock" d="M637 114 h7 v5 h-7 z M638.5 114 v-2 a2 2 0 0 1 4 0 v2" />
+            <text class="hdr-sub" x="647" y="118" data-i18n="como.30">cifrada ponta a ponta</text>
+            <rect class="field" x="606" y="338" width="106" height="28" rx="14" />
+            <rect class="send" x="717" y="338" width="28" height="28" rx="14" />
+            <path class="send-ico" d="M738 345 l-6 15 l-2.5 -6 l-6 -2.5 z" />
+            <text class="field-txt" x="616" y="352" data-i18n="como.28">Mensagem</text>
             <g class="fade rui-msg">
-              <rect class="bubble-in" x="606" y="110" width="138" height="46" rx="16" />
-              <text class="bubble-text" x="675" y="134" data-i18n="como.7">Olá, Rui!</text>
+              <rect class="bubble-in" x="606" y="146" width="124" height="40" rx="14" />
+              <text class="bubble-text" x="668" y="166" data-i18n="como.7">Olá, Rui!</text>
             </g>
             <text class="who" x="675" y="420" data-i18n="como.8">Rui</text>
           </g>
 
           <!-- A chave do Rui, guardada no telemóvel dele -->
           <g id="key-label" class="key-part">
-            <text class="tag tag--key" x="675" y="358" data-i18n="como.9">Chave do Rui</text>
+            <text class="tag tag--key" x="675" y="334" data-i18n="como.9">Chave do Rui</text>
           </g>
 
           <!-- Passo 5: escudo -->
@@ -103,7 +144,7 @@
             </g>
             <text id="env-tag" class="tag" x="0" y="56"></text>
           </g>
-          <g id="rkey" class="key-part" transform="translate(675 318)">
+          <g id="rkey" class="key-part" transform="translate(675 300)">
             <circle class="key-shape" cx="-16" cy="0" r="11" />
             <path class="key-shape" d="M-5 0 h28 m-7 0 v9 m-8 -9 v7" />
           </g>

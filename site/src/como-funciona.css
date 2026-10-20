@@ -132,17 +132,92 @@
   text-anchor: middle;
 }
 
-.bubble {
+/* Ecrã da app dentro dos telemóveis (o mesmo desenho do chat da app, tema escuro). */
+.scr {
+  fill: #0f0b1c;
+}
+
+.bar {
+  fill: #120e1f;
+}
+
+.av {
   fill: var(--violet);
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 2;
+}
+
+.av--ana {
+  fill: #c2477e;
+}
+
+.av-txt {
+  fill: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.hdr-name {
+  fill: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hdr-sub {
+  fill: rgba(255, 255, 255, 0.82);
+  font-size: 8px;
+  font-weight: 500;
+}
+
+.hdr-lock {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.82);
+  stroke-width: 1.2;
+}
+
+.field {
+  fill: #211a33;
+}
+
+.field-txt {
+  fill: #a79fc0;
+  font-size: 11.5px;
+  dominant-baseline: central;
+}
+
+.field-txt.typing {
+  fill: var(--ice);
+}
+
+.send {
+  fill: #b79cff;
+}
+
+.send-ico {
+  fill: #1b1040;
+}
+
+.ana-msg {
+  transition: opacity 0.35s ease;
+}
+
+.ana-msg.hidden {
+  opacity: 0;
+}
+
+.bubble {
+  fill: #4a24b8;
 }
 
 .bubble-in {
-  fill: #2a2f46;
+  fill: #231c36;
 }
 
 .bubble-text {
   fill: #fff;
-  font-size: 21px;
+  font-size: 15px;
   font-weight: 700;
   text-anchor: middle;
   dominant-baseline: middle;
@@ -168,6 +243,29 @@
 
 .led {
   fill: var(--ok);
+}
+
+.note {
+  fill: #17122a;
+  stroke: #4a3e78;
+  stroke-width: 1.5;
+}
+
+.note-1,
+.note-2 {
+  text-anchor: middle;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.note-1 {
+  fill: #fff;
+  font-size: 17px;
+}
+
+.note-2 {
+  fill: var(--lilac);
+  font-size: 14px;
 }
 
 .label {
@@ -297,7 +395,8 @@
 }
 
 [data-scene="1"] .key-part,
-[data-scene="5"] .key-part {
+[data-scene="5"] .key-part,
+.used .key-part {
   opacity: 0;
 }
 

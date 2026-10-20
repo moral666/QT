@@ -30,7 +30,7 @@ const SCENES = [
       en: 'Still on Ana’s phone, the message becomes unreadable and gets a padlock. Only Rui’s key opens it.',
       es: 'Todavía en el móvil de Ana, el mensaje se vuelve ilegible y lleva un candado. Solo la llave de Rui lo abre.',
     }),
-    ms: 6000,
+    ms: 4500,
   },
   {
     title: L({ pt: 'O servidor só a transporta', en: 'The server only carries it', es: 'El servidor solo lo transporta' }),
@@ -39,7 +39,7 @@ const SCENES = [
       en: 'The SEALER server delivers the locked envelope. It cannot read what is inside, and the envelope does not say who sent it.',
       es: 'El servidor de SEALER entrega el sobre cerrado. No puede leer lo que hay dentro, y el sobre no dice quién lo envió.',
     }),
-    ms: 6800,
+    ms: 7000,
   },
   {
     title: L({ pt: 'O Rui abre com a sua chave', en: 'Rui opens it with his key', es: 'Rui lo abre con su llave' }),
@@ -57,7 +57,7 @@ const SCENES = [
       en: 'SEALER also uses protection designed for quantum computers, which may one day break today’s cryptography.',
       es: 'SEALER también usa una protección pensada para los ordenadores cuánticos, que algún día podrían romper la criptografía de hoy.',
     }),
-    ms: 6500,
+    ms: 6000,
   },
 ];
 
@@ -71,6 +71,7 @@ const T = {
   opened: L({ pt: 'Aberta', en: 'Opened', es: 'Abierto' }),
 };
 const CIPHER = '7Fq#9zK@';
+const FIELD = L({ pt: 'Mensagem', en: 'Message', es: 'Mensaje' });
 const GLYPHS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghkmnpqrstuvwxyz0123456789#%&@$';
 
 /** Disposições do desenho. s é a escala do envelope e da chave. */
@@ -80,7 +81,7 @@ const LAYOUTS = {
     s: 1,
     route: 'M210 245 H 590',
     groups: {},
-    pos: { ana: [125, 245], server: [400, 245], rui: [675, 245], key: [675, 318] },
+    pos: { ana: [125, 245], server: [400, 245], rui: [675, 245], key: [675, 300] },
   },
   narrow: {
     viewBox: '0 0 400 900',
@@ -89,12 +90,12 @@ const LAYOUTS = {
     groups: {
       'g-ana': 'translate(100 -46) scale(0.8)',
       'g-server': 'translate(-200 290)',
-      'g-sees': 'translate(-200 288)',
+      'g-sees': 'translate(-200 220)',
       'g-rui': 'translate(-340 544) scale(0.8)',
       'key-label': 'translate(-340 544) scale(0.8)',
       'g-quantum': 'translate(200 520) scale(0.6) translate(-400 -310)',
     },
-    pos: { ana: [200, 150], server: [200, 505], rui: [200, 740], key: [200, 798.4] },
+    pos: { ana: [200, 150], server: [200, 505], rui: [200, 740], key: [200, 784] },
   },
 };
 
@@ -106,6 +107,8 @@ const envLock = $('env-lock');
 const envTag = $('env-tag');
 const anaText = $('ana-text');
 const anaTick = $('ana-tick');
+const anaMsg = $('ana-msg');
+const anaField = $('ana-field');
 const rkey = $('rkey');
 const progress = $('progress');
 const playBtn = $('play');
@@ -189,16 +192,25 @@ function scramble(from, to, ms, id) {
   });
 }
 
+/** A Ana escreve na barra da app; ao enviar, a mensagem aparece na conversa. */
 async function type(text, id) {
-  if (reduced()) {
-    anaText.textContent = text;
-    return;
-  }
-  for (let i = 0; i <= text.length; i++) {
+  anaField.classList.add('typing');
+  if (!reduced()) {
+    for (let i = 0; i <= text.length; i++) {
+      if (!alive(id)) return;
+      anaField.textContent = text.slice(0, i);
+      await wait(130);
+    }
+    await wait(450);
     if (!alive(id)) return;
-    anaText.textContent = text.slice(0, i) || ' ';
-    await wait(130);
   }
+  resetField();
+  anaMsg.classList.remove('hidden');
+}
+
+function resetField() {
+  anaField.classList.remove('typing');
+  anaField.textContent = FIELD;
 }
 
 function tag(text, kind) {
@@ -222,11 +234,13 @@ async function animate(n, id) {
   anaText.textContent = PLAIN;
   anaTick.setAttribute('opacity', n >= 2 ? '1' : '0');
   svg.classList.toggle('got', n >= 5);
+  svg.classList.remove('used');
+  resetField();
+  anaMsg.classList.toggle('hidden', n === 1);
   place(rkey, P.key);
 
   if (n === 1) {
     setEnv(false, false, PLAIN, P.ana);
-    anaText.textContent = ' ';
     await wait(500);
     await type(PLAIN, id);
   } else if (n === 2) {
@@ -241,10 +255,8 @@ async function animate(n, id) {
     setEnv(true, true, CIPHER, P.ana);
     await wait(500);
     await tween(env, P.ana, P.server, 1800, id);
-    if (alive(id)) tag('???', 'cold');
     await wait(1800);
     if (!alive(id)) return;
-    tag('');
     await tween(env, P.server, P.rui, 1800, id);
   } else if (n === 4) {
     setEnv(true, true, CIPHER, P.rui);
@@ -256,6 +268,7 @@ async function animate(n, id) {
     await wait(500);
     if (!alive(id)) return;
     envLock.setAttribute('opacity', '0');
+    svg.classList.add('used');
     place(rkey, P.key);
     await scramble(CIPHER, PLAIN, 1300, id);
     if (!alive(id)) return;
