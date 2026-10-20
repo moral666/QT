@@ -887,7 +887,13 @@ final class AppModel: ObservableObject {
                 showError(s("t_erro", safeMessage(error))); return
             }
             ui.error = nil
-            if let q = qt { await syncPresence(q) }
+            if let q = qt {
+                // Escreveu-me antes (convite) e eu adicionei-o a mao: o convite fica resolvido.
+                let cid = c.contactId
+                _ = try? await background { try q.dismissIntro(contactId: cid) }
+                await syncPresence(q)
+                await refreshViews(q)
+            }
             await flushOutbox()   // recibos que estavam a espera de saber o endereco deste contacto
         }
     }
