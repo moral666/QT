@@ -168,9 +168,12 @@ fun BrandLogo(sizeDp: Int) {
 @Composable
 fun MyAvatar(ui: UiState, badge: ImageVector, label: String, onClick: () -> Unit, sizeDp: Int = 76) {
     val c = LocalChatColors.current
+    // Com badge, o aro do badge substitui o aro claro.
+    val ringed = Badges.colors(ui.myBadge) != null
     Box(Modifier.size((sizeDp + 10).dp)) {
         Box(
-            Modifier.size(sizeDp.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.22f)).padding(4.dp)
+            (if (ringed) Modifier.size(sizeDp.dp).padding((sizeDp * (1 - Badges.INNER) / 2).dp)
+            else Modifier.size(sizeDp.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.22f)).padding(4.dp))
                 .clip(CircleShape).background(c.headerAvatar).clickable(onClickLabel = label, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
@@ -181,6 +184,7 @@ fun MyAvatar(ui: UiState, badge: ImageVector, label: String, onClick: () -> Unit
                 Icon(Icons.Filled.Person, contentDescription = s(R.string.t_a_tua_foto), tint = c.headerAvatarInk, modifier = Modifier.size((sizeDp * 0.55f).dp))
             }
         }
+        if (ringed) BadgeRing(ui.myBadge, Modifier.size(sizeDp.dp))
         IconButton(onClick = onClick, modifier = Modifier.align(Alignment.BottomEnd).offset(x = 6.dp, y = 6.dp).size(44.dp)) {
             Box(
                 Modifier.size(32.dp).shadow(4.dp, CircleShape).clip(CircleShape).background(MaterialTheme.colorScheme.surface),

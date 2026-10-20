@@ -30,6 +30,7 @@ struct AppRoot: View {
             }
         }
         .environment(\.photos, ui.photos)
+        .environment(\.badges, ui.badges)
         .animation(.easeOut(duration: 0.2), value: ui.openChatId)
         .onChange(of: ui.openChatId) { _, _ in showGroupInfo = false }
         .onChange(of: ready(ui)) { _, ok in

@@ -1,6 +1,11 @@
 /* Gerado por scripts/strings-ios.py a partir do Android. Nao editar a mao. */
 "att_daily_limit" = "Tu as atteint la limite quotidienne de pièces jointes. Réessaie demain.";
 "att_no_space" = "Le serveur n'a plus de place pour les pièces jointes. Réessaie plus tard.";
+"badge_cofounder" = "Co-founder";
+"badge_contributor" = "Contributor";
+"badge_dev" = "Dev";
+"badge_founder" = "Founder";
+"badge_tester" = "Tester";
 "confirm_word" = "SUPPRIMER";
 "core_unsupported" = "Ce message utilise une fonction que cette version de l'app ne prend pas encore en charge. Mets SEALER à jour pour le voir.";
 "core_voice_message" = "Message vocal";

@@ -117,7 +117,7 @@ struct HomeHeader: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("Sealer")
                     Spacer()
-                    MyAvatar(photo: ui.myPhoto, badge: "gearshape.fill", label: s("t_definicoes"), action: onSettings)
+                    MyAvatar(photo: ui.myPhoto, ring: ui.myBadge, badge: "gearshape.fill", label: s("t_definicoes"), action: onSettings)
                 }
                 Spacer().frame(height: 10)
                 Text(s("t_conversas")).font(Jakarta.font(29, .heavy, relativeTo: .largeTitle)).foregroundStyle(c.onTopBar)
