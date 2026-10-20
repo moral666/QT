@@ -347,10 +347,13 @@ final class VoicePlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func stop() {
         timer?.invalidate()
+        let had = player != nil
         player?.stop()
         player = nil
         playing = false
         positionMs = 0
+        // Liberta o audio (senao o CallKit pode nao conseguir ativa-lo numa chamada).
+        if had { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
@@ -359,6 +362,7 @@ final class VoicePlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             self.playing = false
             self.positionMs = 0
             self.player?.currentTime = 0
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
 }
