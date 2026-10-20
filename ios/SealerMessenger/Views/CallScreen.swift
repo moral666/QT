@@ -9,6 +9,8 @@ struct CallScreen: View {
     let onHangup: () -> Void
     let onMute: () -> Void
     let onSpeaker: () -> Void
+    /// So na build de testes: o registo da chamada (para descobrir porque nao ha som).
+    var diag: [String] = []
     @Environment(\.chat) private var c
 
     private static let green = Color(hex: 0x2E9E5B)
@@ -44,6 +46,17 @@ struct CallScreen: View {
                     }
                 }
                 Spacer().frame(height: 32)
+                if !diag.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(diag.enumerated()), id: \.offset) { _, line in
+                            Text(line).font(.system(size: 10, design: .monospaced)).foregroundStyle(.white.opacity(0.85))
+                        }
+                    }
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.35)))
+                }
             }
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
