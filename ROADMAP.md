@@ -28,17 +28,17 @@ seguir.
 - **Chave estática Noise do relay persistida** entre reinícios (pinning real).
 - **Registo de bundles autenticado:** o relay só aceita o bundle da
   identidade que se autenticou na ligação.
-- **Bloqueio da app no Android** (código próprio e biometria).
+- **Bloqueio da app** (código próprio e biometria, Face ID no iPhone).
 - **Teste de campo** com cinco aparelhos em três plataformas
   (`docs/field-tests.md`).
-- **Chamadas de voz no Android** (19/10/2026): sinalização dentro do Double Ratchet,
+- **Chamadas de voz no Android** (19/10/2026) **e no iPhone** (testadas a 20/10/2026): sinalização dentro do Double Ratchet,
   relay das chamadas em produção (UDP 443, salas anónimas, reserva por WebSocket),
   motor de áudio (Opus 1.6 com DRED e PLC neural, jitter buffer adaptativo), com a app
   aberta (0.9.4) e a tocar com a app fechada (0.9.6), com toque próprio (0.9.8).
 - **Foto de perfil** só para contactos, cifrada (0.9.9), e **app em seis línguas**
-  (PT, EN, FR, ES, DE, IT, 0.9.10). Por agora só no Android.
+  (PT, EN, FR, ES, DE, IT, 0.9.10).
 - **Novo design** (0.9.11): cabeçalho com o fundo curvo, ecrã de Definições e ecrã Novo
-  contacto; foto de perfil com pré-visualização e "Aplicar". Por agora só no Android.
+  contacto; foto de perfil com pré-visualização e "Aplicar".
 - **Desempenho** (0.9.12): lista de conversas que não fica mais lenta com o histórico,
   fotos de perfil com menos memória, chamadas sem gastar CPU quando o microfone falha e
   APK mais pequena.
@@ -47,10 +47,13 @@ seguir.
 
 - [x] **Chamadas de voz na app Android com a app aberta** (fase 4a, app 0.9.4).
 - [x] **Chamadas a tocar com a app fechada** (fase 4b, app 0.9.6).
-- [ ] **Chamadas no iPhone**, e no Android a integração com o sistema de chamadas
-  (auricular Bluetooth, carro, chamada normal ao mesmo tempo).
-- [ ] **Foto de perfil e seis línguas no iPhone.**
-- [ ] **Bloqueio da app no iPhone**, igual ao do Android.
+- [x] **App iPhone igual à Android** (0.9.13): foto de perfil, seis línguas, novo design e
+  bloqueio da app (código e Face ID).
+- [x] **Chamadas no iPhone** (CallKit), entre iPhones e entre Android e iPhone. Testado a
+  20/10/2026 com Android 0.9.16 e iPhone 0.9.15, junto com contactos, QR, mensagens de texto
+  e voz, GIFs, ficheiros, bloquear e apagar conversas: sem erros.
+- [ ] **No Android, a integração com o sistema de chamadas** (auricular Bluetooth, carro,
+  chamada normal ao mesmo tempo).
 - [ ] **Infraestrutura de produção:** backups e alertas do servidor.
 - [ ] **Distribuição:** Google Play e App Store (TestFlight).
 

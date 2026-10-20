@@ -4,7 +4,7 @@
 
 **SEALER** é um mensageiro privado: sem número de telefone, sem email, com cifra ponta a ponta e proteção pós-quântica. **QT** é o nome do protocolo e deste repositório.
 
-**Estado:** versão de testes, em testes fechados. App Android **0.9.13**, app iPhone **0.9.13** (a testar), servidor em produção.
+**Estado:** versão de testes, em testes fechados. App Android **0.9.16**, app iPhone **0.9.15**, servidor em produção.
 
 [Read this in English →](README.en.md)
 
@@ -29,13 +29,13 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 ## O que a app faz
 
 - **Conversas a dois e em grupo** (até 10 pessoas, 3 administradores), entre Android e iPhone, com *Enviado / Entregue / Visto*.
-- **Chamadas de voz cifradas** no Android, também com a app fechada ou o telemóvel bloqueado, com toque próprio.
+- **Chamadas de voz cifradas** no Android e no iPhone, também entre os dois. No Android tocam com a app fechada ou o telemóvel bloqueado, com toque próprio.
 - **Fotos, GIFs, mensagens de voz e ficheiros até 25 MB.** Cada ficheiro tem uma chave própria e sai do servidor quando é descarregado (ou ao fim de 24 horas).
 - **Notificações com a app fechada**, sempre genéricas ("Tens mensagens novas"): sem nome nem texto.
 - **Foto de perfil** só para os teus contactos, cifrada (o servidor nem sabe que é uma foto). Pode mudar-se de 72 em 72 horas.
 - **Convites por código QR**, reações, bloquear contactos e "online" só para os contactos.
-- **Bloqueio da app** com código próprio, impressão digital ou rosto (Android).
-- **Seis línguas:** português, inglês, francês, espanhol, alemão e italiano (Android).
+- **Bloqueio da app** com código próprio, impressão digital ou rosto (Face ID no iPhone).
+- **Seis línguas:** português, inglês, francês, espanhol, alemão e italiano.
 - **Apagar a conta** do telemóvel e do servidor com um toque.
 
 ## Como protege a privacidade
@@ -56,12 +56,12 @@ O que isto protege e o que não protege está em [`docs/threat-model.md`](docs/t
 
 - Todo o núcleo em Rust (criptografia, transporte, servidor, armazenamento e ponte para as apps), com a suite de testes a passar.
 - Servidor numa AWS EC2 em Estocolmo, em `wss://relay.sealer.pt`, com o Redis só em `127.0.0.1` e protegido por ACL.
-- App Android *release* assinada, em três Samsung e no emulador. App iPhone 0.9.3 num iPhone.
+- App Android *release* assinada, em três Samsung e no emulador.
+- **Android 0.9.16 com iPhone 0.9.15** (20/10/2026), sem erros: adicionar, apagar e voltar a adicionar contactos, código QR, botão de partilhar o ID, todos os menus, mensagens de texto e de voz, GIFs, envio de ficheiros, bloquear contactos, apagar conversas e chamadas de voz entre Androids, entre Android e iPhone e entre iPhones.
 - Teste de campo com cinco aparelhos em três plataformas e envios contínuos: nenhuma mensagem perdida ([`docs/field-tests.md`](docs/field-tests.md)).
 
 **A seguir:**
 
-- Testar no iPhone a 0.9.13 (igual à Android: grupos, chamadas, foto de perfil, seis línguas, novo design e bloqueio da app).
 - No Android, a integração com o sistema de chamadas (Bluetooth, carro).
 - Distribuição pela Google Play e pela App Store (hoje a app é instalada à mão pelos testadores). Já preparado: [`docs/google-play.md`](docs/google-play.md).
 - Servidor de produção com backups e alertas.

@@ -4,7 +4,7 @@
 
 **SEALER** is a private messenger: no phone number, no email, end-to-end encryption and post-quantum protection. **QT** is the name of the protocol and of this repository.
 
-**Status:** test version, in closed testing. Android app **0.9.13**, iPhone app **0.9.13** (being tested), server in production.
+**Status:** test version, in closed testing. Android app **0.9.16**, iPhone app **0.9.15**, server in production.
 
 [Ler em português →](README.md)
 
@@ -29,13 +29,13 @@ It is also a working example of "data protection by design", as the GDPR asks: e
 ## What the app does
 
 - **One-to-one and group chats** (up to 10 people, 3 admins), between Android and iPhone, with *Sent / Delivered / Read*.
-- **Encrypted voice calls** on Android, also with the app closed or the phone locked, with its own ringtone.
+- **Encrypted voice calls** on Android and iPhone, also between the two. On Android they ring with the app closed or the phone locked, with their own ringtone.
 - **Photos, GIFs, voice messages and files up to 25 MB.** Each file has its own key and leaves the server once downloaded (or after 24 hours).
 - **Notifications with the app closed**, always generic ("You have new messages"): no name, no text.
 - **Profile photo** only for your contacts, encrypted (the server does not even know it is a photo). It can be changed every 72 hours.
 - **QR code invites**, reactions, blocking contacts and "online" shown only to contacts.
-- **App lock** with its own code, fingerprint or face (Android).
-- **Six languages:** Portuguese, English, French, Spanish, German and Italian (Android).
+- **App lock** with its own code, fingerprint or face (Face ID on iPhone).
+- **Six languages:** Portuguese, English, French, Spanish, German and Italian.
 - **Delete your account** from the phone and the server with one tap.
 
 ## How it protects privacy
@@ -56,12 +56,12 @@ What this does and does not protect against is in [`docs/threat-model.md`](docs/
 
 - The whole Rust core (cryptography, transport, server, storage and the bridge to the apps), with the test suite passing.
 - Server on an AWS EC2 instance in Stockholm, at `wss://relay.sealer.pt`, with Redis only on `127.0.0.1` and protected by an ACL.
-- Signed *release* Android app on three Samsung phones and the emulator. iPhone app 0.9.3 on an iPhone.
+- Signed *release* Android app on three Samsung phones and the emulator.
+- **Android 0.9.16 with iPhone 0.9.15** (20/10/2026), no bugs: adding, deleting and re-adding contacts, QR code, share ID button, all menus, text and voice messages, GIFs, sending files, blocking contacts, deleting chats and voice calls between Androids, between Android and iPhone and between iPhones.
 - Field test with five devices on three platforms and continuous sending: no message lost ([`docs/field-tests.md`](docs/field-tests.md)).
 
 **Next:**
 
-- Test version 0.9.13 on iPhone (same as Android: groups, calls, profile photo, six languages, new design and app lock).
 - On Android, integration with the system call service (Bluetooth, car).
 - Distribution through Google Play and the App Store (today testers install the app by hand). Already prepared: [`docs/google-play.md`](docs/google-play.md).
 - Production server with backups and alerts.

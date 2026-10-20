@@ -6,6 +6,12 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 20 de outubro de 2026: teste entre Android 0.9.16 e iPhone 0.9.15
+
+- Testado sem erros: contactos (adicionar, apagar, voltar a adicionar), QR, partilha do ID, menus,
+  texto, voz, GIFs, ficheiros, bloquear, apagar conversas e chamadas de voz entre Androids, entre
+  Android e iPhone e entre iPhones. README, roadmap, documentação e site atualizados com este estado.
+
 ### 20 de outubro de 2026: medalha dos badges (apps 0.9.16)
 
 - Além do aro, quem tem badge mostra a medalha (moeda com o símbolo) no canto da foto: lista de
