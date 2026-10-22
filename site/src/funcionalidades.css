@@ -1,0 +1,137 @@
+/*
+  SEALER, página "Funcionalidades" (funcionalidades.html).
+
+  Usa a base de legal.css (tipos de letra, cores, barra, rodapé e seletor de língua) e
+  acrescenta só o que esta página tem: índice das secções e cartões em grelha.
+*/
+
+:root {
+  --wide: 60rem;
+  --violet: #6e48db;
+}
+
+.fx-bar,
+.fx-footer {
+  width: min(100% - 2 * var(--gutter), var(--wide));
+}
+
+.fx {
+  width: min(100% - 2 * var(--gutter), var(--wide));
+  margin: 0 auto;
+  padding: 1.5rem 0 4rem;
+}
+
+.fx h1 {
+  margin: 0 0 1rem;
+  font: 300 clamp(1.75rem, 1.3rem + 2vw, 2.75rem) / 1.2 var(--font-display);
+  text-wrap: balance;
+}
+
+.fx__lede {
+  max-width: 44rem;
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+  line-height: 1.5;
+}
+
+.fx__status {
+  margin: 0 0 2rem;
+  color: var(--mist);
+  font-size: 0.9375rem;
+}
+
+/* ---------- Índice ---------- */
+
+.fx-toc ul {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.fx-toc a {
+  display: inline-block;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ice);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.fx-toc a:hover {
+  border-color: var(--lilac);
+  color: var(--lilac);
+}
+
+/* ---------- Secções e cartões ---------- */
+
+.fx-sec {
+  margin-top: 3rem;
+  scroll-margin-top: 1.5rem;
+}
+
+.fx-sec h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 1.25rem;
+  font: 400 clamp(1.25rem, 1.1rem + 0.6vw, 1.5rem) / 1.3 var(--font-display);
+}
+
+.fx-sec__icon {
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0.4rem;
+  border-radius: 0.7rem;
+  background: rgba(110, 72, 219, 0.18);
+  fill: none;
+  stroke: var(--lilac);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.fx-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.5rem), 1fr));
+  gap: 1rem;
+}
+
+.fx-card {
+  padding: 1.1rem 1.2rem 1.2rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: linear-gradient(160deg, rgba(110, 72, 219, 0.08), transparent 60%), var(--panel);
+}
+
+.fx-card h3 {
+  margin: 0 0 0.4rem;
+  font: 600 1.0625rem/1.35 var(--font-text);
+  color: var(--ice);
+}
+
+.fx-card p {
+  margin: 0;
+  color: var(--mist);
+  font-size: 0.975rem;
+  line-height: 1.55;
+}
+
+.fx__more {
+  margin: 3.5rem 0 0;
+}
+
+.fx__back {
+  margin: 1rem 0 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}

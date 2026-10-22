@@ -4,7 +4,7 @@
 
 **SEALER** is a private messenger: no phone number, no email, end-to-end encryption and post-quantum protection. **QT** is the name of the protocol and of this repository.
 
-**Status:** test version, in closed testing. Android app **0.9.16**, iPhone app **0.9.15**, server in production.
+**Status:** test version, in closed testing. Android app **0.9.22**, iPhone app **0.9.22**, server in production.
 
 [Ler em português →](README.md)
 
@@ -34,7 +34,10 @@ It is also a working example of "data protection by design", as the GDPR asks: e
 - **Notifications with the app closed**, always generic ("You have new messages"): no name, no text.
 - **Profile photo** only for your contacts, encrypted (the server does not even know it is a photo). It can be changed every 72 hours.
 - **QR code invites**, reactions, blocking contacts and "online" shown only to contacts.
-- **App lock** with its own code, fingerprint or face (Face ID on iPhone).
+- **Badges** (Founder, Co-founder, Dev, Tester, Contributor): a ring and a badge on the photo, with a signed certificate, sent encrypted only to contacts.
+- **Report a contact:** the reason and up to 20 messages go encrypted to the SEALER team; the server stores the report without reading it or knowing who made it, and the contact is blocked.
+- **App lock** with its own code, fingerprint or face (Face ID on iPhone). After 5 wrong codes the wait goes up to 15 minutes, and changing the phone's clock does not skip it.
+- **Recovery key:** 12 words bring back the ID, contacts, block list and badge on a new phone. The copy is stored encrypted on the server; history and groups are not in it.
 - **Six languages:** Portuguese, English, French, Spanish, German and Italian.
 - **Delete your account** from the phone and the server with one tap.
 
@@ -44,9 +47,9 @@ It is also a working example of "data protection by design", as the GDPR asks: e
 - **Rotating keys:** the keys published on the server (signed pre-key and ML-KEM) rotate every 7 days, and there are one-time keys, one per new conversation.
 - **Same-size messages:** text is padded to 4 fixed sizes, so the server cannot tell a short message from a receipt.
 - **Protected connection:** Noise Protocol on top of TLS (`wss://`), with the server key pinned in the apps.
-- **Everything encrypted on the phone:** history in SQLCipher, with the key kept in the Android Keystore or the iPhone Secure Enclave.
+- **Everything encrypted on the phone:** history in SQLCipher, with the key kept in the Android Keystore or the iPhone Secure Enclave (this device only, outside cloud backups). The recent-apps thumbnail does not show your chats.
 - **Calls always go through the server**, never directly: whoever calls you never learns your IP. Audio packets all have the same size and rhythm, and the call server does not know which accounts are talking.
-- **Server defences:** proof of work to create an account, and limits per account and per IP.
+- **Server defences:** proof of work to create an account, limits per account and per IP, and only registered accounts can send.
 
 What this does and does not protect against is in [`docs/threat-model.md`](docs/threat-model.md) and [`docs/known-limitations.md`](docs/known-limitations.md) (in Portuguese).
 
@@ -58,6 +61,7 @@ What this does and does not protect against is in [`docs/threat-model.md`](docs/
 - Server on an AWS EC2 instance in Stockholm, at `wss://relay.sealer.pt`, with Redis only on `127.0.0.1` and protected by an ACL.
 - Signed *release* Android app on three Samsung phones and the emulator.
 - **Android 0.9.16 with iPhone 0.9.15** (20/10/2026), no bugs: adding, deleting and re-adding contacts, QR code, share ID button, all menus, text and voice messages, GIFs, sending files, blocking contacts, deleting chats and voice calls between Androids, between Android and iPhone and between iPhones.
+- **Android 0.9.22** (22/10/2026): app lock, recent apps and account recovery.
 - Field test with five devices on three platforms and continuous sending: no message lost ([`docs/field-tests.md`](docs/field-tests.md)).
 
 **Next:**

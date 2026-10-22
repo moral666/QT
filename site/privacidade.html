@@ -30,7 +30,7 @@
     </header>
 
     <main class="legal">
-      <p class="legal__label" data-i18n="priv.1">Última atualização: 19 de outubro de 2026</p>
+      <p class="legal__label" data-i18n="priv.1">Última atualização: 22 de outubro de 2026</p>
       <h1 data-i18n="priv.2">Política de privacidade</h1>
       <p class="legal__lede" data-i18n="priv.3">
         Resumindo: não pedimos o teu número de telefone, nem email, nem nome. As tuas mensagens são cifradas no teu
@@ -47,27 +47,13 @@
       </p>
 
       <h2 data-i18n="priv.7">O que fica só no teu telemóvel</h2>
-      <p data-i18n="priv.8">
-        As tuas mensagens, imagens, mensagens de voz, contactos, a lista de pessoas que bloqueaste, a tua identidade (as
-        tuas chaves) e as
-        definições ficam guardados apenas no
-        teu telemóvel, numa base de dados cifrada (SQLCipher) cuja chave está protegida pelo próprio telemóvel. Nós nunca
-        recebemos estes dados. Se perderes o telemóvel ou desinstalares a app, não os conseguimos recuperar.
-      </p>
+      <p data-i18n="priv.8">As tuas mensagens, imagens, mensagens de voz, ficheiros, contactos, a lista de pessoas que bloqueaste, a tua identidade (as tuas chaves) e as definições ficam guardados apenas no teu telemóvel, numa base de dados cifrada (SQLCipher) cuja chave está protegida pelo próprio telemóvel. Nós nunca recebemos estes dados em claro. Se perderes o telemóvel ou desinstalares a app, não os conseguimos recuperar (a cópia de recuperação, se a ligares, está explicada mais abaixo).</p>
       <p data-i18n="priv.9">
         As chamadas de voz não são gravadas, nem no telemóvel nem no servidor. A app só usa o microfone quando gravas uma
         mensagem de voz ou estás numa chamada, depois de lhe dares permissão.
       </p>
-      <p data-i18n="priv.10">
-        Os grupos funcionam da mesma forma: cada mensagem é cifrada para cada membro e o servidor não sabe que o grupo
-        existe. O estado "online" (podes desligá-lo no menu) é enviado só aos teus contactos, cifrado como uma mensagem,
-        quando abres e fechas a app. Não fica guardado em lado nenhum, nem no servidor nem no telemóvel de quem o recebe.
-      </p>
-      <p data-i18n="priv.11">
-        A foto de perfil, se escolheres uma, é reduzida no teu telemóvel e enviada só aos teus contactos, cifrada como uma
-        mensagem. O servidor não sabe que é uma foto e não a guarda. Fica no telemóvel de cada contacto até ele te apagar dos
-        contactos, ou até a tirares.
-      </p>
+      <p data-i18n="priv.10">Os grupos funcionam da mesma forma: cada mensagem é cifrada para cada membro e o servidor não sabe que o grupo existe. O estado "online" (podes desligá-lo nas Definições) é enviado só aos teus contactos, cifrado como uma mensagem, quando abres e fechas a app. Não fica guardado em lado nenhum, nem no servidor nem no telemóvel de quem o recebe.</p>
+      <p data-i18n="priv.11">A foto de perfil, se escolheres uma, é reduzida no teu telemóvel e enviada só aos teus contactos, cifrada como uma mensagem. O servidor não sabe que é uma foto e não a guarda. Fica no telemóvel de cada contacto até ele te apagar dos contactos, ou até a tirares. As medalhas funcionam da mesma forma: o certificado da medalha vai cifrado só aos teus contactos e o servidor não guarda nada sobre ela.</p>
 
       <h2 data-i18n="priv.12">O que passa pelo nosso servidor</h2>
       <p data-i18n="priv.13">
@@ -83,10 +69,7 @@
           <strong>As tuas chaves públicas</strong>: servem para outra pessoa poder começar uma conversa contigo de forma
           cifrada. São públicas por natureza.
         </li>
-        <li data-i18n="priv.16">
-          <strong>Mensagens, imagens e mensagens de voz à tua espera</strong>: chegam já cifrados. O servidor não consegue ler o conteúdo e
-          também não sabe quem os enviou (o remetente vai dentro da parte cifrada). Sabe só para que ID são.
-        </li>
+        <li data-i18n="priv.16"><strong>Mensagens, imagens, mensagens de voz e ficheiros à tua espera</strong>: chegam já cifrados. O servidor não consegue ler o conteúdo e também não sabe quem os enviou (o remetente vai dentro da parte cifrada). Sabe só para que ID são.</li>
         <li data-i18n="priv.17">
           <strong>O endereço de notificações do teu telemóvel</strong> (se tiveres as notificações ligadas): um código
           dado pela Google (Android) ou pela Apple (iPhone) ao telemóvel. Serve só para o servidor pedir à Google ou à
@@ -98,6 +81,9 @@
           servidor não o consegue ouvir. Também não sabe que contas estão a falar: vê só um código de sala aleatório e os
           endereços de rede dos dois telemóveis, que guarda em memória apenas enquanto a chamada dura.
         </li>
+        <li data-i18n="priv.18a"><strong>A cópia de recuperação</strong> (só se ligares a chave de recuperação, nas Definições): a tua identidade, os teus contactos (nome e ID), a lista de bloqueados e a tua medalha, cifrados no teu telemóvel com uma chave que sai das tuas 12 palavras. O servidor guarda a cópia sem a conseguir abrir, ligada ao teu ID. Não leva mensagens nem grupos. As 12 palavras nunca saem do telemóvel.</li>
+        <li data-i18n="priv.18b"><strong>Denúncias</strong> (só se denunciares alguém): o motivo, o ID da conta denunciada e as mensagens que escolheres (até 20, sem anexos), cifrados no teu telemóvel para uma chave que só a equipa da SEALER tem. O servidor guarda a denúncia sem a conseguir ler e sem saber quem a fez; conta apenas quantas denúncias cada conta fez num dia, para evitar abusos.</li>
+        <li data-i18n="priv.18c"><strong>Contas banidas</strong>: se uma conta for banida por não cumprir os <a href="./termos">termos</a>, o servidor guarda o ID dessa conta para recusar a ligação dela.</li>
         <li data-i18n="priv.19">
           <strong>O endereço de rede (IP) do teu telemóvel</strong>: é necessário para manter a ligação. Só é usado em
           memória enquanto estás ligado e não fica registado.
@@ -120,6 +106,9 @@
           apagado ao fim de 90 dias sem a abrires, quando desligas as notificações ou quando apagas a conta.
         </li>
         <li data-i18n="priv.26">Chamadas de voz: nada fica guardado. A sala desaparece do servidor quando a chamada acaba.</li>
+        <li data-i18n="priv.26a">Cópia de recuperação: enquanto usares a app (é renovada quando a abres). Apagada ao fim de 90 dias sem a abrires, quando desligas a chave de recuperação ou quando apagas a conta.</li>
+        <li data-i18n="priv.26b">Denúncias: 30 dias. O número de denúncias feitas por cada conta num dia: 2 dias.</li>
+        <li data-i18n="priv.26c">Contas banidas: enquanto o banimento durar.</li>
         <li data-i18n="priv.27">Quanto enviaste em anexos por dia (só um número, para evitar abusos): 2 dias.</li>
         <li data-i18n="priv.28">
           Depois de apagares a conta: durante 30 dias, o servidor lembra-se só de que aquele ID foi apagado, para avisar
@@ -128,11 +117,7 @@
       </ul>
 
       <h2 data-i18n="priv.29">Para que usamos estes dados</h2>
-      <p data-i18n="priv.30">
-        Só para entregar as tuas mensagens e manter o serviço a funcionar e protegido contra abusos. A base legal é a
-        prestação do serviço que pedes ao usar a app. Não usamos os dados para publicidade, não criamos perfis e não os
-        vendemos nem partilhamos com ninguém.
-      </p>
+      <p data-i18n="priv.30">Só para entregar as tuas mensagens, guardar a cópia de recuperação que pediste, analisar denúncias e manter o serviço a funcionar e protegido contra abusos. A base legal é a prestação do serviço que pedes ao usar a app e, nas denúncias e banimentos, o interesse legítimo de proteger quem usa a SEALER. Não usamos os dados para publicidade, não criamos perfis e não os vendemos nem partilhamos com ninguém.</p>
 
       <h2 data-i18n="priv.31">Quem mais está envolvido</h2>
       <ul>
@@ -154,11 +139,7 @@
       <p data-i18n="priv.35">A app não tem publicidade, estatísticas de utilização nem relatórios de falhas de outras empresas.</p>
 
       <h2 data-i18n="priv.36">Apagar os teus dados</h2>
-      <p data-i18n="priv.37">
-        Na app, no menu, escolhe <strong>Destruir perfil e dados</strong>: apaga primeiro o que está no servidor e
-        depois tudo do teu telemóvel. Se já desinstalaste a app, vê a página
-        <a href="./apagar-conta">Apagar a conta</a>.
-      </p>
+      <p data-i18n="priv.37">Na app, nas <strong>Definições</strong>, escolhe <strong>Destruir perfil e dados</strong>: apaga primeiro o que está no servidor (incluindo a cópia de recuperação) e depois tudo do teu telemóvel. Se já desinstalaste a app, vê a página <a href="./apagar-conta">Apagar a conta</a>.</p>
 
       <h2 data-i18n="priv.38">Os teus direitos</h2>
       <p data-i18n="priv.39">

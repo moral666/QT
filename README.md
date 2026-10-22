@@ -4,7 +4,7 @@
 
 **SEALER** é um mensageiro privado: sem número de telefone, sem email, com cifra ponta a ponta e proteção pós-quântica. **QT** é o nome do protocolo e deste repositório.
 
-**Estado:** versão de testes, em testes fechados. App Android **0.9.16**, app iPhone **0.9.15**, servidor em produção.
+**Estado:** versão de testes, em testes fechados. App Android **0.9.22**, app iPhone **0.9.22**, servidor em produção.
 
 [Read this in English →](README.en.md)
 
@@ -34,7 +34,10 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 - **Notificações com a app fechada**, sempre genéricas ("Tens mensagens novas"): sem nome nem texto.
 - **Foto de perfil** só para os teus contactos, cifrada (o servidor nem sabe que é uma foto). Pode mudar-se de 72 em 72 horas.
 - **Convites por código QR**, reações, bloquear contactos e "online" só para os contactos.
-- **Bloqueio da app** com código próprio, impressão digital ou rosto (Face ID no iPhone).
+- **Medalhas** (Founder, Co-founder, Dev, Tester, Contributor): um aro e uma medalha na foto, com certificado assinado, enviados cifrados só aos contactos.
+- **Denunciar um contacto:** o motivo e até 20 mensagens seguem cifrados para a equipa da SEALER; o servidor guarda a denúncia sem a ler e sem saber quem a fez, e o contacto fica bloqueado.
+- **Bloqueio da app** com código próprio, impressão digital ou rosto (Face ID no iPhone). Depois de 5 códigos errados a espera vai até 15 minutos, e mudar a hora do telemóvel não a salta.
+- **Chave de recuperação:** 12 palavras recuperam o ID, os contactos, os bloqueados e a medalha num telemóvel novo. A cópia fica cifrada no servidor; o histórico e os grupos não vão nela.
 - **Seis línguas:** português, inglês, francês, espanhol, alemão e italiano.
 - **Apagar a conta** do telemóvel e do servidor com um toque.
 
@@ -44,9 +47,9 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 - **Chaves que rodam:** as chaves publicadas no servidor (signed pre-key e ML-KEM) rodam a cada 7 dias, e há chaves de uso único, uma por cada conversa nova.
 - **Mensagens do mesmo tamanho:** o texto leva enchimento até 4 tamanhos fixos, por isso o servidor não distingue uma mensagem curta de um recibo.
 - **Ligação protegida:** Noise Protocol por cima de TLS (`wss://`), com a chave do servidor fixada nas apps.
-- **Tudo cifrado no telemóvel:** histórico em SQLCipher, com a chave guardada no Keystore do Android ou no Secure Enclave do iPhone.
+- **Tudo cifrado no telemóvel:** histórico em SQLCipher, com a chave guardada no Keystore do Android ou no Secure Enclave do iPhone (só neste aparelho, fora das cópias na nuvem). A miniatura nas apps recentes não mostra as conversas.
 - **Chamadas sempre pelo servidor**, nunca diretas: quem te liga não fica a saber o teu IP. Os pacotes de áudio têm todos o mesmo tamanho e o mesmo ritmo, e o servidor das chamadas não sabe que contas estão a falar.
-- **Defesas no servidor:** prova de trabalho para criar conta e limites por conta e por IP.
+- **Defesas no servidor:** prova de trabalho para criar conta, limites por conta e por IP, e só contas registadas podem enviar.
 
 O que isto protege e o que não protege está em [`docs/threat-model.md`](docs/threat-model.md) e [`docs/known-limitations.md`](docs/known-limitations.md).
 
@@ -58,6 +61,7 @@ O que isto protege e o que não protege está em [`docs/threat-model.md`](docs/t
 - Servidor numa AWS EC2 em Estocolmo, em `wss://relay.sealer.pt`, com o Redis só em `127.0.0.1` e protegido por ACL.
 - App Android *release* assinada, em três Samsung e no emulador.
 - **Android 0.9.16 com iPhone 0.9.15** (20/10/2026), sem erros: adicionar, apagar e voltar a adicionar contactos, código QR, botão de partilhar o ID, todos os menus, mensagens de texto e de voz, GIFs, envio de ficheiros, bloquear contactos, apagar conversas e chamadas de voz entre Androids, entre Android e iPhone e entre iPhones.
+- **Android 0.9.22** (22/10/2026): bloqueio da app, apps recentes e recuperação da conta.
 - Teste de campo com cinco aparelhos em três plataformas e envios contínuos: nenhuma mensagem perdida ([`docs/field-tests.md`](docs/field-tests.md)).
 
 **A seguir:**

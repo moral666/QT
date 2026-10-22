@@ -22,7 +22,7 @@ seguir.
   em simultâneo sem falhas.
 - **Relay acessível pela internet** (AWS EC2), atrás de TLS (`wss://`), com
   pinning da chave Noise nas apps e o Redis só em `127.0.0.1` com ACL.
-- **Chave da base de dados vinda do Android Keystore / Secure Enclave**; o
+- **Chave da base de dados vinda do Android Keystore / Secure Enclave do iPhone**; o
   `messenger` do terminal pede a passphrase escondida, nunca na linha de
   comandos.
 - **Chave estática Noise do relay persistida** entre reinícios (pinning real).
@@ -42,6 +42,16 @@ seguir.
 - **Desempenho** (0.9.12): lista de conversas que não fica mais lenta com o histórico,
   fotos de perfil com menos memória, chamadas sem gastar CPU quando o microfone falha e
   APK mais pequena.
+- **Medalhas** (0.9.14 e 0.9.16): aro e medalha na foto (Founder, Co-founder, Dev, Tester,
+  Contributor), com certificado Ed25519 enviado cifrado aos contactos; o servidor não guarda nada.
+- **Revisão de segurança do núcleo** (0.9.17): o relay só aceita escritas de contas registadas,
+  chaves intermédias zeradas na memória e fuzzing com `cargo-fuzz`.
+- **Denúncias e banimentos** (0.9.18): denunciar um contacto com o motivo e até 20 mensagens,
+  cifradas para a equipa da SEALER; o relay guarda-as sem as ler nem saber quem denunciou.
+- **Chave de recuperação** (0.9.19): 12 palavras recuperam o ID, os contactos, os bloqueados
+  e a medalha num telemóvel novo (sem histórico nem grupos).
+- **Revisão das apps** (0.9.22): espera depois de códigos errados que não se salta mudando a
+  hora, apps recentes tapadas no Android 7 a 12 e medalha logo depois de recuperar a conta.
 
 ## A seguir: tornar isto usável no dia a dia
 
@@ -63,8 +73,8 @@ seguir.
   e de disco, mensagens e cabeçalhos forjados, limites de tamanho, e testes
   por propriedades do Double Ratchet (200 sequências aleatórias de entrega em
   cada corrida). Ver `docs/threat-model.md`, secção 3.
-- [ ] **Fuzzing guiado por cobertura** (`cargo-fuzz`), corrido durante horas:
-  ainda não existe no repositório.
+- [x] **Fuzzing guiado por cobertura** (`cargo-fuzz`, 5 alvos em `fuzz/`, 0.9.17): a
+  primeira volta não encontrou erros. Falta correr durante horas, com regularidade.
 - [x] **Limites no relay por utilizador** (0.9.3): ligações por IP e por conta,
   envios e pedidos de bundle por minuto, prova de trabalho ao criar conta.
 - [x] **One-time prekeys servidas pelo relay**, uma por pedido (0.9.3).
@@ -85,8 +95,9 @@ seguir.
 
 ## Fora do roadmap (por agora, deliberadamente)
 
-Anonimato de rede completo (Tor/mixnet), deteção de abuso e proteção
-contra coerção física não estão planeados para o curto/médio prazo. O que
+Anonimato de rede completo (Tor/mixnet), deteção automática de abuso (há
+denúncias feitas pelas pessoas, desde a 0.9.18) e proteção contra coerção
+física não estão planeados para o curto/médio prazo. O que
 o QT não protege está em `docs/threat-model.md`, secção 4.
 
 ## Como isto se mantém atualizado

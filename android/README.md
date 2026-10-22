@@ -1,6 +1,6 @@
 # SEALER para Android (Kotlin / Jetpack Compose)
 
-**Versão de testes (0.9.16).** Testada a 20/10/2026 com a app iPhone 0.9.15, sem erros (ver `docs/field-tests.md`).
+**Versão de testes (0.9.22).** A 0.9.16 foi testada a 20/10/2026 com a app iPhone 0.9.15, sem erros (ver `docs/field-tests.md`); a 0.9.22 foi testada a 22/10/2026 (bloqueio da app, apps recentes e recuperação da conta).
 Toda a criptografia está no Rust (`libqt_ffi.so`); o Kotlin só move bytes e desenha ecrãs.
 No telemóvel a app chama-se **SEALER**. O identificador na Play Store é `sealer.app` (desde a 0.9.0; antes `pt.qt.app`); o código Kotlin continua no pacote `pt.qt.app`.
 
@@ -22,6 +22,14 @@ Compose UI -> MainViewModel -> QtClient (UniFFI/Rust: identidade, PQXDH, ratchet
 | `Keystore.kt` | Chave do SQLCipher protegida pelo Android Keystore |
 | `ContactStore.kt` | Lista de contactos cifrada |
 | `Theme.kt` | Cores, logotipo e barra de topo |
+| `Design.kt` | Cabeçalhos com o fundo curvo, ecrã inicial e Definições |
+| `Groups.kt` | Grupos (criar, membros, administradores) |
+| `Files.kt` | Ficheiros até 25 MB (abrir noutra app a partir da memória, guardar) |
+| `Voice.kt` | Mensagens de voz (até 10 s) |
+| `Calls.kt`, `CallScreen.kt` | Chamadas de voz (serviço do microfone, notificação de ecrã inteiro) |
+| `Core.kt`, `Push.kt` | Núcleo em segundo plano e notificações (FCM) |
+| `Profile.kt`, `Badges.kt` | Foto de perfil e medalhas |
+| `Recovery.kt` | Chave de recuperação (12 palavras) |
 
 ## O que tens de ter
 
@@ -77,14 +85,19 @@ cd ~/QT && cargo run -p qt_server --example peer -- --relay ws://127.0.0.1:9443 
 Este fluxo (dois processos + relay verdadeiro + pinning) já foi testado de ponta a ponta no PC.
 O `peer` só troca texto: uma imagem enviada pela app aparece lá só como `📷 Foto` ou `GIF`.
 
-## O menu ⋮
+## Definições
 
-- **O meu ID**: o teu QT Public ID, em texto e em código QR.
-- **Notificações**: decide se a app avisa o outro lado de que leste as mensagens (o visto ✓✓ azul).
-  As notificações push (avisos com a app fechada) ligam-se e desligam-se nas definições do telemóvel.
-- **Bloqueio da app** e **Bloquear agora** (este só com o bloqueio ativo).
+Toca na tua foto (com a roda dentada), no cabeçalho do ecrã inicial:
+
+- **Foto de perfil** e **O meu ID** (em texto e em código QR).
+- **Chave de recuperação**: 12 palavras que recuperam a conta num telemóvel novo.
+- **Bloqueio da app** (código, biometria, tempo até bloquear), **Bloquear agora** e **Contactos bloqueados**.
+- **Privacidade**: mostrar quando estou online e confirmações de leitura (o visto ✓✓).
+- **Notificações**, **Idioma** e **Versão**.
 - **Relay (teste)**: só na build *debug*.
-- **Apagar todos os dados**: apaga a identidade, as conversas e as imagens deste telemóvel.
+- **Destruir perfil e dados**: apaga a conta no servidor e depois tudo deste telemóvel.
+
+No chat, o cadeado abre **Verificar segurança** e o menu ⋮ tem **Bloquear**, **Denunciar** e **Eliminar conversa ou contacto**.
 
 ## Adicionar alguém que está ao teu lado (código QR)
 
@@ -111,8 +124,8 @@ O relay tem de ser atualizado para aceitar imagens; com um relay antigo a app av
 
 ## Segurança já tratada na app
 Chave do SQLCipher gerada aleatoriamente e protegida pelo Android Keystore (StrongBox se existir);
-`allowBackup=false`; conversas escondidas na lista de apps recentes (Android 13+; as capturas de ecrã são permitidas); sem logs de conteúdo/chaves; TLS obrigatório na build *release*;
-bloqueio da app opcional (código próprio que cifra a chave do SQLCipher e a lista de contactos, com Argon2id no Rust, mais desbloqueio com impressão digital, rosto ou PIN do telemóvel através de uma chave do Keystore que só funciona depois de autenticar; ao bloquear, as imagens em memória são esquecidas); pinning da chave do relay (obrigatório na *release*); confirmação (`Ack`) só depois de processar; deduplicação feita pelo Rust.
+`allowBackup=false`; conversas escondidas na lista de apps recentes (Android 13+ com `setRecentsScreenshotEnabled`; Android 7 a 12 com FLAG_SECURE só fora do primeiro plano, desde a 0.9.22; as capturas de ecrã são permitidas); sem logs de conteúdo/chaves; TLS obrigatório na build *release*;
+bloqueio da app opcional (código próprio que cifra a chave do SQLCipher e a lista de contactos, com Argon2id no Rust, mais desbloqueio com impressão digital, rosto ou PIN do telemóvel através de uma chave do Keystore que só funciona depois de autenticar; ao bloquear, as imagens em memória são esquecidas; depois de 5 códigos errados, espera crescente contada pelo relógio desde que o telemóvel ligou); pinning da chave do relay (obrigatório na *release*); confirmação (`Ack`) só depois de processar; deduplicação feita pelo Rust.
 
 ## Limitações (ver `docs/known-limitations.md`, itens 30 a 36)
 Com a app fechada chega só um aviso genérico ("Tens mensagens novas"), sem nome nem texto. Desde a 0.9.6 a app decifra em segundo plano
