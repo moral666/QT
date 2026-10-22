@@ -20,6 +20,14 @@
 //! ... --example denuncias -- banidos  --key ~/Documentos/operador.key [--json]
 //! ```
 //!
+//! Premium (0.9.20), com a mesma chave:
+//!
+//! ```text
+//! ... --example denuncias -- premium-dar   --key ... --user qt1:... (--dias 30 | --sempre)
+//! ... --example denuncias -- premium-tirar --key ... --user qt1:...
+//! ... --example denuncias -- premium-lista --key ... [--json]
+//! ```
+//!
 //! O relay guarda as denuncias cifradas (nao as consegue ler) e sem o ID de quem denunciou.
 //! So esta ferramenta, com a chave, as abre. `--relay` e `--pin` servem para testar noutro relay.
 
@@ -130,8 +138,15 @@ async fn ask(c: &mut RelayClient, m: ClientMessage) -> ServerMessage {
 }
 
 fn user_arg() -> String {
-    let u = arg("--user").unwrap_or_else(|| fail("falta --user <id do relay, 64 caracteres hex>"));
-    let u = u.trim().to_ascii_lowercase();
+    let u = arg("--user").unwrap_or_else(|| fail("falta --user <qt1:... ou id do relay, 64 caracteres hex>"));
+    let mut u = u.trim().to_ascii_lowercase();
+    // QT Public ID: o id do relay e a segunda metade (chave de assinatura).
+    if let Some(rest) = u.strip_prefix("qt1:") {
+        if rest.len() != 128 {
+            fail("--user qt1: tem de ter 128 caracteres hex depois de qt1:");
+        }
+        u = rest[64..].to_string();
+    }
     if !qt_server::protocol::is_valid_user_id(&u) {
         fail("--user tem de ser o id do relay (64 caracteres hex), como aparece na denuncia");
     }
@@ -246,6 +261,40 @@ async fn main() {
             ask(&mut c, ClientMessage::AdminUnban { user_id: user.clone() }).await;
             println!("Conta {user} desbanida.");
         }
+        "premium-dar" | "premium-tirar" => {
+            let user = user_arg();
+            let until_ms = if cmd == "premium-tirar" {
+                0
+            } else if flag("--sempre") {
+                253_402_300_799_000 // 31/12/9999
+            } else {
+                let dias: u64 = arg("--dias").and_then(|v| v.parse().ok()).filter(|d| *d > 0)
+                    .unwrap_or_else(|| fail("falta --dias <numero> ou --sempre"));
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+                now + dias * 86_400_000
+            };
+            let seed = load_seed();
+            let mut c = connect(&seed).await;
+            ask(&mut c, ClientMessage::AdminGrantPremium { user_id: user.clone(), until_ms }).await;
+            if until_ms == 0 {
+                println!("Premium tirado a {user}.");
+            } else {
+                println!("Premium dado a {user} ate {}.", when(until_ms));
+            }
+        }
+        "premium-lista" => {
+            let seed = load_seed();
+            let mut c = connect(&seed).await;
+            match ask(&mut c, ClientMessage::AdminListPremium).await {
+                ServerMessage::PremiumList { entries } if flag("--json") => {
+                    let v: Vec<serde_json::Value> = entries.iter().map(|e| serde_json::json!({"user_id": e.user_id, "until_ms": e.until_ms})).collect();
+                    println!("{}", serde_json::Value::Array(v))
+                }
+                ServerMessage::PremiumList { entries } if entries.is_empty() => println!("Ninguem com premium."),
+                ServerMessage::PremiumList { entries } => entries.iter().for_each(|e| println!("{}  ate {}", e.user_id, when(e.until_ms))),
+                other => fail(&format!("resposta inesperada: {other:?}")),
+            }
+        }
         "banidos" => {
             let seed = load_seed();
             let mut c = connect(&seed).await;
@@ -259,7 +308,7 @@ async fn main() {
             }
         }
         _ => {
-            eprintln!("Uso: --example denuncias -- (chave|listar|apagar|banir|desbanir|banidos) --key <ficheiro>");
+            eprintln!("Uso: --example denuncias -- (chave|listar|apagar|banir|desbanir|banidos|premium-dar|premium-tirar|premium-lista) --key <ficheiro>");
             std::process::exit(2);
         }
     }

@@ -77,6 +77,16 @@ def test_reports_commands_and_parsing():
             except ValueError: pass
         try: reports.build_command(cfg, "rm"); assert False
         except ValueError: pass
+    pid = "qt1:" + "ab" * 64
+    assert reports.validate_public_id(pid) is None and reports.validate_public_id("qt1:ab") is not None
+    try:
+        c = reports.build_command(cfg, "premium-dar", user=pid, days=30)
+        assert c.args[-4:] == ["--user", pid, "--dias", "30"]
+        assert reports.build_command(cfg, "premium-dar", user=pid).args[-1] == "--sempre"
+        assert reports.build_command(cfg, "premium-lista").args[-1] == "--json"
+    except ValueError as exc:
+        assert "cargo" in str(exc)
+    assert reports.parse_premium('[{"user_id": "x", "until_ms": 5}, {"a": 1}]') == [{"user_id": "x", "until_ms": 5}]
     got = reports.parse_reports('[{"id": 3, "recebida_em_ms": 1, "denuncia": {"motivo": "spam"}}, {"x": 1}]')
     assert [r["id"] for r in got] == [3]
     assert reports.parse_bans('["' + "ab" * 32 + '", 5]') == ["ab" * 32]

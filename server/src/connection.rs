@@ -528,6 +528,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             match store.delete_account(&user_id).await {
                 Ok(()) => {
                     let _ = store.delete_backup(&user_id).await;
+                    let _ = store.set_premium(&user_id, 0).await;
                     stats::inc(&STATS.accounts_deleted);
                     ServerMessage::Ack
                 }
@@ -659,6 +660,8 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             }
         }
         ClientMessage::AdminListReports { .. }
+        | ClientMessage::AdminGrantPremium { .. }
+        | ClientMessage::AdminListPremium
         | ClientMessage::AdminDeleteReport { .. }
         | ClientMessage::AdminBan { .. }
         | ClientMessage::AdminUnban { .. }
@@ -759,6 +762,23 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
         }
         ClientMessage::BackupDelete => match store.delete_backup(me).await {
             Ok(()) => ServerMessage::Ack,
+            Err(e) => internal(e),
+        },
+        ClientMessage::PremiumStatus => match store.premium_until(me).await {
+            Ok(until_ms) => ServerMessage::Premium { until_ms },
+            Err(e) => internal(e),
+        },
+        ClientMessage::AdminGrantPremium { user_id, until_ms } => {
+            if !is_valid_user_id(&user_id) {
+                return err("user_id invalido");
+            }
+            match store.set_premium(&user_id, until_ms).await {
+                Ok(()) => ServerMessage::Ack,
+                Err(e) => internal(e),
+            }
+        }
+        ClientMessage::AdminListPremium => match store.list_premium().await {
+            Ok(entries) => ServerMessage::PremiumList { entries },
             Err(e) => internal(e),
         },
     }

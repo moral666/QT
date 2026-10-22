@@ -703,6 +703,53 @@ impl Store {
     }
 }
 
+// ------------------------------------------------------------ premium
+//
+//   {p}:premium:{conta}  ate quando (ms desde 1970, texto); expira sozinho 30 dias depois
+//   {p}:premiums         lista das contas (as que expiraram saem ao listar)
+impl Store {
+    pub async fn premium_until(&self, user_id: &str) -> Result<u64, StoreError> {
+        let mut conn = self.connection().await?;
+        let v: Option<String> = conn.get(format!("{}:premium:{user_id}", self.key_prefix)).await?;
+        Ok(v.and_then(|s| s.parse().ok()).unwrap_or(0))
+    }
+
+    /// Da premium ate `until_ms` (0 tira).
+    pub async fn set_premium(&self, user_id: &str, until_ms: u64) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        let key = format!("{p}:premium:{user_id}");
+        let list = format!("{p}:premiums");
+        let mut pipe = redis::pipe();
+        pipe.lrem(&list, 0, user_id).ignore();
+        if until_ms == 0 {
+            pipe.del(&key).ignore();
+        } else {
+            // Expira sozinho 30 dias depois do fim (sem fim: o Redis aceita ate ~292 milhoes de anos).
+            let ttl = (until_ms.saturating_sub(now_ms()) / 1000).saturating_add(30 * 86_400).min(i64::MAX as u64) as i64;
+            pipe.set(&key, until_ms.to_string()).ignore().expire(&key, ttl.max(1)).ignore().rpush(&list, user_id).ignore();
+        }
+        pipe.query_async::<_, ()>(&mut conn).await?;
+        Ok(())
+    }
+
+    pub async fn list_premium(&self) -> Result<Vec<crate::protocol::PremiumEntry>, StoreError> {
+        let mut conn = self.connection().await?;
+        let list = format!("{}:premiums", self.key_prefix);
+        let ids: Vec<String> = conn.lrange(&list, 0, -1).await?;
+        let mut out = Vec::new();
+        for id in ids {
+            let until = self.premium_until(&id).await?;
+            if until == 0 {
+                conn.lrem::<_, _, ()>(&list, 0, &id).await?;
+            } else {
+                out.push(crate::protocol::PremiumEntry { user_id: id, until_ms: until });
+            }
+        }
+        Ok(out)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct QueuedMessage {
     pub id: u64,

@@ -12,6 +12,7 @@ struct ProfileSettingsScreen: View {
     let onLockSettings: () -> Void
     let onLockNow: () -> Void
     let onRecovery: () -> Void
+    let onPremium: () -> Void
     let onUnblock: (String) -> Void
     let onPresence: (Bool) -> Void
     let onReadReceipts: (Bool) -> Void
@@ -52,6 +53,7 @@ struct ProfileSettingsScreen: View {
                     SettingsRow(icon: "face.smiling", title: s("t_foto_de_perfil"), action: onProfilePhoto)
                     SettingsRow(icon: "qrcode", title: s("t_o_meu_id"), action: onMyId)
                     SettingsRow(icon: "key.fill", title: s("recovery_title"), action: onRecovery)
+                    SettingsRow(icon: "star.fill", title: ui.premium ? s("premium_title_on") : s("premium_title"), action: onPremium)
                     SettingsRow(icon: "lock.fill", title: s("t_bloqueio_da_app"),
                                 divider: ui.lockEnabled || !ui.blocked.isEmpty, action: onLockSettings)
                     if ui.lockEnabled {

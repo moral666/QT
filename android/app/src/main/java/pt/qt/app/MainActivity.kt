@@ -442,6 +442,10 @@ fun AppRoot(
             RestoreScreen(ui, onBack = { if (!ui.recoveryBusy) showRestore = false }, onRestore = vm::restoreAccount)
         }
         !ui.hasIdentity -> SetupScreen(ui, onCreate = vm::createIdentity, onRestore = { showRestore = true })
+        ui.showPremium -> {
+            BackHandler { vm.closePremium() }
+            PremiumScreen(ui, onBack = vm::closePremium, onTest = vm::setPremiumTest)
+        }
         openGroup != null && showGroupInfo -> {
             BackHandler { showGroupInfo = false }
             GroupInfoScreen(
@@ -522,6 +526,7 @@ fun AppRoot(
                 onMyId = { showMyId = true },
                 onLockSettings = { showLockSettings = true }, onLockNow = vm::lockNow,
                 onRecovery = { showRecovery = true },
+                onPremium = vm::openPremium,
                 onUnblock = vm::unblockContact,
                 onPresence = vm::setPresence,
                 onReadReceipts = vm::setReadReceipts,
