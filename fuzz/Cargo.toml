@@ -1,0 +1,61 @@
+# Fuzzing local (nao corre na CI): precisa do Rust nightly e do cargo-fuzz.
+#   rustup toolchain install nightly --profile minimal && cargo install cargo-fuzz --locked
+#   cd fuzz && cargo +nightly fuzz run <alvo> -- -max_total_time=300
+# Alvos: relay_pedido, bundle, estado_ratchet, envelope, conteudo. Ver README.md.
+[package]
+name = "qt-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+qt_core = { path = "../core", features = ["pq"] }
+qt_server = { path = "../server" }
+qt_ffi = { path = "../ffi", features = ["pq"] }
+qt_storage = { path = "../storage", features = ["pq", "bundled-sqlcipher"] }
+
+# Fora do workspace principal (o `cargo clippy --workspace` da CI nao o ve).
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "relay_pedido"
+path = "fuzz_targets/relay_pedido.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bundle"
+path = "fuzz_targets/bundle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "estado_ratchet"
+path = "fuzz_targets/estado_ratchet.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "envelope"
+path = "fuzz_targets/envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "conteudo"
+path = "fuzz_targets/conteudo.rs"
+test = false
+doc = false
+bench = false
