@@ -432,7 +432,7 @@ fn queue_receipts(
 
 /// Contactos bloqueados: so neste telemovel, dentro da base cifrada (`kv`).
 /// O relay nao sabe de nada (com sealed sender nem sabe quem envia).
-const KV_BLOCKED: &str = "blocked:";
+pub(crate) const KV_BLOCKED: &str = "blocked:";
 
 pub(crate) fn is_blocked_in(c: &st::rusqlite::Connection, contact_id: &str) -> Result<bool, QtError> {
     Ok(st::kv_get(c, &format!("{KV_BLOCKED}{contact_id}"))?.is_some())

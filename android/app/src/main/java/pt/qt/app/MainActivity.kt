@@ -370,6 +370,8 @@ fun AppRoot(
     var showAddContact by rememberSaveable { mutableStateOf(false) }
     var showMyId by remember { mutableStateOf(false) }
     var showLockSettings by remember { mutableStateOf(false) }
+    var showRecovery by remember { mutableStateOf(false) }
+    var showRestore by remember { mutableStateOf(false) }
     var showGroupInfo by remember { mutableStateOf(false) }
     LaunchedEffect(ui.openChatId) { showGroupInfo = false }
     val openGroup = ui.openChatId?.let { ui.groupOf(it) }
@@ -435,7 +437,11 @@ fun AppRoot(
         }
         ui.locked -> LockScreen(ui, onCode = vm::unlockWithCode, onBio = vm::requestBioUnlock, onWipe = vm::wipeLockedData)
         !ui.termsAccepted -> TermsScreen(onAccept = vm::acceptTerms)
-        !ui.hasIdentity -> SetupScreen(ui, onCreate = vm::createIdentity)
+        !ui.hasIdentity && showRestore -> {
+            BackHandler { if (!ui.recoveryBusy) showRestore = false }
+            RestoreScreen(ui, onBack = { if (!ui.recoveryBusy) showRestore = false }, onRestore = vm::restoreAccount)
+        }
+        !ui.hasIdentity -> SetupScreen(ui, onCreate = vm::createIdentity, onRestore = { showRestore = true })
         openGroup != null && showGroupInfo -> {
             BackHandler { showGroupInfo = false }
             GroupInfoScreen(
@@ -480,6 +486,14 @@ fun AppRoot(
                 canReport = reportsAvailable(), onReport = vm::reportContact,
             )
         }
+        showRecovery -> {
+            BackHandler { if (ui.recoveryWords != null) vm.recoveryHide() else showRecovery = false }
+            RecoveryScreen(
+                ui, onBack = { showRecovery = false },
+                onCreate = vm::recoveryCreate, onShow = vm::recoveryShow, onWritten = vm::recoveryWritten,
+                onHide = vm::recoveryHide, onDisable = vm::recoveryDisable,
+            )
+        }
         showLockSettings -> {
             BackHandler { showLockSettings = false }
             LockSettingsScreen(
@@ -507,6 +521,7 @@ fun AppRoot(
                 onProfilePhoto = { showPhoto = true },
                 onMyId = { showMyId = true },
                 onLockSettings = { showLockSettings = true }, onLockNow = vm::lockNow,
+                onRecovery = { showRecovery = true },
                 onUnblock = vm::unblockContact,
                 onPresence = vm::setPresence,
                 onReadReceipts = vm::setReadReceipts,
@@ -719,7 +734,7 @@ val ManropeBold = FontFamily(Font(R.font.manrope_bold, FontWeight.Bold))
 // ========================================================================= entrada
 
 @Composable
-fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit) {
+fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit, onRestore: () -> Unit = {}) {
     var url by remember { mutableStateOf(ui.relayUrl) }
     var key by remember { mutableStateOf(ui.relayKeyHex) }
     var advanced by remember { mutableStateOf(false) }
@@ -741,7 +756,9 @@ fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit) {
         Button(onClick = { onCreate(url, key) }, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(26.dp)) {
             Text(s(R.string.t_comecar), fontSize = 16.sp)
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onRestore) { Text(s(R.string.recovery_have_words)) }
+        Spacer(Modifier.height(8.dp))
         Text(
             s(R.string.t_versao_de_testes),
             style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,

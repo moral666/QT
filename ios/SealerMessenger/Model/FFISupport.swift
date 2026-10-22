@@ -77,6 +77,8 @@ extension RelayResponse {
         case .blobStatus: return "BlobStatus"
         case .blobData: return "BlobData"
         case .blobNotFound: return "BlobNotFound"
+        case .backupPart: return "BackupPart"
+        case .backupNotFound: return "BackupNotFound"
         }
     }
 }

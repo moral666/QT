@@ -146,6 +146,31 @@ pub enum ClientMessage {
     AdminUnban { user_id: UserId },
     /// Contas banidas. Resposta: `Bans`.
     AdminListBans,
+
+    // ----- Copia de recuperacao (cifrada na app: ver `qt_core::recovery`). -----
+    /// Uma parte da copia `lookup` (identificador derivado das 12 palavras, 64 hex). Envia-se
+    /// `part` de 0 a `parts - 1`, todas com a mesma `generation` (16 hex); `data` em base64,
+    /// ate `BACKUP_PART_MAX` bytes. Quando chega a ultima, a copia nova substitui a anterior
+    /// (e a de outras palavras desta conta, se as houver). So contas registadas; so o dono
+    /// da copia a substitui. Guardada 90 dias, renovados quando a app abre. Resposta: `Ack`.
+    BackupPut { lookup: String, generation: String, part: u32, parts: u32, data: String },
+    /// Uma parte da copia `lookup` (qualquer ligacao autenticada: num telemovel novo a app
+    /// ainda nao tem a conta). Resposta: `BackupPart` ou `BackupNotFound`.
+    BackupGet { lookup: String, part: u32 },
+    /// Apaga a copia desta conta. Resposta: `Ack`.
+    BackupDelete,
+}
+
+/// Maior parte de uma copia de recuperacao (bytes, antes do base64).
+pub const BACKUP_PART_MAX: usize = 40 * 1024;
+/// Partes de uma copia, no maximo (ate 320 KB).
+pub const BACKUP_PARTS_MAX: u32 = 8;
+/// Motivo do `Error` a quem tenta substituir a copia de outra conta.
+pub const BACKUP_NOT_OWNER: &str = "esta copia pertence a outra conta";
+
+/// Identificador de copia ou geracao valido: so hex minusculo com o tamanho certo.
+pub fn is_hex_of_len(s: &str, len: usize) -> bool {
+    s.len() == len && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Denuncia guardada no relay (bytes opacos, cifrados para o operador).
@@ -238,6 +263,9 @@ pub enum ServerMessage {
     Reports { reports: Vec<StoredReport>, more: bool },
     /// Resposta a `AdminListBans`.
     Bans { user_ids: Vec<UserId> },
+    /// Resposta a `BackupGet`: `data` em base64.
+    BackupPart { part: u32, parts: u32, data: String },
+    BackupNotFound,
 }
 
 pub fn serialize_client_message(msg: &ClientMessage) -> Vec<u8> {

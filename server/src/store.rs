@@ -71,7 +71,18 @@ pub enum StoreError {
     /// Ha `MAX_REPORTS_STORED` denuncias por tratar.
     #[error("demasiadas denuncias guardadas")]
     ReportsFull,
+    /// A copia de recuperacao pertence a outra conta.
+    #[error("copia de outra conta")]
+    BackupNotOwner,
+    /// Faltam partes da copia (a ultima chegou antes das outras).
+    #[error("copia incompleta")]
+    BackupIncomplete,
 }
+
+/// Copia de recuperacao: 90 dias, renovados quando a app abre (`renew_backup`).
+pub const BACKUP_TTL_SECONDS: i64 = 60 * 60 * 24 * 90;
+/// Partes de uma copia a meio do envio: 1 hora.
+const BACKUP_STAGE_TTL_SECONDS: i64 = 60 * 60;
 
 fn today() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() / 86_400).unwrap_or(0)
@@ -542,6 +553,153 @@ impl Store {
     pub async fn list_bans(&self) -> Result<Vec<String>, StoreError> {
         let mut conn = self.connection().await?;
         Ok(conn.lrange(format!("{}:bans", self.key_prefix), 0, -1).await?)
+    }
+}
+
+// ------------------------------------------------------------ copia de recuperacao
+//
+// Bytes cifrados pela app (o relay nao os le). Chaves:
+//   {p}:bkhead:{lookup}               "{geracao}:{partes}" da copia atual
+//   {p}:bkpart:{lookup}:{geracao}:{i} uma parte
+//   {p}:bkown:{lookup}                a conta dona (so ela substitui a copia)
+//   {p}:bkof:{conta}                  o lookup da copia desta conta (para a apagar com ela)
+impl Store {
+    fn bk_keys(&self, lookup: &str) -> (String, String) {
+        let p = &self.key_prefix;
+        (format!("{p}:bkhead:{lookup}"), format!("{p}:bkown:{lookup}"))
+    }
+
+    fn bk_part(&self, lookup: &str, generation: &str, i: u32) -> String {
+        format!("{}:bkpart:{lookup}:{generation}:{i}", self.key_prefix)
+    }
+
+    async fn bk_head(&self, conn: &mut redis::aio::ConnectionManager, lookup: &str) -> Result<Option<(String, u32)>, StoreError> {
+        let head: Option<String> = conn.get(self.bk_keys(lookup).0).await?;
+        Ok(head.and_then(|h| {
+            let (g, n) = h.split_once(':')?;
+            Some((g.to_string(), n.parse().ok()?))
+        }))
+    }
+
+    /// Guarda uma parte; na ultima, troca a copia atual pela nova.
+    pub async fn backup_put(
+        &self,
+        owner: &str,
+        lookup: &str,
+        generation: &str,
+        part: u32,
+        parts: u32,
+        data: Vec<u8>,
+    ) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let (head_key, own_key) = self.bk_keys(lookup);
+        let current_owner: Option<String> = conn.get(&own_key).await?;
+        if current_owner.as_deref().is_some_and(|o| o != owner) {
+            return Err(StoreError::BackupNotOwner);
+        }
+        let key = self.bk_part(lookup, generation, part);
+        redis::pipe()
+            .set(&key, data)
+            .ignore()
+            .expire(&key, BACKUP_STAGE_TTL_SECONDS)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        if part + 1 != parts {
+            return Ok(());
+        }
+        // Ultima parte: confirma que chegaram todas antes de trocar.
+        for i in 0..parts {
+            let v: Option<Vec<u8>> = conn.get(self.bk_part(lookup, generation, i)).await?;
+            if v.is_none() {
+                return Err(StoreError::BackupIncomplete);
+            }
+        }
+        let old = self.bk_head(&mut conn, lookup).await?;
+        let of_key = format!("{}:bkof:{owner}", self.key_prefix);
+        let previous_lookup: Option<String> = conn.get(&of_key).await?;
+        let mut pipe = redis::pipe();
+        pipe.set(&head_key, format!("{generation}:{parts}")).ignore().expire(&head_key, BACKUP_TTL_SECONDS).ignore();
+        pipe.set(&own_key, owner).ignore().expire(&own_key, BACKUP_TTL_SECONDS).ignore();
+        pipe.set(&of_key, lookup).ignore().expire(&of_key, BACKUP_TTL_SECONDS).ignore();
+        for i in 0..parts {
+            pipe.expire(self.bk_part(lookup, generation, i), BACKUP_TTL_SECONDS).ignore();
+        }
+        if let Some((g, n)) = old.filter(|(g, _)| g != generation) {
+            for i in 0..n {
+                pipe.del(self.bk_part(lookup, &g, i)).ignore();
+            }
+        }
+        pipe.query_async::<_, ()>(&mut conn).await?;
+        // Palavras novas: a copia das palavras antigas desta conta deixa de servir.
+        if let Some(prev) = previous_lookup.filter(|l| l != lookup) {
+            self.delete_backup_lookup(&mut conn, &prev, owner).await?;
+        }
+        Ok(())
+    }
+
+    /// Uma parte da copia atual: `(partes, dados)`.
+    pub async fn backup_get(&self, lookup: &str, part: u32) -> Result<Option<(u32, Vec<u8>)>, StoreError> {
+        let mut conn = self.connection().await?;
+        let Some((generation, parts)) = self.bk_head(&mut conn, lookup).await? else { return Ok(None) };
+        if part >= parts {
+            return Ok(None);
+        }
+        let data: Option<Vec<u8>> = conn.get(self.bk_part(lookup, &generation, part)).await?;
+        Ok(data.map(|d| (parts, d)))
+    }
+
+    async fn delete_backup_lookup(
+        &self,
+        conn: &mut redis::aio::ConnectionManager,
+        lookup: &str,
+        owner: &str,
+    ) -> Result<(), StoreError> {
+        let (head_key, own_key) = self.bk_keys(lookup);
+        let current_owner: Option<String> = conn.get(&own_key).await?;
+        if current_owner.as_deref() != Some(owner) {
+            return Ok(());
+        }
+        let head = self.bk_head(conn, lookup).await?;
+        let mut pipe = redis::pipe();
+        pipe.del(&head_key).ignore().del(&own_key).ignore();
+        if let Some((g, n)) = head {
+            for i in 0..n {
+                pipe.del(self.bk_part(lookup, &g, i)).ignore();
+            }
+        }
+        pipe.query_async::<_, ()>(conn).await?;
+        Ok(())
+    }
+
+    /// Apaga a copia desta conta (pedido da app, conta apagada ou banida).
+    pub async fn delete_backup(&self, owner: &str) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let of_key = format!("{}:bkof:{owner}", self.key_prefix);
+        let lookup: Option<String> = conn.get(&of_key).await?;
+        if let Some(l) = lookup {
+            self.delete_backup_lookup(&mut conn, &l, owner).await?;
+        }
+        conn.del::<_, ()>(&of_key).await?;
+        Ok(())
+    }
+
+    /// A app abriu (registou o bundle): a copia desta conta fica mais 90 dias.
+    pub async fn renew_backup(&self, owner: &str) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let of_key = format!("{}:bkof:{owner}", self.key_prefix);
+        let Some(lookup) = conn.get::<_, Option<String>>(&of_key).await? else { return Ok(()) };
+        let Some((generation, parts)) = self.bk_head(&mut conn, &lookup).await? else { return Ok(()) };
+        let (head_key, own_key) = self.bk_keys(&lookup);
+        let mut pipe = redis::pipe();
+        for k in [&of_key, &head_key, &own_key] {
+            pipe.expire(k, BACKUP_TTL_SECONDS).ignore();
+        }
+        for i in 0..parts {
+            pipe.expire(self.bk_part(&lookup, &generation, i), BACKUP_TTL_SECONDS).ignore();
+        }
+        pipe.query_async::<_, ()>(&mut conn).await?;
+        Ok(())
     }
 }
 

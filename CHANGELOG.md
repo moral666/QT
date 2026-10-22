@@ -6,6 +6,17 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 22 de outubro de 2026: chave de recuperação da conta (apps 0.9.19, Android e iPhone)
+
+- Definições → **Chave de recuperação**: 12 palavras (mostradas uma vez, com confirmação de 3).
+  Num telemóvel novo, "Já tenho conta: recuperar com as 12 palavras" traz o mesmo ID, os
+  contactos, os bloqueados e o badge. O histórico e os grupos não voltam.
+- Cópia cifrada na app com uma chave derivada das palavras (Argon2id + XChaCha20-Poly1305); o
+  relay guarda-a sem a conseguir ler (`BackupPut`, `BackupGet`, `BackupDelete`), 90 dias
+  renovados quando a app abre. É atualizada sozinha quando os contactos mudam.
+- Depois de recuperar, as sessões com os contactos recomeçam sozinhas (convite e sessão nova).
+- Contadores novos no relay: `copias_guardadas` e `copias_pedidas`.
+
 ### 22 de outubro de 2026: denunciar contactos e banir contas (apps 0.9.18, Android e iPhone)
 
 - Menu da conversa → **Denunciar**: a pessoa escolhe o motivo e as mensagens a incluir (até 20).
