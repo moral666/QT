@@ -660,8 +660,9 @@ impl QtClient {
         json_bytes(serde_json::json!({"RegisterPushToken": {"user_id": uid, "token": token}}))
     }
 
-    /// Premium (0.9.20): ate quando esta conta tem premium. Resposta `Premium { until_ms }`
-    /// (0 = sem premium); um relay antigo responde `Error` (tratar como sem premium).
+    /// Premium (0.9.20): ate quando esta conta tem premium. Resposta `Premium { until_ms, enforced }`
+    /// (0 = sem premium; `enforced` = o operador ligou o bloqueio, 0.9.21); um relay antigo
+    /// responde `Error` (tratar como sem premium e sem bloqueio).
     pub fn relay_request_premium_status(&self) -> Result<Vec<u8>, QtError> {
         json_bytes(serde_json::json!("PremiumStatus"))
     }
@@ -1019,8 +1020,9 @@ pub enum RelayResponse {
     BackupPart { part: u32, parts: u32, data: Vec<u8> },
     /// Nao ha copia para estas palavras (nunca houve, expirou ou foi apagada).
     BackupNotFound,
-    /// Ate quando esta conta tem premium (ms desde 1970); 0 = sem premium.
-    Premium { until_ms: u64 },
+    /// Ate quando esta conta tem premium (ms desde 1970); 0 = sem premium. `enforced`: o
+    /// operador ligou o bloqueio (so entao as funcoes pagas fecham).
+    Premium { until_ms: u64, enforced: bool },
 }
 
 #[derive(serde::Deserialize)]
@@ -1047,7 +1049,11 @@ enum WireServerMsg {
     BlobNotFound,
     BackupPart { part: u32, parts: u32, data: String },
     BackupNotFound,
-    Premium { until_ms: u64 },
+    Premium {
+        until_ms: u64,
+        #[serde(default)]
+        enforced: bool,
+    },
 }
 
 /// Interpreta uma resposta do relay (ja decifrada pelo Noise).
@@ -1095,7 +1101,7 @@ pub fn relay_parse_response(bytes: Vec<u8>) -> Result<RelayResponse, QtError> {
             RelayResponse::BackupPart { part, parts, data }
         }
         WireServerMsg::BackupNotFound => RelayResponse::BackupNotFound,
-        WireServerMsg::Premium { until_ms } => RelayResponse::Premium { until_ms },
+        WireServerMsg::Premium { until_ms, enforced } => RelayResponse::Premium { until_ms, enforced },
     })
 }
 
@@ -1104,6 +1110,13 @@ pub fn relay_parse_response(bytes: Vec<u8>) -> Result<RelayResponse, QtError> {
 #[uniffi::export]
 pub fn relay_recipient_deleted_reason() -> String {
     "o destinatario apagou a conta".to_string()
+}
+
+/// Motivo do `Error` do relay a um anexo ou chamada de uma conta sem premium, com o bloqueio
+/// ligado pelo operador (0.9.21). A app abre o ecra Premium.
+#[uniffi::export]
+pub fn relay_premium_required_reason() -> String {
+    "precisa de premium".to_string()
 }
 
 /// Caixa de correio no relay correspondente a um QT Public ID.
@@ -1154,6 +1167,14 @@ pub fn peer_bundle_from_relay_bytes(bytes: Vec<u8>) -> Result<PeerBundle, QtErro
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn premium_le_o_bloqueio_e_aceita_relays_antigos() {
+        let r = relay_parse_response(br#"{"Premium":{"until_ms":5,"enforced":true}}"#.to_vec()).unwrap();
+        assert!(matches!(r, RelayResponse::Premium { until_ms: 5, enforced: true }));
+        let r = relay_parse_response(br#"{"Premium":{"until_ms":0}}"#.to_vec()).unwrap();
+        assert!(matches!(r, RelayResponse::Premium { until_ms: 0, enforced: false }));
+    }
 
     fn tmp(tag: &str) -> String {
         let p = std::env::temp_dir().join(format!("qt_relock_{tag}_{}.sqlite", std::process::id()));

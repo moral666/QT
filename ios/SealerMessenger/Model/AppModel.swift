@@ -287,7 +287,7 @@ final class AppModel: ObservableObject {
         u.blocked = Set(l.blocked)
         u.invites = Set(l.invites)
         u.recoveryOn = l.recoveryOn
-        u.premiumLock = prefs.bool(forKey: "premium_lock_test")
+        u.premiumLock = prefs.bool(forKey: "premium_enforced")
         u.premiumUntil = (prefs.object(forKey: "premium_until") as? Int64) ?? 0
         u.premium = premiumNow(u.premiumUntil)
         u.termsAccepted = prefs.integer(forKey: "terms_version") >= termsVersion
@@ -898,13 +898,16 @@ final class AppModel: ObservableObject {
 
     // ================================================================ premium
 
-    /// Premium agora: dado pelo relay e dentro do prazo, ou simulado (so na build de debug).
+    /// Premium agora: so o que o relay diz (dado pelo operador) e dentro do prazo.
     private func premiumNow(_ until: Int64) -> Bool {
-        until > Int64(Date().timeIntervalSince1970 * 1000) || (Config.relayEditable && prefs.bool(forKey: "premium_test"))
+        until > Int64(Date().timeIntervalSince1970 * 1000)
     }
 
     /// Acao paga sem premium e com o bloqueio ligado: abre o ecra Premium e devolve `true`.
-    private func premiumBlocked() -> Bool {
+    /// Quem decide e o operador (sealer-control): pergunta-se ao relay antes de cada acao paga;
+    /// sem rede, fica o ultimo estado conhecido.
+    private func premiumBlocked() async -> Bool {
+        if let client = qt, let l = link { await refreshPremium(client, l) }
         guard ui.premiumLock && !ui.premium else { return false }
         ui.showPremium = true
         return true
@@ -918,22 +921,21 @@ final class AppModel: ObservableObject {
 
     func closePremium() { ui.showPremium = false }
 
-    /// Interruptores de teste (ate haver Play Billing): ligar o bloqueio e (debug) simular premium.
-    func setPremiumTest(lock: Bool, premium: Bool) {
-        prefs.set(lock, forKey: "premium_lock_test")
-        prefs.set(premium, forKey: "premium_test")
-        ui.premiumLock = lock
-        ui.premium = premiumNow(ui.premiumUntil)
+    /// O relay recusou um anexo ou uma chamada por falta de premium: mostra o ecra Premium.
+    private func premiumRefused() {
+        openPremium()
     }
 
-    /// Pergunta ao relay ate quando esta conta tem premium.
+    /// Pergunta ao relay ate quando esta conta tem premium e se o operador ligou o bloqueio.
     private func refreshPremium(_ client: QtClient, _ l: RelayLink) async {
         guard let req = try? await background({ try client.relayRequestPremiumStatus() }),
-              let r = try? await l.request(req), case .premium(let until) = r else { return }
+              let r = try? await l.request(req, timeout: 4), case .premium(let until, let enforced) = r else { return }
         let u = Int64(clamping: until)
         prefs.set(u, forKey: "premium_until")
+        prefs.set(enforced, forKey: "premium_enforced")
         ui.premiumUntil = u
         ui.premium = premiumNow(u)
+        ui.premiumLock = enforced
     }
 
     // ================================================================ chave de recuperacao
@@ -1389,10 +1391,10 @@ final class AppModel: ObservableObject {
 
     /// Mensagem de voz (o ficheiro e apagado no fim, cifrado ou nao).
     func sendVoice(to conv: String, file: URL, durationMs: Int64) {
-        if premiumBlocked() { try? FileManager.default.removeItem(at: file); return }
         guard let client = qt else { try? FileManager.default.removeItem(at: file); return }
         Task {
             defer { try? FileManager.default.removeItem(at: file) }
+            if await premiumBlocked() { return }
             do {
                 try await prepareTarget(client, conv)
                 let ms = UInt32(min(max(durationMs, 1), Voice.maxMs))
@@ -1448,9 +1450,9 @@ final class AppModel: ObservableObject {
     }
 
     func createGroup(name: String, members: [Contact]) {
-        if premiumBlocked() { return }
         guard let client = qt else { return }
         Task {
+            if await premiumBlocked() { return }
             do {
                 await ensureSessions(client, members.map(\.publicId))
                 let n = name.trimmingCharacters(in: .whitespaces)
@@ -1531,9 +1533,9 @@ final class AppModel: ObservableObject {
 
     /// Imagem/GIF (galeria ou colada) para uma conversa a dois ou de grupo.
     func sendImage(to conv: String, data: Data, original: Bool, pasted: Bool) {
-        if premiumBlocked() { return }
         guard let client = qt else { return }
         Task {
+            if await premiumBlocked() { return }
             let prepared: PreparedImage
             do {
                 prepared = try await background { try ImagePrep.prepare(data, original: original, keepAsIs: pasted) }
@@ -1559,9 +1561,9 @@ final class AppModel: ObservableObject {
 
     /// Ficheiro (PDF, documento...) ate 25 MB, tal como esta.
     func sendFile(to conv: String, url: URL) {
-        if premiumBlocked() { return }
         guard let client = qt else { return }
         Task {
+            if await premiumBlocked() { return }
             let prepared: PreparedFile
             // A copia que o seletor de ficheiros pos na pasta temporaria da app ja nao faz falta.
             defer {
@@ -1676,7 +1678,7 @@ final class AppModel: ObservableObject {
             case .error(let reason):
                 _ = try? await background { try client.attachmentFailed(contactId: cid, messageId: mid, expired: false) }
                 await refreshViews(client)
-                showError(relayRefusal(reason))
+                if reason == relayPremiumRequiredReason() { premiumRefused() } else { showError(relayRefusal(reason)) }
                 return
             default:
                 throw PlainError("resposta inesperada do relay")
@@ -1826,6 +1828,12 @@ final class AppModel: ObservableObject {
             case .ack:
                 _ = try? await background { try client.outboxSent(outboxId: item.outboxId) }
                 changed = true
+            case .error(let reason) where reason == relayPremiumRequiredReason():
+                // Chamada sem premium (o operador tirou-o entretanto): a oferta nao segue.
+                _ = try? await background { try client.outboxSent(outboxId: item.outboxId) }
+                changed = true
+                if ui.call?.phase == .calling { endCallLocal(s("t_chamada_terminada"), fromUser: true) }
+                premiumRefused()
             case .error(let reason) where reason == relayRecipientDeletedReason():
                 if deletedNotified.insert(item.contactId).inserted {
                     showError(s("t_apagou_a_conta_sealer_as_mensagens", ui.contact(item.contactId)?.nickname ?? s("t_este_contacto")))
@@ -2056,9 +2064,10 @@ final class AppModel: ObservableObject {
 
     /// LIGAR a um contacto (o microfone e pedido pelo ecra antes).
     func startCall(_ contact: Contact) {
-        if premiumBlocked() { return }
         guard let client = qt, ui.call == nil, !ui.blocked.contains(contact.contactId) else { return }
         Task {
+            if await premiumBlocked() { return }
+            guard ui.call == nil else { return }
             do {
                 try await ensureSession(client, contact)
                 let start = try await background { try client.callStart(contactId: contact.contactId) }

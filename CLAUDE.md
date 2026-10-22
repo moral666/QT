@@ -38,7 +38,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
 - O **site, a documentação e a app nunca mencionam auditorias em falta** ("sem auditoria", "não auditada", 19/10/2026).
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.9.20**, `versionCode` 27), em
+- Versões da app: série 0.x (agora **0.9.21**, `versionCode` 28), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
   0.9.3...) e o `versionCode` mais 1, no mesmo commit. Só se passa a **1.0.0** quando o Nuno disser.
 - Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
@@ -194,10 +194,14 @@ contactos ficam em `sessions_to_restart` com convite. Ver `docs/protocol-spec.md
 
 Grátis: texto (também em grupos onde foi adicionado) e **receber tudo**. Pago: fazer chamadas, criar
 grupos, enviar fotos/GIFs/voz/ficheiros (`premiumBlocked()` no `MainViewModel` e no `AppModel`).
-Ecrã `Premium.kt` / `Views/PremiumViews.swift`. O relay guarda `premium:{conta}` = até quando;
-o operador dá/tira com `--example denuncias -- premium-dar|premium-tirar|premium-lista` ou a aba
-"Premium" do sealer-control. O bloqueio só liga com o interruptor de teste (até haver pagamentos);
-"simular premium" só na build de debug. Falta: Play Billing e verificação no relay. Ver secção 23.
+Preço: **5 €/ano** (decisão do Nuno, 22/10/2026). Ecrã `Premium.kt` / `Views/PremiumViews.swift`.
+**Desde a 0.9.21 decide só o operador** (pedido do Nuno: "controlo absoluto"): o relay guarda
+`premium:{conta}` = até quando e `premium_enforce` (bloqueio para todos, desligado por omissão).
+Com o bloqueio ligado, o relay recusa `BlobCreate` e `SendMessage` com `wake: Call` a quem não tem
+premium (`Error "precisa de premium"`); criar grupos só a app fecha. As apps perguntam ao relay antes
+de cada ação paga; não há interruptores de teste. Operador: `--example denuncias -- premium-dar|
+premium-tirar|premium-lista|premium-bloqueio` ou a aba "Premium" do sealer-control. Falta: Play
+Billing. Ver secção 23.
 
 ### Funcionalidades da 0.9.0
 

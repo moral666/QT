@@ -365,7 +365,7 @@
     <string name="recovery_restored">Konto wiederhergestellt. Die Unterhaltungen starten von selbst neu.</string>
     <string name="premium_title">Sealer Premium</string>
     <string name="premium_title_on">Sealer Premium (aktiv)</string>
-    <string name="premium_price">12 € pro Jahr</string>
+    <string name="premium_price">5 € pro Jahr</string>
     <string name="premium_active">Dein Premium ist aktiv. Danke, dass du Sealer unterstützt.</string>
     <string name="premium_free_text">Textnachrichten sind und bleiben immer kostenlos.</string>
     <string name="premium_unlocks">Premium schaltet frei:</string>
@@ -375,10 +375,7 @@
     <string name="premium_perk_receive">Ohne Premium empfängst du weiterhin alles und nimmst Anrufe an</string>
     <string name="premium_active_short">Premium aktiv</string>
     <string name="premium_soon">Bald bei Google Play</string>
-    <string name="premium_test_title">Testmodus</string>
-    <string name="premium_test_hint">Nur solange Zahlungen nicht verfügbar sind.</string>
-    <string name="premium_test_lock">Premium-Sperre einschalten</string>
-    <string name="premium_test_paid">Bezahltes Premium simulieren</string>
+    <string name="premium_all_open">Derzeit stehen alle Funktionen allen offen.</string>
     <string name="premium_until">Aktiv bis %1$s</string>
     <string name="premium_until_forever">Aktiv, ohne Enddatum</string>
 </resources>

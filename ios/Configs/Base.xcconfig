@@ -11,8 +11,8 @@ PRODUCT_NAME = SealerMessenger
 // O mesmo identificador da app Android (desde a 0.9.0). Nunca mudar depois de publicar.
 PRODUCT_BUNDLE_IDENTIFIER = sealer.app
 // Mesma versao que a app Android com as mesmas funcionalidades (android/app/build.gradle.kts).
-MARKETING_VERSION = 0.9.20
-CURRENT_PROJECT_VERSION = 27
+MARKETING_VERSION = 0.9.21
+CURRENT_PROJECT_VERSION = 28
 // Notificacoes (Push Notifications): a conta gratuita da Apple nao as permite. Sem o
 // QT_ENTITLEMENTS no Local.xcconfig a app compila e funciona, sem notificacoes.
 CODE_SIGN_ENTITLEMENTS = $(QT_ENTITLEMENTS)

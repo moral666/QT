@@ -84,8 +84,19 @@ def test_reports_commands_and_parsing():
         assert c.args[-4:] == ["--user", pid, "--dias", "30"]
         assert reports.build_command(cfg, "premium-dar", user=pid).args[-1] == "--sempre"
         assert reports.build_command(cfg, "premium-lista").args[-1] == "--json"
+        assert reports.build_command(cfg, "premium-bloqueio").args[-1] == "--json"
+        assert reports.build_command(cfg, "premium-bloqueio", on=True).args[-2:] == ["--json", "--ligar"]
+        assert reports.build_command(cfg, "premium-bloqueio", on=False).args[-1] == "--desligar"
+        rid = "cd" * 32
+        assert reports.build_command(cfg, "premium-tirar", user=rid).args[-2:] == ["--user", rid]
+        try: reports.build_command(cfg, "premium-dar", user=rid, days=30); assert False
+        except ValueError as exc: assert "qt1" in str(exc)
     except ValueError as exc:
         assert "cargo" in str(exc)
+    assert reports.parse_enforce('{"ligado": true}') is True and reports.parse_enforce('{"ligado": false}') is False
+    try: reports.parse_enforce('{"ligado": 1}'); assert False
+    except ValueError: pass
+    assert reports.validate_account("cd" * 32) is None and reports.validate_account("x; rm") is not None
     assert reports.parse_premium('[{"user_id": "x", "until_ms": 5}, {"a": 1}]') == [{"user_id": "x", "until_ms": 5}]
     got = reports.parse_reports('[{"id": 3, "recebida_em_ms": 1, "denuncia": {"motivo": "spam"}}, {"x": 1}]')
     assert [r["id"] for r in got] == [3]

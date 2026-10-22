@@ -1,11 +1,11 @@
 import SwiftUI
 
 /// "Sealer Premium" (0.9.20), igual ao PremiumScreen do Android: o que desbloqueia e o preco.
-/// Antes do Play Billing/App Store, o botao de subscrever esta desligado e ha interruptores de teste.
+/// Quem tem premium e se o bloqueio esta ligado decide o operador no relay (sealer-control, 0.9.21).
+/// Antes do Play Billing/App Store, o botao de subscrever esta desligado.
 struct PremiumScreen: View {
     let ui: UiState
     let onBack: () -> Void
-    let onTest: (Bool, Bool) -> Void
     @Environment(\.chat) private var c
 
     private static let foreverMs: Int64 = 253_402_300_799_000
@@ -42,12 +42,8 @@ struct PremiumScreen: View {
                     perk("checkmark", s("premium_perk_receive"))
                     PrimaryButton(title: ui.premium ? s("premium_active_short") : s("premium_soon")) {}
                         .disabled(true)
-                    Rectangle().fill(c.outlineVariant).frame(height: 0.5)
-                    Text(s("premium_test_title")).font(.sLabelLarge)
-                    Text(s("premium_test_hint")).font(.sBodySmall).foregroundStyle(c.onSurfaceVariant)
-                    Toggle(s("premium_test_lock"), isOn: Binding(get: { ui.premiumLock }, set: { onTest($0, ui.premium) }))
-                    if Config.relayEditable {   // simular premium: so na build de debug
-                        Toggle(s("premium_test_paid"), isOn: Binding(get: { ui.premium }, set: { onTest(ui.premiumLock, $0) }))
+                    if !ui.premiumLock && !ui.premium {
+                        Text(s("premium_all_open")).font(.sBodySmall).foregroundStyle(c.onSurfaceVariant)
                     }
                 }
                 .padding(20)

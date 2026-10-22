@@ -92,7 +92,7 @@ struct AppRoot: View {
         } else if !ui.hasIdentity {
             SetupScreen(ui: ui, onCreate: model.createIdentity, onRestore: { showRestore = true })
         } else if ui.showPremium {
-            PremiumScreen(ui: ui, onBack: model.closePremium, onTest: { l, p in model.setPremiumTest(lock: l, premium: p) })
+            PremiumScreen(ui: ui, onBack: model.closePremium)
         } else if let g = openGroup, showGroupInfo {
             GroupInfoScreen(ui: ui, group: g, onBack: { showGroupInfo = false },
                             onUpdate: { name, members in model.updateGroup(g.groupId, name: name, members: members) },

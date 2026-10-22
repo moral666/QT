@@ -18,12 +18,10 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -47,12 +45,12 @@ private fun Perk(icon: ImageVector, text: String) {
 
 /**
  * "Sealer Premium" (0.9.20): o que o premium desbloqueia e o preco. Abre a partir de um cadeado
- * (acao paga sem premium) ou das Definicoes. Antes do Play Billing, o botao de subscrever esta
- * desligado e ha dois interruptores de teste: ligar o bloqueio e simular premium.
+ * (acao paga sem premium) ou das Definicoes. Quem tem premium e se o bloqueio esta ligado decide o
+ * operador no relay (sealer-control, 0.9.21). Antes do Play Billing, o botao de subscrever esta desligado.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PremiumScreen(ui: UiState, onBack: () -> Unit, onTest: (Boolean, Boolean) -> Unit) {
+fun PremiumScreen(ui: UiState, onBack: () -> Unit) {
     Scaffold(topBar = { SealerTopBar(title = { Text(s(R.string.premium_title)) }, onBack = onBack) }) { pad ->
         Column(
             Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -83,18 +81,8 @@ fun PremiumScreen(ui: UiState, onBack: () -> Unit, onTest: (Boolean, Boolean) ->
             Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
                 Text(if (ui.premium) s(R.string.premium_active_short) else s(R.string.premium_soon))
             }
-            HorizontalDivider()
-            Text(s(R.string.premium_test_title), style = MaterialTheme.typography.titleSmall)
-            Text(s(R.string.premium_test_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(s(R.string.premium_test_lock), Modifier.weight(1f))
-                Switch(checked = ui.premiumLock, onCheckedChange = { onTest(it, ui.premium) })
-            }
-            if (BuildConfig.RELAY_EDITABLE) {   // simular premium: so na build de debug
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(s(R.string.premium_test_paid), Modifier.weight(1f))
-                    Switch(checked = ui.premium, onCheckedChange = { onTest(ui.premiumLock, it) })
-                }
+            if (!ui.premiumLock && !ui.premium) {
+                Text(s(R.string.premium_all_open), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

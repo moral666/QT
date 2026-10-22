@@ -145,7 +145,7 @@ async fn premium_dado_pelo_operador_e_lido_pela_conta() {
     let alice = SigningKeyPair::generate();
     let mut a = client(&relay, &alice).await.unwrap();
     let r = a.request(ClientMessage::PremiumStatus).await.unwrap();
-    assert!(matches!(r, ServerMessage::Premium { until_ms: 0 }), "{r:?}");
+    assert!(matches!(r, ServerMessage::Premium { until_ms: 0, .. }), "{r:?}");
 
     // Outra conta nao da premium.
     let r = a.request(ClientMessage::AdminGrantPremium { user_id: uid(&alice), until_ms: u64::MAX / 2 }).await.unwrap();
@@ -156,7 +156,7 @@ async fn premium_dado_pelo_operador_e_lido_pela_conta() {
     let r = op.request(ClientMessage::AdminGrantPremium { user_id: uid(&alice), until_ms: until }).await.unwrap();
     assert!(matches!(r, ServerMessage::Ack), "{r:?}");
     let r = a.request(ClientMessage::PremiumStatus).await.unwrap();
-    assert!(matches!(r, ServerMessage::Premium { until_ms } if until_ms == until), "{r:?}");
+    assert!(matches!(r, ServerMessage::Premium { until_ms, .. } if until_ms == until), "{r:?}");
     match op.request(ClientMessage::AdminListPremium).await.unwrap() {
         ServerMessage::PremiumList { entries } => assert_eq!(entries, vec![PremiumEntry { user_id: uid(&alice), until_ms: until }]),
         other => panic!("{other:?}"),
@@ -165,9 +165,65 @@ async fn premium_dado_pelo_operador_e_lido_pela_conta() {
     // Tirar.
     let r = op.request(ClientMessage::AdminGrantPremium { user_id: uid(&alice), until_ms: 0 }).await.unwrap();
     assert!(matches!(r, ServerMessage::Ack));
-    assert!(matches!(a.request(ClientMessage::PremiumStatus).await.unwrap(), ServerMessage::Premium { until_ms: 0 }));
+    assert!(matches!(a.request(ClientMessage::PremiumStatus).await.unwrap(), ServerMessage::Premium { until_ms: 0, .. }));
     match op.request(ClientMessage::AdminListPremium).await.unwrap() {
         ServerMessage::PremiumList { entries } => assert!(entries.is_empty()),
         other => panic!("{other:?}"),
     }
+}
+
+#[tokio::test]
+async fn bloqueio_premium_recusa_anexos_e_chamadas_a_quem_nao_tem() {
+    let dir = std::env::temp_dir().join(format!("qt_premium_blobs_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let relay = TestRelay::start_with_blobs(cfg(), qt_server::BlobConfig::new(dir)).await;
+    let (alice, bob) = (SigningKeyPair::generate(), SigningKeyPair::generate());
+    let mut a = client(&relay, &alice).await.unwrap();
+    let mut b = client(&relay, &bob).await.unwrap();
+    a.register_bundle(valid_bundle(&alice, 1)).await.unwrap();
+    b.register_bundle(valid_bundle(&bob, 2)).await.unwrap();
+    let call = |wake| ClientMessage::SendMessage {
+        to: uid(&bob),
+        sealed_from: vec![],
+        ciphertext: b"oferta".to_vec(),
+        silent: false,
+        wake,
+    };
+    let refused = |r: &ServerMessage| matches!(r, ServerMessage::Error { reason } if reason == PREMIUM_REQUIRED);
+
+    // Bloqueio desligado (por omissao): tudo passa.
+    assert!(matches!(a.request(ClientMessage::BlobCreate { size: 10 }).await.unwrap(), ServerMessage::BlobCreated { .. }));
+    assert!(matches!(a.request(call(Some(WakeKind::Call))).await.unwrap(), ServerMessage::Ack));
+    assert!(matches!(a.request(ClientMessage::PremiumStatus).await.unwrap(), ServerMessage::Premium { enforced: false, .. }));
+
+    // So o operador liga o bloqueio.
+    let r = a.request(ClientMessage::AdminPremiumEnforce { on: Some(false) }).await.unwrap();
+    assert!(matches!(r, ServerMessage::Error { ref reason } if reason == NOT_OPERATOR), "{r:?}");
+    let mut op = client(&relay, &operator()).await.unwrap();
+    let r = op.request(ClientMessage::AdminPremiumEnforce { on: Some(true) }).await.unwrap();
+    assert!(matches!(r, ServerMessage::PremiumEnforce { on: true }), "{r:?}");
+    let r = op.request(ClientMessage::AdminPremiumEnforce { on: None }).await.unwrap();
+    assert!(matches!(r, ServerMessage::PremiumEnforce { on: true }), "{r:?}");
+
+    // Sem premium: anexos e chamadas recusados; texto, fim de chamada e receber continuam.
+    assert!(matches!(a.request(ClientMessage::PremiumStatus).await.unwrap(), ServerMessage::Premium { until_ms: 0, enforced: true }));
+    assert!(refused(&a.request(ClientMessage::BlobCreate { size: 10 }).await.unwrap()));
+    assert!(refused(&a.request(call(Some(WakeKind::Call))).await.unwrap()));
+    assert!(matches!(a.request(call(None)).await.unwrap(), ServerMessage::Ack));
+    assert!(matches!(a.request(call(Some(WakeKind::CallEnd))).await.unwrap(), ServerMessage::Ack));
+
+    // Premium que ja acabou nao conta.
+    op.request(ClientMessage::AdminGrantPremium { user_id: uid(&alice), until_ms: 1_000 }).await.unwrap();
+    assert!(refused(&a.request(ClientMessage::BlobCreate { size: 10 }).await.unwrap()));
+
+    // Com premium: passa.
+    op.request(ClientMessage::AdminGrantPremium { user_id: uid(&alice), until_ms: 4_102_444_800_000 }).await.unwrap();
+    assert!(matches!(a.request(ClientMessage::BlobCreate { size: 10 }).await.unwrap(), ServerMessage::BlobCreated { .. }));
+    assert!(matches!(a.request(call(Some(WakeKind::Call))).await.unwrap(), ServerMessage::Ack));
+
+    // Desligar o bloqueio: o Bob (sem premium) volta a enviar anexos.
+    let r = op.request(ClientMessage::AdminPremiumEnforce { on: Some(false) }).await.unwrap();
+    assert!(matches!(r, ServerMessage::PremiumEnforce { on: false }), "{r:?}");
+    assert!(matches!(b.request(ClientMessage::BlobCreate { size: 10 }).await.unwrap(), ServerMessage::BlobCreated { .. }));
 }

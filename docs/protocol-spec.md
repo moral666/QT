@@ -991,23 +991,31 @@ vão na cópia.
 Testes: `core/src/recovery.rs`, `ffi/src/recovery.rs`, `server/tests/relay_backup.rs` e
 `server/tests/redis_acl.rs`.
 
-## 23. Premium (desde a app 0.9.20)
+## 23. Premium (desde a app 0.9.20; bloqueio no relay desde a 0.9.21)
 
 Grátis: mensagens de texto (também em grupos onde a pessoa foi adicionada), reações, foto de
 perfil, e **receber** tudo (fotos, voz, ficheiros, atender chamadas). Pago: fazer chamadas, criar
 grupos e enviar fotos, GIFs, voz e ficheiros. Assim quem paga continua a falar com quem não paga.
 
 - **Relay:** `{p}:premium:{conta}` = até quando (ms). `PremiumStatus` (a própria conta, resposta
-  `Premium { until_ms }`, 0 = sem premium). Operador: `AdminGrantPremium { user_id, until_ms }`
+  `Premium { until_ms, enforced }`, 0 = sem premium). Operador: `AdminGrantPremium { user_id, until_ms }`
   (0 tira) e `AdminListPremium` (resposta `PremiumList`). Apagar a conta tira o premium. O relay
   sabe que a conta tem premium, não quem é a pessoa.
+- **Bloqueio (desde a 0.9.21):** `{p}:premium_enforce` = "1". Só o operador o liga ou desliga
+  (`AdminPremiumEnforce { on }`, `on: null` só pergunta; resposta `PremiumEnforce { on }`).
+  Desligado (o normal até haver pagamentos), está tudo aberto. Ligado, o relay recusa com
+  `Error "precisa de premium"` o `BlobCreate` (fotos, GIFs, voz, ficheiros) e o `SendMessage` com
+  `wake: Call` (oferta de chamada) de contas sem premium dentro do prazo. Texto, fim de chamada,
+  atender e receber continuam grátis. Criar grupos não passa pelo relay: só a app o fecha.
 - **Operador:** `--example denuncias -- premium-dar --user qt1:... (--dias N | --sempre)`,
-  `premium-tirar`, `premium-lista`, e a aba "Premium" do sealer-control.
-- **App:** pergunta ao ligar-se e ao abrir o ecrã Premium; guarda o último estado conhecido. Com
-  o bloqueio ligado (interruptor de teste, até haver pagamentos), uma ação paga sem premium abre
-  o ecrã "Sealer Premium". Simular premium: só na build de debug.
-- **Por fazer:** Play Billing (o relay confirma a compra e escreve a mesma data) e recusar no
-  relay os anexos e as chamadas de quem não tem premium.
+  `premium-tirar` (`qt1:` ou id do relay), `premium-lista`, `premium-bloqueio [--ligar|--desligar]`,
+  e a aba "Premium" do sealer-control (bloqueio para todos, dar, tirar, lista).
+- **App:** pergunta ao relay ao ligar-se, ao abrir o ecrã Premium e antes de cada ação paga
+  (premium dado ou tirado conta logo); sem rede, fica o último estado conhecido. Sem premium e com
+  o bloqueio ligado, uma ação paga abre o ecrã "Sealer Premium" (5 €/ano). Se o relay recusar um
+  anexo ou uma chamada, a app abre o mesmo ecrã e a oferta da chamada sai da fila. Desde a 0.9.21
+  não há interruptores de teste nem "simular premium": decide só o relay.
+- **Por fazer:** Play Billing (o relay confirma a compra e escreve a mesma data).
 
 ## Documentos relacionados
 

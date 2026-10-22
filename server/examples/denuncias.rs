@@ -26,7 +26,11 @@
 //! ... --example denuncias -- premium-dar   --key ... --user qt1:... (--dias 30 | --sempre)
 //! ... --example denuncias -- premium-tirar --key ... --user qt1:...
 //! ... --example denuncias -- premium-lista --key ... [--json]
+//! ... --example denuncias -- premium-bloqueio --key ... [--ligar | --desligar] [--json]
 //! ```
+//!
+//! `premium-bloqueio` (0.9.21): sem opcao so mostra o estado. Ligado, o relay recusa anexos e
+//! chamadas a contas sem premium e as apps fecham as funcoes pagas.
 //!
 //! O relay guarda as denuncias cifradas (nao as consegue ler) e sem o ID de quem denunciou.
 //! So esta ferramenta, com a chave, as abre. `--relay` e `--pin` servem para testar noutro relay.
@@ -295,6 +299,22 @@ async fn main() {
                 other => fail(&format!("resposta inesperada: {other:?}")),
             }
         }
+        "premium-bloqueio" => {
+            let on = match (flag("--ligar"), flag("--desligar")) {
+                (true, true) => fail("escolhe --ligar ou --desligar"),
+                (true, false) => Some(true),
+                (false, true) => Some(false),
+                (false, false) => None,
+            };
+            let seed = load_seed();
+            let mut c = connect(&seed).await;
+            match ask(&mut c, ClientMessage::AdminPremiumEnforce { on }).await {
+                ServerMessage::PremiumEnforce { on } if flag("--json") => println!("{}", serde_json::json!({ "ligado": on })),
+                ServerMessage::PremiumEnforce { on: true } => println!("Bloqueio premium LIGADO."),
+                ServerMessage::PremiumEnforce { on: false } => println!("Bloqueio premium desligado."),
+                other => fail(&format!("resposta inesperada: {other:?}")),
+            }
+        }
         "banidos" => {
             let seed = load_seed();
             let mut c = connect(&seed).await;
@@ -308,7 +328,7 @@ async fn main() {
             }
         }
         _ => {
-            eprintln!("Uso: --example denuncias -- (chave|listar|apagar|banir|desbanir|banidos|premium-dar|premium-tirar|premium-lista) --key <ficheiro>");
+            eprintln!("Uso: --example denuncias -- (chave|listar|apagar|banir|desbanir|banidos|premium-dar|premium-tirar|premium-lista|premium-bloqueio) --key <ficheiro>");
             std::process::exit(2);
         }
     }
