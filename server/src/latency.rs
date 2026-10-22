@@ -3,7 +3,10 @@
 //!   uma mensagem, o relay manda um ping nessa ligacao e mede a ida e volta ate ao
 //!   pong; a ida e metade (ver `connection.rs`, `IdaProbe`). E o numero do site.
 //! - entrega: desde que o relay recebe uma mensagem (SendMessage) ate o
-//!   destinatario confirmar que a recebeu (AckMessages).
+//!   destinatario confirmar que a recebeu (AckMessages). So conta quando o
+//!   destinatario estava ligado com a app aberta nesse instante
+//!   (`waiters::is_online`): com a app fechada ou em segundo plano o numero mediria
+//!   quanto tempo a pessoa demorou a abrir a app, e nao a entrega.
 //!
 //! So em memoria. Para cada mensagem em fila guarda-se o id interno da fila e o
 //! instante em que chegou, e nada mais: nem remetente, nem destinatario, nem
@@ -137,6 +140,7 @@ impl Tracker {
     /// Fecha o minuto atual, esquece as mensagens a espera ha mais de `MAX_WAIT`
     /// e devolve o resumo da janela (entrega).
     pub fn roll_minute(&mut self, now: Instant) -> Summary {
+        crate::waiters::prune_recent();
         self.delivery.roll();
         self.ida.roll();
         self.pending.retain(|_, at| now.saturating_duration_since(*at) <= MAX_WAIT);
