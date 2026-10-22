@@ -92,6 +92,20 @@ impl UserSlot {
         (UserSlot { user_id: user_id.to_string(), id, close }, closed)
     }
 
+    /// Fecha todas as ligacoes abertas desta conta (conta banida pelo operador).
+    /// Devolve quantas eram.
+    pub fn close_all(user_id: &str) -> usize {
+        with(|m| match m.get(user_id) {
+            Some(list) => {
+                for e in list {
+                    e.close.notify_one();
+                }
+                list.len()
+            }
+            None => 0,
+        })
+    }
+
     /// Completa quando esta ligacao tem de fechar (ha uma mais nova da mesma conta).
     pub async fn must_close(&self) {
         self.close.notified().await

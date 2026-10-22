@@ -979,6 +979,45 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// DENUNCIAR (0.9.18): as mensagens escolhidas seguem cifradas para o operador (o Rust
+    /// cifra; o relay nao as le e nao guarda quem denunciou). Se o relay aceitar, bloqueia o
+    /// contacto. `reason`: "spam", "assedio", "ilegal" ou "outro".
+    func reportContact(_ id: String, messageIds: [String], reason: String) {
+        guard let client = qt else { return }
+        Task {
+            var found = ui.contacts.first(where: { $0.contactId == id })?.publicId
+            if found == nil {
+                found = try? await background { try client.pendingIntro(contactId: id) }
+            }
+            guard let publicId = found else { showError(s("report_failed")); return }
+            guard let l = link else { showError(s("t_sem_ligacao_ao_servidor")); return }
+            let request: Data
+            do {
+                request = try await background {
+                    try client.relayRequestReport(publicId: publicId, messageIds: messageIds, reason: reason)
+                }
+            } catch {
+                showError(s("report_failed")); return
+            }
+            do {
+                switch try await l.request(request) {
+                case .ack: break
+                case .error(let r):
+                    showError(r == Self.relayUnknownRequest ? s("t_o_servidor_ainda_nao_tem_esta") : s("t_o_servidor_respondeu", r))
+                    return
+                default:
+                    showError(s("t_resposta_inesperada_do_servidor")); return
+                }
+            } catch {
+                showError(s("t_sem_ligacao_ao_servidor")); return
+            }
+            _ = try? await background { try client.blockContact(contactId: id) }
+            ui.blocked.insert(id)
+            ui.notice = s("report_sent")
+            await refreshViews(client)
+        }
+    }
+
     func unblockContact(_ id: String) {
         guard let client = qt else { return }
         Task {

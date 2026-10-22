@@ -20,6 +20,7 @@ pub mod pow;
 pub mod primitives;
 pub mod x3dh;
 pub mod ratchet;
+pub mod report;
 pub mod sealed_sender;
 
 #[cfg(feature = "pq")]

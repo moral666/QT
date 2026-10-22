@@ -75,8 +75,10 @@ A política da Play aplica-se a conversas 1 a 1. O que exige e onde está:
   contactos). Lista e desbloqueio em menu → Contactos bloqueados.
 - **Aceitar os termos antes de usar:** ecrã "Antes de começar", com os termos
   (`https://sealer.pt/termos`) e a política de privacidade.
-- **Denunciar:** os termos indicam `privacidade@sealer.pt`. As mensagens são cifradas ponta a
-  ponta, por isso não há moderação de conteúdo no servidor.
+- **Denunciar (desde a 0.9.18):** na conversa, menu ⋮ → Denunciar. A pessoa escolhe o motivo e
+  as mensagens a incluir; seguem cifradas para a equipa do Sealer, que pode banir a conta no
+  relay. O contacto fica bloqueado. Também por `privacidade@sealer.pt`. Como as mensagens são
+  cifradas ponta a ponta, o servidor não analisa conteúdos: só vê o que a pessoa decide denunciar.
 
 ## 4. Criptografia / exportação
 

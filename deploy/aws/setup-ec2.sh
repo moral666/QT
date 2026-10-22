@@ -179,6 +179,17 @@ if [ -f /etc/qt/apns.json ]; then
 else
   log "Notificacoes iPhone (APNs): desligadas (falta /etc/qt/apns.json)"
 fi
+# Denuncias: a chave PUBLICA do operador (hex, 64 caracteres), gerada no PC do Nuno com
+# `cargo run --release -p qt_server --example denuncias -- chave`. Sem ela, as denuncias
+# das apps sao guardadas na mesma, mas ninguem as consegue listar nem banir contas.
+if [ -f /etc/qt/operator.pub ]; then
+  chown root:qt /etc/qt/operator.pub
+  chmod 640 /etc/qt/operator.pub
+  echo "RELAY_OPERATOR_FILE=/etc/qt/operator.pub" >> "$ENV_FILE"
+  log "Denuncias: operador configurado"
+else
+  log "Denuncias: falta /etc/qt/operator.pub (operador desligado)"
+fi
 rm -f "$DROPIN/fcm.conf"
 if [ "$PUSH_OUT" = 1 ]; then
   mkdir -p "$DROPIN"

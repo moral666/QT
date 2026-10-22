@@ -126,7 +126,43 @@ pub enum ClientMessage {
     /// `token` vazio = deixar de receber. Guardado com `store::PUSH_TTL_SECONDS` e
     /// apagado com a conta. Resposta: `Ack`. Relays antigos respondem `Error`.
     RegisterPushToken { user_id: UserId, token: String },
+
+    /// Denuncia de um contacto, ja cifrada pela app para a chave do operador
+    /// (`qt_core::report`): o relay nao a consegue ler. Guardada `store::REPORT_TTL_SECONDS`
+    /// SEM o ID de quem denunciou. Ate `store::MAX_REPORTS_PER_DAY` por conta e por dia.
+    /// Resposta: `Ack`. Relays antigos respondem `Error` (pedido desconhecido).
+    SubmitReport { sealed: Vec<u8> },
+
+    // ----- Pedidos do OPERADOR: so a chave Ed25519 de /etc/qt/operator.pub. -----
+    /// Denuncias guardadas com id maior do que `after`, ate encher uma pagina.
+    /// Resposta: `Reports` (`more = true`: repetir com o ultimo id recebido).
+    AdminListReports { after: u64 },
+    /// Apaga uma denuncia (ja tratada). Resposta: `Ack`.
+    AdminDeleteReport { id: u64 },
+    /// Bane uma conta: apaga o que o relay guarda dela (bundle, fila, campainha) e
+    /// passa a recusar a autenticacao e o registo. Fecha as ligacoes abertas. `Ack`.
+    AdminBan { user_id: UserId },
+    /// Levanta o banimento. Resposta: `Ack`.
+    AdminUnban { user_id: UserId },
+    /// Contas banidas. Resposta: `Bans`.
+    AdminListBans,
 }
+
+/// Denuncia guardada no relay (bytes opacos, cifrados para o operador).
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct StoredReport {
+    pub id: u64,
+    /// Hora em que o relay a recebeu (ms desde 1970).
+    pub received_at_ms: u64,
+    pub sealed: Vec<u8>,
+}
+
+/// Motivo do `Error` a uma conta banida (na autenticacao e no registo).
+pub const BANNED: &str = "conta banida";
+/// Motivo do `Error` quando uma conta passa o limite diario de denuncias.
+pub const REPORT_LIMIT: &str = "limite de denuncias atingido, tenta amanha";
+/// Motivo do `Error` a um pedido de operador vindo de outra conta.
+pub const NOT_OPERATOR: &str = "so o operador";
 
 /// One-time prekeys guardadas por conta, no maximo.
 pub const MAX_OTPKS: usize = 200;
@@ -198,6 +234,10 @@ pub enum ServerMessage {
     /// `data` em base64.
     BlobData { offset: u64, size: u64, data: String },
     BlobNotFound,
+    /// Resposta a `AdminListReports`.
+    Reports { reports: Vec<StoredReport>, more: bool },
+    /// Resposta a `AdminListBans`.
+    Bans { user_ids: Vec<UserId> },
 }
 
 pub fn serialize_client_message(msg: &ClientMessage) -> Vec<u8> {

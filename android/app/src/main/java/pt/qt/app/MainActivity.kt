@@ -44,6 +44,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -86,6 +87,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -157,6 +159,7 @@ import kotlin.math.sin
 import uniffi.qt_ffi.ChatMessage
 import uniffi.qt_ffi.ConversationSummary
 import uniffi.qt_ffi.MessageStatus
+import uniffi.qt_ffi.reportsAvailable
 
 // FragmentActivity (e nao ComponentActivity): o BiometricPrompt precisa dela.
 class MainActivity : FragmentActivity() {
@@ -474,6 +477,7 @@ fun AppRoot(
                 invite = chatId in ui.invites && ui.contacts.none { it.contactId == chatId }, onAcceptInvite = vm::acceptInvite, onDeclineInvite = vm::declineInvite,
                 onReact = vm::react, onSendVoice = vm::sendVoice, onSendFile = vm::sendFile,
                 onCall = { c -> withMic { vm.startCall(c) } },
+                canReport = reportsAvailable(), onReport = vm::reportContact,
             )
         }
         showLockSettings -> {
@@ -1169,9 +1173,12 @@ fun ChatScreen(
     onSendVoice: (Contact, File, Long) -> Unit = { _, _, _ -> },
     onSendFile: (Contact, Uri) -> Unit = { _, _ -> },
     onCall: (Contact) -> Unit = {},
+    canReport: Boolean = false,
+    onReport: (String, List<String>, String) -> Unit = { _, _, _ -> },
 ) {
     val colors = LocalChatColors.current
     var viewing by remember { mutableStateOf<ChatMessage?>(null) }
+    var showReport by remember { mutableStateOf(false) }
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var chatMenu by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
@@ -1234,6 +1241,13 @@ fun ChatScreen(
                                     text = { Text(s(R.string.t_bloquear)) },
                                     leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) },
                                     onClick = { chatMenu = false; confirmBlock = true },
+                                )
+                            }
+                            if (canReport) {
+                                DropdownMenuItem(
+                                    text = { Text(s(R.string.report)) },
+                                    leadingIcon = { Icon(Icons.Filled.Warning, contentDescription = null) },
+                                    onClick = { chatMenu = false; showReport = true },
                                 )
                             }
                             DropdownMenuItem(
@@ -1355,6 +1369,103 @@ fun ChatScreen(
             dismissButton = { TextButton(onClick = { confirmBlock = false }) { Text(s(R.string.t_cancelar)) } },
         )
     }
+    if (showReport) {
+        ReportDialog(
+            name = name,
+            msgs = msgs,
+            onDismiss = { showReport = false },
+            onConfirm = { ids, reason -> showReport = false; onReport(contactId, ids, reason) },
+        )
+    }
+}
+
+// ===================================================================== denunciar
+
+/** Mensagens que a pessoa pode escolher (as mais recentes) e as que vem marcadas. */
+private const val REPORT_SHOWN = 30
+private const val REPORT_PRESELECTED = 10
+private const val REPORT_MAX = 20
+
+/**
+ * Denunciar (0.9.18): motivo + mensagens a incluir (vem marcadas as 10 mais recentes da
+ * outra pessoa; maximo 20). Seguem cifradas so para a equipa do Sealer e o contacto fica
+ * bloqueado. Nada segue sem a pessoa confirmar.
+ */
+@Composable
+private fun ReportDialog(
+    name: String,
+    msgs: List<ChatMessage>,
+    onDismiss: () -> Unit,
+    onConfirm: (List<String>, String) -> Unit,
+) {
+    val shown = remember(msgs) { msgs.filter { it.text.isNotBlank() }.take(REPORT_SHOWN) }
+    val picked = remember(shown) {
+        androidx.compose.runtime.mutableStateListOf<String>().apply {
+            addAll(shown.filter { !it.outgoing }.take(REPORT_PRESELECTED).map { it.messageId })
+        }
+    }
+    val reasons = listOf(
+        "spam" to s(R.string.report_reason_spam),
+        "assedio" to s(R.string.report_reason_harassment),
+        "ilegal" to s(R.string.report_reason_illegal),
+        "outro" to s(R.string.report_reason_other),
+    )
+    var reason by rememberSaveable { mutableStateOf("spam") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
+        title = { Text(s(R.string.report_title, name)) },
+        text = {
+            ObscuredTouchGuard()
+            LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                item {
+                    Text(s(R.string.report_explain, name), style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    Text(s(R.string.report_reason), style = MaterialTheme.typography.labelLarge)
+                }
+                items(reasons) { (code, label) ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { reason = code },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = reason == code, onClick = { reason = code })
+                        Text(label)
+                    }
+                }
+                item {
+                    Spacer(Modifier.height(8.dp))
+                    Text(s(R.string.report_messages, picked.size, REPORT_MAX), style = MaterialTheme.typography.labelLarge)
+                    if (shown.isEmpty()) Text(s(R.string.report_no_messages), style = MaterialTheme.typography.bodySmall)
+                }
+                items(shown, key = { it.messageId }) { m ->
+                    val on = m.messageId in picked
+                    fun toggle() {
+                        if (on) picked.remove(m.messageId) else if (picked.size < REPORT_MAX) picked.add(m.messageId)
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().clickable { toggle() },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = on, onCheckedChange = { toggle() })
+                        Column {
+                            Text(
+                                if (m.outgoing) s(R.string.report_from_me) else name,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(m.text, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(shown.filter { it.messageId in picked }.map { it.messageId }, reason) }) {
+                Text(s(R.string.report_confirm), color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) } },
+    )
 }
 
 // ===================================================================== eliminar
