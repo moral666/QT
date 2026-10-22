@@ -60,3 +60,9 @@ GoogleService-Info.plist
 *.p12
 *.mobileprovision
 *.cer
+
+# Fuzzing (fuzz/README.md): so as sementes vao para o git.
+/fuzz/target/
+/fuzz/artifacts/
+/fuzz/coverage/
+/fuzz/corpus/
