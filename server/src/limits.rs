@@ -170,6 +170,8 @@ pub enum Limited {
     Send,
     /// `FetchPreKeyBundle` (cada um gasta uma one-time prekey do contacto).
     FetchBundle,
+    /// `BackupPut` e `BackupGet` (copia de recuperacao, partes ate 40 KB).
+    Backup,
 }
 
 /// `burst = 0` desliga o limite.

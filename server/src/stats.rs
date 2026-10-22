@@ -36,6 +36,8 @@ pub struct Stats {
     pub accounts_deleted: AtomicU64,
     pub reports: AtomicU64,
     pub bans: AtomicU64,
+    pub backups_saved: AtomicU64,
+    pub backups_restored: AtomicU64,
     /// Tokens de notificacoes registados (`RegisterPushToken`).
     pub push_registered: AtomicU64,
     /// Campainhas enviadas a Google (FCM) e as que falharam.
@@ -81,6 +83,8 @@ pub static STATS: Stats = Stats {
     accounts_deleted: AtomicU64::new(0),
     reports: AtomicU64::new(0),
     bans: AtomicU64::new(0),
+    backups_saved: AtomicU64::new(0),
+    backups_restored: AtomicU64::new(0),
     push_registered: AtomicU64::new(0),
     pushes: AtomicU64::new(0),
     push_failed: AtomicU64::new(0),
@@ -128,6 +132,8 @@ pub fn take_line(s: &Stats) -> Option<String> {
         ("contas_apagadas", t(&s.accounts_deleted)),
         ("denuncias", t(&s.reports)),
         ("banidas", t(&s.bans)),
+        ("copias_guardadas", t(&s.backups_saved)),
+        ("copias_pedidas", t(&s.backups_restored)),
         ("tokens_notificacao", t(&s.push_registered)),
         ("notificacoes", t(&s.pushes)),
         ("notificacoes_falhadas", t(&s.push_failed)),

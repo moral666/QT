@@ -50,6 +50,8 @@ pub struct ServerConfig {
     pub send_rate: crate::limits::Rate,
     /// Pedidos de bundle por conta (`FetchPreKeyBundle`).
     pub fetch_bundle_rate: crate::limits::Rate,
+    /// Partes de copias de recuperacao enviadas ou pedidas por conta (`BackupPut`, `BackupGet`).
+    pub backup_rate: crate::limits::Rate,
     /// Conta do operador (`hex` da chave Ed25519 de `/etc/qt/operator.pub`): so ela faz
     /// pedidos `Admin*` (denuncias e banimentos). `None` = desligados.
     pub operator: Option<String>,
@@ -70,6 +72,8 @@ impl Default for ServerConfig {
             // (e para avisar todos os contactos ao abrir a app), nao para spam em massa.
             send_rate: crate::limits::Rate { burst: 300, per_minute: 300 },
             fetch_bundle_rate: crate::limits::Rate { burst: 60, per_minute: 60 },
+            // Uma copia tem ate 8 partes: chega para refazer a copia algumas vezes por minuto.
+            backup_rate: crate::limits::Rate { burst: 40, per_minute: 20 },
             operator: None,
         }
     }
@@ -435,6 +439,8 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             match store.register_bundle(user_id, bundle_bytes).await {
                 Ok(()) => {
                     stats::inc(&STATS.bundles_registered);
+                    // A app abriu: a copia de recuperacao fica mais 90 dias.
+                    let _ = store.renew_backup(me).await;
                     if let Some(keys) = one_time_pre_keys {
                         if let Err(e) = store.replace_one_time_prekeys(me, &keys).await {
                             return internal(e);
@@ -521,6 +527,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             }
             match store.delete_account(&user_id).await {
                 Ok(()) => {
+                    let _ = store.delete_backup(&user_id).await;
                     stats::inc(&STATS.accounts_deleted);
                     ServerMessage::Ack
                 }
@@ -674,6 +681,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             }
             match store.ban(&user_id).await {
                 Ok(()) => {
+                    let _ = store.delete_backup(&user_id).await;
                     crate::limits::UserSlot::close_all(&user_id);
                     stats::inc(&STATS.bans);
                     ServerMessage::Ack
@@ -692,6 +700,65 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
         }
         ClientMessage::AdminListBans => match store.list_bans().await {
             Ok(user_ids) => ServerMessage::Bans { user_ids },
+            Err(e) => internal(e),
+        },
+        ClientMessage::BackupPut { lookup, generation, part, parts, data } => {
+            use crate::protocol::{is_hex_of_len, BACKUP_PARTS_MAX, BACKUP_PART_MAX};
+            if !is_hex_of_len(&lookup, 64) || !is_hex_of_len(&generation, 16) || parts == 0 || parts > BACKUP_PARTS_MAX || part >= parts {
+                return err("copia invalida");
+            }
+            if data.len() > BACKUP_PART_MAX.div_ceil(3) * 4 {
+                return err("copia invalida");
+            }
+            let Ok(bytes) = b64().decode(&data) else { return err("copia invalida") };
+            if bytes.is_empty() || bytes.len() > BACKUP_PART_MAX {
+                return err("copia invalida");
+            }
+            if !crate::limits::allow(crate::limits::Limited::Backup, me, cfg.backup_rate) {
+                stats::inc(&STATS.rate_limited);
+                return err(crate::protocol::RATE_LIMITED);
+            }
+            match store.is_registered(me).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    stats::inc(&STATS.not_registered);
+                    return err(crate::protocol::NOT_REGISTERED);
+                }
+                Err(e) => return internal(e),
+            }
+            match store.backup_put(me, &lookup, &generation, part, parts, bytes).await {
+                Ok(()) => {
+                    if part + 1 == parts {
+                        stats::inc(&STATS.backups_saved);
+                    }
+                    ServerMessage::Ack
+                }
+                Err(StoreError::BackupNotOwner) => err(crate::protocol::BACKUP_NOT_OWNER),
+                Err(StoreError::BackupIncomplete) => err("copia incompleta"),
+                Err(e) => internal(e),
+            }
+        }
+        ClientMessage::BackupGet { lookup, part } => {
+            if !crate::protocol::is_hex_of_len(&lookup, 64) {
+                return err("copia invalida");
+            }
+            if !crate::limits::allow(crate::limits::Limited::Backup, me, cfg.backup_rate) {
+                stats::inc(&STATS.rate_limited);
+                return err(crate::protocol::RATE_LIMITED);
+            }
+            match store.backup_get(&lookup, part).await {
+                Ok(Some((parts, data))) => {
+                    if part == 0 {
+                        stats::inc(&STATS.backups_restored);
+                    }
+                    ServerMessage::BackupPart { part, parts, data: b64().encode(data) }
+                }
+                Ok(None) => ServerMessage::BackupNotFound,
+                Err(e) => internal(e),
+            }
+        }
+        ClientMessage::BackupDelete => match store.delete_backup(me).await {
+            Ok(()) => ServerMessage::Ack,
             Err(e) => internal(e),
         },
     }

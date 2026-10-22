@@ -45,6 +45,19 @@ const KV_SENT: &str = "badge:sent:";
 /// Certificado recebido deste contacto.
 const KV_OF: &str = "badge:of:";
 
+/// Recuperacao da conta: o meu certificado (a copia so traz os que eram validos), que volta
+/// a seguir para os contactos (versao nova).
+pub(crate) fn restore_mine(c: &st::rusqlite::Connection, cert: &[u8]) -> Result<(), QtError> {
+    st::kv_set(c, KV_MINE, cert)?;
+    st::kv_set(c, KV_MY_VER, &now_ms().to_be_bytes())?;
+    Ok(())
+}
+
+/// O meu certificado, para a copia de recuperacao.
+pub(crate) fn my_cert(c: &st::rusqlite::Connection) -> Result<Option<Vec<u8>>, QtError> {
+    Ok(st::kv_get(c, KV_MINE)?)
+}
+
 #[cfg(debug_assertions)]
 static TEST_ISSUER: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
 

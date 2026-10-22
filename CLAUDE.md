@@ -38,7 +38,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
 - O **site, a documentação e a app nunca mencionam auditorias em falta** ("sem auditoria", "não auditada", 19/10/2026).
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.9.18**, `versionCode` 25), em
+- Versões da app: série 0.x (agora **0.9.19**, `versionCode` 26), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
   0.9.3...) e o `versionCode` mais 1, no mesmo commit. Só se passa a **1.0.0** quando o Nuno disser.
 - Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
@@ -178,6 +178,17 @@ e a página "Denúncias" do sealer-control. A chave do operador fica fora do git
 Chave pública do operador posta nas apps a 22/10/2026 (`OPERATOR_REPORT_PUBLIC`); a do relay é
 `3a145acb…e2e7df` em `/etc/qt/operator.pub`.
 Ver `docs/protocol-spec.md`, secção 21.
+
+### Chave de recuperação (desde a 0.9.19, aprovado pelo Nuno a 22/10/2026)
+
+12 palavras BIP-39 (inglês) → Argon2id → chave da cópia + `lookup` no relay
+(`core/src/recovery.rs`). A cópia (`ffi/src/recovery.rs`) leva identidade, contactos (nome e ID),
+bloqueados e badge; **sem grupos nem histórico** (decisão do Nuno). Relay: `BackupPut`/`BackupGet`/
+`BackupDelete`, 90 dias renovados ao registar o bundle. Android `Recovery.kt` (`RecoveryScreen`,
+`RestoreScreen`, `FLAG_SECURE` enquanto as palavras estão no ecrã), iPhone `Views/RecoveryViews.swift`.
+A app refaz a cópia quando os contactos ou bloqueados mudam (`scheduleBackup`). Num telemóvel sem
+identidade, `relay_auth_message` usa uma chave temporária só em memória. Depois de recuperar, os
+contactos ficam em `sessions_to_restart` com convite. Ver `docs/protocol-spec.md`, secção 22.
 
 ### Funcionalidades da 0.9.0
 

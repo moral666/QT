@@ -12,6 +12,8 @@ struct AppRoot: View {
     @State private var showAddContact = false
     @State private var showMyId = false
     @State private var showLockSettings = false
+    @State private var showRecovery = false
+    @State private var showRestore = false
     @State private var showGroupInfo = false
     @State private var showPhoto = false
     @State private var micDenied = false
@@ -85,8 +87,10 @@ struct AppRoot: View {
             LockScreen(ui: ui, onCode: model.unlockWithCode, onBio: model.requestBioUnlock, onWipe: model.wipeLockedData)
         } else if !ui.termsAccepted {
             TermsScreen(onAccept: model.acceptTerms)
+        } else if !ui.hasIdentity && showRestore {
+            RestoreScreen(ui: ui, onBack: { showRestore = false }, onRestore: model.restoreAccount)
         } else if !ui.hasIdentity {
-            SetupScreen(ui: ui, onCreate: model.createIdentity)
+            SetupScreen(ui: ui, onCreate: model.createIdentity, onRestore: { showRestore = true })
         } else if let g = openGroup, showGroupInfo {
             GroupInfoScreen(ui: ui, group: g, onBack: { showGroupInfo = false },
                             onUpdate: { name, members in model.updateGroup(g.groupId, name: name, members: members) },
@@ -104,6 +108,10 @@ struct AppRoot: View {
             ChatScreen(model: model, ui: ui, conversationId: id, group: nil, onInfo: {},
                        onCall: { c in withMic { model.startCall(c) } })
                 .transition(.move(edge: .trailing))
+        } else if showRecovery {
+            RecoveryScreen(ui: ui, onBack: { showRecovery = false }, onCreate: model.recoveryCreate,
+                           onShow: model.recoveryShow, onWritten: model.recoveryWritten,
+                           onHide: model.recoveryHide, onDisable: model.recoveryDisable)
         } else if showLockSettings {
             LockSettingsScreen(ui: ui, onBack: { showLockSettings = false },
                                onEnable: model.enableLock, onDisable: model.disableLock, onChange: model.changeCode,
@@ -120,6 +128,7 @@ struct AppRoot: View {
                 ui: ui, onBack: { showSettings = false },
                 onProfilePhoto: { showPhoto = true }, onMyId: { showMyId = true },
                 onLockSettings: { showLockSettings = true }, onLockNow: model.lockNow,
+                onRecovery: { showRecovery = true },
                 onUnblock: model.unblockContact, onPresence: model.setPresence, onReadReceipts: model.setReadReceipts,
                 onPush: model.setPush,
                 onLanguage: { if let u = URL(string: UIApplication.openSettingsURLString) { openURL(u) } },
@@ -152,6 +161,7 @@ struct LoadingScreen: View {
 struct SetupScreen: View {
     let ui: UiState
     let onCreate: (String, String) -> Void
+    var onRestore: () -> Void = {}
     @State private var url = ""
     @State private var key = ""
     @State private var advanced = false
@@ -169,6 +179,7 @@ struct SetupScreen: View {
                     .font(.sBodyMedium).multilineTextAlignment(.center).foregroundStyle(c.onSurfaceVariant)
                 Spacer().frame(height: 32)
                 PrimaryButton(title: s("t_comecar")) { onCreate(url, key) }
+                Button(s("recovery_have_words"), action: onRestore).font(.sLabelLarge).padding(.top, 12)
                 Spacer().frame(height: 16)
                 Text(s("t_versao_de_testes"))
                     .font(.sLabelSmall).multilineTextAlignment(.center).foregroundStyle(c.onSurfaceVariant)

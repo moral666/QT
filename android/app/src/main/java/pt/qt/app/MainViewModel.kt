@@ -45,6 +45,7 @@ import uniffi.qt_ffi.peerBundleFromRelayBytes
 import uniffi.qt_ffi.presenceHeartbeatMs
 import uniffi.qt_ffi.relayIdOfPublicId
 import uniffi.qt_ffi.relayRecipientDeletedReason
+import uniffi.qt_ffi.BackupContact
 
 data class UiState(
     val loading: Boolean = true,
@@ -127,6 +128,12 @@ data class UiState(
     val photoPreview: androidx.compose.ui.graphics.ImageBitmap? = null,
     /** Aviso curto a mostrar uma vez (Toast), por exemplo "Foto atualizada". */
     val notice: String? = null,
+    /** Chave de recuperacao (12 palavras) ativa neste telemovel. */
+    val recoveryOn: Boolean = false,
+    /** Palavras a mostrar agora (ao criar ou ao pedir para as ver); `null` fora disso. */
+    val recoveryWords: List<String>? = null,
+    /** A gerar palavras, a recuperar a conta ou a apagar a copia (mostra progresso). */
+    val recoveryBusy: Boolean = false,
 )
 
 enum class CallPhase { CALLING, RINGING_OUT, INCOMING, ACTIVE, ENDED }
@@ -284,6 +291,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 termsAccepted = prefs.getInt("terms_version", 0) >= TERMS_VERSION,
                 presenceOn = prefs.getBoolean("presence", true),
                 online = emptySet(),
+                recoveryOn = has && client.recoveryEnabled(),
             )
         }
         syncPresence(client)
@@ -703,6 +711,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         // Notificacoes: o "endereco de campainha" vai sempre que a app se liga (renova o prazo no relay).
         registerPush(client, bundleLink)
+        // Copia de recuperacao: so se mudou alguma coisa desde a ultima (o relay renova o prazo
+        // da que la esta quando recebe o bundle).
+        if (publishBundle) scheduleBackup()
         // Presenca: "online" aos contactos (se a app estiver no ecra).
         if (visible) presenceAnnounce(true)
     }
@@ -926,6 +937,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val list = (_ui.value.contacts.filter { it.contactId != c.contactId }) + c
             contactStore.save(list, contactsKey ?: return@io)
             _ui.update { it.copy(contacts = list, error = null) }
+            scheduleBackup()
             qt?.let { client ->
                 // Escreveu-me antes (convite) e eu adicionei-o a mao: o convite fica resolvido.
                 // Antes ficava pendente e a conversa escondia o botao de ligar.
@@ -1011,6 +1023,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             client.blockContact(contactId)
             _ui.update { it.copy(blocked = it.blocked + contactId) }
             refreshViews(client)
+            scheduleBackup()
         } catch (e: Exception) {
             error(s(R.string.t_nao_foi_possivel_bloquear, e.safeMsg()))
         }
@@ -1056,11 +1069,144 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ------------------------------------------------------------ chave de recuperacao
+
+    /** Gera 12 palavras novas (as antigas deixam de servir) e mostra-as. Argon2: fora da UI. */
+    fun recoveryCreate() = io {
+        val client = qt ?: return@io
+        _ui.update { it.copy(recoveryBusy = true) }
+        try {
+            val words = client.recoveryEnable()
+            _ui.update { it.copy(recoveryOn = true, recoveryWords = words, recoveryBusy = false) }
+        } catch (e: Exception) {
+            _ui.update { it.copy(recoveryBusy = false) }
+            error(s(R.string.recovery_failed))
+        }
+    }
+
+    /** Mostra de novo as palavras atuais. */
+    fun recoveryShow() = io {
+        val words = qt?.recoveryWords() ?: return@io
+        _ui.update { it.copy(recoveryWords = words) }
+    }
+
+    /** As palavras foram escritas (e confirmadas): esconde-as e envia a copia ja. */
+    fun recoveryWritten() {
+        _ui.update { it.copy(recoveryWords = null) }
+        scheduleBackup(force = true, delayMs = 0)
+    }
+
+    fun recoveryHide() = _ui.update { it.copy(recoveryWords = null) }
+
+    /** Desliga: o relay apaga a copia e as palavras deixam de servir. */
+    fun recoveryDisable() = io {
+        val client = qt ?: return@io
+        val l = link ?: run { error(s(R.string.t_sem_ligacao_ao_servidor)); return@io }
+        _ui.update { it.copy(recoveryBusy = true) }
+        try {
+            val r = l.request(client.relayRequestBackupDelete())
+            if (r !is RelayResponse.Ack) throw IllegalStateException(r.describe())
+            client.recoveryDisable()
+            _ui.update { it.copy(recoveryOn = false, recoveryWords = null, recoveryBusy = false) }
+        } catch (e: Exception) {
+            _ui.update { it.copy(recoveryBusy = false) }
+            error(s(R.string.t_sem_ligacao_ao_servidor))
+        }
+    }
+
+    private var backupJob: Job? = null
+
+    /**
+     * Copia de recuperacao: refeita pouco depois de os contactos ou os bloqueados mudarem (e
+     * ao abrir a app). O Rust so devolve pedidos se o conteudo mudou (ou com [force]).
+     */
+    private fun scheduleBackup(force: Boolean = false, delayMs: Long = BACKUP_DELAY_MS) {
+        if (!_ui.value.recoveryOn) return
+        backupJob?.cancel()
+        backupJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(delayMs)
+            val client = qt ?: return@launch
+            val l = fileLink ?: link ?: return@launch
+            try {
+                val contacts = _ui.value.contacts.map { BackupContact(it.nickname, it.publicId) }
+                val up = client.recoveryBackup(contacts, force)
+                if (up.requests.isEmpty()) return@launch
+                for (req in up.requests) {
+                    val r = l.request(req)
+                    if (r !is RelayResponse.Ack) {
+                        Log.w(TAG, "copia de recuperacao recusada: ${r.describe()}")
+                        return@launch
+                    }
+                }
+                client.recoveryBackupSent(up.digest)
+                Log.d(TAG, "copia de recuperacao enviada (${up.requests.size} parte(s))")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "copia de recuperacao: ${e.safeMsg()}")
+            }
+        }
+    }
+
+    /**
+     * RECUPERAR (telemovel sem conta): confere as palavras, vai buscar a copia ao relay (com
+     * uma chave temporaria), instala a mesma identidade e os contactos e liga-se. As sessoes
+     * com os contactos recomecam sozinhas (`sessionsToRestart`).
+     */
+    fun restoreAccount(words: List<String>) = io {
+        val client = qt ?: return@io
+        _ui.update { it.copy(recoveryBusy = true, error = null) }
+        try {
+            try {
+                client.recoveryPrepare(words)
+            } catch (e: QtException) {
+                error(s(R.string.recovery_bad_words)); return@io
+            }
+            val l = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
+            val parts = mutableListOf<ByteArray>()
+            try {
+                var total = 1
+                while (parts.size < total) {
+                    when (val r = l.request(client.relayRequestBackupGet(parts.size.toUInt()))) {
+                        is RelayResponse.BackupPart -> { total = r.parts.toInt(); parts += r.data }
+                        is RelayResponse.BackupNotFound -> { error(s(R.string.recovery_not_found)); return@io }
+                        else -> { error(s(R.string.t_resposta_inesperada_do_servidor)); return@io }
+                    }
+                }
+            } catch (e: Exception) {
+                error(s(R.string.t_sem_ligacao_ao_servidor)); return@io
+            } finally {
+                l.shutdown()
+            }
+            val acc = try {
+                client.recoveryRestore(parts)
+            } catch (e: QtException) {
+                error(s(R.string.recovery_bad_backup)); return@io
+            }
+            val list = acc.contacts.mapNotNull { c ->
+                runCatching { Contact(c.nickname.ifBlank { s(R.string.t_contacto) }, c.publicId, relayIdOfPublicId(c.publicId)) }.getOrNull()
+            }
+            contactStore.save(list, contactsKey ?: return@io)
+            _ui.update {
+                it.copy(
+                    hasIdentity = true, publicId = acc.publicId, contacts = list,
+                    blocked = client.blockedContacts().toSet(), recoveryOn = true,
+                    notice = s(R.string.recovery_restored),
+                )
+            }
+            refreshViews(client)
+            startLink()
+        } finally {
+            _ui.update { it.copy(recoveryBusy = false) }
+        }
+    }
+
     fun unblockContact(contactId: String) = io {
         val client = qt ?: return@io
         try {
             client.unblockContact(contactId)
             _ui.update { it.copy(blocked = it.blocked - contactId) }
+            scheduleBackup()
         } catch (e: Exception) {
             error(s(R.string.t_nao_foi_possivel_desbloquear_2, e.safeMsg()))
         }
@@ -1079,6 +1225,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             contactStore.save(list, contactsKey ?: return@io)
             client.dismissIntro(contactId)
             _ui.update { it.copy(contacts = list, invites = it.invites - contactId) }
+            scheduleBackup()
             syncPresence(client)
             refreshViews(client)
             flushOutbox()   // recibos que estavam a espera de saber o endereco deste contacto
@@ -1125,6 +1272,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             syncPresence(client)
             refreshViews(client)
             flushOutbox()   // o aviso "sessao terminada" (fica na outbox se nao houver rede)
+            scheduleBackup()
         } catch (e: Exception) {
             error(s(R.string.t_nao_foi_possivel_apagar_o_contacto, e.safeMsg()))
         }
@@ -2133,6 +2281,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
+        /** Copia de recuperacao: espera um pouco depois de uma mudanca (junta varias seguidas). */
+        private const val BACKUP_DELAY_MS = 3_000L
         /** Sem entrega imediata (relay antigo ou sem rede): perguntar de 3 em 3 s. */
         private const val POLL_MS = 3_000L
         /** Em segundo plano ha mais do que isto: fecha as ligacoes ao relay (poupa bateria). */

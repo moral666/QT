@@ -69,6 +69,12 @@ struct UiState {
     var photoPreview: UIImage?
     /// Aviso curto a mostrar uma vez (ex.: "Foto atualizada").
     var notice: String?
+    /// Chave de recuperacao (12 palavras) ativa neste iPhone.
+    var recoveryOn = false
+    /// Palavras a mostrar agora (ao criar ou ao pedir para as ver); `nil` fora disso.
+    var recoveryWords: [String]?
+    /// A gerar palavras, a recuperar a conta ou a apagar a copia.
+    var recoveryBusy = false
 
     func groupOf(_ conversationId: String) -> GroupInfo? {
         conversationId.hasPrefix("g:") ? groups.first { $0.conversationId == conversationId } : nil
@@ -237,7 +243,7 @@ final class AppModel: ObservableObject {
         let pin = Config.relayEditable ? (prefs.string(forKey: "relay_key") ?? Config.relayPin) : Config.relayPin
         struct Loaded: Sendable {
             let has: Bool; let publicId: String; let contacts: [Contact]; let convs: [ConversationSummary]
-            let blocked: [String]; let invites: [String]; let lockEnabled: Bool
+            let blocked: [String]; let invites: [String]; let lockEnabled: Bool; let recoveryOn: Bool
         }
         let l = try await background { () -> Loaded in
             if ContactStore.isLegacy() {
@@ -250,7 +256,8 @@ final class AppModel: ObservableObject {
                 has: has, publicId: pid,
                 contacts: ContactStore.load(key: ck), convs: try client.conversations(),
                 blocked: try client.blockedContacts(), invites: try client.pendingIntros(),
-                lockEnabled: StorageKeyProvider.lockEnabled()
+                lockEnabled: StorageKeyProvider.lockEnabled(),
+                recoveryOn: has ? try client.recoveryEnabled() : false
             )
         }
         var u = ui
@@ -273,6 +280,7 @@ final class AppModel: ObservableObject {
         u.lockTimeoutMs = (prefs.object(forKey: "lock_timeout_ms") as? Int64) ?? defaultLockTimeoutMs
         u.blocked = Set(l.blocked)
         u.invites = Set(l.invites)
+        u.recoveryOn = l.recoveryOn
         u.termsAccepted = prefs.integer(forKey: "terms_version") >= termsVersion
         u.presenceOn = prefs.object(forKey: "presence") as? Bool ?? true
         u.online = []
@@ -664,6 +672,8 @@ final class AppModel: ObservableObject {
         }
         await registerPush(client, f)
         if visible { await presenceAnnounce(true) }
+        // Copia de recuperacao: so se mudou alguma coisa desde a ultima.
+        if publishBundle { scheduleBackup() }
     }
 
     // ================================================================ notificacoes
@@ -873,6 +883,135 @@ final class AppModel: ObservableObject {
         guard let ck = contactsKey else { throw SecureStoreError(message: "sem a chave dos contactos") }
         try await background { try ContactStore.save(list, key: ck) }
         ui.contacts = list
+        scheduleBackup()
+    }
+
+    // ================================================================ chave de recuperacao
+
+    private var backupTask: Task<Void, Never>?
+
+    /// Gera 12 palavras novas (as antigas deixam de servir) e mostra-as. Argon2: fora da UI.
+    func recoveryCreate() {
+        guard let client = qt else { return }
+        ui.recoveryBusy = true
+        Task {
+            do {
+                let words = try await background { try client.recoveryEnable() }
+                ui.recoveryOn = true
+                ui.recoveryWords = words
+            } catch {
+                showError(s("recovery_failed"))
+            }
+            ui.recoveryBusy = false
+        }
+    }
+
+    func recoveryShow() {
+        guard let client = qt else { return }
+        Task { ui.recoveryWords = (try? await background { try client.recoveryWords() }) ?? nil }
+    }
+
+    /// As palavras foram escritas e confirmadas: esconde-as e envia a copia ja.
+    func recoveryWritten() {
+        ui.recoveryWords = nil
+        scheduleBackup(force: true, delay: 0)
+    }
+
+    func recoveryHide() { ui.recoveryWords = nil }
+
+    /// Desliga: o relay apaga a copia e as palavras deixam de servir.
+    func recoveryDisable() {
+        guard let client = qt, let l = link else { showError(s("t_sem_ligacao_ao_servidor")); return }
+        ui.recoveryBusy = true
+        Task {
+            do {
+                let r = try await l.request(try await background { try client.relayRequestBackupDelete() })
+                guard case .ack = r else { throw SecureStoreError(message: r.describe) }
+                try await background { try client.recoveryDisable() }
+                ui.recoveryOn = false
+                ui.recoveryWords = nil
+            } catch {
+                showError(s("t_sem_ligacao_ao_servidor"))
+            }
+            ui.recoveryBusy = false
+        }
+    }
+
+    /// Copia de recuperacao: refeita pouco depois de os contactos ou os bloqueados mudarem (e
+    /// ao abrir a app). O Rust so devolve pedidos se o conteudo mudou (ou com `force`).
+    func scheduleBackup(force: Bool = false, delay: Double = 3) {
+        guard ui.recoveryOn else { return }
+        backupTask?.cancel()
+        backupTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled, let client = self.qt, let l = self.fileLink ?? self.link else { return }
+            let contacts = self.ui.contacts.map { BackupContact(nickname: $0.nickname, publicId: $0.publicId) }
+            do {
+                let up = try await background { try client.recoveryBackup(contacts: contacts, force: force) }
+                if up.requests.isEmpty { return }
+                for req in up.requests {
+                    let r = try await l.request(req)
+                    guard case .ack = r else { log("SealerRelay", "copia de recuperacao recusada: \(r.describe)"); return }
+                }
+                let digest = up.digest
+                try await background { try client.recoveryBackupSent(digest: digest) }
+            } catch {
+                log("SealerRelay", "copia de recuperacao: \(safeMessage(error))")
+            }
+        }
+    }
+
+    /// RECUPERAR (iPhone sem conta): confere as palavras, vai buscar a copia ao relay (com uma
+    /// chave temporaria), instala a mesma identidade e os contactos e liga-se. As sessoes com
+    /// os contactos recomecam sozinhas (`sessionsToRestart`).
+    func restoreAccount(_ words: [String]) {
+        guard let client = qt else { return }
+        ui.recoveryBusy = true
+        ui.error = nil
+        Task {
+            defer { ui.recoveryBusy = false }
+            do {
+                try await background { try client.recoveryPrepare(words: words) }
+            } catch {
+                showError(s("recovery_bad_words")); return
+            }
+            let l = newLink(client)
+            var parts: [Data] = []
+            do {
+                var total: UInt32 = 1
+                while UInt32(parts.count) < total {
+                    let n = UInt32(parts.count)
+                    switch try await l.request(try await background { try client.relayRequestBackupGet(part: n) }) {
+                    case .backupPart(_, let all, let data):
+                        total = all
+                        parts.append(data)
+                    case .backupNotFound:
+                        await l.close(); showError(s("recovery_not_found")); return
+                    default:
+                        await l.close(); showError(s("t_resposta_inesperada_do_servidor")); return
+                    }
+                }
+            } catch {
+                await l.close(); showError(s("t_sem_ligacao_ao_servidor")); return
+            }
+            await l.close()
+            let all = parts
+            guard let acc = try? await background({ try client.recoveryRestore(parts: all) }) else {
+                showError(s("recovery_bad_backup")); return
+            }
+            let list = acc.contacts.compactMap { c -> Contact? in
+                guard let r = try? relayIdOfPublicId(publicId: c.publicId) else { return nil }
+                return Contact(nickname: c.nickname.isEmpty ? s("t_contacto") : c.nickname, publicId: c.publicId, relayId: r)
+            }
+            ui.hasIdentity = true
+            ui.publicId = acc.publicId
+            ui.recoveryOn = true
+            try? await saveContacts(list)
+            ui.blocked = Set((try? await background { try client.blockedContacts() }) ?? [])
+            ui.notice = s("recovery_restored")
+            await refreshViews(client)
+            await startLink()
+        }
     }
 
     /// Guarda o contacto. NAO inicia sessao (evita sessoes cruzadas): so ao enviar a 1.a mensagem.
@@ -973,6 +1112,7 @@ final class AppModel: ObservableObject {
                 try await background { try client.blockContact(contactId: id) }
                 ui.blocked.insert(id)
                 await refreshViews(client)
+                scheduleBackup()
             } catch {
                 showError(s("t_nao_foi_possivel_bloquear", safeMessage(error)))
             }
@@ -1024,6 +1164,7 @@ final class AppModel: ObservableObject {
             do {
                 try await background { try client.unblockContact(contactId: id) }
                 ui.blocked.remove(id)
+                scheduleBackup()
             } catch {
                 showError(s("t_nao_foi_possivel_desbloquear_2", safeMessage(error)))
             }

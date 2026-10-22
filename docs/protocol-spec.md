@@ -959,6 +959,38 @@ operador (o Nuno): o relay guarda-a sem a conseguir ler e sem saber quem denunci
 Testes: `core/src/report.rs`, `ffi/src/report.rs`, `server/tests/relay_reports.rs` e
 `server/tests/redis_acl.rs`.
 
+## 22. Chave de recuperação (desde a app 0.9.19)
+
+12 palavras recuperam a conta num telemóvel novo: a mesma identidade (o mesmo ID), os
+contactos (nomes e IDs), os bloqueados e o meu badge. O histórico de mensagens e os grupos não
+vão na cópia.
+
+- **Palavras** (`core/src/recovery.rs`): 128 bits aleatórios em 12 palavras da lista BIP-39
+  inglesa (com verificação na última). Argon2id (64 MiB, 3 passagens, sal `SEALER-RECOVERY-v1`)
+  dá 64 bytes: a **chave** da cópia (nunca sai do telemóvel) e o **identificador** da cópia no
+  relay (`lookup`, 64 hex).
+- **Cópia** (`ffi/src/recovery.rs`): JSON `{v, identity, signing, contacts: [{n, p}], blocked,
+  badge, created_at_ms}` cifrado com XChaCha20-Poly1305 (nonce aleatório de 24 bytes, AAD =
+  versão): `[1 versão=1][24 nonce][cifrado]`, com enchimento até um múltiplo de 4096 bytes. Até
+  2 000 contactos (256 KB).
+- **Relay:** `BackupPut { lookup, generation, part, parts, data }` em partes de até 40 KB (no
+  máximo 8). Só contas registadas; só a conta dona substitui a cópia daquele `lookup`. A cópia
+  nova só substitui a anterior quando chega a última parte. Palavras novas apagam a cópia das
+  antigas. Guardada 90 dias, renovados quando a app regista o bundle; apagada com
+  `BackupDelete`, com a conta (`DeleteAccount`) e ao banir. `BackupGet { lookup, part }`
+  (resposta `BackupPart` ou `BackupNotFound`) serve qualquer ligação autenticada: num telemóvel
+  sem identidade, a app autentica-se com uma chave temporária só em memória.
+- **Quando é enviada:** ao confirmar as palavras, quando os contactos ou os bloqueados mudam e
+  ao abrir a app. O núcleo só devolve pedidos se o conteúdo mudou (resumo SHA-256).
+- **Recuperar:** palavras → Argon2 → `BackupGet` das partes → abrir → instalar a identidade
+  (pre-keys novas) → cada contacto fica marcado para recomeçar a sessão (`sessions_to_restart`)
+  e receber o convite. O outro lado troca para a sessão nova ao receber a primeira mensagem dela
+  (o mecanismo de sessões substituídas da secção das sessões cruzadas). As mensagens enviadas
+  para o telemóvel antigo antes disso perdem-se. Uma conta só funciona num telemóvel de cada vez.
+
+Testes: `core/src/recovery.rs`, `ffi/src/recovery.rs`, `server/tests/relay_backup.rs` e
+`server/tests/redis_acl.rs`.
+
 ## Documentos relacionados
 
 - [`threat-model.md`](threat-model.md): modelo de ameaças formal (quem

@@ -49,7 +49,7 @@ const KIND_PREKEY_MSG: u8 = 1;
 const KIND_PREKEY_MSG_V2: u8 = 2;
 const HEADER_LEN: usize = 32 + 4 + 4 + PQ_CIPHERTEXT_LEN;
 const HEADER_V2_LEN: usize = 32 + 4 + 4 + 4 + PQ_CIPHERTEXT_LEN;
-const PQ_PREKEY_ID: u32 = prekeys::FIRST_ID;
+pub(crate) const PQ_PREKEY_ID: u32 = prekeys::FIRST_ID;
 /// Tamanhos fixos do plaintext com enchimento (o ultimo cabe `MAX_PLAINTEXT_LEN` + 1).
 const PAD_BUCKETS: [usize; 4] = [256, 1024, 4096, 10_240];
 const MAX_ENVELOPE_LEN: usize = 1024 * 1024;
@@ -213,6 +213,12 @@ pub struct QtClient {
     pub(crate) presence: Mutex<crate::presence::Presence>,
     /// Chamada de voz em curso e eventos por entregar (so em memoria; ver call.rs).
     pub(crate) calls: Mutex<crate::call::Calls>,
+    /// Recuperacao a meio (palavras ja verificadas): chave e identificador da copia, so em
+    /// memoria (ver recovery.rs).
+    pub(crate) pending_recovery: Mutex<Option<crate::recovery::PendingRecovery>>,
+    /// Chave temporaria para falar com o relay antes de haver identidade (buscar a copia de
+    /// recuperacao num telemovel novo). So em memoria.
+    pub(crate) ephemeral_signing: Mutex<Option<SigningKeyPair>>,
 }
 
 pub(crate) fn parse_public_id(id: &str) -> Result<([u8; 32], [u8; 32]), QtError> {
@@ -267,6 +273,8 @@ impl QtClient {
             files_dir: std::path::PathBuf::from(format!("{path}.anexos")),
             presence: Mutex::new(Default::default()),
             calls: Mutex::new(Default::default()),
+            pending_recovery: Mutex::new(None),
+            ephemeral_signing: Mutex::new(None),
         }))
     }
 
@@ -536,10 +544,21 @@ impl QtClient {
         if handshake_hash.len() != 32 {
             return Err(bad("handshake_hash"));
         }
-        let c = self.lock()?;
-        let ident = st::load_identity(&c)?;
         let mut m = AUTH_CONTEXT.to_vec();
         m.extend_from_slice(&handshake_hash);
+        let c = self.lock()?;
+        // Sem identidade (telemovel novo, a recuperar a conta): uma chave temporaria, so em
+        // memoria. Chega para pedir a copia; o relay nao guarda nada dela.
+        if !st::identity_exists(&c)? {
+            let mut eph = relock(&self.ephemeral_signing);
+            let k = eph.get_or_insert_with(SigningKeyPair::generate);
+            let sig = k.sign(&m);
+            return json_bytes(serde_json::json!({"Authenticate": {
+                "signing_public": k.verifying_key.to_bytes().to_vec(),
+                "signature": sig.to_bytes().to_vec(),
+            }}));
+        }
+        let ident = st::load_identity(&c)?;
         let sig = ident.identity_signing.sign(&m);
         json_bytes(serde_json::json!({"Authenticate": {
             "signing_public": ident.identity_signing.verifying_key.to_bytes().to_vec(),
@@ -990,6 +1009,10 @@ pub enum RelayResponse {
     BlobData { offset: u64, size: u64, data: Vec<u8> },
     /// O relay ja nao tem este anexo (expirou ou foi apagado).
     BlobNotFound,
+    /// Uma parte da copia de recuperacao (`relay_request_backup_get`).
+    BackupPart { part: u32, parts: u32, data: Vec<u8> },
+    /// Nao ha copia para estas palavras (nunca houve, expirou ou foi apagada).
+    BackupNotFound,
 }
 
 #[derive(serde::Deserialize)]
@@ -1014,6 +1037,8 @@ enum WireServerMsg {
     BlobStatus { size: u64, received: u64, complete: bool },
     BlobData { offset: u64, size: u64, data: String },
     BlobNotFound,
+    BackupPart { part: u32, parts: u32, data: String },
+    BackupNotFound,
 }
 
 /// Interpreta uma resposta do relay (ja decifrada pelo Noise).
@@ -1052,6 +1077,15 @@ pub fn relay_parse_response(bytes: Vec<u8>) -> Result<RelayResponse, QtError> {
             RelayResponse::BlobData { offset, size, data }
         }
         WireServerMsg::BlobNotFound => RelayResponse::BlobNotFound,
+        WireServerMsg::BackupPart { part, parts, data } => {
+            use base64::Engine;
+            let data = base64::engine::general_purpose::STANDARD.decode(data).map_err(|_| QtError::InvalidEnvelope)?;
+            if data.len() > crate::recovery::PART_MAX {
+                return Err(QtError::InvalidEnvelope);
+            }
+            RelayResponse::BackupPart { part, parts, data }
+        }
+        WireServerMsg::BackupNotFound => RelayResponse::BackupNotFound,
     })
 }
 
