@@ -6,6 +6,22 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 22 de outubro de 2026: japonês, chinês simplificado e hindi (apps 0.9.24 e site)
+
+- Apps Android e iPhone em nove línguas: `values-ja`, `values-zh-rCN`, `values-hi` e as pastas
+  `ja`, `zh-Hans` e `hi.lproj` do iPhone (geradas por `scripts/strings-ios.py`). Japonês na forma
+  educada (です・ます), chinês com 你 (您 nas páginas legais do site), hindi sempre com आप.
+- Definições → "Reportar erro de tradução": abre o email para privacidade@sealer.pt com a língua e a
+  versão da app no assunto (nada do utilizador).
+- A palavra para confirmar "Destruir perfil e dados" é 削除 / 删除 / हटाएं; em hindi aceita as duas
+  formas do nasal (ँ e ं).
+- Site em nove línguas (`ja.js`, `zh.js`, `hi.js`), seletor de línguas num menu com o nome de cada
+  língua (sem bandeiras), letras do sistema próprias para japonês, chinês e hindi, e uma linha no
+  rodapé das traduções para avisar de erros. O chinês tradicional do navegador fica em inglês.
+- Nomes do exemplo "Como funciona": アナ/ルイ, 安娜/鲁伊 e, em hindi, अनु/रवि (em hindi "आना" quer dizer
+  "vir" e "रुई" quer dizer "algodão").
+- As traduções devem ser revistas por nativos (folha de revisão entregue ao Nuno).
+
 ### 22 de outubro de 2026: tempo de entrega só com o destinatário ligado (relay)
 
 - O tempo de entrega (e o "entre telemóveis" do site) só conta mensagens para quem estava com a

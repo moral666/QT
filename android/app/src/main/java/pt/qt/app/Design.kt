@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
@@ -332,6 +333,7 @@ fun ProfileSettingsScreen(
     onWipeAll: () -> Unit,
 ) {
     val c = LocalChatColors.current
+    val ctx = LocalContext.current
     var showBlocked by remember { mutableStateOf(false) }
     var showWipe by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -374,6 +376,7 @@ fun ProfileSettingsScreen(
             SectionLabel(s(R.string.t_sec_app))
             if (Push.available) SettingsSwitch(Icons.Filled.Notifications, s(R.string.t_notificacoes), ui.pushOn, onPush)
             SettingsRow(null, s(R.string.lang_menu), onClick = onLanguage, glyph = "Aa")
+            SettingsRow(Icons.Filled.Email, s(R.string.lang_report), onClick = { Lang.reportTranslation(ctx) })
             if (BuildConfig.RELAY_EDITABLE) SettingsRow(Icons.Filled.Build, s(R.string.t_relay_teste), onClick = onRelay)
             // Versao instalada (build.gradle.kts, versionName), so informativa.
             SettingsRow(Icons.Filled.Info, s(R.string.t_versao, BuildConfig.VERSION_NAME), onClick = null, divider = false)

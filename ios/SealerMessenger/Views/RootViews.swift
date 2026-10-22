@@ -425,7 +425,7 @@ struct WipeAllSheet: View {
                 Spacer()
                 Button(s("t_cancelar")) { dismiss() }
                 Button(s("t_apagar_tudo"), role: .destructive) { dismiss(); onConfirm() }
-                    .disabled(typed.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare(word) != .orderedSame)
+                    .disabled(!Lang.confirmWordOk(typed))
                     .padding(.leading, 16)
             }
             .font(Jakarta.font(15, .semibold))

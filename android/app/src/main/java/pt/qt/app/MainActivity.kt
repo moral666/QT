@@ -1681,7 +1681,7 @@ fun WipeAllDialog(onDismiss: () -> Unit, onConfirm: () -> Unit, serverToo: Boole
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, enabled = typed.trim().equals(s(R.string.confirm_word), ignoreCase = true)) {
+            TextButton(onClick = onConfirm, enabled = Lang.confirmWordOk(typed)) {
                 Text(s(R.string.t_apagar_tudo), color = MaterialTheme.colorScheme.error)
             }
         },

@@ -8,6 +8,7 @@
 "badge_tester" = "Tester";
 "call_mic_lost" = "O microfone deixou de funcionar (outra app pode estar a usá-lo). O outro lado deixou de te ouvir.";
 "confirm_word" = "APAGAR";
+"confirm_word_alt" = "";
 "contacts_unreadable_new" = "Começar lista nova";
 "contacts_unreadable_text" = "Não foi possível ler a lista de contactos guardada. Para não a perder, a app não grava nada por cima dela. Fecha e volta a abrir a app. Se o aviso continuar, podes começar uma lista nova (a antiga fica guardada à parte).";
 "contacts_unreadable_title" = "Os contactos não abriram";
@@ -34,6 +35,9 @@
 "ios_use_passcode" = "Usar o código do iPhone";
 "ios_use_touch_id" = "Usar Touch ID";
 "lang_menu" = "Idioma";
+"lang_report" = "Reportar erro de tradução";
+"lang_report_body" = "Ecrã onde está o erro:\nTexto atual:\nComo devia ficar:\n";
+"lang_report_no_app" = "Não há nenhuma app de email. Escreve para %1$@.";
 "lang_system" = "Língua do telemóvel";
 "photo_invalid" = "Essa imagem não serve como foto de perfil.";
 "photo_preview_note" = "Depois de aplicar, só podes voltar a mudar a foto daqui a 72 horas.";

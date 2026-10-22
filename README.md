@@ -38,7 +38,7 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 - **Denunciar um contacto:** o motivo e até 20 mensagens seguem cifrados para a equipa da SEALER; o servidor guarda a denúncia sem a ler e sem saber quem a fez, e o contacto fica bloqueado.
 - **Bloqueio da app** com código próprio, impressão digital ou rosto (Face ID no iPhone). Depois de 5 códigos errados a espera vai até 15 minutos, e mudar a hora do telemóvel não a salta.
 - **Chave de recuperação:** 12 palavras recuperam o ID, os contactos, os bloqueados e a medalha num telemóvel novo. A cópia fica cifrada no servidor; o histórico e os grupos não vão nela.
-- **Seis línguas:** português, inglês, francês, espanhol, alemão e italiano.
+- **Nove línguas:** português, inglês, francês, espanhol, alemão, italiano, japonês, chinês simplificado e hindi.
 - **Apagar a conta** do telemóvel e do servidor com um toque.
 
 ## Como protege a privacidade
