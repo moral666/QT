@@ -6,6 +6,20 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 22 de outubro de 2026: site revisto contra o código
+
+- Site (6 línguas): textos acertados com o que o código faz. O servidor "não guarda" (em vez de
+  "não sabe") quem envia e quem denuncia; as apps usam sempre o PQXDH; o texto vai em 4 tamanhos
+  fixos; a fila de mensagens apaga-se 30 dias depois da última; nos grupos os ficheiros ficam até
+  às 24 horas; a foto de perfil fica cifrada na fila até o contacto a receber; diferenças do iPhone
+  (fotos só da galeria, idioma nas Definições do iPhone, notificações quando chegar à App Store);
+  recibos só nas conversas a dois; data do teste dos 5 aparelhos.
+- Termos: o serviço inclui voz, ficheiros, grupos e chamadas; todas as funções gratuitas durante os
+  testes, com funções que poderão vir a ser pagas (as mensagens de texto ficam sempre grátis);
+  idade mínima de 16 anos; licença AGPL-3.0 ou posterior, com licença comercial à parte.
+- Política de privacidade: o acesso às funções pagas guardado no servidor e durante quanto tempo.
+- Modelo de ameaças, ROADMAP e limitações conhecidas (ponto 33) acertados da mesma forma.
+
 ### 22 de outubro de 2026: site e documentação
 
 - Site: página nova **Funcionalidades** (`funcionalidades.html`, PT, EN e ES) com tudo o que a app

@@ -87,7 +87,8 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
 33. ~~**Poll de 3 s** em vez de *push*~~ (resolvido com a app aberta, 16/10/2026): entrega
     imediata com `WaitMessages` (o relay responde no instante em que a mensagem chega; ver
     `docs/protocol-spec.md`). Com a app fechada chega um aviso genérico (ver 41); o interruptor
-    "Notificações" do menu só decide se a app envia o aviso de "vista". Android
+    "Notificações" do menu desliga também o aviso no servidor (a app envia
+    um token vazio e apaga o token na Google). Android
     (desde a 0.7.0): 30 s depois de a app sair do ecrã, fecha as ligações ao relay (antes
     ficavam abertas, com ping e pedido de espera de 25 em 25 s, a gastar bateria sem mostrar
     nada); ao voltar, religa e vai buscar o que chegou. Até lá, quem envia vê só ✓.

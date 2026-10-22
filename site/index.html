@@ -190,7 +190,7 @@
             <p class="tile__label" data-i18n="index.33">Passo 2 de 3</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><rect x="13" y="13" width="31" height="22" rx="3.5" /><path d="m13 16.5 15.5 10 15.5-10M3 19h6M5 25h4M3 31h6" /></svg>
             <h3 class="tile__title" id="t-passo-2" data-i18n="index.34">Viaja sempre fechada</h3>
-            <p class="tile__text" data-i18n="index.35">Passa pelo nosso servidor, que só a entrega. Não a consegue abrir nem sabe quem a&nbsp;enviou.</p>
+            <p class="tile__text" data-i18n="index.35">Passa pelo nosso servidor, que só a entrega. Não a consegue abrir, e o envelope não diz quem a&nbsp;enviou.</p>
           </article>
           <article class="tile tile--passo" data-cell="2-2" aria-labelledby="t-passo-3">
             <p class="tile__label" data-i18n="index.36">Passo 3 de 3</p>
@@ -214,16 +214,13 @@
             <p class="tile__label tile__label--group" data-i18n="index.43">Para especialistas</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><circle cx="18" cy="24" r="12" /><circle cx="30" cy="24" r="12" /></svg>
             <h3 class="tile__title" id="t-pqxdh" data-i18n="index.44">PQXDH</h3>
-            <p class="tile__text" data-i18n="index.45">
-              Acordo de chaves híbrido: <code>X25519</code> com <code class="nowrap">ML-KEM-768</code>. O X3DH clássico
-              continua&nbsp;disponível.
-            </p>
+            <p class="tile__text" data-i18n="index.45">Acordo de chaves híbrido: <code>X25519</code> com <code class="nowrap">ML-KEM-768</code>. As apps usam sempre o PQXDH, sem recuo para o X3DH&nbsp;clássico.</p>
           </article>
           <article class="tile tile--tecnico" data-cell="0-0" aria-labelledby="t-sealed">
             <p class="tile__label tile__label--group" data-i18n="index.46">Para especialistas</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="11" width="36" height="26" rx="3.5" /><path d="m6 14.5 18 12 18-12" /><circle cx="24" cy="31" r="5.5" /></svg>
             <h3 class="tile__title" id="t-sealed" data-i18n="index.47">Remetente selado</h3>
-            <p class="tile__text" data-i18n="index.48">O relay recebe envelopes cifrados sem saber quem os enviou (sealed&nbsp;sender).</p>
+            <p class="tile__text" data-i18n="index.48">O envelope não diz quem o enviou (sealed&nbsp;sender). O relay vê a ligação de quem envia, mas não a&nbsp;guarda.</p>
           </article>
           <article class="tile tile--tecnico" data-cell="1-5" aria-labelledby="t-ligacao">
             <p class="tile__label tile__label--group" data-i18n="index.49">Para especialistas</p>
@@ -243,10 +240,7 @@
             <p class="tile__label tile__label--group" data-i18n="index.55">Para especialistas</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="7" /><circle cx="24" cy="24" r="14" /><path d="M24 4v6M24 38v6M4 24h6M38 24h6M9.9 9.9l4.2 4.2M33.9 33.9l4.2 4.2M9.9 38.1l4.2-4.2M33.9 14.1l4.2-4.2" /></svg>
             <h3 class="tile__title" id="t-rust" data-i18n="index.56">Núcleo em Rust</h3>
-            <p class="tile__text" data-i18n="index.57">
-              Toda a criptografia vive num só núcleo em Rust (<code>core</code>, <code>ffi</code>, <code>storage</code>).
-              Nada é reimplementado nas&nbsp;apps.
-            </p>
+            <p class="tile__text" data-i18n="index.57">Toda a criptografia das mensagens e das chamadas vive num só núcleo em Rust&nbsp;(<code>core</code>, <code>ffi</code>, <code>storage</code>).</p>
           </article>
           <article class="tile tile--tecnico" data-cell="3-5" aria-labelledby="t-uniffi">
             <p class="tile__label tile__label--group" data-i18n="index.58">Para especialistas</p>
@@ -298,7 +292,7 @@
           <article class="tile tile--testes tile--figure" data-cell="0-3" aria-labelledby="t-aparelhos">
             <p class="tile__label" data-i18n="index.72">Testes</p>
             <h3 class="tile__figure" id="t-aparelhos" data-i18n="index.73">5 aparelhos</h3>
-            <p class="tile__text" data-i18n="index.74">2 Android, 1 emulador, 1 iPhone e 1 Mac trocaram mensagens sem parar, com envios em simultâneo, sem&nbsp;falhas.</p>
+            <p class="tile__text" data-i18n="index.74">No teste de 15 de outubro, 2 Android, 1 emulador, 1 iPhone e 1 Mac (com o simulador de iPhone) trocaram mensagens sem parar, com envios em simultâneo, sem&nbsp;falhas.</p>
           </article>
           <article class="tile tile--testes tile--figure" data-cell="2-0" aria-labelledby="t-tempo">
             <p class="tile__label" data-i18n="index.75">Esta página</p>

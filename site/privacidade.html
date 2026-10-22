@@ -53,7 +53,7 @@
         mensagem de voz ou estás numa chamada, depois de lhe dares permissão.
       </p>
       <p data-i18n="priv.10">Os grupos funcionam da mesma forma: cada mensagem é cifrada para cada membro e o servidor não sabe que o grupo existe. O estado "online" (podes desligá-lo nas Definições) é enviado só aos teus contactos, cifrado como uma mensagem, quando abres e fechas a app. Não fica guardado em lado nenhum, nem no servidor nem no telemóvel de quem o recebe.</p>
-      <p data-i18n="priv.11">A foto de perfil, se escolheres uma, é reduzida no teu telemóvel e enviada só aos teus contactos, cifrada como uma mensagem. O servidor não sabe que é uma foto e não a guarda. Fica no telemóvel de cada contacto até ele te apagar dos contactos, ou até a tirares. As medalhas funcionam da mesma forma: o certificado da medalha vai cifrado só aos teus contactos e o servidor não guarda nada sobre ela.</p>
+      <p data-i18n="priv.11">A foto de perfil, se escolheres uma, é reduzida no teu telemóvel e enviada só aos teus contactos, cifrada como uma mensagem. O servidor não sabe que é uma foto e só a guarda, cifrada, até o contacto a receber. Fica no telemóvel de cada contacto até ele te apagar dos contactos, ou até a tirares. As medalhas funcionam da mesma forma: o certificado da medalha vai cifrado só aos teus contactos e o servidor não sabe que é uma medalha.</p>
 
       <h2 data-i18n="priv.12">O que passa pelo nosso servidor</h2>
       <p data-i18n="priv.13">
@@ -69,7 +69,7 @@
           <strong>As tuas chaves públicas</strong>: servem para outra pessoa poder começar uma conversa contigo de forma
           cifrada. São públicas por natureza.
         </li>
-        <li data-i18n="priv.16"><strong>Mensagens, imagens, mensagens de voz e ficheiros à tua espera</strong>: chegam já cifrados. O servidor não consegue ler o conteúdo e também não sabe quem os enviou (o remetente vai dentro da parte cifrada). Sabe só para que ID são.</li>
+        <li data-i18n="priv.16"><strong>Mensagens, imagens, mensagens de voz e ficheiros à tua espera</strong>: chegam já cifrados. O servidor não consegue ler o conteúdo e não guarda quem os enviou (o remetente vai dentro da parte cifrada). Guarda só para que ID são.</li>
         <li data-i18n="priv.17">
           <strong>O endereço de notificações do teu telemóvel</strong> (se tiveres as notificações ligadas): um código
           dado pela Google (Android) ou pela Apple (iPhone) ao telemóvel. Serve só para o servidor pedir à Google ou à
@@ -82,8 +82,9 @@
           endereços de rede dos dois telemóveis, que guarda em memória apenas enquanto a chamada dura.
         </li>
         <li data-i18n="priv.18a"><strong>A cópia de recuperação</strong> (só se ligares a chave de recuperação, nas Definições): a tua identidade, os teus contactos (nome e ID), a lista de bloqueados e a tua medalha, cifrados no teu telemóvel com uma chave que sai das tuas 12 palavras. O servidor guarda a cópia sem a conseguir abrir, ligada ao teu ID. Não leva mensagens nem grupos. As 12 palavras nunca saem do telemóvel.</li>
-        <li data-i18n="priv.18b"><strong>Denúncias</strong> (só se denunciares alguém): o motivo, o ID da conta denunciada e as mensagens que escolheres (até 20, sem anexos), cifrados no teu telemóvel para uma chave que só a equipa da SEALER tem. O servidor guarda a denúncia sem a conseguir ler e sem saber quem a fez; conta apenas quantas denúncias cada conta fez num dia, para evitar abusos.</li>
+        <li data-i18n="priv.18b"><strong>Denúncias</strong> (só se denunciares alguém): o motivo, o ID da conta denunciada e as mensagens que escolheres (até 20, sem anexos), cifrados no teu telemóvel para uma chave que só a equipa da SEALER tem. O servidor guarda a denúncia sem a conseguir ler e sem registar quem a fez; conta apenas quantas denúncias cada conta fez num dia, para evitar abusos.</li>
         <li data-i18n="priv.18c"><strong>Contas banidas</strong>: se uma conta for banida por não cumprir os <a href="./termos">termos</a>, o servidor guarda o ID dessa conta para recusar a ligação dela.</li>
+        <li data-i18n="priv.18d"><strong>Acesso às funções pagas</strong> (só se o tiveres): até que data a tua conta tem esse acesso, ligada ao teu ID, para o servidor saber se pode aceitar as tuas chamadas e anexos.</li>
         <li data-i18n="priv.19">
           <strong>O endereço de rede (IP) do teu telemóvel</strong>: é necessário para manter a ligação. Só é usado em
           memória enquanto estás ligado e não fica registado.
@@ -96,8 +97,8 @@
 
       <h2 data-i18n="priv.21">Durante quanto tempo</h2>
       <ul>
-        <li data-i18n="priv.22">Mensagens à tua espera: até as recebes; se nunca as fores buscar, são apagadas ao fim de 30 dias.</li>
-        <li data-i18n="priv.23">Imagens, GIFs e mensagens de voz à tua espera: apagados quando os descarregas, ou ao fim de 24 horas.</li>
+        <li data-i18n="priv.22">Mensagens à tua espera: até as recebes. Se nunca as fores buscar, são apagadas 30 dias depois de chegar a última.</li>
+        <li data-i18n="priv.23">Imagens, GIFs, mensagens de voz e ficheiros à tua espera: nas conversas a dois, apagados quando os descarregas; nos grupos, e se ninguém os descarregar, ao fim de 24 horas.</li>
         <li data-i18n="priv.24">
           As tuas chaves públicas: enquanto usares a app. Se não a abrires durante 90 dias, são apagadas sozinhas.
         </li>
@@ -109,6 +110,7 @@
         <li data-i18n="priv.26a">Cópia de recuperação: enquanto usares a app (é renovada quando a abres). Apagada ao fim de 90 dias sem a abrires, quando desligas a chave de recuperação ou quando apagas a conta.</li>
         <li data-i18n="priv.26b">Denúncias: 30 dias. O número de denúncias feitas por cada conta num dia: 2 dias.</li>
         <li data-i18n="priv.26c">Contas banidas: enquanto o banimento durar.</li>
+        <li data-i18n="priv.26d">Acesso às funções pagas: até 30 dias depois de terminar, ou até apagares a conta.</li>
         <li data-i18n="priv.27">Quanto enviaste em anexos por dia (só um número, para evitar abusos): 2 dias.</li>
         <li data-i18n="priv.28">
           Depois de apagares a conta: durante 30 dias, o servidor lembra-se só de que aquele ID foi apagado, para avisar
