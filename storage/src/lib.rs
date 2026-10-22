@@ -20,6 +20,7 @@ use rusqlite::Connection;
 use qt_core::primitives::{DhKeyPair, SigningKeyPair};
 use qt_core::ratchet::RatchetState;
 use thiserror::Error;
+#[cfg(feature = "pq")]
 use zeroize::Zeroize;
 
 #[derive(Debug, Error)]
@@ -84,14 +85,9 @@ pub fn open_database_with_key(path: &str, key: &[u8]) -> Result<Connection, Stor
         return Err(StorageError::InvalidStorageKey);
     }
     let conn = Connection::open(path)?;
-    let mut hex = String::with_capacity(32 * 2 + 8);
-    hex.push_str("PRAGMA key = \"x'");
-    for b in key {
-        hex.push_str(&format!("{:02x}", b));
-    }
-    hex.push_str("'\";");
-    let r = conn.execute_batch(&hex);
-    hex.zeroize();
+    let pragma = key_pragma(key);
+    let r = conn.execute_batch(&pragma);
+    drop(pragma); // zerado ao sair (Zeroizing)
     r.map_err(|_| StorageError::CannotOpen)?;
     // Qualquer erro aqui (chave errada, ficheiro corrompido) e mapeado para
     // um erro generico, que nunca contem material de chave.
@@ -100,6 +96,27 @@ pub fn open_database_with_key(path: &str, key: &[u8]) -> Result<Connection, Stor
         other => other,
     })?;
     Ok(conn)
+}
+
+const KEY_PRAGMA_PREFIX: &str = "PRAGMA key = \"x'";
+const KEY_PRAGMA_SUFFIX: &str = "'\";";
+/// Tamanho exato do `PRAGMA key` com uma chave de 32 bytes em hexadecimal.
+const KEY_PRAGMA_LEN: usize = KEY_PRAGMA_PREFIX.len() + 64 + KEY_PRAGMA_SUFFIX.len();
+
+/// `PRAGMA key = "x'<hex>'";` numa so reserva de memoria, do tamanho exato, e zerada
+/// ao sair. Antes reservava 72 bytes para 83: a string era copiada a meio e a copia
+/// antiga (com ~28 bytes da chave em hex) ficava na memoria libertada. Tambem sem
+/// `format!`, que criava uma string temporaria por byte da chave.
+fn key_pragma(key: &[u8]) -> zeroize::Zeroizing<String> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut s = zeroize::Zeroizing::new(String::with_capacity(KEY_PRAGMA_LEN));
+    s.push_str(KEY_PRAGMA_PREFIX);
+    for b in key {
+        s.push(HEX[(b >> 4) as usize] as char);
+        s.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    s.push_str(KEY_PRAGMA_SUFFIX);
+    s
 }
 
 fn init_connection(conn: &Connection) -> Result<(), StorageError> {
@@ -594,4 +611,40 @@ pub fn is_envelope_seen(conn: &Connection, contact_id: &str, envelope_id: &[u8])
 pub fn identity_exists(conn: &Connection) -> Result<bool, StorageError> {
     let n: i64 = conn.query_row("SELECT COUNT(*) FROM identity WHERE id = 0", [], |r| r.get(0))?;
     Ok(n > 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regressao (22/10/2026): o texto do `PRAGMA key` cabe na reserva inicial, por
+    /// isso nunca e copiado (uma copia antiga ficaria com parte da chave na memoria
+    /// libertada). Com a reserva antiga (72 bytes) a capacidade final passava a 144.
+    #[test]
+    fn pragma_da_chave_numa_so_reserva_e_com_o_texto_certo() {
+        let key: Vec<u8> = (0u8..32).map(|i| i.wrapping_mul(37).wrapping_add(0xA5)).collect();
+        let p = key_pragma(&key);
+        assert_eq!(p.len(), KEY_PRAGMA_LEN);
+        assert_eq!(p.capacity(), KEY_PRAGMA_LEN, "a string foi realocada");
+        let hex: String = key.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(p.as_str(), format!("PRAGMA key = \"x'{hex}'\";"));
+    }
+
+    /// A chave em binario continua a abrir a mesma base de dados (e so ela).
+    #[test]
+    fn mesma_chave_reabre_e_outra_chave_nao() {
+        let path = std::env::temp_dir().join(format!("qt_pragma_{}.sqlite", std::process::id()));
+        let path = path.to_str().unwrap().to_string();
+        let _ = std::fs::remove_file(&path);
+        let k1 = [0x5a; 32];
+        {
+            let c = open_database_with_key(&path, &k1).unwrap();
+            kv_set(&c, "x", b"y").unwrap();
+        }
+        let c = open_database_with_key(&path, &k1).unwrap();
+        assert_eq!(kv_get(&c, "x").unwrap().as_deref(), Some(&b"y"[..]));
+        drop(c);
+        assert!(open_database_with_key(&path, &[0x5b; 32]).is_err());
+        let _ = std::fs::remove_file(&path);
+    }
 }
