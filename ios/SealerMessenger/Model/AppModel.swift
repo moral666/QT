@@ -75,12 +75,19 @@ struct UiState {
     var recoveryWords: [String]?
     /// A gerar palavras, a recuperar a conta ou a apagar a copia.
     var recoveryBusy = false
+    /// Pedir o codigo da app antes de ver ou gerar as palavras de recuperacao (0.9.23).
+    var recoveryAskCode = false
+    /// Texto que nao chegou a ser enviado: volta a caixa de escrita (0.9.23).
+    var unsentText: (conversationId: String, text: String)?
     /// Premium (0.9.20): com o bloqueio ligado, quem nao tem premium so envia texto.
     var premiumLock = false
     var premium = false
     /// Premium dado pelo relay: ate quando (ms); 0 = nao.
     var premiumUntil: Int64 = 0
     var showPremium = false
+    /// A lista de contactos guardada nao abriu (0.9.23): nada e gravado por cima ate o
+    /// utilizador escolher reabrir a app ou comecar uma lista nova.
+    var contactsUnreadable = false
 
     func groupOf(_ conversationId: String) -> GroupInfo? {
         conversationId.hasPrefix("g:") ? groups.first { $0.conversationId == conversationId } : nil
@@ -133,6 +140,9 @@ final class AppModel: ObservableObject {
     private var qt: QtClient?
     /// Chave da lista de contactos; so existe em memoria com a base de dados aberta.
     private var contactsKey: Data?
+    /// O ficheiro dos contactos existe mas nao abriu nesta sessao: nao se grava por cima nem
+    /// se envia a copia de recuperacao (ver `saveContacts`).
+    private var contactsBroken = false
     private var link: RelayLink?
     private var poller: Task<Void, Never>?
     /// Segunda ligacao, so para anexos: um envio grande nao atrasa as mensagens.
@@ -248,19 +258,24 @@ final class AppModel: ObservableObject {
         let url = Config.relayEditable ? (prefs.string(forKey: "relay_url") ?? Config.relayURL) : Config.relayURL
         let pin = Config.relayEditable ? (prefs.string(forKey: "relay_key") ?? Config.relayPin) : Config.relayPin
         struct Loaded: Sendable {
-            let has: Bool; let publicId: String; let contacts: [Contact]; let convs: [ConversationSummary]
+            let has: Bool; let publicId: String; let contacts: [Contact]; let contactsBroken: Bool
+            let convs: [ConversationSummary]
             let blocked: [String]; let invites: [String]; let lockEnabled: Bool; let recoveryOn: Bool
         }
         let l = try await background { () -> Loaded in
-            if ContactStore.isLegacy() {
-                let old = ContactStore.load(key: ck)
-                if !old.isEmpty { try? ContactStore.save(old, key: ck) }
+            var contacts: [Contact] = []
+            var broken = false
+            do {
+                contacts = try ContactStore.load(key: ck)
+                if !contacts.isEmpty, ContactStore.isLegacy() { try? ContactStore.save(contacts, key: ck) }
+            } catch {
+                broken = true
             }
             let has = try client.hasIdentity()
             let pid = try has ? client.exportPublicIdentity().publicId : ""
             return Loaded(
                 has: has, publicId: pid,
-                contacts: ContactStore.load(key: ck), convs: try client.conversations(),
+                contacts: contacts, contactsBroken: broken, convs: try client.conversations(),
                 blocked: try client.blockedContacts(), invites: try client.pendingIntros(),
                 lockEnabled: StorageKeyProvider.lockEnabled(),
                 recoveryOn: has ? try client.recoveryEnabled() : false
@@ -273,6 +288,9 @@ final class AppModel: ObservableObject {
         u.relayKeyHex = pin
         u.publicId = l.publicId
         u.contacts = l.contacts
+        contactsBroken = l.contactsBroken
+        u.contactsUnreadable = l.contactsBroken
+        if l.contactsBroken { log("SealerRelay", "contactos: o ficheiro nao abriu") }
         u.conversations = l.convs
         u.readReceipts = prefs.object(forKey: "read_receipts") as? Bool ?? true
         u.pushOn = prefs.object(forKey: "push_on") as? Bool ?? true
@@ -289,7 +307,7 @@ final class AppModel: ObservableObject {
         u.recoveryOn = l.recoveryOn
         u.premiumLock = prefs.bool(forKey: "premium_enforced")
         u.premiumUntil = (prefs.object(forKey: "premium_until") as? Int64) ?? 0
-        u.premium = premiumNow(u.premiumUntil)
+        u.premium = premiumNow(u.premiumUntil, active: prefs.object(forKey: "premium_active") as? Bool)
         u.termsAccepted = prefs.integer(forKey: "terms_version") >= termsVersion
         u.presenceOn = prefs.object(forKey: "presence") as? Bool ?? true
         u.online = []
@@ -356,6 +374,7 @@ final class AppModel: ObservableObject {
         visible = false
         hiddenAt = monotonicSeconds()
         Task { await presenceAnnounce(false) }
+        scheduleAutoLock()
         pauseTask?.cancel()
         if ui.call != nil { return }   // chamada: o CallKit mantem a app viva, as ligacoes ficam
         // O iOS da ~30 s para acabar o que estava a meio (envios, "offline", recibos).
@@ -372,6 +391,30 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private var autoLockTask: Task<Void, Never>?
+
+    /// Bloqueia em segundo plano quando passa o tempo escolhido; com "Imediatamente", logo ao
+    /// sair (0.9.23). Antes so se via ao voltar a app, e a base de dados e as chaves ficavam em
+    /// memoria entretanto. Com uma chamada (no ecra ou a tocar) bloqueia quando ela acabar.
+    private func scheduleAutoLock() {
+        autoLockTask?.cancel()
+        autoLockTask = nil
+        guard ui.lockEnabled, !ui.locked else { return }
+        let ms = ui.lockTimeoutMs
+        if ms <= 0 { lockInBackground(); return }
+        autoLockTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(ms) * 1_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.lockInBackground()
+        }
+    }
+
+    private func lockInBackground() {
+        guard !visible, ui.lockEnabled, !ui.locked else { return }
+        if ui.call != nil || pendingRing != nil { lockAfterCall = true; return }
+        lockNow()
+    }
+
     private func endBackgroundTask() {
         if bgTask != .invalid {
             UIApplication.shared.endBackgroundTask(bgTask)
@@ -383,6 +426,7 @@ final class AppModel: ObservableObject {
     func onAppVisible() {
         let wasVisible = visible
         visible = true
+        autoLockTask?.cancel(); autoLockTask = nil
         pauseTask?.cancel(); pauseTask = nil
         endBackgroundTask()
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
@@ -433,7 +477,7 @@ final class AppModel: ObservableObject {
         ui.lockMessage = nil
         Task {
             do {
-                let key = try await background { try StorageKeyProvider.storageKeyWithCode(code) }
+                let key = try await codeAttempt { try await background { try StorageKeyProvider.storageKeyWithCode(code) } }
                 resetFails()
                 try await openClient(key)
                 afterUnlock()
@@ -489,6 +533,9 @@ final class AppModel: ObservableObject {
                 let db = try dbFile()
                 try await background { try StorageKeyProvider.enableLock(code: code, dbFile: db) }
                 resetFails()
+                // Um Face ID antigo (de antes do bloqueio, ou de outra instalacao) nao fica a valer.
+                BioUnlock.disable()
+                ui.bioEnabled = false
                 ui.lockEnabled = true
                 ui.bioAvailable = BioUnlock.isAvailable()
             } catch QtError.InvalidInput {
@@ -503,7 +550,7 @@ final class AppModel: ObservableObject {
         if lockWaitMs() > 0 { showError(waitMessage(lockWaitMs())); return }
         Task {
             do {
-                try await background { try StorageKeyProvider.disableLock(code: code) }
+                try await codeAttempt { try await background { try StorageKeyProvider.disableLock(code: code) } }
                 BioUnlock.disable()
                 resetFails()
                 ui.lockEnabled = false
@@ -521,9 +568,9 @@ final class AppModel: ObservableObject {
         if lockWaitMs() > 0 { showError(waitMessage(lockWaitMs())); return }
         Task {
             do {
-                try await background { try StorageKeyProvider.changeCode(old: old, new: new) }
+                try await codeAttempt { try await background { try StorageKeyProvider.changeCode(old: old, new: new) } }
                 resetFails()
-                showError(s("t_codigo_alterado"))
+                ui.notice = s("t_codigo_alterado")   // aviso curto, nao um erro
             } catch QtError.Crypto {
                 _ = registerFail()
                 showError(s("t_o_codigo_atual_esta_errado"))
@@ -542,10 +589,13 @@ final class AppModel: ObservableObject {
         let reason = s("t_ativar_desbloqueio_rapido")
         Task {
             do {
+                var key = try await codeAttempt { try await background { try StorageKeyProvider.storageKeyWithCode(code) } }
+                let k = key
+                key.resetBytes(in: 0..<key.count)
                 try await background {
-                    var key = try StorageKeyProvider.storageKeyWithCode(code)
-                    defer { key.resetBytes(in: 0..<key.count) }
-                    try BioUnlock.save(key, reason: reason)
+                    var copy = k
+                    defer { copy.resetBytes(in: 0..<copy.count) }
+                    try BioUnlock.save(copy, reason: reason)
                 }
                 resetFails()
                 ui.bioEnabled = true
@@ -582,8 +632,10 @@ final class AppModel: ObservableObject {
             try? FileManager.default.removeItem(atPath: db.path + ".anexos")
         }
         ContactStore.wipe()
+        contactsBroken = false
         for k in ["relay_url", "relay_key", "read_receipts", "push_on", "push_asked", "lock_timeout_ms", "terms_version",
-                  "presence", "lock_fails", "lock_until", "lock_wait", "lock_wait_at"] {
+                  "presence", "lock_fails", "lock_until", "lock_wait", "lock_wait_at", "lock_pending",
+                  "premium_until", "premium_enforced", "premium_active"] {
             prefs.removeObject(forKey: k)
         }
         ui = UiState()
@@ -599,6 +651,11 @@ final class AppModel: ObservableObject {
     /// Espera que falta. Depois de reiniciar o iPhone o relogio volta a zero e a espera recomeca
     /// inteira (nunca fica mais curta).
     private func lockWaitMs() -> Int64 {
+        // Uma tentativa ficou a meio (a app foi fechada durante o Argon2): conta como errada.
+        if !attemptRunning, prefs.bool(forKey: "lock_pending") {
+            prefs.removeObject(forKey: "lock_pending")
+            _ = registerFail()
+        }
         let wait = Int64(prefs.integer(forKey: "lock_wait"))
         guard wait > 0 else { return 0 }
         let now = Self.bootClockMs()
@@ -622,6 +679,23 @@ final class AppModel: ObservableObject {
         return wait
     }
 
+    /// Ha uma tentativa com o codigo a decorrer (Argon2, ~1 s).
+    private var attemptRunning = false
+
+    /// Argon2 com o codigo: a tentativa fica marcada no disco ANTES de calcular (0.9.23). Se a
+    /// app for fechada a meio, conta como errada na vez seguinte. Certa ou errada, sai no fim.
+    private func codeAttempt<T>(_ op: () async throws -> T) async rethrows -> T {
+        attemptRunning = true
+        prefs.set(true, forKey: "lock_pending")
+        prefs.synchronize()
+        defer {
+            prefs.removeObject(forKey: "lock_pending")
+            prefs.synchronize()
+            attemptRunning = false
+        }
+        return try await op()
+    }
+
     private func resetFails() {
         for k in ["lock_fails", "lock_wait", "lock_wait_at", "lock_until"] { prefs.removeObject(forKey: k) }
     }
@@ -638,13 +712,23 @@ final class AppModel: ObservableObject {
             if Config.relayEditable && !applyRelay(relayUrl, relayKeyHex) { return }
             do {
                 let me = try await background { try client.createIdentity() }
+                // Conta nova: "Mostrar quando estou online" comeca desligado (0.9.23).
+                // Quem ja tinha conta fica como estava.
+                newAccountPresenceOff()
                 ui.hasIdentity = true
                 ui.publicId = me.publicId
+                await syncPresence(client)
                 await startLink()
             } catch {
                 showError(s("t_erro", safeMessage(error)))
             }
         }
+    }
+
+    private func newAccountPresenceOff() {
+        prefs.set(false, forKey: "presence")
+        ui.presenceOn = false
+        ui.online = []
     }
 
     func saveRelay(relayUrl: String, relayKeyHex: String) {
@@ -907,18 +991,39 @@ final class AppModel: ObservableObject {
 
     // ================================================================ contactos
 
+    /// Grava a lista de contactos. Com a lista guardada por ler nesta sessao, nao grava (gravar
+    /// por cima apagava-a): mostra o aviso e lanca `ContactsUnreadableError`.
     private func saveContacts(_ list: [Contact]) async throws {
+        if contactsBroken {
+            ui.contactsUnreadable = true
+            throw ContactsUnreadableError()
+        }
         guard let ck = contactsKey else { throw SecureStoreError(message: "sem a chave dos contactos") }
         try await background { try ContactStore.save(list, key: ck) }
         ui.contacts = list
         scheduleBackup()
     }
 
+    /// "Fechar" no aviso dos contactos: continua sem gravar ate reabrir a app.
+    func dismissContactsUnreadable() { ui.contactsUnreadable = false }
+
+    /// "Comecar uma lista nova": o ficheiro que nao abre fica guardado a parte (cifrado).
+    func startNewContactList() {
+        Task {
+            await background { ContactStore.quarantine() }
+            contactsBroken = false
+            ui.contactsUnreadable = false
+            ui.contacts = []
+        }
+    }
+
     // ================================================================ premium
 
-    /// Premium agora: so o que o relay diz (dado pelo operador) e dentro do prazo.
-    private func premiumNow(_ until: Int64) -> Bool {
-        until > Int64(Date().timeIntervalSince1970 * 1000)
+    /// Premium agora: o que o relay diz, pelo relogio dele (0.9.23). Antes contava o relogio do
+    /// iPhone: mudar a hora mudava o que a app mostrava. So um relay antigo (sem `active`) usa o
+    /// relogio do iPhone.
+    private func premiumNow(_ until: Int64, active: Bool?) -> Bool {
+        active ?? (until > Int64(Date().timeIntervalSince1970 * 1000))
     }
 
     /// Acao paga sem premium e com o bloqueio ligado: abre o ecra Premium e devolve `true`.
@@ -947,12 +1052,13 @@ final class AppModel: ObservableObject {
     /// Pergunta ao relay ate quando esta conta tem premium e se o operador ligou o bloqueio.
     private func refreshPremium(_ client: QtClient, _ l: RelayLink) async {
         guard let req = try? await background({ try client.relayRequestPremiumStatus() }),
-              let r = try? await l.request(req, timeout: 4), case .premium(let until, let enforced) = r else { return }
+              let r = try? await l.request(req, timeout: 4), case .premium(let until, let enforced, let active) = r else { return }
         let u = Int64(clamping: until)
         prefs.set(u, forKey: "premium_until")
         prefs.set(enforced, forKey: "premium_enforced")
+        if let active { prefs.set(active, forKey: "premium_active") } else { prefs.removeObject(forKey: "premium_active") }
         ui.premiumUntil = u
-        ui.premium = premiumNow(u)
+        ui.premium = premiumNow(u, active: active)
         ui.premiumLock = enforced
     }
 
@@ -960,8 +1066,67 @@ final class AppModel: ObservableObject {
 
     private var backupTask: Task<Void, Never>?
 
+    private enum RecoveryAction { case show, create }
+    private var pendingRecovery: RecoveryAction?
+
+    /// Ver ou gerar as 12 palavras so depois de confirmar que e o dono (0.9.23): com o bloqueio
+    /// da app, o codigo dela; sem ele, o Face ID ou o codigo do iPhone. Quem pegasse no iPhone
+    /// desbloqueado podia ver as palavras e levar a conta.
+    func recoveryCreate() { recoveryAuth(.create) }
+
+    func recoveryShow() { recoveryAuth(.show) }
+
+    private func recoveryAuth(_ action: RecoveryAction) {
+        pendingRecovery = action
+        if ui.lockEnabled { ui.recoveryAskCode = true; return }
+        let reason = s("recovery_auth")
+        Task {
+            if await background({ BioUnlock.confirmOwner(reason: reason) }) { recoveryAuthorized() } else { pendingRecovery = nil }
+        }
+    }
+
+    /// O codigo da app escrito na janela da chave de recuperacao.
+    func recoveryWithCode(_ code: String) {
+        // Guardado ja: fechar a janela tambem chama recoveryCancelAuth.
+        let action = pendingRecovery
+        ui.recoveryAskCode = false
+        let wait = lockWaitMs()
+        if wait > 0 { pendingRecovery = nil; showError(waitMessage(wait)); return }
+        Task {
+            do {
+                var key = try await codeAttempt { try await background { try StorageKeyProvider.storageKeyWithCode(code) } }
+                key.resetBytes(in: 0..<key.count)
+                resetFails()
+                pendingRecovery = action
+                recoveryAuthorized()
+            } catch QtError.Crypto {
+                pendingRecovery = nil
+                let w = registerFail()
+                showError(s("t_codigo_errado") + (w > 0 ? " " + waitMessage(w) : ""))
+            } catch {
+                pendingRecovery = nil
+                showError(s("t_nao_foi_possivel_desbloquear", safeMessage(error)))
+            }
+        }
+    }
+
+    func recoveryCancelAuth() {
+        pendingRecovery = nil
+        ui.recoveryAskCode = false
+    }
+
+    private func recoveryAuthorized() {
+        let action = pendingRecovery
+        pendingRecovery = nil
+        switch action {
+        case .show: recoveryShowNow()
+        case .create: recoveryCreateNow()
+        case nil: break
+        }
+    }
+
     /// Gera 12 palavras novas (as antigas deixam de servir) e mostra-as. Argon2: fora da UI.
-    func recoveryCreate() {
+    private func recoveryCreateNow() {
         guard let client = qt else { return }
         ui.recoveryBusy = true
         Task {
@@ -976,7 +1141,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func recoveryShow() {
+    private func recoveryShowNow() {
         guard let client = qt else { return }
         Task { ui.recoveryWords = (try? await background { try client.recoveryWords() }) ?? nil }
     }
@@ -1010,7 +1175,8 @@ final class AppModel: ObservableObject {
     /// Copia de recuperacao: refeita pouco depois de os contactos ou os bloqueados mudarem (e
     /// ao abrir a app). O Rust so devolve pedidos se o conteudo mudou (ou com `force`).
     func scheduleBackup(force: Bool = false, delay: Double = 3) {
-        guard ui.recoveryOn else { return }
+        // Lista de contactos por ler: a copia teria uma lista vazia (e apagava a boa no relay).
+        guard ui.recoveryOn, !contactsBroken else { return }
         backupTask?.cancel()
         backupTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
@@ -1076,6 +1242,13 @@ final class AppModel: ObservableObject {
             ui.hasIdentity = true
             ui.publicId = acc.publicId
             ui.recoveryOn = true
+            newAccountPresenceOff()   // como numa conta nova, neste iPhone
+            // A copia substitui a lista; se a lista guardada nao abria, fica guardada a parte.
+            if contactsBroken {
+                await background { ContactStore.quarantine() }
+                contactsBroken = false
+                ui.contactsUnreadable = false
+            }
             try? await saveContacts(list)
             ui.blocked = Set((try? await background { try client.blockedContacts() }) ?? [])
             ui.notice = s("recovery_restored")
@@ -1090,13 +1263,16 @@ final class AppModel: ObservableObject {
     /// Guarda o contacto. NAO inicia sessao (evita sessoes cruzadas): so ao enviar a 1.a mensagem.
     func addContact(nickname: String, publicId: String) {
         Task {
-            let id = publicId.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Em minusculas: "QT1:ABC..." e o mesmo ID, e o contactId tem de ser igual ao do nucleo.
+            let id = publicId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard let relayId = try? relayIdOfPublicId(publicId: id) else { showError(s("t_public_id_invalido")); return }
             let name = nickname.trimmingCharacters(in: .whitespaces)
             let c = Contact(nickname: name.isEmpty ? s("t_contacto") : name, publicId: id, relayId: relayId)
             if c.publicId == ui.publicId { showError(s("t_esse_e_o_teu_proprio_id")); return }
             do {
                 try await saveContacts(ui.contacts.filter { $0.contactId != c.contactId } + [c])
+            } catch is ContactsUnreadableError {
+                return   // o aviso dos contactos ja esta no ecra
             } catch {
                 showError(s("t_erro", safeMessage(error))); return
             }
@@ -1261,6 +1437,8 @@ final class AppModel: ObservableObject {
                 await syncPresence(client)
                 await refreshViews(client)
                 await flushOutbox()
+            } catch is ContactsUnreadableError {
+                // o aviso dos contactos ja esta no ecra
             } catch {
                 showError(s("t_nao_foi_possivel_aceitar_o_convite", safeMessage(error)))
             }
@@ -1290,7 +1468,8 @@ final class AppModel: ObservableObject {
                 try await background {
                     if let r { try client.deleteContactNotify(contactId: id, relayId: r) } else { try client.deleteContact(contactId: id) }
                 }
-                try await saveContacts(ui.contacts.filter { $0.contactId != id })
+                // Com a lista guardada por ler, nao grava (o aviso aparece) e segue.
+                try? await saveContacts(ui.contacts.filter { $0.contactId != id })
                 if ui.openChatId == id { closeChat() }
                 await syncPresence(client)
                 await refreshViews(client)
@@ -1395,6 +1574,7 @@ final class AppModel: ObservableObject {
     func send(_ contact: Contact, _ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.utf8.count <= Self.maxTextBytes else {
+            ui.unsentText = (contact.contactId, text)
             showError(s("t_mensagem_vazia_ou_maior_que_bytes", Self.maxTextBytes)); return
         }
         guard let client = qt else { return }
@@ -1402,13 +1582,17 @@ final class AppModel: ObservableObject {
             do {
                 try await ensureSession(client, contact)
                 _ = try await background { try client.sendText(contactId: contact.contactId, text: trimmed) }
-                await refreshViews(client)
-                await flushOutbox()
             } catch {
+                ui.unsentText = (contact.contactId, text)
                 showError(s("t_nao_foi_possivel_enviar_2", safeMessage(error)))
+                return
             }
+            await refreshViews(client)
+            await flushOutbox()
         }
     }
+
+    func draftRestored() { if ui.unsentText != nil { ui.unsentText = nil } }
 
     /// Mensagem de voz (o ficheiro e apagado no fim, cifrado ou nao).
     func sendVoice(to conv: String, file: URL, durationMs: Int64) {
@@ -1489,7 +1673,9 @@ final class AppModel: ObservableObject {
 
     func sendGroup(_ groupId: String, _ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let conv = ui.groups.first { $0.groupId == groupId }?.conversationId
         guard !trimmed.isEmpty, trimmed.utf8.count <= Self.maxTextBytes else {
+            if let conv { ui.unsentText = (conv, text) }
             showError(s("t_mensagem_vazia_ou_maior_que_bytes", Self.maxTextBytes)); return
         }
         guard let client = qt else { return }
@@ -1497,11 +1683,13 @@ final class AppModel: ObservableObject {
             do {
                 await ensureSessions(client, try await background { try client.groupMembersNeedingSession(groupId: groupId) })
                 _ = try await background { try client.groupSendText(groupId: groupId, text: trimmed) }
-                await refreshViews(client)
-                await flushOutbox()
             } catch {
+                if let conv { ui.unsentText = (conv, text) }
                 showError(s("t_nao_foi_possivel_enviar_2", safeMessage(error)))
+                return
             }
+            await refreshViews(client)
+            await flushOutbox()
         }
     }
 
@@ -1613,6 +1801,12 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// O relay respondeu, mas recusou (ou respondeu outra coisa): nao e falta de rede.
+    private struct RelayRefused: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
     private struct PlainError: LocalizedError {
         let errorDescription: String?
         init(_ m: String) { errorDescription = m }
@@ -1623,7 +1817,7 @@ final class AppModel: ObservableObject {
         if let gid = groupIdOfConversation(conversationId: conv) {
             await ensureSessions(client, try await background { try client.groupMembersNeedingSession(groupId: gid) })
         } else {
-            guard let c = ui.contact(conv) else { throw PlainError("contacto desconhecido") }
+            guard let c = ui.contact(conv) else { throw PlainError(s("err_unknown_contact")) }
             try await ensureSession(client, c)
         }
     }
@@ -1643,6 +1837,12 @@ final class AppModel: ObservableObject {
 
     private func setProgress(_ id: String, _ p: Double?) { ui.transfers[id] = p }
 
+    /// Falhas seguidas das transferencias (para esperar mais entre tentativas).
+    private var transferRounds = 0
+    /// Recusas do relay (ou erros do nucleo) seguidas, por anexo. So em memoria.
+    private var transferFails: [String: Int] = [:]
+    private static let transferMaxTries = 5
+
     private func startTransfers() {
         transferTask?.cancel()
         let (stream, cont) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
@@ -1651,20 +1851,41 @@ final class AppModel: ObservableObject {
             for await _ in stream {
                 guard let self, !Task.isCancelled else { return }
                 if await self.runTransfers() {
-                    // Falha de rede: tenta de novo daqui a 15 s (ou antes, se houver novidades).
+                    // Falhou: tenta de novo daqui a 15 s, 30 s, 1 min... ate 5 min (ou antes, se
+                    // houver novidades). Antes era sempre de 15 em 15 s.
+                    let wait = min(15 << min(self.transferRounds, 4), 300)
+                    self.transferRounds += 1
                     Task { [weak self] in
-                        try? await Task.sleep(nanoseconds: 15_000_000_000)
+                        try? await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000_000)
                         self?.kickTransfers()
                     }
+                } else {
+                    self.transferRounds = 0
                 }
             }
         }
         cont.yield()
     }
 
-    /// Envia e descarrega os anexos pendentes. Devolve true se algo falhou por rede.
+    /// Um anexo que o relay recusa (ou que o nucleo nao consegue tratar) salta-se e os outros
+    /// seguem (0.9.23: antes o primeiro que falhava parava a fila toda). Ao fim de
+    /// `transferMaxTries` fica como falhado.
+    private func transferRefused(_ client: QtClient, _ r: AttachmentRef, _ error: Error) async {
+        setProgress(r.messageId, nil)
+        let n = (transferFails[r.messageId] ?? 0) + 1
+        log("SealerRelay", "anexo recusado (\(n)/\(Self.transferMaxTries)): \(safeMessage(error))")
+        if n < Self.transferMaxTries { transferFails[r.messageId] = n; return }
+        transferFails[r.messageId] = nil
+        let cid = r.contactId, mid = r.messageId
+        _ = try? await background { try client.attachmentFailed(contactId: cid, messageId: mid, expired: false) }
+        await refreshViews(client)
+    }
+
+    /// Envia e descarrega os anexos pendentes. Devolve true se algo falhou e deve ser tentado.
+    /// Sem rede, para logo (os outros tambem falhariam); uma recusa so salta esse anexo.
     private func runTransfers() async -> Bool {
         guard let client = qt, let l = fileLink else { return false }
+        var retry = false
         let ups = (try? await background { try client.attachmentsPendingUpload() }) ?? []
         for r in ups {
             let gid = groupIdOfConversation(conversationId: r.contactId)
@@ -1679,13 +1900,31 @@ final class AppModel: ObservableObject {
                 if ui.blocked.contains(r.contactId) { continue }
                 if ui.contact(r.contactId) == nil { continue }
             }
-            do { try await upload(client, l, r, gid) } catch { setProgress(r.messageId, nil); return true }
+            do {
+                try await upload(client, l, r, gid)
+                transferFails[r.messageId] = nil
+            } catch let e as RelayRefused {
+                await transferRefused(client, r, e); retry = true
+            } catch let e as QtError {
+                await transferRefused(client, r, e); retry = true
+            } catch {
+                setProgress(r.messageId, nil); return true
+            }
         }
         let downs = (try? await background { try client.attachmentsPendingDownload() }) ?? []
         for r in downs {
-            do { try await download(client, l, r) } catch { setProgress(r.messageId, nil); return true }
+            do {
+                try await download(client, l, r)
+                transferFails[r.messageId] = nil
+            } catch let e as RelayRefused {
+                await transferRefused(client, r, e); retry = true
+            } catch let e as QtError {
+                await transferRefused(client, r, e); retry = true
+            } catch {
+                setProgress(r.messageId, nil); return true
+            }
         }
-        return false
+        return retry
     }
 
     private func upload(_ client: QtClient, _ l: RelayLink, _ r: AttachmentRef, _ gid: String?) async throws {
@@ -1702,7 +1941,7 @@ final class AppModel: ObservableObject {
                 if reason == relayPremiumRequiredReason() { premiumRefused() } else { showError(relayRefusal(reason)) }
                 return
             default:
-                throw PlainError("resposta inesperada do relay")
+                throw RelayRefused(message: "resposta inesperada do relay")
             }
         } else {
             switch try await l.request(try await background { try client.blobInfoRequest(contactId: cid, messageId: mid) }) {
@@ -1713,7 +1952,7 @@ final class AppModel: ObservableObject {
                 await refreshViews(client)
                 return
             default:
-                throw PlainError("resposta inesperada do relay")
+                throw RelayRefused(message: "resposta inesperada do relay")
             }
         }
         var offset = start
@@ -1722,7 +1961,7 @@ final class AppModel: ObservableObject {
             let reqs = try await background { try batch.map { try client.blobPutRequest(contactId: cid, messageId: mid, offset: $0) } }
             let answers = try await l.requestMany(reqs)
             guard answers.allSatisfy({ if case .blobStatus = $0 { return true } else { return false } }) else {
-                throw PlainError("bloco recusado")
+                throw RelayRefused(message: "bloco recusado")
             }
             offset = (batch.last ?? offset) + Self.chunk
             setProgress(mid, Double(min(offset, total)) / Double(total))
@@ -1759,7 +1998,7 @@ final class AppModel: ObservableObject {
                     await refreshViews(client)
                     return
                 default:
-                    throw PlainError("resposta inesperada do relay")
+                    throw RelayRefused(message: "resposta inesperada do relay")
                 }
             }
             if let t = total, t > 0 { setProgress(mid, Double(have) / Double(t)) }
@@ -1807,9 +2046,10 @@ final class AppModel: ObservableObject {
         case .bundle(let bytes):
             _ = try await background { try client.startSession(publicId: c.publicId, bundle: try peerBundleFromRelayBytes(bytes: bytes)) }
         case .bundleNotFound:
-            throw PlainError("o contacto ainda nao publicou as chaves (tem de abrir a app uma vez)")
+            throw PlainError(s("err_contact_no_keys"))
         case let other:
-            throw PlainError("resposta inesperada do relay: \(other.describe)")
+            log("SealerRelay", "bundle: resposta inesperada \(other.describe)")
+            throw PlainError(s("t_resposta_inesperada_do_servidor"))
         }
     }
 
@@ -1856,6 +2096,10 @@ final class AppModel: ObservableObject {
                 if ui.call?.phase == .calling { endCallLocal(s("t_chamada_terminada"), fromUser: true) }
                 premiumRefused()
             case .error(let reason) where reason == relayRecipientDeletedReason():
+                // O contacto apagou a conta: sai da outbox (nunca seria aceite) e a mensagem fica
+                // por enviar (0.9.23; antes ficava na outbox para sempre).
+                _ = try? await background { try client.outboxDrop(outboxId: item.outboxId) }
+                changed = true
                 if deletedNotified.insert(item.contactId).inserted {
                     showError(s("t_apagou_a_conta_sealer_as_mensagens", ui.contact(item.contactId)?.nickname ?? s("t_este_contacto")))
                 }
@@ -1902,6 +2146,9 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Ultima vez que `syncPhotos` correu por causa de mensagens recebidas.
+    private var lastPhotoSync: Double = 0
+
     private func pollOnce(first: [RelayDelivered]? = nil) async {
         await receiveLock.lock()
         await pollOnceLocked(first)
@@ -1913,6 +2160,7 @@ final class AppModel: ObservableObject {
         do {
             if first == nil { await flushOutbox() }
             var received = false
+            var updated = false   // foto, badge, presenca, reacao ou grupo: algo alem de mensagens
             var pending = first
             for _ in 0..<Self.maxPages {
                 let msgs: [RelayDelivered]
@@ -1924,7 +2172,10 @@ final class AppModel: ObservableObject {
                     msgs = m
                 }
                 if msgs.isEmpty { break }
-                struct Page: Sendable { var ack: [UInt64] = []; var got = false; var fresh = false; var status: [String: [String]] = [:] }
+                struct Page: Sendable {
+                    var ack: [UInt64] = []; var got = false; var fresh = false; var updated = false
+                    var status: [String: [String]] = [:]
+                }
                 let page = try await background { () -> Page in
                     var p = Page()
                     for m in msgs {
@@ -1934,7 +2185,7 @@ final class AppModel: ObservableObject {
                                 p.got = true
                                 p.status[cid, default: []] += ids
                             case .newMessage: p.got = true; p.fresh = true
-                            case .updated: p.got = true
+                            case .updated: p.got = true; p.updated = true
                             case .noChange: break
                             }
                             p.ack.append(m.id)
@@ -1946,6 +2197,7 @@ final class AppModel: ObservableObject {
                     }
                     return p
                 }
+                if page.updated { updated = true }
                 if page.got {
                     received = true
                     // Fora do ecra (ainda ligada): o relay nao toca a campainha porque a espera estava aberta.
@@ -1961,10 +2213,18 @@ final class AppModel: ObservableObject {
             await restartSessions(client)
             await handleCallEvents(client)
             if received {
-                await syncPhotos(client)
+                // Fotos e badges recebidos (updated) ja; por mensagens novas (contactos com sessao
+                // nova), no maximo de minuto a minuto. Antes relia as fotos e os badges de todos os
+                // contactos a cada pagina recebida (0.9.23).
+                let now = monotonicSeconds()
+                if updated || now - lastPhotoSync >= 60 {
+                    lastPhotoSync = now
+                    await syncPhotos(client)
+                }
                 kickTransfers()
                 _ = try? await background { try client.prepareDeliveryReceipts() }
-                if let open = ui.openChatId, visible { await markRead(client, open) } else { await refreshViews(client) }
+                // A lista ja foi refrescada a cada pagina; so a conversa aberta precisa do "Visto".
+                if let open = ui.openChatId, visible { await markRead(client, open) }
                 await flushOutbox()
             }
             status("Ligado ao relay")
@@ -2097,7 +2357,7 @@ final class AppModel: ObservableObject {
                 ui.call = CallUi(callId: start.callId, contactId: contact.contactId, name: contact.nickname, phase: .calling)
                 let uuid = UUID()
                 callKitIds[start.callId] = uuid
-                CallKitBridge.shared.startOutgoing(uuid, name: contact.nickname)
+                CallKitBridge.shared.startOutgoing(uuid, name: callKitName(contact))
                 await flushOutbox()
                 await startCallAudio(client, start.callId)
                 startCallIOIfReady()
@@ -2113,6 +2373,13 @@ final class AppModel: ObservableObject {
     /// ATENDER (no ecra da app ou no CallKit).
     func acceptCall() {
         guard let client = qt, let c = ui.call, c.phase == .incoming else { return }
+        // Quem nunca ligou nem gravou voz ainda nao deu o microfone (0.9.23): pede-o agora e,
+        // se estiver recusado, avisa (antes atendia sem som do seu lado e sem dizer nada).
+        switch AVAudioApplication.shared.recordPermission {
+        case .denied: showError(s("ios_mic_denied_call"))
+        case .undetermined: AVAudioApplication.requestRecordPermission { _ in }
+        default: break
+        }
         Task {
             do {
                 diag("atendida no iPhone")
@@ -2217,6 +2484,12 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Nome no ecra de chamada do iPhone (tambem no ecra bloqueado): nunca com o bloqueio da
+    /// app ativo, em nenhum caminho (PushKit, ligacao ao relay ou chamada feita).
+    private func callKitName(_ contact: Contact) -> String {
+        ui.lockEnabled ? s("t_chamada_sealer") : contact.nickname
+    }
+
     private func answerRequested() -> Bool {
         answerRequestedAt > 0 && monotonicSeconds() - answerRequestedAt < Self.answerValidSeconds
     }
@@ -2232,6 +2505,9 @@ final class AppModel: ObservableObject {
                     _ = try? await background { () -> Void in
                         if let item = try client.callHangup(callId: callId) { try client.outboxSent(outboxId: item.outboxId) }
                     }
+                    // O PushKit ja mostrou esta chamada no CallKit: para ja de tocar (0.9.23).
+                    // Antes ficava a tocar ate 20 s (45 s com o bloqueio da app).
+                    endPendingRing(reason: .declinedElsewhere)
                     continue
                 }
                 if let shown = ui.call, shown.phase != .ended {
@@ -2245,11 +2521,12 @@ final class AppModel: ObservableObject {
                     // A chamada que o PushKit ja mostrou no CallKit (sem nome): passa a ter o nome.
                     pendingRing = nil
                     callKitIds[callId] = pr.uuid
-                    CallKitBridge.shared.updateName(pr.uuid, name: ui.lockEnabled ? s("t_chamada_sealer") : contact.nickname)
+                    CallKitBridge.shared.updateName(pr.uuid, name: callKitName(contact))
                 } else {
                     let uuid = UUID()
                     callKitIds[callId] = uuid
-                    CallKitBridge.shared.reportIncoming(uuid, name: contact.nickname) { [weak self] ok in
+                    // A mesma regra que pelo PushKit (0.9.23): com o bloqueio da app, sem nome.
+                    CallKitBridge.shared.reportIncoming(uuid, name: callKitName(contact)) { [weak self] ok in
                         if !ok { Task { @MainActor in self?.hangupCall() } }
                     }
                 }
@@ -2278,6 +2555,9 @@ final class AppModel: ObservableObject {
                 if let c = ui.call, c.callId == callId, c.phase != .ended {
                     let incoming = c.phase == .incoming
                     endCallLocal(endText(reason, incoming: incoming), reason: callKitReason(reason, incoming: incoming))
+                } else if ui.call == nil || ui.call?.phase == .ended {
+                    // Acabou antes de chegar ao ecra (so existia o toque do PushKit): para de tocar.
+                    endPendingRing(reason: callKitReason(reason, incoming: true))
                 }
             }
         }
@@ -2306,6 +2586,15 @@ final class AppModel: ObservableObject {
             }
             await pollOnce()
         }
+    }
+
+    /// Termina no CallKit o toque do PushKit que ainda nao tinha chamada (recusada ou acabada).
+    private func endPendingRing(reason: CXCallEndedReason) {
+        guard let pr = pendingRing else { return }
+        pendingRing = nil
+        answerRequestedAt = 0
+        CallKitBridge.shared.reportEnded(pr.uuid, reason: reason)
+        onAppHiddenAfterCall()
     }
 
     /// O PushKit acordou a app mas a chamada nao apareceu (ou passou o tempo de tocar).

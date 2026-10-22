@@ -84,3 +84,29 @@ fn o_pedido_da_app_e_o_que_o_relay_espera() {
     assert!(c.relay_request_push_token(String::new()).is_ok(), "vazio = deixar de receber");
     let _ = std::fs::remove_file(path);
 }
+
+/// 0.9.23: "Esqueci-me do codigo" apaga a conta so no telemovel e cria outra, com o mesmo
+/// token. A conta antiga deixa de ter o token (antes o telemovel continuava a tocar por ela).
+#[tokio::test]
+async fn o_mesmo_telemovel_so_acorda_pela_conta_mais_recente() {
+    let relay = TestRelay::start(ServerConfig::default()).await;
+    let store = Store::with_prefix("redis://127.0.0.1:6379", &relay.prefix).unwrap();
+    let (old, new) = (SigningKeyPair::generate(), SigningKeyPair::generate());
+    let mut a = client(&relay, &old).await;
+    let r = a.request(ClientMessage::RegisterPushToken { user_id: uid(&old), token: TOKEN.into() }).await.unwrap();
+    assert!(matches!(r, ServerMessage::Ack), "{r:?}");
+
+    let mut b = client(&relay, &new).await;
+    let r = b.request(ClientMessage::RegisterPushToken { user_id: uid(&new), token: TOKEN.into() }).await.unwrap();
+    assert!(matches!(r, ServerMessage::Ack), "{r:?}");
+    assert_eq!(store.get_push_token(&uid(&new)).await.unwrap().as_deref(), Some(TOKEN));
+    assert_eq!(store.get_push_token(&uid(&old)).await.unwrap(), None, "a conta antiga ficou sem o token");
+
+    // A conta antiga, noutro telemovel (token diferente), nao perde o dela por isto.
+    let r = a.request(ClientMessage::RegisterPushToken { user_id: uid(&old), token: "outro:token".into() }).await.unwrap();
+    assert!(matches!(r, ServerMessage::Ack), "{r:?}");
+    let r = b.request(ClientMessage::RegisterPushToken { user_id: uid(&new), token: String::new() }).await.unwrap();
+    assert!(matches!(r, ServerMessage::Ack), "{r:?}");
+    assert_eq!(store.get_push_token(&uid(&old)).await.unwrap().as_deref(), Some("outro:token"));
+    assert_eq!(store.get_push_token(&uid(&new)).await.unwrap(), None);
+}

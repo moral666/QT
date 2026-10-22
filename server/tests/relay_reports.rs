@@ -156,7 +156,7 @@ async fn premium_dado_pelo_operador_e_lido_pela_conta() {
     let r = op.request(ClientMessage::AdminGrantPremium { user_id: uid(&alice), until_ms: until }).await.unwrap();
     assert!(matches!(r, ServerMessage::Ack), "{r:?}");
     let r = a.request(ClientMessage::PremiumStatus).await.unwrap();
-    assert!(matches!(r, ServerMessage::Premium { until_ms, .. } if until_ms == until), "{r:?}");
+    assert!(matches!(r, ServerMessage::Premium { until_ms, active: true, .. } if until_ms == until), "{r:?}");
     match op.request(ClientMessage::AdminListPremium).await.unwrap() {
         ServerMessage::PremiumList { entries } => assert_eq!(entries, vec![PremiumEntry { user_id: uid(&alice), until_ms: until }]),
         other => panic!("{other:?}"),
@@ -207,7 +207,7 @@ async fn bloqueio_premium_recusa_anexos_e_chamadas_a_quem_nao_tem() {
     assert!(matches!(r, ServerMessage::PremiumEnforce { on: true }), "{r:?}");
 
     // Sem premium: anexos e chamadas recusados; texto, fim de chamada e receber continuam.
-    assert!(matches!(a.request(ClientMessage::PremiumStatus).await.unwrap(), ServerMessage::Premium { until_ms: 0, enforced: true }));
+    assert!(matches!(a.request(ClientMessage::PremiumStatus).await.unwrap(), ServerMessage::Premium { until_ms: 0, enforced: true, active: false }));
     assert!(refused(&a.request(ClientMessage::BlobCreate { size: 10 }).await.unwrap()));
     assert!(refused(&a.request(call(Some(WakeKind::Call))).await.unwrap()));
     assert!(matches!(a.request(call(None)).await.unwrap(), ServerMessage::Ack));

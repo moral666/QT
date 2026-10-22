@@ -249,7 +249,9 @@ struct ChatScreen: View {
             },
             onSendImage: { data, original, pasted in model.sendImage(to: conversationId, data: data, original: original, pasted: pasted) },
             onSendFile: { url in model.sendFile(to: conversationId, url: url) },
-            onSendVoice: { url, ms in model.sendVoice(to: conversationId, file: url, durationMs: ms) }
+            onSendVoice: { url, ms in model.sendVoice(to: conversationId, file: url, durationMs: ms) },
+            restoreText: model.ui.unsentText.flatMap { $0.conversationId == conversationId ? $0.text : nil },
+            onRestored: model.draftRestored
         )
     }
 }

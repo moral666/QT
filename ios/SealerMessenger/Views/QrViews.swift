@@ -18,7 +18,8 @@ enum QR {
 
     /// O texto lido e um ID SEALER? Devolve-o limpo, ou nil. O Rust valida-o a seguir.
     static func id(from text: String?) -> String? {
-        guard let t = text?.trimmingCharacters(in: .whitespacesAndNewlines),
+        // Em maiusculas no QR (menos denso): o mesmo ID, guardado em minusculas (0.9.23).
+        guard let t = text?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
               t.hasPrefix("qt1:"), (68...400).contains(t.count) else { return nil }
         return t
     }

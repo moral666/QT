@@ -55,20 +55,38 @@ class RelayLink(
 
     private suspend fun requestLocked(bytes: ByteArray, timeoutMs: Long): RelayResponse {
         var last: Exception? = null
+        val repeatable = repeatable(bytes)
         for (attempt in 0..MAX_RETRIES) {
             if (attempt > 0) delay((BACKOFF_MS shl (attempt - 1)).coerceAtMost(8_000L))
             if (shut) throw IOException(SHUT_MSG)
+            var sent = false
             try {
                 val c = conn ?: connect().also { conn = it; closeIfShut() }
-                return roundtrip(c, bytes, timeoutMs)
+                send(c.ws, c.noise.encrypt(bytes))
+                sent = true
+                val frame = withTimeout(timeoutMs) { c.inbox.receive() }
+                return relayParseResponse(c.noise.decrypt(frame))
             } catch (e: PermanentRelayException) {
                 close(); throw e
             } catch (e: Exception) {
                 close(); last = e          // timeout, queda de rede, frame invalido...
                 Log.w(TAG, "pedido falhou (tentativa ${attempt + 1}): ${e.javaClass.simpleName}: ${e.message?.take(120)}")
+                // Ja tinha saido e a resposta perdeu-se: um envio ou um anexo novo nao se repete
+                // aqui (podia chegar duas vezes). Quem chama tenta mais tarde (a outbox fica).
+                if (sent && !repeatable) throw IOException("sem resposta do relay", e)
             }
         }
         throw IOException("relay indisponivel: ${last?.message}", last)
+    }
+
+    /**
+     * Pode repetir-se sem efeito duplicado (leituras, confirmacoes, registos)? Desde a 0.9.23
+     * nao se repetem automaticamente, depois de enviados: mensagens (SendMessage), anexos
+     * novos (BlobCreate), denuncias e a espera por mensagens.
+     */
+    private fun repeatable(bytes: ByteArray): Boolean {
+        val head = String(bytes, 0, minOf(bytes.size, 24), Charsets.ISO_8859_1)
+        return NOT_REPEATABLE.none { head.startsWith(it) }
     }
 
     /**
@@ -155,6 +173,8 @@ class RelayLink(
             }
             // Pinning: se a chave do relay nao for a esperada, aborta SEM repetir (possivel MITM)
             val pin = pinnedRelayKeyHex?.trim()?.lowercase().orEmpty()
+            // Fora da build de testes o pin e obrigatorio: sem ele nao se liga (0.9.23).
+            if (pin.isEmpty() && !BuildConfig.RELAY_EDITABLE) throw PermanentRelayException("falta a chave do relay (pin)")
             if (pin.isNotEmpty() && noise.remoteStaticPublicKey().toHex() != pin) {
                 throw PermanentRelayException("chave do relay diferente da esperada (possivel intermediario)")
             }
@@ -199,6 +219,7 @@ class RelayLink(
                 .pingInterval(25, TimeUnit.SECONDS)   // mantem a ligacao viva e deteta quedas
                 .build()
         }
+        private val NOT_REPEATABLE = listOf("{\"SendMessage\"", "{\"BlobCreate\"", "{\"SubmitReport\"", "{\"WaitMessages\"")
         private const val MAX_RETRIES = 3
         private const val BACKOFF_MS = 300L
         private const val HANDSHAKE_MS = 10_000L

@@ -63,6 +63,12 @@ object SealerCore {
     val flushLock = Mutex()
     /** O ecra esta visivel e recebe tudo sozinho: o segundo plano nao mexe. */
     @Volatile var uiReceiving = false
+    /**
+     * O ecra (MainViewModel) que usa agora o nucleo. Um ecra antigo que acaba (a Activity foi
+     * recriada) so fecha o nucleo se ainda for ele o dono: antes fechava a base de dados que o
+     * ecra novo ja estava a usar e cortava a chamada (0.9.23).
+     */
+    @Volatile var uiOwner: Any? = null
 
     fun dbFile(ctx: Context): File = ctx.applicationContext.noBackupFilesDir.resolve("qt.db")
     private fun box() = KeystoreBox()
@@ -140,7 +146,8 @@ object SealerCore {
 
     private fun newLink(ctx: Context, c: QtClient) = RelayLink(c, relayUrl(ctx), relayPinHex(ctx).ifBlank { null })
 
-    fun loadContacts(ctx: Context): List<Contact> = contactsKeyRef?.let { contactStore(ctx).load(it) } ?: emptyList()
+    /** So leitura (segundo plano): uma lista que nao abre conta como vazia, mas nunca e gravada por cima. */
+    fun loadContacts(ctx: Context): List<Contact> = contactsKeyRef?.let { contactStore(ctx).loadOrEmpty(it) } ?: emptyList()
 
     // ------------------------------------------------------------- eventos das chamadas
 
@@ -286,6 +293,51 @@ object SealerCore {
             if (ringing === r) {
                 runCatching { handleCallEvents(ctx, c) }
                 stopRinging(ctx, r, missed = true)
+            }
+        }
+    }
+
+    /**
+     * O ecra acabou a meio de uma chamada (ex.: a app foi fechada nos recentes): avisa o outro
+     * lado ("desligou"), para ele nao ficar a espera, e so depois fecha o nucleo ([closeAfter]).
+     */
+    fun hangupInBackground(ctx: Context, c: QtClient, callId: String, closeAfter: Boolean) {
+        val app = ctx.applicationContext
+        scope.launch {
+            withTimeoutOrNull(8_000L) {
+                try {
+                    c.callHangup(callId)
+                    val l = newLink(app, c)
+                    try { flush(app, c, l) } finally { l.shutdown() }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "desligar: ${e.javaClass.simpleName}")
+                }
+            }
+            // Entretanto abriu-se outro ecra: o nucleo fica para ele.
+            if (closeAfter && uiOwner == null) close()
+        }
+    }
+
+    /** O Firebase deu um token novo: manda-o ao relay se a base de dados estiver aberta. */
+    fun pushTokenChanged(ctx: Context, token: String) {
+        val app = ctx.applicationContext
+        val c = client ?: return
+        if (!Push.isOn(app)) return
+        scope.launch {
+            withTimeoutOrNull(10_000L) {
+                val l = newLink(app, c)
+                try {
+                    val r = l.request(c.relayRequestPushToken(token))
+                    if (r !is RelayResponse.Ack) Log.w(TAG, "relay recusou o token novo")
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "token novo: ${e.javaClass.simpleName}")
+                } finally {
+                    l.shutdown()
+                }
             }
         }
     }

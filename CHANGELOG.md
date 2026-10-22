@@ -6,6 +6,39 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 22 de outubro de 2026: correções das apps (0.9.23, Android e iPhone)
+
+- Contactos: se a lista guardada não abrir, a app já não grava uma lista vazia por cima nem envia
+  a cópia de recuperação vazia. Mostra um aviso: reabrir a app ou começar uma lista nova (a antiga
+  fica guardada à parte, cifrada).
+- Android: tocar numa notificação durante uma chamada já não corta a chamada. Fechar a app a meio
+  de uma chamada avisa o outro lado.
+- iPhone: um contacto bloqueado ou desconhecido já não põe o iPhone a tocar. A capa de privacidade
+  passa a tapar também as fotos, os documentos e as outras janelas abertas.
+- As 12 palavras de recuperação só aparecem (ou são geradas) depois do código da app ou do
+  bloqueio do telemóvel.
+- PNG e WebP enviados em qualidade original vão sem metadados (data, aparelho, localização), com a
+  mesma imagem, a transparência e a animação.
+- Um anexo que o relay recusa já não para os outros; ao fim de 5 tentativas fica como falhado. As
+  tentativas ficam mais espaçadas.
+- IDs em maiúsculas ("QT1:...") são aceites e guardados em minúsculas (também no núcleo). No
+  iPhone, ler o QR de um ID passa a funcionar com o QR em maiúsculas.
+- Bloqueio da app: passa a bloquear em segundo plano quando passa o tempo escolhido ("Imediatamente"
+  bloqueia logo ao sair). Uma tentativa de código conta mesmo que a app seja fechada a meio.
+- Contas novas: "Mostrar quando estou online" começa desligado. Quem já tinha conta fica como estava.
+- Com o bloqueio da app ativo, o nome de quem liga nunca aparece no ecrã de chamada.
+- Gravação de voz cancelada quando a app sai do ecrã (antes continuava e podia ser enviada sozinha).
+- O texto de uma mensagem que não foi enviada volta à caixa de escrita.
+- Mensagens e anexos já não são repetidos automaticamente quando a resposta do relay se perde.
+- Mensagens para quem apagou a conta saem da fila de envio.
+- Android: ficheiros recebidos abrem pelo tipo verdadeiro (conteúdo e extensão), nunca pelo que o
+  remetente disse; aviso para ligar as chamadas em ecrã inteiro no Android 14+; vibração respeita o
+  modo silêncio; aviso se o microfone falhar numa chamada; datas no formato da língua da app.
+- iPhone: um Face ID de uma instalação antiga deixa de aparecer; microfone pedido ao atender;
+  ficheiro de voz protegido desde o início; sem a exceção de redes locais na Release.
+- Relay: um telemóvel só acorda pela conta mais recente que registou o seu token de notificações.
+- Builds: Rust 1.88 declarado em todos os crates; compilação automática da app iPhone no GitHub.
+
 ### 22 de outubro de 2026: site revisto contra o código
 
 - Site (6 línguas): textos acertados com o que o código faz. O servidor "não guarda" (em vez de

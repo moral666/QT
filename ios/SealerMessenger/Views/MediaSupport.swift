@@ -268,7 +268,14 @@ final class VoiceRecorder: ObservableObject {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
         try session.setActive(true)
-        let f = FileManager.default.temporaryDirectory.appendingPathComponent("voz-\(UUID().uuidString).m4a")
+        // Pasta com protecao maxima ANTES de gravar (0.9.23): o ficheiro nasce ja protegido
+        // (antes so recebia a protecao depois de a gravacao comecar). "voz-" e limpa ao arrancar.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("voz-gravacoes", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
+                                                attributes: [.protectionKey: FileProtectionType.complete])
+        try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: dir.path)
+        let f = dir.appendingPathComponent("voz-\(UUID().uuidString).m4a")
+        FileManager.default.createFile(atPath: f.path, contents: nil, attributes: [.protectionKey: FileProtectionType.complete])
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 44_100,

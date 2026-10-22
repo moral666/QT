@@ -120,9 +120,9 @@ async fn main() {
     let size: usize = arg("--size", "200").parse().expect("--size");
     let poll_ms: u64 = arg("--poll-ms", "100").parse().expect("--poll-ms");
     let send_gap_ms: u64 = arg("--gap-ms", "50").parse().expect("--gap-ms");
-    assert!(pairs >= 1 && pairs <= 50, "--pairs entre 1 e 50");
-    assert!(msgs >= 1 && msgs <= 500, "--msgs entre 1 e 500 (a fila do relay aceita 1000 por utilizador)");
-    assert!(size >= 16 && size <= 8000, "--size entre 16 e 8000 bytes");
+    assert!((1..=50).contains(&pairs), "--pairs entre 1 e 50");
+    assert!((1..=500).contains(&msgs), "--msgs entre 1 e 500 (a fila do relay aceita 1000 por utilizador)");
+    assert!((16..=8000).contains(&size), "--size entre 16 e 8000 bytes");
 
     let dir = std::env::temp_dir().join(format!("qt-loadtest-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("pasta temporaria");

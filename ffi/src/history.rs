@@ -600,6 +600,19 @@ impl QtClient {
         Ok(())
     }
 
+    /// Tira um item da outbox SEM o dar como enviado (0.9.23): o destinatario apagou a conta e
+    /// o relay nunca o vai aceitar. A mensagem fica no historico como estava (por enviar).
+    /// Antes ficava na outbox para sempre e era tentada em cada envio.
+    pub fn outbox_drop(&self, outbox_id: String) -> Result<(), QtError> {
+        let id = parse_msg_id(&outbox_id)?;
+        let c = self.lock()?;
+        let tx = c.unchecked_transaction()?;
+        st::kv_delete(&tx, &format!("{KV_OUT_RELAY}{}", hex(&id)))?;
+        let _ = hm::outbox_take(&tx, &id)?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Recebe um envelope selado vindo do relay: decifra, guarda e agenda o
     /// recibo "entregue", tudo numa transacao. So confirmar (`Ack`) ao relay
     /// DEPOIS disto devolver Ok (ou um erro definitivo como `Replay`).

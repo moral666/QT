@@ -380,4 +380,15 @@
     <string name="premium_until_forever">Actif, sans date de fin</string>
     <string name="t_a_enviar_tamanho">Envoi… %1$s</string>
     <string name="t_a_receber_tamanho">Réception… %1$s</string>
+    <string name="contacts_unreadable_title">Les contacts n\'ont pas pu être ouverts</string>
+    <string name="contacts_unreadable_text">La liste de contacts enregistrée n\'a pas pu être lue. Pour ne pas la perdre, l\'app n\'enregistre rien par-dessus. Fermez puis rouvrez l\'app. Si l\'avertissement persiste, vous pouvez commencer une nouvelle liste (l\'ancienne est conservée à part).</string>
+    <string name="contacts_unreadable_new">Nouvelle liste</string>
+    <string name="recovery_auth">Confirmez que c\'est bien vous pour continuer : les mots donnent accès à votre compte.</string>
+    <string name="full_screen_title">Appels en plein écran</string>
+    <string name="full_screen_text">Pour qu\'un appel s\'affiche en plein écran quand le téléphone est verrouillé, Android a besoin de votre autorisation. Sans elle, l\'appel n\'apparaît que sous forme de petite notification.</string>
+    <string name="full_screen_open">Ouvrir les réglages</string>
+    <string name="full_screen_later">Plus tard</string>
+    <string name="call_mic_lost">Le micro ne fonctionne plus (une autre app l\'utilise peut-être). Votre correspondant ne vous entend plus.</string>
+    <string name="err_unknown_contact">Ce contact n\'est plus dans votre liste.</string>
+    <string name="err_contact_no_keys">Le contact n\'a pas encore ouvert l\'app SEALER (il doit l\'ouvrir une fois).</string>
 </resources>

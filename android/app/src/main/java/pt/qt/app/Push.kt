@@ -123,7 +123,7 @@ object Push {
     fun showGeneric(ctx: Context) {
         if (appVisible || !isOn(ctx) || !permissionGranted(ctx)) return
         ensureChannel(ctx)
-        val open = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val open = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val pi = PendingIntent.getActivity(ctx, 0, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_sealer)
@@ -154,8 +154,12 @@ class SealerPushService : FirebaseMessagingService() {
         SealerCore.onPush(applicationContext, message.data["qt"])
     }
 
-    /** Token novo (raro): a app envia-o ao relay da proxima vez que se ligar. */
+    /**
+     * Token novo (raro): com a base de dados aberta, segue ja para o relay (0.9.23; antes so
+     * quando a app voltava a abrir, e ate la as campainhas iam para o token antigo). Sem ela
+     * (bloqueio da app), segue da proxima vez que a app se ligar.
+     */
     override fun onNewToken(token: String) {
-        // Nada a fazer aqui: sem a base de dados aberta nao ha ligacao autenticada ao relay.
+        SealerCore.pushTokenChanged(applicationContext, token)
     }
 }

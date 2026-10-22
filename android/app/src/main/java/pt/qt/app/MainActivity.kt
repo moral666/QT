@@ -177,11 +177,12 @@ class MainActivity : FragmentActivity() {
             vm.authInProgress = false
             val purpose = vm.bioPurpose
             vm.bioPurpose = null
+            if (purpose == BioPurpose.RECOVERY) { vm.recoveryAuthorized(); return }
             val cipher = result.cryptoObject?.cipher ?: return
             when (purpose) {
                 BioPurpose.UNLOCK -> vm.unlockWithBio(cipher)
                 BioPurpose.ENABLE -> vm.finishBioEnable(cipher)
-                null -> {}
+                BioPurpose.RECOVERY, null -> {}
             }
         }
 
@@ -190,6 +191,7 @@ class MainActivity : FragmentActivity() {
             val purpose = vm.bioPurpose
             vm.bioPurpose = null
             if (purpose == BioPurpose.ENABLE) vm.cancelBioEnable()
+            if (purpose == BioPurpose.RECOVERY) vm.recoveryCancelAuth()
             val cancelled = errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
                 errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON ||
                 errorCode == BiometricPrompt.ERROR_CANCELED
@@ -349,6 +351,26 @@ class MainActivity : FragmentActivity() {
             if (req.purpose == BioPurpose.ENABLE) vm.cancelBioEnable()
             return
         }
+        if (req.purpose == BioPurpose.RECOVERY) {
+            // So confirmar que e o dono do telemovel (sem chave do Keystore).
+            val info = BiometricPrompt.PromptInfo.Builder()
+                .setTitle(s(R.string.recovery_title))
+                .setSubtitle(s(R.string.recovery_auth))
+                .setAllowedAuthenticators(BioUnlock.DEVICE_AUTHENTICATORS)
+                .build()
+            vm.bioPurpose = req.purpose
+            vm.authInProgress = true
+            try {
+                bioPrompt.authenticate(info)
+            } catch (e: Exception) {
+                vm.authInProgress = false
+                vm.bioPurpose = null
+                vm.recoveryCancelAuth()
+                vm.bioMessage(s(R.string.t_nao_foi_possivel_pedir_a_autenticacao))
+            }
+            return
+        }
+        val cipher = req.cipher ?: return
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle(if (req.purpose == BioPurpose.UNLOCK) s(R.string.t_desbloquear, APP_NAME) else s(R.string.t_ativar_desbloqueio_rapido))
             .setSubtitle(s(R.string.t_impressao_digital_rosto_ou_pin_do))
@@ -358,7 +380,7 @@ class MainActivity : FragmentActivity() {
         vm.bioPurpose = req.purpose
         vm.authInProgress = true
         try {
-            bioPrompt.authenticate(info, BiometricPrompt.CryptoObject(req.cipher))
+            bioPrompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
         } catch (e: Exception) {
             vm.authInProgress = false
             vm.bioPurpose = null
@@ -451,6 +473,16 @@ fun AppRoot(
         }
     }
 
+    // Android 14+: sem a permissao de ecra inteiro, a chamada so aparece como um aviso pequeno.
+    // Explica-se uma vez, com o botao para as definicoes (0.9.23).
+    var showFullScreen by remember { mutableStateOf(false) }
+    LaunchedEffect(ui.hasIdentity, ui.locked, ui.termsAccepted, ui.loading, ui.pushAsked) {
+        val ready = !ui.loading && ui.hasIdentity && !ui.locked && ui.termsAccepted
+        if (ready && Push.available && ui.pushOn && ui.pushAsked && !ui.fullScreenAsked && !CallNotify.fullScreenAllowed(ctx)) {
+            showFullScreen = true
+        }
+    }
+
     // "Atender" na notificacao: atende, pedindo o microfone se ainda nao houver permissao.
     LaunchedEffect(ui.answerNow, ui.call?.callId, ui.call?.phase) {
         if (ui.answerNow != null && ui.answerNow == ui.call?.callId && ui.call?.phase == CallPhase.INCOMING) {
@@ -507,6 +539,7 @@ fun AppRoot(
                 onSendImage = { uri, original, copy -> vm.sendImageTo(openGroup.conversationId, uri, original, copy) },
                 onSendFile = { uri -> vm.sendFileTo(openGroup.conversationId, uri) },
                 onSendVoice = { file, ms -> vm.sendVoiceTo(openGroup.conversationId, file, ms) },
+                onDraftRestored = vm::draftRestored,
             )
         }
         ui.openChatId?.startsWith("g:") == true -> {
@@ -528,6 +561,7 @@ fun AppRoot(
                 onReact = vm::react, onSendVoice = vm::sendVoice, onSendFile = vm::sendFile,
                 onCall = { c -> withMic { vm.startCall(c) } },
                 canReport = reportsAvailable(), onReport = vm::reportContact,
+                onDraftRestored = vm::draftRestored,
             )
         }
         showRecovery -> {
@@ -536,6 +570,7 @@ fun AppRoot(
                 ui, onBack = { showRecovery = false },
                 onCreate = vm::recoveryCreate, onShow = vm::recoveryShow, onWritten = vm::recoveryWritten,
                 onHide = vm::recoveryHide, onDisable = vm::recoveryDisable,
+                onCode = vm::recoveryWithCode, onCancelCode = vm::recoveryCancelAuth,
             )
         }
         showLockSettings -> {
@@ -632,6 +667,34 @@ fun AppRoot(
             onDismiss = vm::dismissWipeServerFailed,
         )
     }
+    if (showFullScreen && !ui.locked) {
+        AlertDialog(
+            onDismissRequest = { showFullScreen = false; vm.markFullScreenAsked() },
+            icon = { Icon(Icons.Filled.Call, contentDescription = null) },
+            title = { Text(s(R.string.full_screen_title)) },
+            text = { Text(s(R.string.full_screen_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showFullScreen = false
+                    vm.markFullScreenAsked()
+                    AutoLockPause.active = true   // as definicoes do Android nao contam como sair
+                    runCatching { ctx.startActivity(CallNotify.fullScreenSettings(ctx)) }
+                }) { Text(s(R.string.full_screen_open)) }
+            },
+            dismissButton = { TextButton(onClick = { showFullScreen = false; vm.markFullScreenAsked() }) { Text(s(R.string.full_screen_later)) } },
+        )
+    }
+    if (ui.contactsUnreadable && !ui.locked) {
+        // A lista de contactos guardada nao abriu (0.9.23): nada e gravado por cima.
+        AlertDialog(
+            onDismissRequest = vm::dismissContactsUnreadable,
+            icon = { Icon(Icons.Filled.Warning, contentDescription = null) },
+            title = { Text(s(R.string.contacts_unreadable_title)) },
+            text = { Text(s(R.string.contacts_unreadable_text)) },
+            confirmButton = { TextButton(onClick = vm::dismissContactsUnreadable) { Text(s(R.string.t_fechar)) } },
+            dismissButton = { TextButton(onClick = vm::startNewContactList) { Text(s(R.string.contacts_unreadable_new)) } },
+        )
+    }
     ui.safetyNumber?.let { text ->
         AlertDialog(
             onDismissRequest = vm::dismissSafetyNumber,
@@ -703,7 +766,7 @@ private fun CallOverLock(
             onSpeaker = vm::toggleSpeaker,
         )
         // Sem "apagar os dados" aqui: o telemovel ainda esta bloqueado.
-        ui.locked -> LockScreen(ui, onCode = vm::unlockWithCode, onBio = vm::requestBioUnlock, onWipe = {})
+        ui.locked -> LockScreen(ui, onCode = vm::unlockWithCode, onBio = vm::requestBioUnlock, onWipe = {}, canWipe = false)
         else -> LoadingScreen()
     }
 }
@@ -1237,6 +1300,7 @@ fun ChatScreen(
     onCall: (Contact) -> Unit = {},
     canReport: Boolean = false,
     onReport: (String, List<String>, String) -> Unit = { _, _, _ -> },
+    onDraftRestored: () -> Unit = {},
 ) {
     val colors = LocalChatColors.current
     var viewing by remember { mutableStateOf<ChatMessage?>(null) }
@@ -1391,6 +1455,8 @@ fun ChatScreen(
                     onSendImage = { uri, original, copy -> onSendImage(contact, uri, original, copy) },
                     onSendFile = { uri -> onSendFile(contact, uri) },
                     onSendVoice = { file, ms -> onSendVoice(contact, file, ms) },
+                    restoreText = ui.unsentText?.takeIf { it.first == contactId }?.second,
+                    onRestored = onDraftRestored,
                 )
             }
         }
@@ -1883,11 +1949,29 @@ fun statusGlyph(s: MessageStatus): String = when (s) {
     MessageStatus.RECEIVED, MessageStatus.READ_BY_ME -> ""
 }
 
-private val timeFmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-private val dateFmt = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
 private val dayFmt = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.ROOT)
 
-fun timeOf(ms: Long): String = timeFmt.format(java.util.Date(ms))
+/** Formatos de data na lingua da app (0.9.23; antes sempre "dd/MM/yyyy"). Refeitos se ela mudar. */
+private object Dates {
+    private var locale: java.util.Locale? = null
+    private lateinit var time: java.text.DateFormat
+    private lateinit var date: java.text.DateFormat
+    private lateinit var short: java.text.DateFormat
+
+    @Synchronized
+    fun get(): Triple<java.text.DateFormat, java.text.DateFormat, java.text.DateFormat> {
+        val l = Lang.locale()
+        if (l != locale) {
+            locale = l
+            time = java.text.SimpleDateFormat("HH:mm", l)
+            date = java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT, l)
+            short = java.text.SimpleDateFormat(android.text.format.DateFormat.getBestDateTimePattern(l, "dM"), l)
+        }
+        return Triple(time, date, short)
+    }
+}
+
+fun timeOf(ms: Long): String = Dates.get().first.format(java.util.Date(ms))
 
 fun dayKey(ms: Long): String = dayFmt.format(java.util.Date(ms))
 
@@ -1898,7 +1982,7 @@ fun dayLabel(ms: Long): String {
     return when (dayKey(ms)) {
         today -> s(R.string.t_hoje)
         yesterday -> s(R.string.t_ontem)
-        else -> dateFmt.format(java.util.Date(ms))
+        else -> Dates.get().second.format(java.util.Date(ms))
     }
 }
 
@@ -1906,14 +1990,14 @@ fun dayLabel(ms: Long): String {
 fun shortTime(ms: Long): String = when (dayLabel(ms)) {
     s(R.string.t_hoje) -> timeOf(ms)
     s(R.string.t_ontem) -> s(R.string.t_ontem)
-    else -> java.text.SimpleDateFormat("dd/MM", java.util.Locale.getDefault()).format(java.util.Date(ms))
+    else -> Dates.get().third.format(java.util.Date(ms))
 }
 
 // ======================================================================= bloqueio
 
 /** Ecra de bloqueio: codigo de acesso ou impressao digital/rosto/PIN do telemovel. */
 @Composable
-fun LockScreen(ui: UiState, onCode: (String) -> Unit, onBio: () -> Unit, onWipe: () -> Unit) {
+fun LockScreen(ui: UiState, onCode: (String) -> Unit, onBio: () -> Unit, onWipe: () -> Unit, canWipe: Boolean = true) {
     val minLen = remember { MainViewModel.minCodeLen() }
     var code by remember { mutableStateOf("") }
     var forgot by remember { mutableStateOf(false) }
@@ -1962,8 +2046,12 @@ fun LockScreen(ui: UiState, onCode: (String) -> Unit, onBio: () -> Unit, onWipe:
                 Text(s(R.string.t_usar_impressao_digital_ou_pin_do))
             }
         }
-        Spacer(Modifier.height(8.dp))
-        TextButton(onClick = { forgot = true }) { Text(s(R.string.t_esqueci_me_do_codigo)) }
+        // Por cima do bloqueio do telemovel nao se apaga nada: o botao nao aparece (antes
+        // aparecia e nao fazia nada).
+        if (canWipe) {
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = { forgot = true }) { Text(s(R.string.t_esqueci_me_do_codigo)) }
+        }
     }
     if (forgot) {
         AlertDialog(

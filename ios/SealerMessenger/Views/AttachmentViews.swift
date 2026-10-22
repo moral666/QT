@@ -5,6 +5,68 @@ import UniformTypeIdentifiers
 
 // ======================================================================== preparar
 
+/// Tira os metadados de um PNG ou WebP sem voltar a gravar a imagem (fica igual, com a
+/// transparencia e a animacao). PNG: sem tEXt, zTXt, iTXt, eXIf e tIME. WebP: sem EXIF e XMP.
+/// `nil` se o ficheiro estiver mal formado. Igual ao `MetaStrip` do Android.
+enum MetaStrip {
+    private static let pngDrop: Set<String> = ["tEXt", "zTXt", "iTXt", "eXIf", "tIME"]
+    private static let webpDrop: Set<String> = ["EXIF", "XMP "]
+
+    static func strip(_ d: Data, mime: String) -> Data? {
+        let b = [UInt8](d)
+        switch mime {
+        case "image/png": return png(b)
+        case "image/webp": return webp(b)
+        default: return d
+        }
+    }
+
+    private static func tag(_ b: [UInt8], _ i: Int) -> String {
+        String(decoding: b[i..<(i + 4)], as: UTF8.self)
+    }
+
+    private static func png(_ b: [UInt8]) -> Data? {
+        guard b.count >= 8 else { return nil }
+        var out = Data(b[0..<8])
+        var i = 8
+        while i + 12 <= b.count {
+            let len = Int(b[i]) << 24 | Int(b[i + 1]) << 16 | Int(b[i + 2]) << 8 | Int(b[i + 3])
+            let total = 12 + len
+            guard len >= 0, i + total <= b.count else { return nil }
+            let type = tag(b, i + 4)
+            if !pngDrop.contains(type) { out.append(contentsOf: b[i..<(i + total)]) }
+            i += total
+            if type == "IEND" { return out }
+        }
+        return nil
+    }
+
+    private static func webp(_ b: [UInt8]) -> Data? {
+        guard b.count >= 12 else { return nil }
+        var body = Data()
+        var i = 12
+        while i + 8 <= b.count {
+            let type = tag(b, i)
+            let len = Int(b[i + 4]) | Int(b[i + 5]) << 8 | Int(b[i + 6]) << 16 | Int(b[i + 7]) << 24
+            guard i + 8 + len <= b.count else { return nil }
+            let end = min(b.count, i + 8 + len + (len & 1))
+            if !webpDrop.contains(type) {
+                var chunk = Array(b[i..<end])
+                // VP8X: tira as marcas "tem EXIF" (0x08) e "tem XMP" (0x04).
+                if type == "VP8X", chunk.count > 8 { chunk[8] &= ~UInt8(0x0C) }
+                body.append(contentsOf: chunk)
+            }
+            i = end
+        }
+        let size = UInt32(body.count + 4)
+        var out = Data("RIFF".utf8)
+        withUnsafeBytes(of: size.littleEndian) { out.append(contentsOf: $0) }
+        out.append(contentsOf: Array("WEBP".utf8))
+        out.append(body)
+        return out
+    }
+}
+
 enum ImagePrepError: Error {
     case tooBig
     case unreadable
@@ -22,7 +84,8 @@ struct PreparedImage: Sendable {
 ///  - GIF: vai como esta (para continuar animado);
 ///  - fotos: reduzidas para 1600 px no lado maior e JPEG 80 (~300 KB), ou, com
 ///    "qualidade original", ate 4096 px e JPEG 92;
-///  - PNG/WebP colados ou em qualidade original: como estao.
+///  - PNG/WebP colados ou em qualidade original: a mesma imagem, sem os metadados (`MetaStrip`,
+///    desde a 0.9.23; antes iam tal como estavam).
 /// Voltar a gravar a foto apaga os metadados (incluindo a localizacao GPS).
 enum ImagePrep {
     static let maxBytes = 25 * 1024 * 1024
@@ -46,7 +109,13 @@ enum ImagePrep {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("envio-\(UUID().uuidString)")
         if asIs {
             guard data.count <= maxBytes else { throw ImagePrepError.tooBig }
-            try data.write(to: url, options: [.atomic, .completeFileProtection])
+            // Data, aparelho e as vezes a localizacao: fora (a imagem fica igual, bit a bit).
+            let clean: Data
+            if mime == "image/gif" { clean = data } else {
+                guard let d = MetaStrip.strip(data, mime: mime) else { throw ImagePrepError.unreadable }
+                clean = d
+            }
+            try clean.write(to: url, options: [.atomic, .completeFileProtection])
             let (w, h) = pixelSize(data)
             return PreparedImage(url: url, mime: mime, width: w, height: h)
         }

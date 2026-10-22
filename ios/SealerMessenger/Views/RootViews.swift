@@ -55,6 +55,14 @@ struct AppRoot: View {
         }
         .alert("", isPresented: Binding(get: { model.ui.error != nil }, set: { if !$0 { model.dismissError() } }),
                actions: { Button("OK", action: model.dismissError) }, message: { Text(ui.error ?? "") })
+        // A lista de contactos guardada nao abriu (0.9.23): nada e gravado por cima.
+        .alert(s("contacts_unreadable_title"),
+               isPresented: Binding(get: { model.ui.contactsUnreadable && !model.ui.locked }, set: { if !$0 { model.dismissContactsUnreadable() } }),
+               actions: {
+                   Button(s("contacts_unreadable_new"), role: .destructive, action: model.startNewContactList)
+                   Button(s("t_fechar"), role: .cancel, action: model.dismissContactsUnreadable)
+               },
+               message: { Text(s("contacts_unreadable_text")) })
         .alert(s("ios_mic_denied_call"), isPresented: $micDenied) {
             Button(s("ios_open_settings")) { if let u = URL(string: UIApplication.openSettingsURLString) { openURL(u) } }
             Button(s("t_cancelar"), role: .cancel) {}
@@ -113,7 +121,8 @@ struct AppRoot: View {
         } else if showRecovery {
             RecoveryScreen(ui: ui, onBack: { showRecovery = false }, onCreate: model.recoveryCreate,
                            onShow: model.recoveryShow, onWritten: model.recoveryWritten,
-                           onHide: model.recoveryHide, onDisable: model.recoveryDisable)
+                           onHide: model.recoveryHide, onDisable: model.recoveryDisable,
+                           onCode: model.recoveryWithCode, onCancelCode: model.recoveryCancelAuth)
         } else if showLockSettings {
             LockSettingsScreen(ui: ui, onBack: { showLockSettings = false },
                                onEnable: model.enableLock, onDisable: model.disableLock, onChange: model.changeCode,

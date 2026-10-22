@@ -380,4 +380,15 @@
     <string name="premium_until_forever">Active, no end date</string>
     <string name="t_a_enviar_tamanho">Sending… %1$s</string>
     <string name="t_a_receber_tamanho">Receiving… %1$s</string>
+    <string name="contacts_unreadable_title">Contacts could not be opened</string>
+    <string name="contacts_unreadable_text">The saved contact list could not be read. So that it is not lost, the app will not save anything over it. Close and reopen the app. If this keeps happening, you can start a new list (the old one is kept aside).</string>
+    <string name="contacts_unreadable_new">Start a new list</string>
+    <string name="recovery_auth">Confirm it\'s you to continue: the words give access to your account.</string>
+    <string name="full_screen_title">Full-screen calls</string>
+    <string name="full_screen_text">For a call to appear full screen when your phone is locked, Android needs your permission. Without it, the call only shows as a small notification.</string>
+    <string name="full_screen_open">Open settings</string>
+    <string name="full_screen_later">Not now</string>
+    <string name="call_mic_lost">The microphone stopped working (another app may be using it). The other person can no longer hear you.</string>
+    <string name="err_unknown_contact">This contact is no longer in your list.</string>
+    <string name="err_contact_no_keys">The contact hasn\'t opened the SEALER app yet (they need to open it once).</string>
 </resources>

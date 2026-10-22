@@ -380,4 +380,15 @@
     <string name="premium_until_forever">Attivo, senza data di fine</string>
     <string name="t_a_enviar_tamanho">Invio… %1$s</string>
     <string name="t_a_receber_tamanho">Ricezione… %1$s</string>
+    <string name="contacts_unreadable_title">Impossibile aprire i contatti</string>
+    <string name="contacts_unreadable_text">Impossibile leggere l\'elenco dei contatti salvato. Per non perderlo, l\'app non salva nulla sopra. Chiudi e riapri l\'app. Se l\'avviso continua, puoi iniziare un nuovo elenco (quello vecchio viene conservato a parte).</string>
+    <string name="contacts_unreadable_new">Nuovo elenco</string>
+    <string name="recovery_auth">Conferma che sei tu per continuare: le parole danno accesso al tuo account.</string>
+    <string name="full_screen_title">Chiamate a schermo intero</string>
+    <string name="full_screen_text">Perché una chiamata appaia a schermo intero con il telefono bloccato, Android ha bisogno del tuo permesso. Senza, la chiamata appare solo come una piccola notifica.</string>
+    <string name="full_screen_open">Apri impostazioni</string>
+    <string name="full_screen_later">Non ora</string>
+    <string name="call_mic_lost">Il microfono ha smesso di funzionare (forse lo usa un\'altra app). L\'altra persona non ti sente più.</string>
+    <string name="err_unknown_contact">Questo contatto non è più nel tuo elenco.</string>
+    <string name="err_contact_no_keys">Il contatto non ha ancora aperto l\'app SEALER (deve aprirla una volta).</string>
 </resources>

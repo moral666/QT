@@ -12,6 +12,9 @@ struct ChatComposer: View {
     let onSendImage: (Data, Bool, Bool) -> Void
     let onSendFile: (URL) -> Void
     let onSendVoice: (URL, Int64) -> Void
+    /// Texto que nao chegou a ser enviado (0.9.23): volta a caixa se ela estiver vazia.
+    var restoreText: String? = nil
+    var onRestored: () -> Void = {}
 
     @State private var text = ""
     @State private var showPhotos = false
@@ -24,6 +27,7 @@ struct ChatComposer: View {
     @StateObject private var recorder = VoiceRecorder()
     @Environment(\.chat) private var c
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -35,6 +39,15 @@ struct ChatComposer: View {
         }
         .background(c.chatBackground)
         .onDisappear { recorder.cancel() }   // sair da conversa apaga a gravacao a meio
+        // A app saiu do ecra a meio de uma gravacao: cancela (0.9.23). Com o audio em segundo
+        // plano (por causa das chamadas) o iPhone continuava a gravar e, ao voltar, a barra
+        // enviava a gravacao sozinha.
+        .onChange(of: scenePhase) { _, phase in if phase == .background { recorder.cancel() } }
+        .onChange(of: restoreText) { _, t in
+            guard let t else { return }
+            if text.isEmpty { text = t }
+            onRestored()
+        }
         .photosPicker(isPresented: $showPhotos, selection: $photoItem, matching: .images)
         .onChange(of: photoItem) { _, item in
             guard let item else { return }

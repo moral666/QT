@@ -94,6 +94,9 @@ func log(_ tag: String, _ msg: @autoclosure () -> String) {
 
 /// Mensagem curta e SEGURA para mostrar: nunca inclui conteudo nem chaves.
 func safeMessage(_ error: Error) -> String {
+    // Falhas de rede: "Sem ligacao ao servidor" na lingua da app (0.9.23; antes o texto tecnico).
+    // O detalhe fica no registo do RelayLink.
+    if error is RelayLinkError { return s("t_sem_ligacao_ao_servidor") }
     if error is QtError || error is FfiError {
         // So o nome do caso (ex.: "Storage", "Replay"), sem argumentos.
         let full = String(describing: error)

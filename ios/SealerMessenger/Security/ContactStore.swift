@@ -47,21 +47,40 @@ enum ContactStore {
         return try SecureBox.foreground.open(raw)
     }
 
-    static func load(key: Data) -> [Contact] {
+    /// A lista guardada, ou vazia se ainda nao ha ficheiro (normal numa conta nova). Se o
+    /// ficheiro existe mas nao abre, lanca `ContactsUnreadableError` (0.9.23): antes devolvia
+    /// uma lista vazia e a gravacao seguinte apagava a lista verdadeira.
+    static func load(key: Data) throws -> [Contact] {
         lock.lock(); defer { lock.unlock() }
-        guard let url = try? file(), FileManager.default.fileExists(atPath: url.path),
-              let raw = try? Data(contentsOf: url),
-              let outer = try? openOuter(raw) else { return [] }
-        let plain: Data
-        if outer.count > innerMagic.count, outer.prefix(innerMagic.count) == innerMagic {
-            guard let box = try? AES.GCM.SealedBox(combined: outer.dropFirst(innerMagic.count)),
-                  let p = try? AES.GCM.open(box, using: SymmetricKey(data: key), authenticating: innerAad) else { return [] }
-            plain = p
-        } else {
-            plain = outer
+        let url = try file()
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        do {
+            let raw = try Data(contentsOf: url)
+            let outer = try openOuter(raw)
+            let plain: Data
+            if outer.count > innerMagic.count, outer.prefix(innerMagic.count) == innerMagic {
+                let box = try AES.GCM.SealedBox(combined: outer.dropFirst(innerMagic.count))
+                plain = try AES.GCM.open(box, using: SymmetricKey(data: key), authenticating: innerAad)
+            } else {
+                plain = outer
+            }
+            let rows = try JSONDecoder().decode([Row].self, from: plain)
+            return rows.map { Contact(nickname: $0.n, publicId: $0.p, relayId: $0.r) }
+        } catch {
+            throw ContactsUnreadableError()
         }
-        guard let rows = try? JSONDecoder().decode([Row].self, from: plain) else { return [] }
-        return rows.map { Contact(nickname: $0.n, publicId: $0.p, relayId: $0.r) }
+    }
+
+    /// Guarda uma copia do ficheiro que nao abriu ("qt_contacts.bad-<hora>.bin", cifrada como
+    /// estava) e tira-o do caminho: a lista seguinte comeca vazia. So quando o utilizador escolhe.
+    static func quarantine() {
+        lock.lock(); defer { lock.unlock() }
+        guard let url = try? file(), FileManager.default.fileExists(atPath: url.path) else { return }
+        let dest = url.deletingLastPathComponent()
+            .appendingPathComponent("qt_contacts.bad-\(Int64(Date().timeIntervalSince1970 * 1000)).bin")
+        if (try? FileManager.default.moveItem(at: url, to: dest)) == nil {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     /// O ficheiro existe e ainda esta num formato antigo.
@@ -83,8 +102,18 @@ enum ContactStore {
         try AppFiles.writeAtomically(outerMagic + sealed, to: file())
     }
 
+    /// Apaga a lista e as copias que nao abriam.
     static func wipe() {
         lock.lock(); defer { lock.unlock() }
-        if let url = try? file() { try? FileManager.default.removeItem(at: url) }
+        guard let url = try? file() else { return }
+        try? FileManager.default.removeItem(at: url)
+        let dir = url.deletingLastPathComponent()
+        for u in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        where u.lastPathComponent.hasPrefix("qt_contacts.bad-") {
+            try? FileManager.default.removeItem(at: u)
+        }
     }
 }
+
+/// O ficheiro dos contactos existe mas nao abre (chave, Secure Enclave ou ficheiro estragado).
+struct ContactsUnreadableError: Error {}

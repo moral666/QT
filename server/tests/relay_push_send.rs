@@ -6,6 +6,7 @@
 //!   * app aberta (`WaitMessages` pendente): nao toca;
 //!   * envio `silent` (recibo, reacao, presenca): entregue, mas nao toca;
 //!   * token que a Google diz que ja nao existe: e apagado do Redis.
+//!
 //! Precisa de um Redis em 127.0.0.1:6379 e do `openssl` (gera uma chave RSA de teste).
 
 mod common;

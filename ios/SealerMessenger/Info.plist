@@ -68,8 +68,8 @@
 	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- Sem excecoes globais. So permite redes locais (relay de teste no Mac).
-		     O codigo recusa ws:// na build Release de qualquer forma. -->
+		<!-- Sem excecoes globais. So permite redes locais (relay de teste no Mac), e so na
+		     Debug: na Release esta chave e tirada depois da build (project.yml). -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>

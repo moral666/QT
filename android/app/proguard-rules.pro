@@ -70,12 +70,6 @@
 # para esses motores e os stack traces mais uteis. Descomenta para ativar:
 # -dontobfuscate
 
-# Remove chamadas de log de debug/verbose no release (nada de dados em logcat).
--assumenosideeffects class android.util.Log {
-    public static int v(...);
-    public static int d(...);
-}
-
 # ---------- Registos (Log) na release ----------
 # A release nao escreve registos de rotina (Log.v/d/i): o R8 apaga as chamadas.
 # Ficam so os avisos (Log.w/e), sem dados das mensagens nem chaves, porque sao

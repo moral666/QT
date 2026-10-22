@@ -156,11 +156,69 @@ object FilePrep {
     }
 }
 
+/**
+ * Tipo de um ficheiro RECEBIDO para o abrir noutra app (0.9.23). Antes usava-se o que o
+ * remetente dizia, e um ficheiro podia ir parar a uma app que nao era a certa (ou ao
+ * instalador de apps). Agora: pelos primeiros bytes e pela extensao, so tipos de uma lista
+ * de documentos, imagens, som e video; o resto abre como "ficheiro" generico.
+ */
+object FileTypes {
+    private const val GENERIC = "application/octet-stream"
+    private const val OOXML = "application/vnd.openxmlformats-officedocument."
+    private val ALLOWED_EXACT = setOf(
+        "application/pdf", "application/rtf", "application/zip", "application/epub+zip",
+        "application/msword", "application/vnd.ms-excel", "application/vnd.ms-powerpoint",
+        "text/plain", "text/csv", "text/calendar", "text/vcard", "text/x-vcard",
+    )
+    private val ALLOWED_PREFIX = listOf(
+        "image/", "audio/", "video/", OOXML, "application/vnd.oasis.opendocument.",
+    )
+    /** Nunca: instaladores e paginas (abririam com permissoes ou scripts de outra app). */
+    private val BLOCKED = setOf(
+        "application/vnd.android.package-archive", "text/html", "application/xhtml+xml",
+        "image/svg+xml", "application/x-msdownload",
+    )
+
+    private fun allowed(m: String) =
+        m !in BLOCKED && (m in ALLOWED_EXACT || ALLOWED_PREFIX.any { m.startsWith(it) })
+
+    /** Pela extensao (sem ver o conteudo); generico se nao estiver na lista. */
+    fun forName(name: String): String {
+        val dot = name.lastIndexOf('.')
+        if (dot <= 0 || dot == name.length - 1) return GENERIC
+        val ext = name.substring(dot + 1).lowercase()
+        val m = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: return GENERIC
+        return if (allowed(m)) m else GENERIC
+    }
+
+    /** Pelos primeiros bytes, conferidos com a extensao. */
+    fun forView(name: String, b: ByteArray): String {
+        fun at(i: Int, s: String) = b.size >= i + s.length && s.indices.all { b[i + it] == s[it].code.toByte() }
+        val sniffed = when {
+            at(0, "%PDF-") -> "application/pdf"
+            b.size > 3 && b[0] == 0x89.toByte() && at(1, "PNG") -> "image/png"
+            b.size > 3 && b[0] == 0xFF.toByte() && b[1] == 0xD8.toByte() && b[2] == 0xFF.toByte() -> "image/jpeg"
+            at(0, "GIF87a") || at(0, "GIF89a") -> "image/gif"
+            at(0, "RIFF") && at(8, "WEBP") -> "image/webp"
+            else -> null
+        }
+        if (sniffed != null) return sniffed
+        val byName = forName(name)
+        // Formatos que sao um ZIP por dentro (Word, Excel, ODF, EPUB): tem de comecar por "PK".
+        val zipBased = byName == "application/zip" || byName == "application/epub+zip" ||
+            byName.startsWith(OOXML) || byName.startsWith("application/vnd.oasis.opendocument.")
+        if (zipBased && !at(0, "PK")) return GENERIC
+        // Diz que e PDF ou imagem mas nao e: generico.
+        if (byName == "application/pdf" || byName.startsWith("image/")) return GENERIC
+        return byName
+    }
+}
+
 /** "350 KB", "2,4 MB". */
 fun formatSize(bytes: Long): String = when {
     bytes < 1024 -> "$bytes B"
     bytes < 1024 * 1024 -> "${(bytes + 512) / 1024} KB"
-    else -> String.format(java.util.Locale("pt", "PT"), "%.1f MB", bytes / (1024.0 * 1024.0))
+    else -> String.format(Lang.locale(), "%.1f MB", bytes / (1024.0 * 1024.0))
 }
 
 /** "PDF", "DOCX"... (para o icone); vazio se nao houver extensao curta. */
@@ -329,7 +387,7 @@ fun FileActionsDialog(m: ChatMessage, load: suspend (String, String) -> ByteArra
     fun toast(s: String) = Toast.makeText(ctx, s, Toast.LENGTH_LONG).show()
 
     // Guardar: o utilizador escolhe onde (Transferencias, Drive...). Fica la em claro, por escolha dele.
-    val saver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(att.mime)) { uri ->
+    val saver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(FileTypes.forName(name))) { uri ->
         if (uri == null) {
             busy = false
         } else {
@@ -363,8 +421,10 @@ fun FileActionsDialog(m: ChatMessage, load: suspend (String, String) -> ByteArra
                 busy = false
                 return@launch
             }
-            val uri = SealerFileProvider.share(ctx, bytes, name, att.mime)
-            val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, att.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            // O tipo vem do conteudo e da extensao, nunca do que o remetente disse (0.9.23).
+            val mime = FileTypes.forView(name, bytes)
+            val uri = SealerFileProvider.share(ctx, bytes, name, mime)
+            val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             try {
                 AutoLockPause.active = true   // abrir noutra app nao conta como sair (bloqueio)
                 ctx.startActivity(intent)

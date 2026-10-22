@@ -2,6 +2,7 @@
 name = "qt_storage"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88"
 license = "AGPL-3.0-or-later"
 description = "Armazenamento local encriptado (SQLCipher): identidade e sessoes"
 

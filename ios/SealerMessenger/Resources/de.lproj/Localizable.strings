@@ -6,9 +6,19 @@
 "badge_dev" = "Dev";
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
+"call_mic_lost" = "Das Mikrofon funktioniert nicht mehr (vielleicht nutzt es eine andere App). Die andere Person hört dich nicht mehr.";
 "confirm_word" = "LÖSCHEN";
+"contacts_unreadable_new" = "Neue Liste beginnen";
+"contacts_unreadable_text" = "Die gespeicherte Kontaktliste konnte nicht gelesen werden. Damit sie nicht verloren geht, speichert die App nichts darüber. Schließe die App und öffne sie erneut. Wenn der Hinweis bleibt, kannst du eine neue Liste beginnen (die alte wird separat aufbewahrt).";
+"contacts_unreadable_title" = "Kontakte konnten nicht geöffnet werden";
 "core_unsupported" = "Diese Nachricht nutzt eine Funktion, die diese App-Version noch nicht unterstützt. Aktualisiere SEALER, um sie zu sehen.";
 "core_voice_message" = "Sprachnachricht";
+"err_contact_no_keys" = "Der Kontakt hat die SEALER-App noch nicht geöffnet (er muss sie einmal öffnen).";
+"err_unknown_contact" = "Dieser Kontakt ist nicht mehr in deiner Liste.";
+"full_screen_later" = "Nicht jetzt";
+"full_screen_open" = "Einstellungen öffnen";
+"full_screen_text" = "Damit ein Anruf bei gesperrtem Handy im Vollbild erscheint, braucht Android deine Erlaubnis. Ohne sie erscheint der Anruf nur als kleine Benachrichtigung.";
+"full_screen_title" = "Anrufe im Vollbild";
 "ios_bio_changed" = "Face ID, Touch ID oder der iPhone-Code haben sich geändert. Nutze den App-Code und aktiviere die Schnellentsperrung erneut.";
 "ios_bio_confirm" = "Bestätige mit deinem Code. Danach fragt das iPhone nach Face ID, Touch ID oder dem iPhone-Code.";
 "ios_bio_unavailable" = "Nicht verfügbar: Dieses iPhone hat keinen Code.";
@@ -45,6 +55,7 @@
 "premium_until" = "Aktiv bis %1$@";
 "premium_until_forever" = "Aktiv, ohne Enddatum";
 "push_new" = "Du hast neue Nachrichten";
+"recovery_auth" = "Bestätige, dass du es bist: Die Wörter geben Zugriff auf dein Konto.";
 "recovery_bad_backup" = "Die Kopie konnte nicht geöffnet werden.";
 "recovery_bad_words" = "Die Wörter stimmen nicht. Prüfe Reihenfolge und Schreibweise.";
 "recovery_check" = "Wort Nr. %1$@";

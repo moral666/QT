@@ -6,9 +6,19 @@
 "badge_dev" = "Dev";
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
+"call_mic_lost" = "Le micro ne fonctionne plus (une autre app l'utilise peut-être). Votre correspondant ne vous entend plus.";
 "confirm_word" = "SUPPRIMER";
+"contacts_unreadable_new" = "Nouvelle liste";
+"contacts_unreadable_text" = "La liste de contacts enregistrée n'a pas pu être lue. Pour ne pas la perdre, l'app n'enregistre rien par-dessus. Fermez puis rouvrez l'app. Si l'avertissement persiste, vous pouvez commencer une nouvelle liste (l'ancienne est conservée à part).";
+"contacts_unreadable_title" = "Les contacts n'ont pas pu être ouverts";
 "core_unsupported" = "Ce message utilise une fonction que cette version de l'app ne prend pas encore en charge. Mets SEALER à jour pour le voir.";
 "core_voice_message" = "Message vocal";
+"err_contact_no_keys" = "Le contact n'a pas encore ouvert l'app SEALER (il doit l'ouvrir une fois).";
+"err_unknown_contact" = "Ce contact n'est plus dans votre liste.";
+"full_screen_later" = "Plus tard";
+"full_screen_open" = "Ouvrir les réglages";
+"full_screen_text" = "Pour qu'un appel s'affiche en plein écran quand le téléphone est verrouillé, Android a besoin de votre autorisation. Sans elle, l'appel n'apparaît que sous forme de petite notification.";
+"full_screen_title" = "Appels en plein écran";
 "ios_bio_changed" = "Face ID, Touch ID ou le code de l'iPhone ont changé. Utilisez le code de l'app et réactivez le déverrouillage rapide.";
 "ios_bio_confirm" = "Confirmez avec votre code. Ensuite, l'iPhone demande Face ID, Touch ID ou le code de l'iPhone.";
 "ios_bio_unavailable" = "Indisponible : cet iPhone n'a pas de code.";
@@ -45,6 +55,7 @@
 "premium_until" = "Actif jusqu'au %1$@";
 "premium_until_forever" = "Actif, sans date de fin";
 "push_new" = "Vous avez de nouveaux messages";
+"recovery_auth" = "Confirmez que c'est bien vous pour continuer : les mots donnent accès à votre compte.";
 "recovery_bad_backup" = "Impossible d'ouvrir la copie.";
 "recovery_bad_words" = "Les mots ne sont pas corrects. Vérifie l'ordre et l'orthographe.";
 "recovery_check" = "Mot n° %1$@";

@@ -77,6 +77,9 @@ object Lang {
         return ctx.createConfigurationContext(conf)
     }
 
+    /** A lingua em que a app esta a mostrar os textos (para datas e numeros). */
+    fun locale(): Locale = (res ?: app.resources).configuration.locales[0]
+
     fun str(@StringRes id: Int, vararg args: Any?): String {
         val r = res ?: app.resources
         return if (args.isEmpty()) r.getString(id) else r.getString(id, *args)

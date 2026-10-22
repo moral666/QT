@@ -700,6 +700,9 @@ Implementado em `server/src/push.rs` (relay) e `android/.../Push.kt` (app). Test
 do Firebase Cloud Messaging deste telemóvel (só letras, dígitos e `-_:.`, até 4096). Só o próprio
 `user_id` autenticado; `token` vazio apaga (interruptor "Notificações" desligado). No Redis:
 `<prefixo>:push:<user_id>`, com TTL de 90 dias (como o bundle), apagado também com `DeleteAccount`.
+Desde a 0.9.23 um token só acorda uma conta: `<prefixo>:pushowner:<sha256(token)>` = a conta que o
+registou por último (mesmo TTL). Se o mesmo token chegar de outra conta (ex.: "Esqueci-me do código"
+apaga a conta só no telemóvel e cria outra), a conta anterior deixa de o ter, se ainda for o dela.
 
 **Campainha.** Depois de pôr uma mensagem na fila, se ninguém desse destinatário estiver em
 `WaitMessages` (app fechada ou em segundo plano há mais de 30 s) e não tiver havido campainha nos
@@ -997,7 +1000,9 @@ perfil, e **receber** tudo (fotos, voz, ficheiros, atender chamadas). Pago: faze
 grupos e enviar fotos, GIFs, voz e ficheiros. Assim quem paga continua a falar com quem não paga.
 
 - **Relay:** `{p}:premium:{conta}` = até quando (ms). `PremiumStatus` (a própria conta, resposta
-  `Premium { until_ms, enforced }`, 0 = sem premium). Operador: `AdminGrantPremium { user_id, until_ms }`
+  `Premium { until_ms, enforced, active }`, 0 = sem premium; `active` desde a 0.9.23: ativo agora
+  pelo relógio do relay, para as apps não dependerem do relógio do telemóvel; ausente num relay
+  antigo). Operador: `AdminGrantPremium { user_id, until_ms }`
   (0 tira) e `AdminListPremium` (resposta `PremiumList`). Apagar a conta tira o premium. O relay
   sabe que a conta tem premium, não quem é a pessoa.
 - **Bloqueio (desde a 0.9.21):** `{p}:premium_enforce` = "1". Só o operador o liga ou desliga

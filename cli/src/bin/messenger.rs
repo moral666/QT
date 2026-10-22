@@ -221,6 +221,8 @@ fn describe(r: &RelayResponse) -> String {
         | RelayResponse::BlobStatus { .. }
         | RelayResponse::BlobData { .. }
         | RelayResponse::BlobNotFound => "Anexo".into(),
+        RelayResponse::BackupPart { .. } | RelayResponse::BackupNotFound => "Copia de recuperacao".into(),
+        RelayResponse::Premium { .. } => "Premium".into(),
     }
 }
 

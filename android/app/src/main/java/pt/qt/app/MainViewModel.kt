@@ -145,6 +145,17 @@ data class UiState(
     val premiumUntil: Long = 0,
     /** Ecra "Sealer Premium" aberto (por um cadeado ou pelas Definicoes). */
     val showPremium: Boolean = false,
+    /**
+     * A lista de contactos guardada nao abriu (0.9.23). Nada e gravado por cima ate o
+     * utilizador escolher: reabrir a app (o mais comum) ou comecar uma lista nova.
+     */
+    val contactsUnreadable: Boolean = false,
+    /** Pedir o codigo da app antes de ver ou gerar as palavras de recuperacao (0.9.23). */
+    val recoveryAskCode: Boolean = false,
+    /** Ja se explicou uma vez a permissao de ecra inteiro das chamadas (Android 14+). */
+    val fullScreenAsked: Boolean = true,
+    /** Texto que nao chegou a ser enviado (conversa, texto): volta a caixa de escrita (0.9.23). */
+    val unsentText: Pair<String, String>? = null,
 )
 
 enum class CallPhase { CALLING, RINGING_OUT, INCOMING, ACTIVE, ENDED }
@@ -233,6 +244,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** De segundo a segundo durante uma chamada: eventos, expiracao e a linha tecnica. */
     @Volatile private var callTicker: Job? = null
     private val callSounds = CallSounds(app)
+    /**
+     * O ficheiro dos contactos existe mas nao abriu nesta sessao: nao se grava por cima nem se
+     * envia a copia de recuperacao (senao a lista verdadeira perdia-se). Ver [saveContacts].
+     */
+    @Volatile private var contactsBroken = false
     /** Bytes da ultima foto decifrada de cada contacto (para nao voltar a descodificar). */
     private val photoCache = HashMap<String, Pair<Int, androidx.compose.ui.graphics.ImageBitmap>>()
     private val bioChannel = Channel<BioRequest>(Channel.BUFFERED)
@@ -241,6 +257,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
 
     init {
+        // Este ecra passa a ser o dono do nucleo (um ecra antigo que acabe ja nao o fecha).
+        SealerCore.uiOwner = this
         ImagePrep.cleanCache(app)
         io { openStorage() }
         presenceJob = viewModelScope.launch(Dispatchers.IO) { presenceLoop() }
@@ -276,9 +294,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         qt = client
         val ck = contactsKey ?: throw IllegalStateException("sem a chave dos contactos")
         // Lista de contactos no formato antigo: passa ja a ter a segunda camada.
-        if (contactStore.isLegacy()) {
-            val old = contactStore.load(ck)
-            if (old.isNotEmpty()) runCatching { contactStore.save(old, ck) }
+        val contacts = try {
+            val list = contactStore.load(ck)
+            if (list.isNotEmpty() && contactStore.isLegacy()) runCatching { contactStore.save(list, ck) }
+            contactsBroken = false
+            list
+        } catch (e: ContactsUnreadableException) {
+            Log.w(TAG, "contactos: o ficheiro nao abriu (${e.cause?.javaClass?.simpleName})")
+            contactsBroken = true
+            emptyList()
         }
         // Release: relay fixo da build, ignora preferencias antigas. Debug: editavel.
         val url = if (BuildConfig.RELAY_EDITABLE) prefs.getString("relay_url", null) ?: BuildConfig.RELAY_URL else BuildConfig.RELAY_URL
@@ -286,7 +310,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val has = client.hasIdentity()
         // Tudo lido antes do update: a funcao do update pode correr mais de uma vez (concorrencia).
         val publicId = if (has) client.exportPublicIdentity().publicId else ""
-        val contacts = contactStore.load(ck)
         val conversations = client.conversations()
         val blocked = client.blockedContacts().toSet()
         val invites = client.pendingIntros().toSet()
@@ -300,6 +323,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 readReceipts = prefs.getBoolean("read_receipts", true),
                 pushOn = Push.isOn(getApplication()),
                 pushAsked = prefs.getBoolean("push_asked", false),
+                fullScreenAsked = prefs.getBoolean("full_screen_asked", false),
                 locked = false, unlocking = false, lockMessage = null,
                 lockEnabled = storageKeys.lockEnabled(),
                 bioEnabled = bio.isEnabled(), bioAvailable = bio.isAvailable(),
@@ -312,7 +336,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 recoveryOn = recoveryOn,
                 premiumLock = prefs.getBoolean(PREF_PREMIUM_ENFORCED, false),
                 premiumUntil = prefs.getLong(PREF_PREMIUM_UNTIL, 0),
-                premium = premiumNow(prefs.getLong(PREF_PREMIUM_UNTIL, 0)),
+                premium = premiumCached(),
+                contactsUnreadable = contactsBroken,
             )
         }
         syncPresence(client)
@@ -334,8 +359,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Fecha a base de dados e a ligacao ao relay; apaga as chaves da memoria. */
-    private fun closeSession() {
+    /**
+     * Fecha a ligacao ao relay e, com [closeCore], a base de dados (apaga as chaves da memoria).
+     * Sem [closeCore]: o ecra acabou mas o nucleo continua (outro ecra usa-o, ou ainda falta
+     * avisar o outro lado de uma chamada).
+     */
+    private fun closeSession(closeCore: Boolean = true) {
         stopCallMedia()
         _ui.update { it.copy(call = null) }
         poller?.cancel()
@@ -355,11 +384,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         pendingPhoto = null
         qt = null
         updateReceiving()
-        SealerCore.close()
+        if (closeCore) SealerCore.close()
     }
 
     /** O ecra esta visivel e com a base de dados aberta: ele recebe tudo (o segundo plano nao mexe). */
     private fun updateReceiving() {
+        // Um ecra antigo (ja substituido) nao mexe no estado do ecra novo.
+        val owner = SealerCore.uiOwner
+        if (owner != null && owner !== this) return
         SealerCore.uiReceiving = visible && qt != null
     }
 
@@ -388,6 +420,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         updateReceiving()
         // Presenca: "offline" a quem me via online (o seletor de fotos nao conta como sair).
         if (!AutoLockPause.active) io { presenceAnnounce(false) }
+        scheduleAutoLock()
         pauseJob?.cancel()
         // Chamada a decorrer: as ligacoes ficam abertas (o servico da chamada mantem a app viva).
         if (_ui.value.call != null) return
@@ -400,6 +433,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    @Volatile private var autoLockJob: Job? = null
+
+    /**
+     * Bloqueia em segundo plano quando passa o tempo escolhido (0.9.23). Antes so se via ao
+     * voltar a app, e a base de dados e as chaves ficavam em memoria entretanto. Com uma
+     * chamada (no ecra ou a tocar) bloqueia quando ela acabar. O Android pode atrasar este
+     * relogio com o telemovel a dormir: [onAppVisible] volta a ver ao regressar.
+     */
+    private fun scheduleAutoLock() {
+        autoLockJob?.cancel()
+        val st = _ui.value
+        if (!st.lockEnabled || st.locked) return
+        // Leitor de QR, seletor de fotos ou pedido de permissao: mais tempo (como ao voltar).
+        val grace = if (AutoLockPause.active) AutoLockPause.GRACE_MS else 0L
+        autoLockJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(st.lockTimeoutMs + grace)
+            if (visible || authInProgress) return@launch
+            val now = _ui.value
+            if (!now.lockEnabled || now.locked) return@launch
+            if (now.call != null || SealerCore.ringing != null) { lockAfterCall = true; return@launch }
+            lockNow()
+        }
+    }
+
     /**
      * A app voltou ao ecra (Activity.onStart): bloqueia se passou o tempo escolhido; senao,
      * religa ao relay se as ligacoes tinham sido fechadas em segundo plano.
@@ -407,6 +464,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun onAppVisible() {
         Push.appVisible = true
         Push.clear(getApplication())
+        autoLockJob?.cancel()
+        autoLockJob = null
         synchronized(pauseLock) {
             visible = true
             pauseJob?.cancel()
@@ -483,7 +542,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         _ui.update { it.copy(unlocking = true, lockMessage = null) }
         try {
-            val key = storageKeys.storageKeyWithCode(code)
+            val key = codeAttempt { storageKeys.storageKeyWithCode(code) }
             resetFails()
             openClient(key)
         } catch (e: QtException.Crypto) {
@@ -545,7 +604,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun disableLock(code: String) = io {
         if (lockWaitMs() > 0) { error(waitMessage(lockWaitMs())); return@io }
         try {
-            storageKeys.disableLock(code)
+            codeAttempt { storageKeys.disableLock(code) }
             bio.disable()
             resetFails()
             _ui.update { it.copy(lockEnabled = false, bioEnabled = false) }
@@ -560,9 +619,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun changeCode(oldCode: String, newCode: String) = io {
         if (lockWaitMs() > 0) { error(waitMessage(lockWaitMs())); return@io }
         try {
-            storageKeys.changeCode(oldCode, newCode)
+            codeAttempt { storageKeys.changeCode(oldCode, newCode) }
             resetFails()
-            error(s(R.string.t_codigo_alterado))
+            _ui.update { it.copy(notice = s(R.string.t_codigo_alterado)) }   // aviso curto, nao um erro
         } catch (e: QtException.Crypto) {
             registerFail()
             error(s(R.string.t_o_codigo_atual_esta_errado))
@@ -581,7 +640,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (lockWaitMs() > 0) { error(waitMessage(lockWaitMs())); return@io }
         try {
-            val key = storageKeys.storageKeyWithCode(code)
+            val key = codeAttempt { storageKeys.storageKeyWithCode(code) }
             resetFails()
             pendingBioKey?.fill(0)
             pendingBioKey = key
@@ -642,6 +701,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Imagens/GIFs (cifrados com chaves que estavam na base de dados apagada).
         File(dbFile.path + ".anexos").deleteRecursively()
         contactStore.wipe()
+        contactsBroken = false
         prefs.edit().clear().apply()
         _ui.update { UiState(loading = true) }
         openStorage()
@@ -653,6 +713,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // mudar a hora do telemovel ja nao salta a espera. Depois de reiniciar o telemovel esse
     // relogio volta a zero e a espera recomeca inteira (nunca fica mais curta).
     private fun lockWaitMs(): Long {
+        // Uma tentativa ficou a meio (a app foi fechada durante o Argon2): conta como errada.
+        if (!attemptRunning && prefs.getBoolean(PREF_LOCK_PENDING, false)) {
+            prefs.edit().remove(PREF_LOCK_PENDING).commit()
+            registerFail()
+        }
         val wait = prefs.getLong("lock_wait", 0L)
         if (wait <= 0L) return 0L
         val now = SystemClock.elapsedRealtime()
@@ -676,6 +741,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return wait
     }
 
+    /** Ha uma tentativa com o codigo a decorrer (Argon2, ~1 s). */
+    @Volatile private var attemptRunning = false
+
+    /**
+     * Argon2 com o codigo: a tentativa fica marcada no disco ANTES de calcular (0.9.23). Se a
+     * app for fechada a meio, conta como errada na vez seguinte (antes nao contava, e fechar a
+     * app durante o calculo permitia tentar sem limite). Certa ou errada, a marca sai no fim.
+     */
+    private fun <T> codeAttempt(block: () -> T): T {
+        attemptRunning = true
+        prefs.edit().putBoolean(PREF_LOCK_PENDING, true).commit()
+        try {
+            return block()
+        } finally {
+            prefs.edit().remove(PREF_LOCK_PENDING).commit()
+            attemptRunning = false
+        }
+    }
+
     private fun resetFails() {
         prefs.edit().remove("lock_fails").remove("lock_wait").remove("lock_wait_at").remove("lock_until").apply()
     }
@@ -688,8 +772,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val client = qt ?: return@io
         saveRelay(relayUrl, relayKeyHex)
         val me = client.createIdentity()
+        // Conta nova: "Mostrar quando estou online" comeca desligado (0.9.23). Liga-se no menu.
+        // Quem ja tinha conta fica como estava.
+        newAccountPresenceOff()
         _ui.update { it.copy(hasIdentity = true, publicId = me.publicId) }
+        syncPresence(client)
         startLink()
+    }
+
+    private fun newAccountPresenceOff() {
+        prefs.edit().putBoolean("presence", false).apply()
+        _ui.update { it.copy(presenceOn = false, online = emptySet()) }
     }
 
     fun saveRelay(relayUrl: String, relayKeyHex: String) {
@@ -726,6 +819,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val bundleLink = fileLink!!
         poller = viewModelScope.launch(Dispatchers.IO) { receiveLoop(client) }
         transferJob = viewModelScope.launch(Dispatchers.IO) {
+            var rounds = 0
             while (isActive) {
                 val retry = try {
                     runTransfers()
@@ -734,8 +828,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 } catch (e: Exception) {
                     true
                 }
-                // Depois de uma falha de rede tenta de novo daqui a 15 s (ou antes, se houver novidades).
-                if (retry) withTimeoutOrNull(RETRY_MS) { transferKick.receive() } else transferKick.receive()
+                // Depois de uma falha tenta de novo daqui a 15 s, 30 s, 1 min... ate 5 min (ou
+                // antes, se houver novidades). Antes era sempre de 15 em 15 s.
+                if (retry) {
+                    val wait = (RETRY_MS shl rounds.coerceAtMost(4)).coerceAtMost(RETRY_MAX_MS)
+                    rounds++
+                    withTimeoutOrNull(wait) { transferKick.receive() }
+                } else {
+                    rounds = 0
+                    transferKick.receive()
+                }
             }
         }
         transferKick.trySend(Unit)
@@ -788,6 +890,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (client != null && l != null) registerPush(client, l)
             if (!on) Push.deleteToken(app)
         }
+    }
+
+    /** O aviso da permissao de ecra inteiro (Android 14+) ja foi mostrado. */
+    fun markFullScreenAsked() {
+        prefs.edit().putBoolean("full_screen_asked", true).apply()
+        _ui.update { it.copy(fullScreenAsked = true) }
     }
 
     /** O pedido de permissao de notificacoes (Android 13+) ja foi mostrado. */
@@ -968,15 +1076,44 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------------- contactos
 
+    /**
+     * Grava a lista de contactos. `false` se nao gravou: a lista guardada nao abriu nesta
+     * sessao (mostra o aviso; gravar por cima apagava-a) ou a base de dados ja fechou.
+     */
+    private fun saveContacts(list: List<Contact>): Boolean {
+        if (contactsBroken) {
+            _ui.update { it.copy(contactsUnreadable = true) }
+            return false
+        }
+        val ck = contactsKey ?: return false
+        contactStore.save(list, ck)
+        return true
+    }
+
+    /** "Fechar" no aviso dos contactos: nada muda (continua sem gravar ate reabrir a app). */
+    fun dismissContactsUnreadable() = _ui.update { it.copy(contactsUnreadable = false) }
+
+    /**
+     * "Comecar uma lista nova": o ficheiro que nao abre fica guardado a parte (cifrado) e a
+     * lista recomeca vazia. A copia de recuperacao passa a ter so os contactos novos.
+     */
+    fun startNewContactList() = io {
+        contactStore.quarantine()
+        contactsBroken = false
+        _ui.update { it.copy(contactsUnreadable = false, contacts = emptyList()) }
+    }
+
     /** Guarda o contacto. NAO inicia sessao (evita sessoes cruzadas): so ao enviar a 1.a mensagem. */
     fun addContact(nickname: String, publicId: String) = io {
         try {
-            val id = publicId.trim()
+            // Em minusculas: "QT1:ABC..." (como no QR) e o mesmo ID, e o contactId tem de ser igual
+            // ao do nucleo (0.9.23).
+            val id = publicId.trim().lowercase()
             val relayId = relayIdOfPublicId(id)               // valida o formato no Rust
             val c = Contact(nickname.trim().ifBlank { s(R.string.t_contacto) }, id, relayId)
             if (c.publicId == _ui.value.publicId) { error(s(R.string.t_esse_e_o_teu_proprio_id)); return@io }
             val list = (_ui.value.contacts.filter { it.contactId != c.contactId }) + c
-            contactStore.save(list, contactsKey ?: return@io)
+            if (!saveContacts(list)) return@io
             _ui.update { it.copy(contacts = list, error = null) }
             scheduleBackup()
             qt?.let { client ->
@@ -1134,8 +1271,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun closePremium() = _ui.update { it.copy(showPremium = false) }
 
-    /** Premium agora: so o que o relay diz (dado pelo operador) e dentro do prazo. */
-    private fun premiumNow(until: Long): Boolean = until > System.currentTimeMillis()
+    /**
+     * Premium agora: o que o relay diz, pelo relogio dele (0.9.23). Antes contava o relogio do
+     * telemovel: adiantar ou atrasar a hora mudava o que a app mostrava. So um relay antigo
+     * (sem `active`) usa o relogio do telemovel.
+     */
+    private fun premiumNow(until: Long, active: Boolean?): Boolean = active ?: (until > System.currentTimeMillis())
+
+    /** Ultimo estado que o relay deu (antes de ele responder outra vez). */
+    private fun premiumCached(): Boolean {
+        val until = prefs.getLong(PREF_PREMIUM_UNTIL, 0)
+        val active = if (prefs.contains(PREF_PREMIUM_ACTIVE)) prefs.getBoolean(PREF_PREMIUM_ACTIVE, false) else null
+        return premiumNow(until, active)
+    }
 
     /**
      * Pergunta ao relay ate quando esta conta tem premium e se o operador ligou o bloqueio (ao
@@ -1146,8 +1294,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val r = l.request(client.relayRequestPremiumStatus(), PREMIUM_TIMEOUT_MS)
             if (r is RelayResponse.Premium) {
                 val until = r.untilMs.toLong()
-                prefs.edit().putLong(PREF_PREMIUM_UNTIL, until).putBoolean(PREF_PREMIUM_ENFORCED, r.enforced).apply()
-                _ui.update { it.copy(premiumUntil = until, premium = premiumNow(until), premiumLock = r.enforced) }
+                val active = r.active
+                val ed = prefs.edit().putLong(PREF_PREMIUM_UNTIL, until).putBoolean(PREF_PREMIUM_ENFORCED, r.enforced)
+                if (active != null) ed.putBoolean(PREF_PREMIUM_ACTIVE, active) else ed.remove(PREF_PREMIUM_ACTIVE)
+                ed.apply()
+                _ui.update { it.copy(premiumUntil = until, premium = premiumNow(until, active), premiumLock = r.enforced) }
             }
         } catch (e: Exception) {
             // Sem rede: fica o ultimo estado conhecido.
@@ -1162,9 +1313,71 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------ chave de recuperacao
 
+    /** O que fazer depois de confirmar que e o dono (codigo da app ou bloqueio do telemovel). */
+    private enum class RecoveryAction { SHOW, CREATE }
+    @Volatile private var pendingRecovery: RecoveryAction? = null
+
+    /**
+     * Ver ou gerar as 12 palavras so depois de confirmar que e o dono (0.9.23): com o bloqueio
+     * da app, o codigo dela; sem ele, o bloqueio do telemovel. Quem pegasse no telemovel
+     * desbloqueado podia ver as palavras e levar a conta. Telemovel sem bloqueio nenhum: segue.
+     */
+    fun recoveryCreate() = recoveryAuth(RecoveryAction.CREATE)
+
+    /** Mostra de novo as palavras atuais (depois de confirmar). */
+    fun recoveryShow() = recoveryAuth(RecoveryAction.SHOW)
+
+    private fun recoveryAuth(action: RecoveryAction) = io {
+        pendingRecovery = action
+        when {
+            _ui.value.lockEnabled -> _ui.update { it.copy(recoveryAskCode = true) }
+            bio.deviceAuthAvailable() -> bioChannel.send(BioRequest(BioPurpose.RECOVERY, null))
+            else -> recoveryAuthorized()
+        }
+    }
+
+    /** O codigo da app escrito na janela da chave de recuperacao. */
+    fun recoveryWithCode(code: String) = io {
+        val action = pendingRecovery
+        _ui.update { it.copy(recoveryAskCode = false) }
+        val wait = lockWaitMs()
+        if (wait > 0) { pendingRecovery = null; error(waitMessage(wait)); return@io }
+        try {
+            codeAttempt { storageKeys.storageKeyWithCode(code) }.fill(0)
+            resetFails()
+            pendingRecovery = action
+            recoveryAuthorized()
+        } catch (e: QtException.Crypto) {
+            pendingRecovery = null
+            val w = registerFail()
+            error(s(R.string.t_codigo_errado) + (if (w > 0) " " + waitMessage(w) else ""))
+        } catch (e: QtException.InvalidInput) {
+            pendingRecovery = null
+            error(s(R.string.t_o_codigo_tem_pelo_menos_digitos, minCodeLen()))
+        } catch (e: Exception) {
+            pendingRecovery = null
+            error(s(R.string.t_nao_foi_possivel_desbloquear, e.safeMsg()))
+        }
+    }
+
+    /** Cancelou a confirmacao (janela do codigo ou do telemovel). */
+    fun recoveryCancelAuth() {
+        pendingRecovery = null
+        _ui.update { it.copy(recoveryAskCode = false) }
+    }
+
+    /** Confirmado: faz o que estava pedido. */
+    fun recoveryAuthorized() = io {
+        when (pendingRecovery.also { pendingRecovery = null }) {
+            RecoveryAction.SHOW -> recoveryShowNow()
+            RecoveryAction.CREATE -> recoveryCreateNow()
+            null -> {}
+        }
+    }
+
     /** Gera 12 palavras novas (as antigas deixam de servir) e mostra-as. Argon2: fora da UI. */
-    fun recoveryCreate() = io {
-        val client = qt ?: return@io
+    private fun recoveryCreateNow() {
+        val client = qt ?: return
         _ui.update { it.copy(recoveryBusy = true) }
         try {
             val words = client.recoveryEnable()
@@ -1175,9 +1388,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Mostra de novo as palavras atuais. */
-    fun recoveryShow() = io {
-        val words = qt?.recoveryWords() ?: return@io
+    private fun recoveryShowNow() {
+        val words = qt?.recoveryWords() ?: return
         _ui.update { it.copy(recoveryWords = words) }
     }
 
@@ -1213,6 +1425,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun scheduleBackup(force: Boolean = false, delayMs: Long = BACKUP_DELAY_MS) {
         if (!_ui.value.recoveryOn) return
+        // Lista de contactos por ler: a copia teria uma lista vazia (e apagava a boa no relay).
+        if (contactsBroken) return
         backupJob?.cancel()
         backupJob = viewModelScope.launch(Dispatchers.IO) {
             delay(delayMs)
@@ -1277,12 +1491,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val list = acc.contacts.mapNotNull { c ->
                 runCatching { Contact(c.nickname.ifBlank { s(R.string.t_contacto) }, c.publicId, relayIdOfPublicId(c.publicId)) }.getOrNull()
             }
-            contactStore.save(list, contactsKey ?: return@io)
+            // A copia substitui a lista; se a lista guardada nao abria, fica guardada a parte.
+            if (contactsBroken) { contactStore.quarantine(); contactsBroken = false }
+            newAccountPresenceOff()   // como numa conta nova, neste telemovel
+            if (!saveContacts(list)) return@io
             val blocked = client.blockedContacts().toSet()
             _ui.update {
                 it.copy(
                     hasIdentity = true, publicId = acc.publicId, contacts = list,
-                    blocked = blocked, recoveryOn = true,
+                    blocked = blocked, recoveryOn = true, contactsUnreadable = false,
                     notice = s(R.string.recovery_restored),
                 )
             }
@@ -1317,7 +1534,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val publicId = client.pendingIntro(contactId) ?: run { error(s(R.string.t_este_convite_ja_nao_esta_disponivel)); return@io }
             val c = Contact(nickname.trim().ifBlank { s(R.string.t_contacto_2, contactId.take(4)) }, publicId, relayIdOfPublicId(publicId))
             val list = _ui.value.contacts.filter { it.contactId != c.contactId } + c
-            contactStore.save(list, contactsKey ?: return@io)
+            if (!saveContacts(list)) return@io
             client.dismissIntro(contactId)
             _ui.update { it.copy(contacts = list, invites = it.invites - contactId) }
             scheduleBackup()
@@ -1355,7 +1572,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // Primeiro o Rust (mensagens + chaves + aviso na outbox), na mesma transacao; depois a lista.
             if (relayId != null) client.deleteContactNotify(contactId, relayId) else client.deleteContact(contactId)
             val list = _ui.value.contacts.filter { it.contactId != contactId }
-            contactStore.save(list, contactsKey ?: return@io)
+            saveContacts(list)   // com a lista guardada por ler, nao grava (e mostra o aviso)
             _ui.update {
                 it.copy(
                     contacts = list,
@@ -1495,17 +1712,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun send(contact: Contact, text: String) = io {
         val client = qt ?: return@io
         val bytes = text.trim().toByteArray(Charsets.UTF_8)
-        if (bytes.isEmpty() || bytes.size > MAX_TEXT_BYTES) { error(s(R.string.t_mensagem_vazia_ou_maior_que_bytes, MAX_TEXT_BYTES)); return@io }
+        if (bytes.isEmpty() || bytes.size > MAX_TEXT_BYTES) {
+            unsent(contact.contactId, text)
+            error(s(R.string.t_mensagem_vazia_ou_maior_que_bytes, MAX_TEXT_BYTES)); return@io
+        }
         try {
             ensureSession(client, contact)
             // Numa so transacao no Rust: ratchet avanca + mensagem guardada + envelope na outbox.
             client.sendText(contact.contactId, text.trim())
-            refreshViews(client)
-            flushOutbox()
         } catch (e: Exception) {
+            unsent(contact.contactId, text)
             error(s(R.string.t_nao_foi_possivel_enviar_2, e.safeMsg()))
+            return@io
         }
+        refreshViews(client)
+        flushOutbox()
     }
+
+    /** A mensagem nao ficou guardada: o texto volta a caixa de escrita (antes perdia-se). */
+    private fun unsent(conversationId: String, text: String) = _ui.update { it.copy(unsentText = conversationId to text) }
+
+    fun draftRestored() { if (_ui.value.unsentText != null) _ui.update { it.copy(unsentText = null) } }
 
     /** Envia uma mensagem de voz gravada (`file` e apagado no fim, cifrado ou nao). */
     fun sendVoice(contact: Contact, file: File, durationMs: Long) = sendVoiceTo(contact.contactId, file, durationMs)
@@ -1579,16 +1806,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun sendGroup(groupId: String, text: String) = io {
         val client = qt ?: return@io
+        val conv = _ui.value.groups.firstOrNull { it.groupId == groupId }?.conversationId
         val bytes = text.trim().toByteArray(Charsets.UTF_8)
-        if (bytes.isEmpty() || bytes.size > MAX_TEXT_BYTES) { error(s(R.string.t_mensagem_vazia_ou_maior_que_bytes, MAX_TEXT_BYTES)); return@io }
+        if (bytes.isEmpty() || bytes.size > MAX_TEXT_BYTES) {
+            conv?.let { unsent(it, text) }
+            error(s(R.string.t_mensagem_vazia_ou_maior_que_bytes, MAX_TEXT_BYTES)); return@io
+        }
         try {
             ensureSessions(client, client.groupMembersNeedingSession(groupId))
             client.groupSendText(groupId, text.trim())
-            refreshViews(client)
-            flushOutbox()
         } catch (e: Exception) {
+            conv?.let { unsent(it, text) }
             error(s(R.string.t_nao_foi_possivel_enviar_2, e.safeMsg()))
+            return@io
         }
+        refreshViews(client)
+        flushOutbox()
     }
 
     fun reactGroup(groupId: String, messageId: String, emoji: String) = io {
@@ -1719,7 +1952,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             ensureSessions(client, client.groupMembersNeedingSession(gid))
         } else {
             val contact = _ui.value.contacts.firstOrNull { it.contactId == conversationId }
-                ?: throw IllegalStateException("contacto desconhecido")
+                ?: throw IllegalStateException(s(R.string.err_unknown_contact))
             ensureSession(client, contact)
         }
     }
@@ -1744,11 +1977,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         it.copy(transfers = if (p == null) it.transfers - messageId else it.transfers + (messageId to p))
     }
 
+    /** Recusas do relay (ou erros do nucleo) seguidas, por anexo. So em memoria. */
+    private val transferFails = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    /**
+     * Um anexo que o relay recusa (ou que o nucleo nao consegue tratar) salta-se e os outros
+     * seguem (0.9.23: antes o primeiro que falhava parava a fila toda). Ao fim de
+     * [TRANSFER_MAX_TRIES] fica como falhado.
+     */
+    private fun transferRefused(client: QtClient, r: AttachmentRef, e: Exception) {
+        setProgress(r.messageId, null)
+        val n = (transferFails[r.messageId] ?: 0) + 1
+        Log.w(TAG, "anexo recusado ($n/$TRANSFER_MAX_TRIES): ${e.safeMsg()}")
+        if (n < TRANSFER_MAX_TRIES) { transferFails[r.messageId] = n; return }
+        transferFails.remove(r.messageId)
+        runCatching { client.attachmentFailed(r.contactId, r.messageId, false) }
+        refreshViews(client)
+    }
+
     /**
      * Envia e descarrega os anexos pendentes (tambem os que ficaram a meio antes de a
-     * app fechar). Devolve true se algo falhou por rede e deve ser tentado de novo.
+     * app fechar). Devolve true se algo falhou e deve ser tentado de novo. Sem rede, para logo
+     * (os outros tambem falhariam); uma recusa so salta esse anexo.
      */
     private suspend fun runTransfers(): Boolean {
+        var retry = false
         val client = qt ?: return false
         val l = fileLink ?: return false
         for (r in client.attachmentsPendingUpload()) {
@@ -1769,8 +2022,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             try {
                 upload(client, l, r, gid, beforeSend)
+                transferFails.remove(r.messageId)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: RelayRefusedException) {
+                transferRefused(client, r, e); retry = true
+            } catch (e: QtException) {
+                transferRefused(client, r, e); retry = true
             } catch (e: Exception) {
                 setProgress(r.messageId, null)
                 return true
@@ -1779,14 +2037,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         for (r in client.attachmentsPendingDownload()) {
             try {
                 download(client, l, r)
+                transferFails.remove(r.messageId)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: RelayRefusedException) {
+                transferRefused(client, r, e); retry = true
+            } catch (e: QtException) {
+                transferRefused(client, r, e); retry = true
             } catch (e: Exception) {
                 setProgress(r.messageId, null)
                 return true
             }
         }
-        return false
+        return retry
     }
 
     private suspend fun upload(client: QtClient, l: RelayLink, r: AttachmentRef, groupId: String?, beforeSend: suspend () -> Unit) {
@@ -1803,7 +2066,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     if (resp.reason == relayPremiumRequiredReason()) premiumRefused() else error(relayRefusal(resp.reason))
                     return
                 }
-                else -> throw IOException("resposta inesperada do relay")
+                else -> throw RelayRefusedException("resposta inesperada do relay")
             }
         } else {
             when (val resp = l.request(client.blobInfoRequest(cid, mid))) {
@@ -1814,14 +2077,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     refreshViews(client)
                     return
                 }
-                else -> throw IOException("resposta inesperada do relay")
+                else -> throw RelayRefusedException("resposta inesperada do relay")
             }
         }
         var offset = start
         while (offset < total) {
             val batch = generateSequence(offset) { it + CHUNK }.takeWhile { it < total }.take(WINDOW).toList()
             val answers = l.requestMany(batch.map { client.blobPutRequest(cid, mid, it) })
-            if (answers.any { it !is RelayResponse.BlobStatus }) throw IOException("bloco recusado")
+            if (answers.any { it !is RelayResponse.BlobStatus }) throw RelayRefusedException("bloco recusado")
             offset = batch.last() + CHUNK
             setProgress(mid, (minOf(offset, total).toDouble() / total.toDouble()).toFloat())
         }
@@ -1854,7 +2117,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         refreshViews(client)
                         return
                     }
-                    else -> throw IOException("resposta inesperada do relay")
+                    else -> throw RelayRefusedException("resposta inesperada do relay")
                 }
             }
             val now = total
@@ -1907,11 +2170,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun ensureSession(client: QtClient, c: Contact) {
         if (client.hasSession(c.contactId)) return
-        val l = link ?: throw IllegalStateException("sem ligacao ao relay")
+        val l = link ?: throw IllegalStateException(s(R.string.t_sem_ligacao_ao_servidor))
         when (val r = l.request(client.relayRequestFetchBundle(c.relayId))) {
             is RelayResponse.Bundle -> client.startSession(c.publicId, peerBundleFromRelayBytes(r.bytes))
-            is RelayResponse.BundleNotFound -> throw IllegalStateException("o contacto ainda nao publicou as chaves (tem de abrir a app uma vez)")
-            else -> throw IllegalStateException("resposta inesperada do relay: ${r.describe()}")
+            is RelayResponse.BundleNotFound -> throw IllegalStateException(s(R.string.err_contact_no_keys))
+            else -> throw IllegalStateException(s(R.string.t_resposta_inesperada_do_servidor))
         }
     }
 
@@ -1949,7 +2212,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (_ui.value.call?.phase == CallPhase.CALLING) endCallLocal(s(R.string.t_chamada_terminada))
                 premiumRefused()
             } else if (r is RelayResponse.Error && r.reason == relayRecipientDeletedReason()) {
-                // O contacto apagou a conta: avisa uma vez por sessao (a mensagem fica por enviar).
+                // O contacto apagou a conta: sai da outbox (nunca seria aceite; antes ficava la
+                // para sempre) e a mensagem fica por enviar. Avisa uma vez por sessao.
+                runCatching { client.outboxDrop(item.outboxId) }
+                changed = true
                 if (deletedNotified.add(item.contactId)) {
                     val name = _ui.value.contacts.firstOrNull { it.contactId == item.contactId }?.nickname ?: s(R.string.t_este_contacto)
                     error(s(R.string.t_apagou_a_conta_sealer_as_mensagens, name))
@@ -2030,6 +2296,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         try {
             if (first == null) flushOutbox()
             var received = false
+            var updated = false   // foto, badge, presenca, reacao ou grupo: algo alem de mensagens
             var pending = first
             for (page in 0 until MAX_PAGES) {
                 val msgs = pending ?: (l.request(client.relayRequestFetch()) as? RelayResponse.Messages)?.messages ?: break
@@ -2048,7 +2315,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                                 statusIds.getOrPut(r.contactId) { mutableSetOf() }.addAll(r.messageIds)
                             }
                             is ReceiveResult.NewMessage -> { received = true; gotPage = true; newMessage = true }
-                            is ReceiveResult.Updated -> { received = true; gotPage = true }
+                            is ReceiveResult.Updated -> { received = true; gotPage = true; updated = true }
                             is ReceiveResult.NoChange -> {}
                         }
                         ackIds += m.id
@@ -2073,11 +2340,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             restartSessions(client)
             handleCallEvents(client)
             if (received) {
-                syncPhotos(client)          // fotos recebidas e contactos com sessao nova
+                // Fotos e badges recebidos (Updated) ja; por mensagens novas (contactos com sessao
+                // nova), no maximo de minuto a minuto. Antes relia as fotos e os badges de todos os
+                // contactos a cada pagina recebida (0.9.23).
+                val now = SystemClock.elapsedRealtime()
+                if (updated || now - lastPhotoSync >= PHOTO_SYNC_MS) {
+                    lastPhotoSync = now
+                    syncPhotos(client)
+                }
                 transferKick.trySend(Unit)   // imagens recebidas: descarregar ja
                 client.prepareDeliveryReceipts()
-                val open = _ui.value.openChatId
-                if (open != null) markRead(client, open) else refreshViews(client)
+                // A lista ja foi refrescada a cada pagina; so a conversa aberta precisa do "Visto".
+                _ui.value.openChatId?.let { markRead(client, it) }
                 flushOutbox()
             }
             status("Ligado ao relay")
@@ -2085,6 +2359,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             status("Sem ligacao ao relay: ${e.safeMsg()}")
         }
     }
+
+    /** Ultima vez que [syncPhotos] correu por causa de mensagens recebidas. */
+    @Volatile private var lastPhotoSync = 0L
 
     // ---------------------------------------------------------------- chamadas de voz
 
@@ -2108,6 +2385,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val app = getApplication<Application>()
         try {
             callIO = CallAudioIO(app, a).also {
+                it.onMicLost = { _ui.update { u -> u.copy(notice = s(R.string.call_mic_lost)) } }
                 it.start()
                 it.muted = _ui.value.call?.muted == true
             }
@@ -2329,7 +2607,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     CallControl.hangup = { hangupCall() }
                     callSounds.ringIncoming()
                     // Fora do ecra: notificacao de ecra inteiro (sem som: o toque e o de cima).
-                    if (!visible) CallNotify.ringing(app, contact.nickname, sound = false)
+                    // Com o bloqueio da app, sem nome (a mesma regra que com a app fechada).
+                    if (!visible) CallNotify.ringing(app, if (_ui.value.lockEnabled) null else contact.nickname, sound = false)
                     runCatching { startCallAudio(client, ev.callId) }
                     ensureCallTicker()
                     checkAutoAnswer()
@@ -2384,12 +2663,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        closeSession()
+        val owner = SealerCore.uiOwner === this
+        if (owner) SealerCore.uiOwner = null
+        // Chamada a meio: o outro lado e avisado ("desligou") antes de fechar o nucleo.
+        val c = _ui.value.call
+        val client = qt
+        val endCall = client != null && c != null && c.phase != CallPhase.ENDED
+        closeSession(closeCore = owner && !endCall)
+        if (endCall) SealerCore.hangupInBackground(getApplication(), client!!, c!!.callId, closeAfter = owner)
         pendingBioKey?.fill(0)
     }
 
     companion object {
         private const val PREF_PREMIUM_ENFORCED = "premium_enforced"
+        private const val PREF_LOCK_PENDING = "lock_pending"
+        private const val PREF_PREMIUM_ACTIVE = "premium_active"
         private const val PREMIUM_TIMEOUT_MS = 4_000L
         private const val PREF_PREMIUM_UNTIL = "premium_until"
         /** Copia de recuperacao: espera um pouco depois de uma mudanca (junta varias seguidas). */
@@ -2421,21 +2709,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         /** Blocos em transito ao mesmo tempo (~320 KB). */
         private const val WINDOW = 8
         private const val RETRY_MS = 15_000L
+        private const val RETRY_MAX_MS = 5 * 60_000L
+        /** Recusas seguidas de um anexo antes de ficar como falhado. */
+        private const val TRANSFER_MAX_TRIES = 5
         /** De quanto em quanto tempo se atualiza quem esta online (com a app aberta). */
         private const val PRESENCE_TICK_MS = 60_000L
+        /** Fotos e badges dos contactos: relidos no maximo de minuto a minuto por mensagens novas. */
+        private const val PHOTO_SYNC_MS = 60_000L
         /** Quanto tempo fica no ecra "Chamada terminada". */
         private const val ENDED_SHOW_MS = 2_000L
         fun minCodeLen(): Int = uniffi.qt_ffi.appLockMinCodeLen().toInt()
     }
 }
 
+/** O relay respondeu, mas recusou (ou respondeu outra coisa): nao e falta de rede. */
+private class RelayRefusedException(msg: String) : IOException(msg)
+
 private fun RelayResponse.describe(): String = when (this) {
     is RelayResponse.Error -> reason
     else -> this::class.simpleName ?: "?"
 }
 
-/** Mensagem curta e SEGURA para mostrar/registar: nunca inclui conteudo nem chaves. */
+/**
+ * Mensagem curta e SEGURA para mostrar/registar: nunca inclui conteudo nem chaves. Falhas de
+ * rede aparecem como "Sem ligacao ao servidor" na lingua da app (0.9.23; antes apareciam os
+ * textos tecnicos, em portugues sem acentos). O detalhe fica no registo do RelayLink.
+ */
 private fun Exception.safeMsg(): String = when (this) {
     is QtException -> this::class.simpleName ?: "erro"
+    is RelayRefusedException -> message ?: "recusado"
+    is IOException -> s(R.string.t_sem_ligacao_ao_servidor)
     else -> (message ?: this::class.simpleName ?: "erro").take(120)
 }

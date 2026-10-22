@@ -779,7 +779,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             Err(e) => internal(e),
         },
         ClientMessage::PremiumStatus => match (store.premium_until(me).await, store.premium_enforced().await) {
-            (Ok(until_ms), Ok(enforced)) => ServerMessage::Premium { until_ms, enforced },
+            (Ok(until_ms), Ok(enforced)) => ServerMessage::Premium { until_ms, enforced, active: until_ms > crate::store::now_ms() },
             (Err(e), _) | (_, Err(e)) => internal(e),
         },
         ClientMessage::AdminPremiumEnforce { on } => {

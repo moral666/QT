@@ -5,7 +5,7 @@
 #        -> UniFFI -> qt_ffi.kt  -> app Android
 #
 # Requisitos (no PC de build, Linux/macOS):
-#   * Rust >= 1.81 via rustup           https://rustup.rs
+#   * Rust >= 1.88 via rustup           https://rustup.rs
 #   * Android NDK r27+ (ex.: Android Studio > SDK Manager > NDK); ver a nota sobre o r26d abaixo
 #   * perl, make (para compilar SQLCipher + OpenSSL a partir do codigo-fonte)
 #   * cmake (para compilar o Opus das chamadas de voz: sudo apt install cmake)
@@ -55,8 +55,9 @@ cargo ndk \
   -o "$OUT/jniLibs" \
   build --release -p qt_ffi --no-default-features --features android
 
-echo ">>> bindings Kotlin (perfil de producao)"
-./ffi/generate_bindings.sh >/dev/null
+echo ">>> bindings Kotlin (perfil de producao, as mesmas features do .so) e testes Python"
+# Antes a saida ia para /dev/null e nao se viam os testes Python (0.9.23).
+QT_BINDINGS_FEATURES=android ./ffi/generate_bindings.sh
 mkdir -p "$OUT/kotlin"
 cp -r ffi/bindings/kotlin/uniffi "$OUT/kotlin/"
 

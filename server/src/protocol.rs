@@ -294,6 +294,10 @@ pub enum ServerMessage {
         until_ms: u64,
         #[serde(default)]
         enforced: bool,
+        /// (0.9.23) O premium esta ativo agora, pelo relogio do relay: as apps deixam de
+        /// depender do relogio do telemovel. Relays antigos: ausente.
+        #[serde(default)]
+        active: bool,
     },
     /// Resposta a `AdminPremiumEnforce`: estado do bloqueio depois do pedido.
     PremiumEnforce { on: bool },

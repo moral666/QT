@@ -222,6 +222,9 @@ pub struct QtClient {
 }
 
 pub(crate) fn parse_public_id(id: &str) -> Result<([u8; 32], [u8; 32]), QtError> {
+    // Maiusculas ("QT1:ABC...", como no QR) sao o mesmo ID (0.9.23). As apps guardam-no em
+    // minusculas, para o contactId ser igual ao do nucleo.
+    let id = id.trim().to_ascii_lowercase();
     let rest = id.strip_prefix("qt1:").ok_or_else(|| bad("public_id"))?;
     let bytes = unhex(rest).ok_or_else(|| bad("public_id"))?;
     if bytes.len() != 64 {
@@ -1021,8 +1024,9 @@ pub enum RelayResponse {
     /// Nao ha copia para estas palavras (nunca houve, expirou ou foi apagada).
     BackupNotFound,
     /// Ate quando esta conta tem premium (ms desde 1970); 0 = sem premium. `enforced`: o
-    /// operador ligou o bloqueio (so entao as funcoes pagas fecham).
-    Premium { until_ms: u64, enforced: bool },
+    /// operador ligou o bloqueio (so entao as funcoes pagas fecham). `active` (0.9.23): ativo
+    /// agora pelo relogio do relay (`None` num relay antigo: usar `until_ms` e o relogio local).
+    Premium { until_ms: u64, enforced: bool, active: Option<bool> },
 }
 
 #[derive(serde::Deserialize)]
@@ -1053,6 +1057,8 @@ enum WireServerMsg {
         until_ms: u64,
         #[serde(default)]
         enforced: bool,
+        #[serde(default)]
+        active: Option<bool>,
     },
 }
 
@@ -1101,7 +1107,7 @@ pub fn relay_parse_response(bytes: Vec<u8>) -> Result<RelayResponse, QtError> {
             RelayResponse::BackupPart { part, parts, data }
         }
         WireServerMsg::BackupNotFound => RelayResponse::BackupNotFound,
-        WireServerMsg::Premium { until_ms, enforced } => RelayResponse::Premium { until_ms, enforced },
+        WireServerMsg::Premium { until_ms, enforced, active } => RelayResponse::Premium { until_ms, enforced, active },
     })
 }
 
@@ -1169,11 +1175,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn public_id_em_maiusculas_e_o_mesmo() {
+        let id = format!("qt1:{}{}", "ab".repeat(32), "cd".repeat(32));
+        let up = id.to_ascii_uppercase();
+        assert_eq!(parse_public_id(&id).unwrap(), parse_public_id(&up).unwrap());
+        assert_eq!(relay_id_of_public_id(up).unwrap(), "cd".repeat(32));
+        assert!(parse_public_id("qt2:00").is_err());
+    }
+
+    #[test]
     fn premium_le_o_bloqueio_e_aceita_relays_antigos() {
         let r = relay_parse_response(br#"{"Premium":{"until_ms":5,"enforced":true}}"#.to_vec()).unwrap();
-        assert!(matches!(r, RelayResponse::Premium { until_ms: 5, enforced: true }));
+        assert!(matches!(r, RelayResponse::Premium { until_ms: 5, enforced: true, active: None }));
         let r = relay_parse_response(br#"{"Premium":{"until_ms":0}}"#.to_vec()).unwrap();
-        assert!(matches!(r, RelayResponse::Premium { until_ms: 0, enforced: false }));
+        assert!(matches!(r, RelayResponse::Premium { until_ms: 0, enforced: false, active: None }));
+        let r = relay_parse_response(br#"{"Premium":{"until_ms":9,"enforced":true,"active":true}}"#.to_vec()).unwrap();
+        assert!(matches!(r, RelayResponse::Premium { until_ms: 9, enforced: true, active: Some(true) }));
     }
 
     fn tmp(tag: &str) -> String {
