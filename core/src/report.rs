@@ -1,5 +1,5 @@
 //! Denuncias: cifradas na app para a CHAVE DE OPERADOR (o Nuno), guardadas pelo relay
-//! como bytes opacos e abertas so no PC do operador (`cargo run --example denuncias`).
+//! como bytes opacos e abertas so no computador do operador (`cargo run --example denuncias`).
 //!
 //!   * O operador tem UMA semente de 32 bytes (fora do git e do servidor). Dela saem:
 //!       - a chave X25519 das denuncias (a publica esta fixa em `OPERATOR_REPORT_PUBLIC`,

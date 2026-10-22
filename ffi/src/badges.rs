@@ -3,7 +3,7 @@
 //! Double Ratchet, como a foto de perfil). O relay ve um envelope normal: nao sabe que
 //! e um badge e nao guarda nada.
 //!
-//!   * O emissor (ferramenta `badge`, no PC do Nuno) envia o certificado a pessoa como
+//!   * O emissor (ferramenta `badge`, no computador do operador) envia o certificado a pessoa como
 //!     uma mensagem normal. A app guarda-o se for valido e for para a SUA identidade.
 //!   * A app envia o seu certificado aos contactos (`badge_sync`, uma vez por versao).
 //!     Quem recebe so o aceita se a assinatura for do emissor e o certificado for da

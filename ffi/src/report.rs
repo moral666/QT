@@ -1,7 +1,7 @@
 //! Denunciar um contacto (desde a 0.9.18). A pessoa escolhe as mensagens; a app junta-as
 //! num JSON, cifra-o para a chave do operador (`qt_core::report`) e envia-o ao relay
 //! (`SubmitReport`). O relay guarda bytes que nao consegue ler, sem o ID de quem denunciou.
-//! So o operador (ferramenta `denuncias`, no PC do Nuno) abre a denuncia.
+//! So o operador (ferramenta `denuncias`, no computador do operador) abre a denuncia.
 //!
 //! Conteudo (JSON, antes de cifrar):
 //! `{"v":1, "denunciado_public_id", "denunciado_relay_id", "motivo", "criada_em_ms",

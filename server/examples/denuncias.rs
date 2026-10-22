@@ -1,4 +1,4 @@
-//! FERRAMENTA DO OPERADOR: DENUNCIAS E BANIMENTOS (so no PC do Nuno; nao e a app nem o servidor).
+//! FERRAMENTA DO OPERADOR: DENUNCIAS E BANIMENTOS (so no computador do operador; nao e a app nem o servidor).
 //!
 //! Passo 1, uma vez: criar a chave do operador (fica num ficheiro, NUNCA no git nem no servidor).
 //!

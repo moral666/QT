@@ -922,7 +922,7 @@ final class AppModel: ObservableObject {
     }
 
     /// Acao paga sem premium e com o bloqueio ligado: abre o ecra Premium e devolve `true`.
-    /// Quem decide e o operador (sealer-control): pergunta-se ao relay antes de cada acao paga;
+    /// Quem decide e o operador: pergunta-se ao relay antes de cada acao paga;
     /// sem rede, fica o ultimo estado conhecido.
     private func premiumBlocked() async -> Bool {
         if let client = qt, let l = link { await refreshPremium(client, l) }

@@ -179,7 +179,7 @@ if [ -f /etc/qt/apns.json ]; then
 else
   log "Notificacoes iPhone (APNs): desligadas (falta /etc/qt/apns.json)"
 fi
-# Denuncias: a chave PUBLICA do operador (hex, 64 caracteres), gerada no PC do Nuno com
+# Denuncias: a chave PUBLICA do operador (hex, 64 caracteres), gerada no computador do operador com
 # `cargo run --release -p qt_server --example denuncias -- chave`. Sem ela, as denuncias
 # das apps sao guardadas na mesma, mas ninguem as consegue listar nem banir contas.
 if [ -f /etc/qt/operator.pub ]; then

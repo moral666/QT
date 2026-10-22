@@ -30,7 +30,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 ### 22 de outubro de 2026: premium controlado pelo operador (apps 0.9.21, Android e iPhone)
 
 - Quem tem premium e se o bloqueio está ligado passa a ser decidido só no relay, pela aba "Premium"
-  do sealer-control: botão "Ligar o bloqueio" (para todos), dar, tirar e lista com "Tirar".
+  da ferramenta do operador: bloqueio para todos, dar, tirar e lista.
 - Com o bloqueio ligado, o relay recusa anexos e ofertas de chamada de contas sem premium
   (`AdminPremiumEnforce`, `PREMIUM_REQUIRED`), mesmo de uma app alterada.
 - As apps perguntam ao relay antes de cada ação paga: tirar o premium conta logo. Saíram o
@@ -45,7 +45,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   premium abre o ecrã Premium.
 - O relay guarda até quando cada conta tem premium (`PremiumStatus`, `AdminGrantPremium`,
   `AdminListPremium`). O operador dá ou tira premium (testadores, ofertas) pela ferramenta
-  `denuncias` ou pela aba "Premium" do sealer-control.
+  `denuncias`.
 
 ### 22 de outubro de 2026: chave de recuperação da conta (apps 0.9.19, Android e iPhone)
 
@@ -68,7 +68,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   `/etc/qt/operator.pub`. Conta banida: o relay apaga o que guarda dela e deixa de a aceitar.
   Contadores novos: `denuncias` e `banidas`.
 - Ferramenta do operador `server/examples/denuncias.rs` (chave, listar, apagar, banir, desbanir,
-  banidos) e página "Denúncias" no sealer-control.
+  banidos).
 - A opção só aparece nas apps depois de a chave pública do operador estar em
   `OPERATOR_REPORT_PUBLIC` (`core/src/report.rs`).
 

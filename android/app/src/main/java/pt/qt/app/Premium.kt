@@ -46,7 +46,7 @@ private fun Perk(icon: ImageVector, text: String) {
 /**
  * "Sealer Premium" (0.9.20): o que o premium desbloqueia e o preco. Abre a partir de um cadeado
  * (acao paga sem premium) ou das Definicoes. Quem tem premium e se o bloqueio esta ligado decide o
- * operador no relay (sealer-control, 0.9.21). Antes do Play Billing, o botao de subscrever esta desligado.
+ * operador no relay (0.9.21). Antes do Play Billing, o botao de subscrever esta desligado.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

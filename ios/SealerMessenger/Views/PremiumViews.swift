@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// "Sealer Premium" (0.9.20), igual ao PremiumScreen do Android: o que desbloqueia e o preco.
-/// Quem tem premium e se o bloqueio esta ligado decide o operador no relay (sealer-control, 0.9.21).
+/// Quem tem premium e se o bloqueio esta ligado decide o operador no relay (0.9.21).
 /// Antes do Play Billing/App Store, o botao de subscrever esta desligado.
 struct PremiumScreen: View {
     let ui: UiState
