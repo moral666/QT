@@ -19,12 +19,18 @@ const INTERVAL_MS = 60_000;
 const TESTING = L({
   pt: 'A SEALER está em testes fechados: por agora só 5 testadores convidados têm acesso ao serviço.',
   en: 'SEALER is in closed testing: for now only 5 invited testers have access to the service.',
+  fr: 'SEALER est en test fermé : pour l’instant, seuls 5 testeurs invités ont accès au service.',
   es: 'SEALER está en pruebas cerradas: por ahora solo 5 probadores invitados tienen acceso al servicio.',
+  de: 'SEALER ist in einem geschlossenen Test: Vorerst haben nur 5 eingeladene Tester Zugang zum Dienst.',
+  it: 'SEALER è in test chiuso: per ora solo 5 tester invitati hanno accesso al servizio.',
 });
 const TAG = L({
   pt: 'Testes fechados<span class="status-pill__count"> · 5 pessoas</span>',
   en: 'Closed testing<span class="status-pill__count"> · 5 people</span>',
+  fr: 'Test fermé<span class="status-pill__count"> · 5 personnes</span>',
   es: 'Pruebas cerradas<span class="status-pill__count"> · 5 personas</span>',
+  de: 'Geschlossener Test<span class="status-pill__count"> · 5 Personen</span>',
+  it: 'Test chiuso<span class="status-pill__count"> · 5 persone</span>',
 });
 
 const TEXT = L({
@@ -39,6 +45,24 @@ const TEXT = L({
     on: { short: 'Services online', mini: 'Online', long: 'The SEALER services are working' },
     off: { short: 'Services offline', mini: 'Offline', long: 'The SEALER services are down at the moment' },
     unknown: { short: 'Status unknown', mini: 'No data', long: 'Could not find out the status of the SEALER services' },
+  },
+  fr: {
+    checking: { short: 'Vérification des services', mini: 'Vérification', long: 'Vérification du bon fonctionnement des services de SEALER' },
+    on: { short: 'Services en ligne', mini: 'En ligne', long: 'Les services de SEALER fonctionnent' },
+    off: { short: 'Services hors ligne', mini: 'Hors ligne', long: 'Les services de SEALER sont indisponibles pour le moment' },
+    unknown: { short: 'État inconnu', mini: 'Pas de données', long: 'Impossible de connaître l’état des services de SEALER' },
+  },
+  de: {
+    checking: { short: 'Dienste werden geprüft', mini: 'Prüfung', long: 'Es wird geprüft, ob die Dienste von SEALER funktionieren' },
+    on: { short: 'Dienste online', mini: 'Online', long: 'Die Dienste von SEALER funktionieren' },
+    off: { short: 'Dienste offline', mini: 'Offline', long: 'Die Dienste von SEALER sind derzeit nicht erreichbar' },
+    unknown: { short: 'Status unbekannt', mini: 'Keine Daten', long: 'Der Status der Dienste von SEALER konnte nicht ermittelt werden' },
+  },
+  it: {
+    checking: { short: 'Verifica dei servizi', mini: 'Verifica', long: 'Verifica del funzionamento dei servizi di SEALER' },
+    on: { short: 'Servizi online', mini: 'Online', long: 'I servizi di SEALER funzionano' },
+    off: { short: 'Servizi offline', mini: 'Offline', long: 'I servizi di SEALER sono al momento non disponibili' },
+    unknown: { short: 'Stato sconosciuto', mini: 'Nessun dato', long: 'Impossibile conoscere lo stato dei servizi di SEALER' },
   },
   es: {
     checking: { short: 'Comprobando servicios', mini: 'Comprobando', long: 'Comprobando si los servicios de SEALER funcionan' },
@@ -64,6 +88,30 @@ const W = L({
     hour: (v, n, how) => ` Phone-to-phone time in the last hour: ${v} ms (${n}), ${how}.`,
     last: (v, when, how) => ` Last phone-to-phone time: ${v} ms${when}, ${how}.`,
     measured: (a) => ` (measured ${a})`,
+  },
+  fr: {
+    how: 'le temps que met un message type depuis le téléphone de l’expéditeur jusqu’à ce que le téléphone du destinataire confirme qu’il l’a (envoi au serveur plus remise)',
+    now: 'à l’instant', min1: 'il y a 1 minute', mins: (n) => `il y a ${n} minutes`, h1: 'il y a 1 heure', hs: (n) => `il y a ${n} heures`, days: (n) => `il y a ${n} jours`,
+    msg1: '1 message', msgs: (n) => `${n} messages`,
+    hour: (v, n, how) => ` Temps entre téléphones dans la dernière heure : ${v} ms (${n}), ${how}.`,
+    last: (v, when, how) => ` Dernier temps entre téléphones : ${v} ms${when}, ${how}.`,
+    measured: (a) => ` (mesuré ${a})`,
+  },
+  de: {
+    how: 'die Zeit, die eine typische Nachricht vom Handy des Absenders braucht, bis das Handy des Empfängers bestätigt, dass sie angekommen ist (Senden an den Server plus Zustellung)',
+    now: 'gerade eben', min1: 'vor 1 Minute', mins: (n) => `vor ${n} Minuten`, h1: 'vor 1 Stunde', hs: (n) => `vor ${n} Stunden`, days: (n) => `vor ${n} Tagen`,
+    msg1: '1 Nachricht', msgs: (n) => `${n} Nachrichten`,
+    hour: (v, n, how) => ` Zeit zwischen Handys in der letzten Stunde: ${v} ms (${n}), ${how}.`,
+    last: (v, when, how) => ` Letzte Zeit zwischen Handys: ${v} ms${when}, ${how}.`,
+    measured: (a) => ` (gemessen ${a})`,
+  },
+  it: {
+    how: 'il tempo che un messaggio tipico impiega dal telefono di chi lo invia finché il telefono di chi lo riceve conferma di averlo (invio al server più consegna)',
+    now: 'proprio ora', min1: '1 minuto fa', mins: (n) => `${n} minuti fa`, h1: '1 ora fa', hs: (n) => `${n} ore fa`, days: (n) => `${n} giorni fa`,
+    msg1: '1 messaggio', msgs: (n) => `${n} messaggi`,
+    hour: (v, n, how) => ` Tempo tra telefoni nell’ultima ora: ${v} ms (${n}), ${how}.`,
+    last: (v, when, how) => ` Ultimo tempo tra telefoni: ${v} ms${when}, ${how}.`,
+    measured: (a) => ` (misurato ${a})`,
   },
   es: {
     how: 'el tiempo que tarda un mensaje típico desde el móvil de quien lo envía hasta que el móvil de quien lo recibe confirma que lo tiene (envío al servidor más entrega)',

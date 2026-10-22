@@ -143,7 +143,7 @@ Todo o conteúdo das janelas está no `index.html`, dentro de `<main class="list
 - Mantenha o texto curto: cerca de 120 caracteres no máximo. Os testes verificam, em 8 tamanhos de ecrã, se o texto cabe em todas as janelas.
 - Os pictogramas são SVG com traço (`viewBox="0 0 48 48"`), sem cor própria: a cor vem do CSS.
 
-- **Línguas (PT, EN, ES):** cada texto tem `data-i18n="index.n"` (e `data-i18n-alt`, `-aria-label`, `-content` nos atributos). O português fica no HTML; o inglês e o espanhol estão em `src/i18n/en.js` e `src/i18n/es.js`, com as mesmas chaves. Ao mudar ou acrescentar um texto, mudar também nesses dois ficheiros (uma chave que falte fica em português). A língua vem de `?lang=pt|en|es` (seletor PT · EN · ES) ou do navegador; nada é guardado no navegador. Textos criados em JavaScript usam `L({ pt, en, es })` de `src/i18n.js`.
+- **Línguas (PT, EN, FR, ES, DE, IT, as mesmas seis da app):** cada texto tem `data-i18n="index.n"` (e `data-i18n-alt`, `-aria-label`, `-content` nos atributos). O português fica no HTML; as outras línguas estão em `src/i18n/en.js`, `fr.js`, `es.js`, `de.js` e `it.js`, com as mesmas chaves. Ao mudar ou acrescentar um texto, mudar também nesses cinco ficheiros (uma chave que falte fica em português). A língua vem de `?lang=pt|en|fr|es|de|it` (seletor PT · EN · FR · ES · DE · IT) ou do navegador (outra qualquer: inglês); nada é guardado no navegador. Textos criados em JavaScript usam `L({ pt, en, fr, es, de, it })` de `src/i18n.js`.
 
 Depois de editar: `npm run build` e `python3 tests/run_tests.py`.
 
@@ -255,7 +255,7 @@ As janelas descrevem o QT tal como foi descrito durante o projeto. Confirme este
 - **Servidor na União Europeia**: o relay está em Estocolmo (eu-north-1). Se mudar de região, atualize a janela.
 - **O que vem a seguir**: lista funcionalidades planeadas para o lançamento. Retire as que deixarem de estar previstas, e mova para outras janelas as que já estiverem feitas.
 - **Números de "Testes e números"**: "5 aparelhos" vem do teste entre 2 Android, 1 emulador, 1 iPhone e 1 Mac. "0,8 s" é o tempo medido até esta página aparecer num telemóvel lento (secção 10). Se a página mudar muito, volte a medir.
-- **Página "Funcionalidades"** (`funcionalidades.html`, chaves `func.*` em `src/i18n/en.js` e `es.js`): tem de bater certo com as apps. Ao acrescentar ou mudar uma funcionalidade na app, atualize a página e as versões no topo (e a frase das versões no `index.html`, chave `index.5`).
+- **Página "Funcionalidades"** (`funcionalidades.html`, chaves `func.*` em `src/i18n/*.js`): tem de bater certo com as apps. Ao acrescentar ou mudar uma funcionalidade na app, atualize a página e as versões no topo (e a frase das versões no `index.html`, chave `index.5`).
 - **Rodapé e "0 cookies"**: verdade para esta página. Se mais tarde acrescentar analítica, atualize as duas.
 
 ## 10. Desempenho: objetivos e resultados medidos

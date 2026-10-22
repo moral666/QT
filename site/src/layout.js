@@ -46,7 +46,7 @@ export function initLayout({ setLogoActive }) {
     root.classList.toggle('mode-grid', next === 'grid');
     root.classList.toggle('mode-list', next === 'list');
     hero.inert = false;
-    toggle.textContent = next === 'grid' ? L({ pt: 'Ver em lista', en: 'View as list', es: 'Ver en lista' }) : L({ pt: 'Ver em grelha', en: 'View as grid', es: 'Ver en cuadrícula' });
+    toggle.textContent = next === 'grid' ? L({ pt: 'Ver em lista', en: 'View as list', fr: 'Voir en liste', es: 'Ver en lista', de: 'Als Liste anzeigen', it: 'Vedi come elenco' }) : L({ pt: 'Ver em grelha', en: 'View as grid', fr: 'Voir en grille', es: 'Ver en cuadrícula', de: 'Als Raster anzeigen', it: 'Vedi come griglia' });
     toggle.setAttribute('aria-pressed', String(next === 'list'));
 
     if (next === 'grid') attachWhenReady();

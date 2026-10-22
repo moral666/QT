@@ -15,63 +15,78 @@ import { L, translatePage } from './i18n.js';
 
 const SCENES = [
   {
-    title: L({ pt: 'A Ana escreve ao Rui', en: 'Ana writes to Rui', es: 'Ana le escribe a Rui' }),
+    title: L({ pt: 'A Ana escreve ao Rui', en: 'Ana writes to Rui', fr: 'Ana écrit à Rui', es: 'Ana le escribe a Rui', de: 'Ana schreibt Rui', it: 'Ana scrive a Rui' }),
     text: L({
       pt: 'Escreve «Olá, Rui!» e carrega em enviar.',
       en: 'She types “Hi, Rui!” and taps send.',
+      fr: 'Elle écrit « Salut, Rui ! » et appuie sur envoyer.',
       es: 'Escribe «¡Hola, Rui!» y pulsa enviar.',
+      de: 'Sie schreibt „Hallo, Rui!“ und tippt auf Senden.',
+      it: 'Scrive «Ciao, Rui!» e tocca invia.',
     }),
     ms: 4500,
   },
   {
-    title: L({ pt: 'A mensagem é trancada', en: 'The message is locked', es: 'El mensaje se cierra con llave' }),
+    title: L({ pt: 'A mensagem é trancada', en: 'The message is locked', fr: 'Le message est verrouillé', es: 'El mensaje se cierra con llave', de: 'Die Nachricht wird verschlossen', it: 'Il messaggio viene chiuso' }),
     text: L({
       pt: 'Ainda no telemóvel da Ana, a mensagem fica ilegível e leva um cadeado. Só a chave do Rui o abre.',
       en: 'Still on Ana’s phone, the message becomes unreadable and gets a padlock. Only Rui’s key opens it.',
+      fr: 'Encore sur le téléphone d’Ana, le message devient illisible et reçoit un cadenas. Seule la clé de Rui l’ouvre.',
       es: 'Todavía en el móvil de Ana, el mensaje se vuelve ilegible y lleva un candado. Solo la llave de Rui lo abre.',
+      de: 'Noch auf Anas Handy wird die Nachricht unlesbar und bekommt ein Schloss. Nur Ruis Schlüssel öffnet es.',
+      it: 'Ancora sul telefono di Ana, il messaggio diventa illeggibile e riceve un lucchetto. Solo la chiave di Rui lo apre.',
     }),
     ms: 4500,
   },
   {
-    title: L({ pt: 'O servidor só a transporta', en: 'The server only carries it', es: 'El servidor solo lo transporta' }),
+    title: L({ pt: 'O servidor só a transporta', en: 'The server only carries it', fr: 'Le serveur ne fait que le transporter', es: 'El servidor solo lo transporta', de: 'Der Server transportiert sie nur', it: 'Il server si limita a trasportarlo' }),
     text: L({
       pt: 'O servidor da SEALER entrega o envelope trancado. Não consegue ler o que está lá dentro, e o envelope não diz quem o enviou.',
       en: 'The SEALER server delivers the locked envelope. It cannot read what is inside, and the envelope does not say who sent it.',
+      fr: 'Le serveur de SEALER remet l’enveloppe verrouillée. Il ne peut pas lire ce qu’il y a dedans, et l’enveloppe ne dit pas qui l’a envoyée.',
       es: 'El servidor de SEALER entrega el sobre cerrado. No puede leer lo que hay dentro, y el sobre no dice quién lo envió.',
+      de: 'Der Server von SEALER stellt den verschlossenen Umschlag zu. Er kann nicht lesen, was darin steht, und der Umschlag verrät nicht, wer ihn gesendet hat.',
+      it: 'Il server di SEALER consegna la busta chiusa. Non può leggere cosa c’è dentro, e la busta non dice chi l’ha inviata.',
     }),
     ms: 7000,
   },
   {
-    title: L({ pt: 'O Rui abre com a sua chave', en: 'Rui opens it with his key', es: 'Rui lo abre con su llave' }),
+    title: L({ pt: 'O Rui abre com a sua chave', en: 'Rui opens it with his key', fr: 'Rui l’ouvre avec sa clé', es: 'Rui lo abre con su llave', de: 'Rui öffnet sie mit seinem Schlüssel', it: 'Rui lo apre con la sua chiave' }),
     text: L({
       pt: 'A chave está só no telemóvel do Rui. Nem a SEALER a tem.',
       en: 'The key is only on Rui’s phone. Not even SEALER has it.',
+      fr: 'La clé est seulement sur le téléphone de Rui. Même SEALER ne l’a pas.',
       es: 'La llave está solo en el móvil de Rui. Ni siquiera SEALER la tiene.',
+      de: 'Der Schlüssel ist nur auf Ruis Handy. Nicht einmal SEALER hat ihn.',
+      it: 'La chiave è solo sul telefono di Rui. Nemmeno SEALER ce l’ha.',
     }),
     ms: 6500,
   },
   {
-    title: L({ pt: 'Protegida também para o futuro', en: 'Protected for the future too', es: 'Protegido también para el futuro' }),
+    title: L({ pt: 'Protegida também para o futuro', en: 'Protected for the future too', fr: 'Protégé aussi pour l’avenir', es: 'Protegido también para el futuro', de: 'Auch für die Zukunft geschützt', it: 'Protetto anche per il futuro' }),
     text: L({
       pt: 'A SEALER usa também uma proteção pensada para os computadores quânticos, que um dia poderão quebrar a criptografia de hoje.',
       en: 'SEALER also uses protection designed for quantum computers, which may one day break today’s cryptography.',
+      fr: 'SEALER utilise aussi une protection pensée pour les ordinateurs quantiques, qui pourraient un jour casser la cryptographie d’aujourd’hui.',
       es: 'SEALER también usa una protección pensada para los ordenadores cuánticos, que algún día podrían romper la criptografía de hoy.',
+      de: 'SEALER nutzt auch einen Schutz, der für Quantencomputer gedacht ist, die eines Tages die heutige Kryptografie brechen könnten.',
+      it: 'SEALER usa anche una protezione pensata per i computer quantistici, che un giorno potrebbero rompere la crittografia di oggi.',
     }),
     ms: 6000,
   },
 ];
 
-const PLAIN = L({ pt: 'Olá, Rui!', en: 'Hi, Rui!', es: '¡Hola, Rui!' });
+const PLAIN = L({ pt: 'Olá, Rui!', en: 'Hi, Rui!', fr: 'Salut, Rui !', es: '¡Hola, Rui!', de: 'Hallo, Rui!', it: 'Ciao, Rui!' });
 const T = {
-  step: (n, m) => L({ pt: `Passo ${n} de ${m}`, en: `Step ${n} of ${m}`, es: `Paso ${n} de ${m}` }),
-  stepLabel: (n, t) => L({ pt: `Passo ${n}: ${t}`, en: `Step ${n}: ${t}`, es: `Paso ${n}: ${t}` }),
-  pause: L({ pt: 'Pausar', en: 'Pause', es: 'Pausa' }),
-  play: L({ pt: 'Reproduzir', en: 'Play', es: 'Reproducir' }),
-  locked: L({ pt: 'Trancada', en: 'Locked', es: 'Cerrado' }),
-  opened: L({ pt: 'Aberta', en: 'Opened', es: 'Abierto' }),
+  step: (n, m) => L({ pt: `Passo ${n} de ${m}`, en: `Step ${n} of ${m}`, fr: `Étape ${n} sur ${m}`, es: `Paso ${n} de ${m}`, de: `Schritt ${n} von ${m}`, it: `Passo ${n} di ${m}` }),
+  stepLabel: (n, t) => L({ pt: `Passo ${n}: ${t}`, en: `Step ${n}: ${t}`, fr: `Étape ${n} : ${t}`, es: `Paso ${n}: ${t}`, de: `Schritt ${n}: ${t}`, it: `Passo ${n}: ${t}` }),
+  pause: L({ pt: 'Pausar', en: 'Pause', fr: 'Pause', es: 'Pausa', de: 'Pause', it: 'Pausa' }),
+  play: L({ pt: 'Reproduzir', en: 'Play', fr: 'Lecture', es: 'Reproducir', de: 'Abspielen', it: 'Riproduci' }),
+  locked: L({ pt: 'Trancada', en: 'Locked', fr: 'Verrouillé', es: 'Cerrado', de: 'Verschlossen', it: 'Chiuso' }),
+  opened: L({ pt: 'Aberta', en: 'Opened', fr: 'Ouvert', es: 'Abierto', de: 'Geöffnet', it: 'Aperto' }),
 };
 const CIPHER = '7Fq#9zK@';
-const FIELD = L({ pt: 'Mensagem', en: 'Message', es: 'Mensaje' });
+const FIELD = L({ pt: 'Mensagem', en: 'Message', fr: 'Message', es: 'Mensaje', de: 'Nachricht', it: 'Messaggio' });
 const GLYPHS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghkmnpqrstuvwxyz0123456789#%&@$';
 
 /** Disposições do desenho. s é a escala do envelope e da chave. */
