@@ -47,7 +47,7 @@ seguir.
 - **Revisão de segurança do núcleo** (0.9.17): o relay só aceita escritas de contas registadas,
   chaves intermédias zeradas na memória e fuzzing com `cargo-fuzz`.
 - **Denúncias e banimentos** (0.9.18): denunciar um contacto com o motivo e até 20 mensagens,
-  cifradas para a equipa da SEALER; o relay guarda-as sem as ler nem saber quem denunciou.
+  cifradas para a equipa da SEALER; o relay guarda-as sem as ler e sem guardar quem denunciou.
 - **Chave de recuperação** (0.9.19): 12 palavras recuperam o ID, os contactos, os bloqueados
   e a medalha num telemóvel novo (sem histórico nem grupos).
 - **Revisão das apps** (0.9.22): espera depois de códigos errados que não se salta mudando a

@@ -33,7 +33,7 @@ Cada linha indica o mecanismo e **o teste que o demonstra** (corre com
 | Ameaça | Mecanismo | Evidência |
 |---|---|---|
 | Relay lê o conteúdo | Double Ratchet; o relay só guarda envelopes opacos | `server/tests/two_clients_over_relay.rs` lê o Redis real e verifica que não há plaintext |
-| Relay descobre o remetente | Sealed Sender: identidade do remetente numa caixa selada para o destinatário; o cabeçalho PQXDH **não** contém a identidade | `ffi/tests/client_flow.rs::sealed_sender_relay_nao_ve_plaintext_nem_remetente`; mesmo teste no Redis real |
+| Relay descobre o remetente | Sealed Sender: identidade do remetente numa caixa selada para o destinatário; o cabeçalho PQXDH **não** contém a identidade; o relay não guarda o remetente (a ligação de quem envia é autenticada, por isso um relay mal-intencionado pode associá-la no momento) | `ffi/tests/client_flow.rs::sealed_sender_relay_nao_ve_plaintext_nem_remetente`; mesmo teste no Redis real |
 | Relay substitui o bundle de outra pessoa | `start_session` verifica o bundle contra o QT Public ID (chaves de identidade) e a assinatura Ed25519, que cobre a signed pre-key **e** a chave ML-KEM (impede um relay de anular a proteção pós-quântica trocando-a); chaves ML-KEM validadas (tamanho e codificação canónica) | `bundles_invalidos_sao_rejeitados`, `relay_malicioso_nao_pode_substituir_a_chave_mlkem` |
 | Atacante passivo lê o tráfego | Noise XX (X25519, ChaChaPoly, SHA256) + E2EE por cima | `transport/` e `relay_hardening.rs` |
 | Atacante ativo corrompe, repete ou reordena frames de transporte | O Noise tem contador de nonce estrito: qualquer frame corrompido/repetido/fora de ordem faz o relay encerrar a sessão | `frame_noise_corrompido…`, `frame_noise_repetido…`, `frame_noise_fora_de_ordem…` |
@@ -88,8 +88,10 @@ e depois alimenta a root key do Double Ratchet.
 * **Endpoint do outro participante** comprometido, screenshots, capturas.
 * **Metadados no relay:** o relay vê o destinatário (`to`), o tamanho, o
   instante e o endereço IP de cada ligação (o relay **não** os regista, mas um
-  operador mal-intencionado pode). Sealed Sender esconde só o remetente, e só
-  contra o relay, não contra análise de tráfego/correlação temporal.
+  operador mal-intencionado pode). Sealed Sender tira o remetente do envelope guardado, mas
+  a ligação de quem envia é autenticada: um operador mal-intencionado pode associar
+  a conta que envia a cada envelope no momento. Também não protege contra análise de
+  tráfego/correlação temporal.
 * **O relay pode censurar, atrasar, descartar ou reordenar** (disponibilidade
   não é garantida). Não há federação.
 * **Spam / abuso:** qualquer conta registada pode enfileirar mensagens para
