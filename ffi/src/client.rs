@@ -107,6 +107,18 @@ pub(crate) fn bad(field: &str) -> QtError {
     QtError::InvalidInput { field: field.to_string() }
 }
 
+/// Tranca um Mutex mesmo que um panic anterior o tenha deixado "envenenado". O UniFFI
+/// apanha os panics do Rust (a app nao morre), mas antes disto o Mutex ficava
+/// envenenado e todas as chamadas seguintes falhavam (`Storage`) ate reiniciar a app.
+/// Recuperar e seguro: na base de dados, a transacao em curso foi desfeita pelo
+/// SQLite ao desenrolar o panic; a presenca e as chamadas sao so estado em memoria.
+pub(crate) fn relock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| {
+        m.clear_poison();
+        e.into_inner()
+    })
+}
+
 pub(crate) fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{:02x}", x)).collect()
 }
@@ -296,9 +308,7 @@ impl QtClient {
     pub fn delete_identity(&self) -> Result<(), QtError> {
         let c = self.lock()?;
         st::wipe_all(&c)?;
-        if let Ok(mut p) = self.presence.lock() {
-            *p = Default::default();
-        }
+        *relock(&self.presence) = Default::default();
         // Os anexos estao cifrados com chaves que estavam na base de dados (ja
         // apagadas); os ficheiros vao tambem.
         let _ = std::fs::remove_dir_all(&self.files_dir);
@@ -675,7 +685,7 @@ impl QtClient {
     }
 
     pub(crate) fn lock(&self) -> Result<std::sync::MutexGuard<'_, st::rusqlite::Connection>, QtError> {
-        self.conn.lock().map_err(|_| QtError::Storage)
+        Ok(relock(&self.conn))
     }
 
     /// Cifra e avanca o ratchet usando `c` (o CHAMADOR abre e confirma a
@@ -1095,4 +1105,72 @@ pub fn peer_bundle_from_relay_bytes(bytes: Vec<u8>) -> Result<PeerBundle, QtErro
         pq_pre_key_public: b.pq_pre_key,
         one_time_pre_key,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> String {
+        let p = std::env::temp_dir().join(format!("qt_relock_{tag}_{}.sqlite", std::process::id()));
+        let p = p.to_str().unwrap().to_string();
+        let _ = std::fs::remove_file(&p);
+        p
+    }
+
+    /// Regressao (22/10/2026): um panic com a base de dados trancada (o UniFFI apanha-o
+    /// e a app continua) envenenava o Mutex e todas as chamadas seguintes davam
+    /// `Storage` ate reiniciar a app. Agora a app continua a funcionar e o que estava
+    /// a meio da transacao foi desfeito.
+    #[test]
+    fn panic_com_a_base_de_dados_trancada_nao_bloqueia_a_app() {
+        let path = tmp("db");
+        let c = QtClient::open(path.clone(), vec![0x5a; 32]).unwrap();
+        c.create_identity().unwrap();
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let g = c.lock().unwrap();
+            let tx = g.unchecked_transaction().unwrap();
+            st::kv_set(&tx, "a-meio", b"x").unwrap();
+            panic!("panic simulado a meio de uma transacao");
+        }));
+        assert!(r.is_err());
+        assert!(c.conn.is_poisoned(), "o panic envenenou o Mutex");
+        // A app continua a funcionar...
+        assert!(c.has_identity().unwrap());
+        assert!(!c.export_public_identity().unwrap().public_id.is_empty());
+        // ...o Mutex ficou limpo e a escrita a meio foi desfeita.
+        assert!(!c.conn.is_poisoned());
+        assert_eq!(st::kv_get(&c.lock().unwrap(), "a-meio").unwrap(), None);
+        drop(c);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// O mesmo para o estado em memoria da presenca e das chamadas.
+    #[test]
+    fn panic_com_presenca_ou_chamadas_trancadas_nao_bloqueia() {
+        let path = tmp("mem");
+        let c = QtClient::open(path.clone(), vec![0x5b; 32]).unwrap();
+        c.create_identity().unwrap();
+        for m in [0, 1] {
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if m == 0 {
+                    let _g = c.presence.lock().unwrap();
+                    panic!("presenca");
+                } else {
+                    let _g = c.calls.lock().unwrap();
+                    panic!("chamadas");
+                }
+            }));
+            assert!(r.is_err());
+        }
+        assert!(c.presence.is_poisoned() && c.calls.is_poisoned());
+        let _p = relock(&c.presence);
+        let _k = relock(&c.calls);
+        drop((_p, _k));
+        assert!(!c.presence.is_poisoned() && !c.calls.is_poisoned());
+        // Apagar a identidade (que mexe na presenca) continua a funcionar.
+        c.delete_identity().unwrap();
+        drop(c);
+        let _ = std::fs::remove_file(&path);
+    }
 }

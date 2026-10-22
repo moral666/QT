@@ -131,7 +131,7 @@ impl QtClient {
         if relay_public_key.len() != 32 {
             return Err(bad("relay_public_key"));
         }
-        let mut calls = self.calls.lock().map_err(|_| QtError::Storage)?;
+        let mut calls = crate::client::relock(&self.calls);
         crate::call::start_for_call(&mut calls, id, &relay_url, &relay_public_key)
     }
 }

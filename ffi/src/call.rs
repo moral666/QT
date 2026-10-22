@@ -253,7 +253,7 @@ pub(crate) fn on_call(
     let op = body[0];
     let call_id: [u8; 16] = body[1..17].try_into().map_err(|_| QtError::InvalidEnvelope)?;
     let rest = &body[17..];
-    let mut calls = client.calls.lock().map_err(|_| QtError::Storage)?;
+    let mut calls = crate::client::relock(&client.calls);
     if calls.ended.contains(&call_id) {
         return Ok(no_change);
     }
@@ -381,7 +381,7 @@ impl QtClient {
     /// para enviar logo ao relay.
     pub fn call_start(&self, contact_id: String) -> Result<CallStart, QtError> {
         let c = self.lock()?;
-        let mut calls = self.calls.lock().map_err(|_| QtError::Storage)?;
+        let mut calls = crate::client::relock(&self.calls);
         expire(self, &c, &mut calls)?;
         if calls.cur.is_some() {
             return Err(bad("call_busy"));
@@ -420,7 +420,7 @@ impl QtClient {
     pub fn call_accept(&self, call_id: String) -> Result<OutboxItem, QtError> {
         let id = parse_call_id(&call_id)?;
         let c = self.lock()?;
-        let mut calls = self.calls.lock().map_err(|_| QtError::Storage)?;
+        let mut calls = crate::client::relock(&self.calls);
         expire(self, &c, &mut calls)?;
         let call = match calls.cur.as_mut() {
             Some(k) if k.id == id && k.state == State::Incoming => k,
@@ -445,7 +445,7 @@ impl QtClient {
     pub fn call_hangup(&self, call_id: String) -> Result<Option<OutboxItem>, QtError> {
         let id = parse_call_id(&call_id)?;
         let c = self.lock()?;
-        let mut calls = self.calls.lock().map_err(|_| QtError::Storage)?;
+        let mut calls = crate::client::relock(&self.calls);
         let (state, contact, offer_outbox) = match calls.cur.as_ref() {
             Some(k) if k.id == id => (k.state, k.contact.clone(), k.offer_outbox),
             _ => return Ok(None),
@@ -478,14 +478,14 @@ impl QtClient {
     /// resposta (o aviso "sem resposta" fica na outbox para enviar).
     pub fn call_events(&self) -> Result<Vec<CallEvent>, QtError> {
         let c = self.lock()?;
-        let mut calls = self.calls.lock().map_err(|_| QtError::Storage)?;
+        let mut calls = crate::client::relock(&self.calls);
         expire(self, &c, &mut calls)?;
         Ok(calls.events.drain(..).collect())
     }
 
     /// Ha uma chamada a decorrer (a tocar ou atendida)? Devolve o call_id.
     pub fn call_current(&self) -> Result<Option<String>, QtError> {
-        let calls = self.calls.lock().map_err(|_| QtError::Storage)?;
+        let calls = crate::client::relock(&self.calls);
         Ok(calls.cur.as_ref().map(|k| hex(&k.id)))
     }
 
@@ -499,7 +499,7 @@ impl QtClient {
         if relay_public_key.len() != 32 {
             return Err(bad("relay_public_key"));
         }
-        let calls = self.calls.lock().map_err(|_| QtError::Storage)?;
+        let calls = crate::client::relock(&self.calls);
         let call = match calls.cur.as_ref() {
             Some(k) if k.id == id => k,
             _ => return Err(bad("call_id")),
@@ -516,7 +516,7 @@ impl QtClient {
     /// (ignorar). `Some(true)`: o outro telemovel ja esta na sala.
     pub fn call_join_ok(&self, call_id: String, packet: Vec<u8>) -> Result<Option<bool>, QtError> {
         let id = parse_call_id(&call_id)?;
-        let calls = self.calls.lock().map_err(|_| QtError::Storage)?;
+        let calls = crate::client::relock(&self.calls);
         match calls.cur.as_ref() {
             Some(k) if k.id == id => Ok(parse_join_ok(&k.room, &packet)),
             _ => Err(bad("call_id")),
@@ -527,7 +527,7 @@ impl QtClient {
     /// da chamada tem o mesmo tamanho. So depois de atendida.
     pub fn call_seal(&self, call_id: String, frame: Vec<u8>) -> Result<Vec<u8>, QtError> {
         let id = parse_call_id(&call_id)?;
-        let mut calls = self.calls.lock().map_err(|_| QtError::Storage)?;
+        let mut calls = crate::client::relock(&self.calls);
         match calls.cur.as_mut() {
             Some(Call { id: cur, media: Some(m), .. }) if *cur == id => m.seal(&frame).map_err(|_| bad("frame")),
             _ => Err(bad("call_id")),
@@ -538,7 +538,7 @@ impl QtClient {
     /// de outra chamada (descartar sem mais nada).
     pub fn call_open(&self, call_id: String, packet: Vec<u8>) -> Result<Option<MediaFrame>, QtError> {
         let id = parse_call_id(&call_id)?;
-        let mut calls = self.calls.lock().map_err(|_| QtError::Storage)?;
+        let mut calls = crate::client::relock(&self.calls);
         match calls.cur.as_mut() {
             Some(Call { id: cur, media: Some(m), .. }) if *cur == id => {
                 Ok(m.open(&packet).ok().map(|(counter, frame)| MediaFrame { counter, frame }))

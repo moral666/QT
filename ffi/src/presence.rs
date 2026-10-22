@@ -105,7 +105,7 @@ pub(crate) fn on_presence(
     sent_at: i64,
 ) -> Result<ReceiveResult, QtError> {
     let no_change = || ReceiveResult::NoChange { contact_id: cid.to_string() };
-    let mut p = client.presence.lock().map_err(|_| QtError::Storage)?;
+    let mut p = crate::client::relock(&client.presence);
     if !p.share || !p.allowed.contains(cid) {
         return Ok(no_change());
     }
@@ -130,7 +130,7 @@ impl QtClient {
     /// recebe "offline" (devolve quantos envelopes ficaram na outbox).
     pub fn presence_configure(&self, share: bool, contact_ids: Vec<String>) -> Result<u32, QtError> {
         let c = self.lock()?;
-        let mut p = self.presence.lock().map_err(|_| QtError::Storage)?;
+        let mut p = crate::client::relock(&self.presence);
         let allowed: HashSet<String> = contact_ids.into_iter().collect();
         let tx = c.unchecked_transaction()?;
         let mut n = 0;
@@ -154,7 +154,7 @@ impl QtClient {
     /// Fechada: "offline" a quem pode pensar que estou online.
     pub fn presence_announce(&self, visible: bool) -> Result<u32, QtError> {
         let c = self.lock()?;
-        let mut p = self.presence.lock().map_err(|_| QtError::Storage)?;
+        let mut p = crate::client::relock(&self.presence);
         p.visible = visible;
         if !p.share {
             return Ok(0);
@@ -183,7 +183,7 @@ impl QtClient {
     /// a quem esta online, para nao passar a offline do lado de la.
     pub fn presence_heartbeat(&self) -> Result<u32, QtError> {
         let c = self.lock()?;
-        let mut p = self.presence.lock().map_err(|_| QtError::Storage)?;
+        let mut p = crate::client::relock(&self.presence);
         if !p.share || !p.visible {
             return Ok(0);
         }
@@ -203,7 +203,7 @@ impl QtClient {
 
     /// Contactos online agora (contact_ids). Vazio com a presenca desligada.
     pub fn presence_online(&self) -> Vec<String> {
-        let Ok(p) = self.presence.lock() else { return vec![] };
+        let p = crate::client::relock(&self.presence);
         if !p.share {
             return vec![];
         }
