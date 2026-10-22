@@ -175,7 +175,8 @@ e o contacto fica bloqueado. O relay guarda-as 30 dias sem as ler e sem o ID de 
 pedidos `Admin*` (listar, apagar, banir, desbanir). Ferramenta no PC do Nuno:
 `cargo run --release -p qt_server --example denuncias -- chave|listar|apagar|banir|desbanir|banidos --key ...`
 e a página "Denúncias" do sealer-control. A chave do operador fica fora do git e do servidor.
-Enquanto `OPERATOR_REPORT_PUBLIC` estiver a zeros, a opção não aparece nas apps.
+Chave pública do operador posta nas apps a 22/10/2026 (`OPERATOR_REPORT_PUBLIC`); a do relay é
+`3a145acb…e2e7df` em `/etc/qt/operator.pub`.
 Ver `docs/protocol-spec.md`, secção 21.
 
 ### Funcionalidades da 0.9.0
