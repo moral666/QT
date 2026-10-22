@@ -161,7 +161,7 @@ npx wrangler deploy    # envia a pasta dist/ para o Worker sealer
 
 A primeira versão foi carregada no painel da Cloudflare, por arrastar e largar. As seguintes publicam-se daqui, com o wrangler. Na primeira vez, o wrangler pode avisar que o Worker foi criado no painel: confirme.
 
-Em `wrangler.jsonc`, `workers_dev: true` mantém também o endereço `sealer.nunojsilvag.workers.dev`. Para o site existir só em sealer.pt, mude para `false` e publique outra vez.
+Em `wrangler.jsonc`, `workers_dev: false`: o site só existe em sealer.pt, sem o endereço `*.workers.dev` da conta da Cloudflare.
 
 **Publicar sozinho a cada push (opcional).** No painel da Cloudflare: Workers & Pages → `sealer` → Settings → Builds, ligar ao repositório QT, com a pasta raiz `site`, o comando de compilação `npm run build` e o comando de publicação `npx wrangler deploy`.
 

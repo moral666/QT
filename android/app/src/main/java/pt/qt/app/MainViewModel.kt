@@ -1115,7 +1115,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Acao paga (fazer chamadas, criar grupos, enviar fotos, GIFs, voz e ficheiros): sem
      * premium e com o bloqueio ligado, abre o ecra Premium e devolve `true` (a acao nao segue).
-     * Quem decide e o operador (sealer-control): pergunta-se ao relay antes de cada acao paga,
+     * Quem decide e o operador: pergunta-se ao relay antes de cada acao paga,
      * para o premium dado ou tirado contar logo. Sem rede, fica o ultimo estado conhecido.
      */
     private suspend fun premiumBlocked(): Boolean {

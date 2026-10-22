@@ -904,7 +904,7 @@ emissor, que segue cifrado como qualquer mensagem.
   `SEALER-BADGE-v1` seguido dos primeiros 42 bytes. Badges: 0 nenhum, 1 Founder, 2 Co-founder,
   3 Dev, 4 Tester, 5 Contributor. A chave pública do emissor está fixa no núcleo
   (`ISSUER_PUBLIC_KEY`, igual no Android e no iPhone); a privada fica só com o emissor.
-- **Atribuir:** a ferramenta do emissor (`server/examples/badge.rs`, no PC do Nuno) tem uma
+- **Atribuir:** a ferramenta do emissor (`server/examples/badge.rs`, no computador do operador) tem uma
   identidade própria, abre sessão com a pessoa pelo ID e envia o certificado no tipo 13, dentro do
   Double Ratchet. O relay vê um envelope normal. A app guarda o certificado se a assinatura for
   válida e ele for para a sua identidade (vem de quem vier, só a assinatura conta). O emissor não
@@ -926,7 +926,7 @@ Testes: `ffi/tests/badges.rs` e `core/src/badge.rs`.
 ## 21. Denúncias e banimentos (desde a app 0.9.18)
 
 Quem recebe mensagens abusivas pode denunciar o contacto. A denúncia vai cifrada para o
-operador (o Nuno): o relay guarda-a sem a conseguir ler e sem saber quem denunciou.
+operador: o relay guarda-a sem a conseguir ler e sem saber quem denunciou.
 
 - **Chave do operador** (`core/src/report.rs`): uma semente de 32 bytes, só no PC do operador
   (`server/examples/denuncias.rs -- chave`). Com HKDF-SHA256 (sal `SEALER-OPERATOR`) dá duas
@@ -954,7 +954,6 @@ operador (o Nuno): o relay guarda-a sem a conseguir ler e sem saber quem denunci
   recebem `Error` "so o operador". Banir apaga o bundle, as one-time prekeys, a fila e a
   campainha, fecha as ligações abertas e passa a recusar a autenticação e o registo ("conta
   banida"). Limite: sem número de telefone, a pessoa pode criar um ID novo (com prova de trabalho).
-- Na app do PC (`tools/sealer-control`), a página "Denúncias" usa esta ferramenta.
 
 Testes: `core/src/report.rs`, `ffi/src/report.rs`, `server/tests/relay_reports.rs` e
 `server/tests/redis_acl.rs`.
@@ -1008,8 +1007,7 @@ grupos e enviar fotos, GIFs, voz e ficheiros. Assim quem paga continua a falar c
   `wake: Call` (oferta de chamada) de contas sem premium dentro do prazo. Texto, fim de chamada,
   atender e receber continuam grátis. Criar grupos não passa pelo relay: só a app o fecha.
 - **Operador:** `--example denuncias -- premium-dar --user qt1:... (--dias N | --sempre)`,
-  `premium-tirar` (`qt1:` ou id do relay), `premium-lista`, `premium-bloqueio [--ligar|--desligar]`,
-  e a aba "Premium" do sealer-control (bloqueio para todos, dar, tirar, lista).
+  `premium-tirar` (`qt1:` ou id do relay), `premium-lista`, `premium-bloqueio [--ligar|--desligar]`.
 - **App:** pergunta ao relay ao ligar-se, ao abrir o ecrã Premium e antes de cada ação paga
   (premium dado ou tirado conta logo); sem rede, fica o último estado conhecido. Sem premium e com
   o bloqueio ligado, uma ação paga abre o ecrã "Sealer Premium" (5 €/ano). Se o relay recusar um

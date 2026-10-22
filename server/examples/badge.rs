@@ -1,4 +1,4 @@
-//! FERRAMENTA DO EMISSOR DOS BADGES (so no PC do Nuno; nao e a app nem o servidor).
+//! FERRAMENTA DO EMISSOR DOS BADGES (so no computador do operador; nao e a app nem o servidor).
 //!
 //! Passo 1, uma vez, na pasta do repo: criar a chave do emissor (fica num ficheiro, NUNCA no git
 //! nem no servidor). A chave publica e escrita em `ISSUER_PUBLIC_KEY` (core/src/badge.rs);
