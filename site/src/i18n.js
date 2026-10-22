@@ -1,19 +1,20 @@
 /**
- * Línguas do site: português (o texto das páginas), inglês e espanhol.
+ * Línguas do site: as mesmas seis da app. Português (o texto das páginas), inglês,
+ * francês, espanhol, alemão e italiano.
  *
- * Escolha: `?lang=pt|en|es` no endereço (o seletor PT · EN · ES põe-no); sem isso, a
- * língua do navegador (pt, es, en; outra qualquer: inglês). Nada é guardado no
+ * Escolha: `?lang=pt|en|fr|es|de|it` no endereço (o seletor PT · EN · FR · ES · DE · IT
+ * põe-no); sem isso, a língua do navegador (uma destas; outra qualquer: inglês). Nada é guardado no
  * navegador (a política de cookies diz que o site não usa armazenamento): a escolha
  * passa de página em página pelos links, com o `?lang=`.
  *
  * As páginas marcam os textos com data-i18n="chave" (e data-i18n-alt, -aria-label,
- * -title, -content para atributos). Em inglês e espanhol os textos vêm de
- * i18n/en.js ou i18n/es.js, carregados só nesse caso. Os textos criados por
- * JavaScript usam L({ pt, en, es }).
+ * -title, -content para atributos). Nas outras línguas os textos vêm de
+ * i18n/<língua>.js, carregado só nesse caso. Os textos criados por JavaScript usam
+ * L({ pt, en, fr, es, de, it }) (uma língua que falte fica em inglês).
  */
 
-const SUPPORTED = ['pt', 'en', 'es'];
-const HTML_LANG = { pt: 'pt-PT', en: 'en', es: 'es' };
+const SUPPORTED = ['pt', 'en', 'fr', 'es', 'de', 'it'];
+const HTML_LANG = { pt: 'pt-PT', en: 'en', fr: 'fr', es: 'es', de: 'de', it: 'it' };
 
 function fromUrl() {
   try {
@@ -36,15 +37,18 @@ function fromBrowser() {
 const chosen = fromUrl();
 export const lang = chosen ?? fromBrowser();
 
-/** Texto na língua da página: L({ pt: '...', en: '...', es: '...' }). */
-export const L = (o) => o[lang] ?? o.pt;
+/** Texto na língua da página: L({ pt: '...', en: '...', fr: '...', es: '...', de: '...', it: '...' }). */
+export const L = (o) => o[lang] ?? o.en ?? o.pt;
 
 /** Formato de números na língua da página. */
 export const locale = HTML_LANG[lang];
 
 const loaders = {
   en: () => import('./i18n/en.js'),
+  fr: () => import('./i18n/fr.js'),
   es: () => import('./i18n/es.js'),
+  de: () => import('./i18n/de.js'),
+  it: () => import('./i18n/it.js'),
 };
 
 function applyDict(dict) {
@@ -79,7 +83,7 @@ function keepLangInLinks() {
   }
 }
 
-/** Seletor PT · EN · ES: marca a língua atual e mantém a página e o #. */
+/** Seletor PT · EN · FR · ES · DE · IT: marca a língua atual e mantém a página e o #. */
 function markSwitcher() {
   for (const a of document.querySelectorAll('.lang a[data-lang]')) {
     const l = a.dataset.lang;

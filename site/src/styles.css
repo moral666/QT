@@ -1228,7 +1228,7 @@ p {
   }
 }
 
-/* ---------- Seletor de língua (PT · EN · ES) ---------- */
+/* ---------- Seletor de língua (PT · EN · FR · ES · DE · IT) ---------- */
 
 .lang {
   margin: var(--space-s, 0.75rem) 0 0;
