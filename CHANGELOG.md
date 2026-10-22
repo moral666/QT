@@ -6,6 +6,16 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 22 de outubro de 2026: site e documentação
+
+- Site: página nova **Funcionalidades** (`funcionalidades.html`, PT, EN e ES) com tudo o que a app
+  faz; botão "O que a app faz" no início e ligações no rodapé. Versões no topo: Android 0.9.22 e
+  iPhone 0.9.22.
+- Política de privacidade, termos e "Apagar a conta" atualizados: cópia de recuperação, denúncias,
+  contas banidas, medalhas e o caminho novo para as Definições.
+- Documentação revista: README (PT e EN), ROADMAP, modelo de ameaças, limitações conhecidas
+  (medalhas, denúncias, chave de recuperação), SECURITY e READMEs das apps.
+
 ### 22 de outubro de 2026: revisão das apps (0.9.22, Android e iPhone)
 
 - Bloqueio da app: a espera depois de 5 códigos errados conta pelo relógio desde que o telemóvel

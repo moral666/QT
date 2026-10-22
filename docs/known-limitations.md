@@ -99,7 +99,8 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     root, quem conseguir correr código como a app pode tentar códigos através desse Keystore: cada
     tentativa custa cerca de 0,5 a 1 s (Argon2id, 64 MiB), por isso um código de 6 dígitos aguenta
     dias, não anos. Códigos mais longos protegem mais. A espera crescente depois de 5 erros só trava
-    tentativas pela interface. Com o desbloqueio por impressão digital ativo, quem souber o PIN do
+    tentativas pela interface (desde a 0.9.22 conta pelo relógio desde que o telemóvel ligou, por
+    isso mudar a hora não a salta, e recomeça inteira depois de reiniciar). Com o desbloqueio por impressão digital ativo, quem souber o PIN do
     telemóvel também abre a app (é uma escolha do utilizador). No iPhone (desde a 0.9.13) é igual,
     com o Secure Enclave no lugar do Keystore e o Face ID / Touch ID / código do iPhone.
 36. **Imagens e GIFs (anexos).** O conteúdo e a chave são cifrados ponta a ponta, mas o relay vê:
@@ -143,3 +144,18 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     telemóvel dado pela Google. A notificação é sempre genérica ("Tens mensagens novas"): para
     ver quem escreveu é preciso abrir a app. Telemóveis sem serviços Google (ex.: Huawei
     recentes) não recebem avisos com a app fechada.
+42. **Medalhas (desde a 0.9.14).** O certificado não tem validade: retirar uma medalha é emitir um
+    certificado mais recente com "nenhuma", que só chega aos contactos quando a app da pessoa o
+    envia. Uma app alterada pode não o enviar, e quem já tinha o antigo continua a ver o aro.
+43. **Denúncias (desde a 0.9.18).** Quem denuncia escolhe as mensagens que seguem, e o texto não
+    leva prova de quem o escreveu: uma app alterada pode inventar mensagens. A equipa da SEALER
+    lê a denúncia, mas não consegue confirmar o conteúdo. Os anexos não seguem. Banir recusa
+    aquele ID, mas sem número de telefone a pessoa pode criar um ID novo (com a prova de
+    trabalho).
+44. **Chave de recuperação (desde a 0.9.19).** Quem tiver as 12 palavras recupera a conta noutro
+    telemóvel e passa a receber as mensagens dela (uma conta só funciona num telemóvel de cada
+    vez). As palavras têm 128 bits e passam por Argon2id (64 MiB), por isso adivinhá-las não é
+    viável, mas uma fotografia ou um papel perdido chega. O relay guarda a cópia cifrada ligada
+    ao ID, e quem pedir uma cópia com o identificador certo recebe-a (cifrada). Não leva
+    histórico nem grupos; as mensagens enviadas para o telemóvel antigo antes da recuperação
+    perdem-se.

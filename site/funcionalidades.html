@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="pt-PT" data-page="func">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Funcionalidades · SEALER</title>
+    <meta
+      name="description"
+      content="Tudo o que a app SEALER faz: conversas a dois e em grupo, fotos, voz, ficheiros, chamadas de voz cifradas, contactos sem número de telefone, bloqueio da app e chave de recuperação."
+     data-i18n-content="func.@0"/>
+    <meta name="theme-color" content="#05060d" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="referrer" content="no-referrer" />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Tudo o que a SEALER faz" />
+    <meta property="og:description" content="Tudo o que a app SEALER faz: conversas a dois e em grupo, fotos, voz, ficheiros, chamadas de voz cifradas, contactos sem número de telefone, bloqueio da app e chave de recuperação." />
+    <meta property="og:image" content="https://sealer.pt/og-image.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Funcionalidades da app. Tem de continuar verdadeira em relação às apps (Android e
+         iPhone): ao acrescentar ou mudar uma funcionalidade, atualizar aqui e em
+         src/i18n/en.js e es.js (chaves func.*). Estilo: legal.css + funcionalidades.css. -->
+    <link rel="stylesheet" href="./src/legal.css" />
+    <link rel="stylesheet" href="./src/funcionalidades.css" />
+  </head>
+  <body>
+    <header class="legal-bar fx-bar">
+      <a class="legal-bar__brand" href="./">
+        <img src="./src/assets/logo/logo-96.webp" width="96" height="96" alt="" />
+        <span>SEALER</span>
+      </a>
+    </header>
+
+    <main class="fx">
+
+      <h1 data-i18n="func.0">Tudo o que a SEALER faz</h1>
+      <p class="fx__lede" data-i18n="func.1">Uma app de mensagens sem número de telefone, sem email e sem publicidade. O que escreves, envias e dizes é cifrado no teu telemóvel antes de sair.</p>
+      <p class="fx__status" data-i18n="func.2">Versão de testes: Android&nbsp;0.9.22 e iPhone&nbsp;0.9.22. As duas apps fazem o mesmo, salvo onde está indicado.</p>
+      <nav class="fx-toc" aria-label="Secções" data-i18n-aria-label="func.@1">
+        <ul>
+          <li><a href="#conversas" data-i18n="func.3">Conversas</a></li>
+          <li><a href="#anexos" data-i18n="func.4">Fotos, voz e ficheiros</a></li>
+          <li><a href="#chamadas" data-i18n="func.5">Chamadas de voz</a></li>
+          <li><a href="#contactos" data-i18n="func.6">Contactos sem número de telefone</a></li>
+          <li><a href="#perfil" data-i18n="func.7">O teu perfil</a></li>
+          <li><a href="#protecao" data-i18n="func.8">Proteger a app e a conta</a></li>
+          <li><a href="#privacidade" data-i18n="func.9">Privacidade sem teres de configurar nada</a></li>
+          <li><a href="#todos" data-i18n="func.10">Para toda a gente</a></li>
+        </ul>
+      </nav>
+
+      <section class="fx-sec" id="conversas" aria-labelledby="conversas-t">
+        <h2 id="conversas-t"><svg class="fx-sec__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M8 10h32v20H22l-9 8v-8H8z" /></svg><span data-i18n="func.11">Conversas</span></h2>
+        <div class="fx-cards">
+          <article class="fx-card">
+            <h3 data-i18n="func.12">A dois e em grupo</h3>
+            <p data-i18n="func.13">Grupos até 10 pessoas, com até 3 administradores. Cada mensagem é cifrada para cada membro e o servidor nem sabe que o grupo existe.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.14">Android e iPhone</h3>
+            <p data-i18n="func.15">Falas com quem tem Android e com quem tem iPhone, sem diferença nenhuma.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.16">Enviado, entregue e visto</h3>
+            <p data-i18n="func.17">Vês o estado de cada mensagem. As confirmações de leitura podem ser desligadas nas Definições.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.18">Reações</h3>
+            <p data-i18n="func.19">Respondes a uma mensagem com um emoji, sem escrever nada.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.20">Convites</h3>
+            <p data-i18n="func.21">Quem não está nos teus contactos e te escreve aparece como convite: aceitas, recusas ou bloqueias.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="fx-sec" id="anexos" aria-labelledby="anexos-t">
+        <h2 id="anexos-t"><svg class="fx-sec__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M10 8h18l10 10v22H10zM28 8v10h10" /></svg><span data-i18n="func.22">Fotos, voz e ficheiros</span></h2>
+        <div class="fx-cards">
+          <article class="fx-card">
+            <h3 data-i18n="func.23">Fotos e GIFs</h3>
+            <p data-i18n="func.24">Da galeria, da câmara ou do teclado de GIFs. Vês em ecrã inteiro sem nada ficar guardado em claro no telemóvel.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.25">Mensagens de voz</h3>
+            <p data-i18n="func.26">Carregas no microfone e gravas até 10 segundos.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.27">Ficheiros até 25 MB</h3>
+            <p data-i18n="func.28">PDF, documentos e outros ficheiros. Abres noutra app sem ficar uma cópia decifrada no telemóvel, ou guardas onde quiseres.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.29">Uma chave por ficheiro</h3>
+            <p data-i18n="func.30">Cada ficheiro é cifrado com uma chave própria e sai do servidor quando é descarregado, ou ao fim de 24 horas.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="fx-sec" id="chamadas" aria-labelledby="chamadas-t">
+        <h2 id="chamadas-t"><svg class="fx-sec__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M14 7l6 9-4 4c2 5 6 9 11 11l4-4 9 6-3 7c-15 0-30-15-30-30z" /></svg><span data-i18n="func.31">Chamadas de voz</span></h2>
+        <div class="fx-cards">
+          <article class="fx-card">
+            <h3 data-i18n="func.32">Cifradas ponta a ponta</h3>
+            <p data-i18n="func.33">Chamadas a dois no Android e no iPhone, também entre um Android e um iPhone. Ninguém pelo caminho as consegue ouvir.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.34">O teu endereço fica escondido</h3>
+            <p data-i18n="func.35">O som passa sempre pelo nosso servidor, nunca diretamente: quem te liga não fica a saber o teu endereço de rede.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.36">Som limpo com rede fraca</h3>
+            <p data-i18n="func.37">O áudio recupera os bocados que se perdem pelo caminho, e a chamada não cai ao passar do Wi-Fi para os dados móveis.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.38">Tocam com a app fechada</h3>
+            <p data-i18n="func.39">No Android, as chamadas tocam mesmo com a app fechada ou o telemóvel bloqueado, com toque próprio.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="fx-sec" id="contactos" aria-labelledby="contactos-t">
+        <h2 id="contactos-t"><svg class="fx-sec__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 22a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM10 40c1-8 7-13 14-13s13 5 14 13" /></svg><span data-i18n="func.40">Contactos sem número de telefone</span></h2>
+        <div class="fx-cards">
+          <article class="fx-card">
+            <h3 data-i18n="func.41">O teu ID é uma chave</h3>
+            <p data-i18n="func.42">A tua conta nasce no teu telemóvel. Não há telefone, email nem nome de utilizador: és tu quem decide a quem dá o teu ID.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.43">Código QR</h3>
+            <p data-i18n="func.44">Mostras o teu código ou lês o da outra pessoa com a câmara. Também podes copiar e partilhar o ID.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.45">Verificar segurança</h3>
+            <p data-i18n="func.46">Números de segurança para compararem lado a lado e confirmarem que ninguém está a meio da conversa.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.47">Bloquear</h3>
+            <p data-i18n="func.48">As mensagens dessa pessoa deixam de te chegar, e ela não é avisada. Podes desbloquear quando quiseres.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.49">Denunciar</h3>
+            <p data-i18n="func.50">Escolhes o motivo e até 20 mensagens. A denúncia segue cifrada para a equipa da SEALER, o servidor não sabe quem a fez, e o contacto fica bloqueado.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="fx-sec" id="perfil" aria-labelledby="perfil-t">
+        <h2 id="perfil-t"><svg class="fx-sec__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M8 12h32v24H8zM8 30l9-9 8 8 5-5 10 10" /></svg><span data-i18n="func.51">O teu perfil</span></h2>
+        <div class="fx-cards">
+          <article class="fx-card">
+            <h3 data-i18n="func.52">Foto de perfil</h3>
+            <p data-i18n="func.53">Só os teus contactos a veem, e vai cifrada: o servidor nem sabe que é uma foto. Podes mudá-la de 72 em 72 horas.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.54">Online só para contactos</h3>
+            <p data-i18n="func.55">Os teus contactos podem ver quando estás online. Ninguém mais, e podes desligar.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.56">Medalhas</h3>
+            <p data-i18n="func.57">Algumas contas têm uma medalha no canto da foto, assinada pela SEALER. <a href="./como-funciona#bd-title">Ver as medalhas</a></p>
+          </article>
+        </div>
+      </section>
+
+      <section class="fx-sec" id="protecao" aria-labelledby="protecao-t">
+        <h2 id="protecao-t"><svg class="fx-sec__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M11 22h26v19H11zM16 22v-6a8 8 0 0 1 16 0v6M24 29.5v4" /></svg><span data-i18n="func.58">Proteger a app e a conta</span></h2>
+        <div class="fx-cards">
+          <article class="fx-card">
+            <h3 data-i18n="func.59">Bloqueio da app</h3>
+            <p data-i18n="func.60">Código de pelo menos 6 dígitos, impressão digital ou rosto (Face ID no iPhone). Fecha sozinha quando sais, logo ou ao fim de 1, 5 ou 15 minutos, e até a lista de contactos fica trancada.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.61">Contra quem tenta adivinhar</h3>
+            <p data-i18n="func.62">Depois de 5 códigos errados, a app obriga a esperar cada vez mais, até 15 minutos. Mudar a hora do telemóvel não salta a espera.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.63">Chave de recuperação</h3>
+            <p data-i18n="func.64">12 palavras recuperam, num telemóvel novo, o mesmo ID, os contactos, os bloqueados e a medalha. A cópia fica cifrada no servidor, que não a consegue abrir. As conversas e os grupos não vão na cópia.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.65">Apagar tudo</h3>
+            <p data-i18n="func.66">Em Definições, <strong>Destruir perfil e dados</strong> apaga a conta do nosso servidor e depois tudo do telemóvel. <a href="./apagar-conta">Como apagar</a></p>
+          </article>
+        </div>
+      </section>
+
+      <section class="fx-sec" id="privacidade" aria-labelledby="privacidade-t">
+        <h2 id="privacidade-t"><svg class="fx-sec__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M4 24c5-8 12-12 20-12s15 4 20 12c-5 8-12 12-20 12S9 32 4 24zM24 30a6 6 0 1 0 0-12 6 6 0 0 0 0 12z" /></svg><span data-i18n="func.67">Privacidade sem teres de configurar nada</span></h2>
+        <div class="fx-cards">
+          <article class="fx-card">
+            <h3 data-i18n="func.68">Notificações sem conteúdo</h3>
+            <p data-i18n="func.69">Com a app fechada aparece só «Tens mensagens novas». Nem o nome nem o texto passam pela Google ou pela Apple.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.70">Conversas trancadas no telemóvel</h3>
+            <p data-i18n="func.71">O histórico fica numa base de dados cifrada, com a chave protegida pelo próprio telemóvel. Nada vai para cópias na nuvem.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.72">Apps recentes tapadas</h3>
+            <p data-i18n="func.73">Na lista de apps abertas, a miniatura da SEALER não mostra as tuas conversas.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.74">O servidor não sabe quem envia</h3>
+            <p data-i18n="func.75">O remetente vai dentro da parte cifrada, e as mensagens têm tamanhos fixos para não se distinguir uma curta de uma longa.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.76">Pensada para o futuro</h3>
+            <p data-i18n="func.77">Usa também uma proteção feita para resistir aos computadores quânticos.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.78">Sem publicidade nem estatísticas</h3>
+            <p data-i18n="func.79">A app não tem anúncios, estatísticas de utilização nem relatórios de falhas de outras empresas.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="fx-sec" id="todos" aria-labelledby="todos-t">
+        <h2 id="todos-t"><svg class="fx-sec__icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6a18 18 0 1 0 0 36 18 18 0 0 0 0-36zM6 24h36M24 6c5 5 7 11 7 18s-2 13-7 18c-5-5-7-11-7-18s2-13 7-18z" /></svg><span data-i18n="func.80">Para toda a gente</span></h2>
+        <div class="fx-cards">
+          <article class="fx-card">
+            <h3 data-i18n="func.81">Seis línguas</h3>
+            <p data-i18n="func.82">Português, inglês, francês, espanhol, alemão e italiano. Segue a língua do telemóvel, ou escolhes nas Definições.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.83">Claro e escuro</h3>
+            <p data-i18n="func.84">O aspeto acompanha o modo claro ou escuro do telemóvel.</p>
+          </article>
+          <article class="fx-card">
+            <h3 data-i18n="func.85">Telemóveis compatíveis</h3>
+            <p data-i18n="func.86">Android 7 ou mais recente, e iPhone com iOS 17 ou mais recente.</p>
+          </article>
+        </div>
+      </section>
+
+      <p class="fx__more" data-i18n="func.87">Queres ver o que acontece a uma mensagem pelo caminho? <a href="./como-funciona">Vê como funciona</a></p>
+      <p class="fx__back" data-i18n="func.88"><a href="./">Voltar ao início</a></p>
+    </main>
+
+    <footer class="legal-footer fx-footer">
+      <p class="lang" aria-label="Idioma / Language / Idioma"><a data-lang="pt" lang="pt-PT" href="?lang=pt">PT</a> · <a data-lang="en" lang="en" href="?lang=en">EN</a> · <a data-lang="es" lang="es" href="?lang=es">ES</a></p>
+      <p data-i18n="func.89">© 2026 SEALER, um projeto QT. <a href="./privacidade">Privacidade</a> · <a href="./termos">Termos</a> · <a href="./politica-de-cookies">Política de cookies</a></p>
+    </footer>
+    <script type="module" src="/src/legal.js"></script>
+  </body>
+</html>

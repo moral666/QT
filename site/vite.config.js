@@ -94,6 +94,7 @@ export default defineConfig({
         privacidade: resolve(import.meta.dirname, 'privacidade.html'),
         apagarConta: resolve(import.meta.dirname, 'apagar-conta.html'),
         termos: resolve(import.meta.dirname, 'termos.html'),
+        funcionalidades: resolve(import.meta.dirname, 'funcionalidades.html'),
       },
       output: {
         manualChunks(id) {

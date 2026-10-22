@@ -57,6 +57,7 @@ privacidade.html            Política de privacidade (exigida pela Google Play; 
 apagar-conta.html           Como apagar a conta (link web exigido pela Google Play; idem)
 termos.html                 Termos de utilização (aceites na app antes de usar; idem)
 como-funciona.html          Animação "Como viaja uma mensagem" em 5 passos (src/como-funciona.js e .css)
+funcionalidades.html        Tudo o que a app faz, em cartões por secção (sem JavaScript próprio; src/funcionalidades.css)
 vite.config.js              Compilação, política de segurança de conteúdo (CSP) e dist/_headers
 wrangler.jsonc              Publicação na Cloudflare (Worker sealer, os dois domínios e o endereço do relay)
 worker/index.js             Código do Worker: só /api/estado (estado do relay na AWS); o resto é estático
@@ -71,6 +72,7 @@ src/
   styles.css                Todo o estilo da página
   legal.css                 Estilo das páginas de texto (política de cookies, como funciona)
   como-funciona.js, .css    Animação da página "Como funciona" (textos dos passos em SCENES)
+  funcionalidades.css       Cartões da página "Funcionalidades" (por cima de legal.css)
   grid/
     config.js               Valores ajustáveis da grelha
     field.js                Grelha infinita: arrasto, encaixe, lente, roda, teclado, toque
@@ -249,10 +251,11 @@ As janelas descrevem o QT tal como foi descrito durante o projeto. Confirme este
 
 - **Proteção pós-quântica** (janelas "Pensada para o futuro" e "PQXDH"): só é verdade se a app publicada for compilada com a funcionalidade `pq` ativa. Se não for, retire as duas.
 - **Remetente selado** (janelas "Viaja sempre fechada" e "Remetente selado"): depende de o sealed sender estar ativo na versão publicada.
-- **iPhone** (janelas "Também trancadas no telemóvel", "Núcleo em Rust" e "Ligação ao relay"): confirmado em `ios/README.md`. A app de iPhone usa o mesmo núcleo em Rust, o histórico cifrado (com a chave protegida pelo Secure Enclave) e a chave do relay fixada. A janela "Armazenamento" fala só do Android Keystore.
+- **iPhone** (janelas "Também trancadas no telemóvel", "Núcleo em Rust" e "Ligação ao relay"): confirmado em `ios/README.md`. A app de iPhone usa o mesmo núcleo em Rust, o histórico cifrado (com a chave protegida pelo Secure Enclave) e a chave do relay fixada. A janela "Armazenamento" fala do Android Keystore e do Secure Enclave do iPhone.
 - **Servidor na União Europeia**: o relay está em Estocolmo (eu-north-1). Se mudar de região, atualize a janela.
 - **O que vem a seguir**: lista funcionalidades planeadas para o lançamento. Retire as que deixarem de estar previstas, e mova para outras janelas as que já estiverem feitas.
 - **Números de "Testes e números"**: "5 aparelhos" vem do teste entre 2 Android, 1 emulador, 1 iPhone e 1 Mac. "0,8 s" é o tempo medido até esta página aparecer num telemóvel lento (secção 10). Se a página mudar muito, volte a medir.
+- **Página "Funcionalidades"** (`funcionalidades.html`, chaves `func.*` em `src/i18n/en.js` e `es.js`): tem de bater certo com as apps. Ao acrescentar ou mudar uma funcionalidade na app, atualize a página e as versões no topo (e a frase das versões no `index.html`, chave `index.5`).
 - **Rodapé e "0 cookies"**: verdade para esta página. Se mais tarde acrescentar analítica, atualize as duas.
 
 ## 10. Desempenho: objetivos e resultados medidos

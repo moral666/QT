@@ -43,7 +43,12 @@ cumprir.)*
   downgrade de algoritmos
 - `ffi/`: a API usada pelas apps (histórico, anexos, bloqueio da app),
   sobretudo qualquer caminho que faça uma chave atravessar a FFI
-- `server/`: o relay (autenticação, filas, anexos no disco)
+- `server/`: o relay (autenticação, filas, anexos no disco, cópias de
+  recuperação, denúncias e pedidos só do operador)
+- A chave de recuperação (`core/src/recovery.rs`, `ffi/src/recovery.rs`):
+  qualquer forma de abrir ou trocar a cópia de outra pessoa
+- Medalhas (`core/src/badge.rs`): aceitar um certificado que não foi
+  assinado pelo emissor, ou mostrar a medalha de outra identidade
 - Fugas de metadados não documentadas. Ver `docs/known-limitations.md` e
   `docs/protocol-spec.md` para o que já é um limite conhecido e assumido
   (não precisas de reportar isso)

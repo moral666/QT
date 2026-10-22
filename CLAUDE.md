@@ -63,6 +63,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 
 - QT é o protocolo e o repositório; as apps chamam-se **SEALER**. Site em
   `site/` (sealer.pt, Cloudflare Worker com deploy automático a partir do git).
+- **Página "Funcionalidades"** (`site/funcionalidades.html`, chaves `func.*`, 22/10/2026): tudo o que a app faz. Ao mudar uma funcionalidade na app, atualizar esta página. **Não falar do premium (5 €/ano) no site nem na documentação pública por agora**, e as ferramentas internas (sealer-control, badge, denúncias) ficam fora do site e da documentação pública (pedido do Nuno, 22/10/2026).
 - **Site em PT, EN e ES** (19/10/2026, escolha do Nuno: trocar o texto com JavaScript, uma só página).
   O português fica no HTML; cada texto tem `data-i18n="pagina.n"` (atributos: `data-i18n-alt`,
   `-aria-label`, `-content`) e as traduções estão em `site/src/i18n/en.js` e `es.js` (carregadas só

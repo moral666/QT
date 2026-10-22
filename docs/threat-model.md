@@ -1,6 +1,6 @@
 # Modelo de Ameaças
 
-> Descreve o que o código faz hoje (versão de testes, app Android 0.9.13), o que
+> Descreve o que o código faz hoje (versão de testes, apps Android e iPhone 0.9.22), o que
 > os testes demonstram e, com igual peso, o que **não** está protegido.
 
 ## 1. Ativos
@@ -92,11 +92,20 @@ e depois alimenta a root key do Double Ratchet.
   contra o relay, não contra análise de tráfego/correlação temporal.
 * **O relay pode censurar, atrasar, descartar ou reordenar** (disponibilidade
   não é garantida). Não há federação.
-* **Spam / abuso:** qualquer utilizador autenticado pode enfileirar mensagens
-  para qualquer `user_id` (limite de 1000 mensagens por fila). Desde a 0.9.3 há
-  limites por conta (300 envelopes por minuto) e uma prova de trabalho ao criar
-  conta (alguns segundos de CPU), mas um atacante com muitas máquinas continua a
-  conseguir criar contas. Não há consentimento de contacto no relay.
+* **Spam / abuso:** qualquer conta registada pode enfileirar mensagens para
+  qualquer `user_id` registado (limite de 1000 mensagens por fila; desde a 0.9.17
+  o relay recusa escritas de contas sem registo). Desde a 0.9.3 há limites por
+  conta (300 envelopes por minuto) e uma prova de trabalho ao criar conta (alguns
+  segundos de CPU), mas um atacante com muitas máquinas continua a conseguir criar
+  contas. Não há consentimento de contacto no relay. Desde a 0.9.18 há denúncias
+  (cifradas para o operador) e banimentos por ID; um ID banido pode ser trocado
+  por outro novo.
+* **Denúncias:** o operador lê as mensagens que quem denuncia escolheu enviar. Não
+  há prova de autoria dessas mensagens (uma app alterada pode inventá-las), por
+  isso uma denúncia é um indício, não uma prova.
+* **Chave de recuperação (desde a 0.9.19):** as 12 palavras dão a conta inteira a
+  quem as tiver (ID, contactos, bloqueados). O relay guarda a cópia cifrada
+  (XChaCha20-Poly1305, chave por Argon2id) e vê que conta a enviou e quando.
 * **One-time prekeys e validade dos bundles (desde a 0.9.3):** o relay entrega uma
   one-time prekey por pedido e o bundle tem data assinada (recusado com mais de 90
   dias). Quem pede bundles em massa pode esgotar as one-time prekeys de alguém (o
@@ -129,8 +138,9 @@ e depois alimenta a root key do Double Ratchet.
 * **`ws://` só em testes locais** (builds de debug). As builds de release só
   aceitam `wss://`; o Noise protege o conteúdo e o TLS evita expor o padrão
   Noise.
-* **Sem análise de canais laterais nem fuzzing contínuo** (os testes de
-  entradas inválidas e por propriedades estão na secção 3).
+* **Sem análise de canais laterais nem fuzzing contínuo.** Há fuzzing com
+  `cargo-fuzz` desde a 0.9.17 (5 alvos, corrido à mão); os testes de entradas
+  inválidas e por propriedades estão na secção 3.
 * **Legacy:** a feature `legacy-api` da FFI expõe chaves privadas e estados
   em bytes. Nunca deve ser ativada na build Android (o script de bindings
   falha se aparecer no Kotlin).
@@ -141,6 +151,7 @@ e depois alimenta a root key do Double Ratchet.
 |---|---|---|
 | Rust `core` (+ dependências) | Toda a criptografia | - |
 | Android Keystore / Secure Enclave do iPhone | Proteger a chave que cifra o storage | Resistir a um dispositivo comprometido |
+| Operador (chave das denúncias e dos banimentos) | Ler as denúncias, banir e emitir medalhas | Ler outras mensagens (não tem como) |
 | Relay + Redis | Entregar o que recebe, quando quiser | Confidencialidade, autenticidade de bundles, ordem, disponibilidade |
 | Rede | Nada | Tudo |
 | Apps Kotlin e Swift | Mover bytes, UI, ciclo de vida, preparar imagens antes de as cifrar | Qualquer criptografia (proibido) |
