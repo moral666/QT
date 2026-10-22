@@ -67,7 +67,7 @@ pub fn waiting_users() -> usize {
     with(|m| m.len())
 }
 
-/// Ha alguem deste utilizador a espera (testes e leituras telefone a telefone, `latency.rs`).
+/// Ha alguem deste utilizador a espera (para testes).
 pub fn is_waiting(user_id: &str) -> bool {
     with(|m| m.contains_key(user_id))
 }
