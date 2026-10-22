@@ -94,10 +94,12 @@
 "t_a_carregar_mensagens_anteriores" = "Ältere Nachrichten werden geladen…";
 "t_a_chamada_ja_nao_esta_disponivel" = "Der Anruf ist nicht mehr verfügbar";
 "t_a_chamar" = "Anruf läuft…";
+"t_a_enviar_tamanho" = "Wird gesendet… %1$@";
 "t_a_foto_tem_mais_de_20" = "Das Foto ist größer als 20 MB. Wähle ein kleineres.";
 "t_a_imagem_ja_nao_esta_disponivel" = "Das Bild ist nicht mehr verfügbar (mehr als 24 Stunden vergangen).";
 "t_a_imagem_tem_mais_de_25" = "Das Bild ist größer als 25 MB.";
 "t_a_impressao_digital_ou_o_bloqueio" = "Fingerabdruck oder Bildschirmsperre haben sich geändert. Nutze den Code und aktiviere die Biometrie erneut.";
+"t_a_receber_tamanho" = "Wird empfangen… %1$@";
 "t_a_sealer_esta_em_testes_ao" = "SEALER ist in der Testphase. Mit der Nutzung akzeptierst du Folgendes:";
 "t_a_tocar" = "Klingelt…";
 "t_a_tua_foto" = "Dein Foto";

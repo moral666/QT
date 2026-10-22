@@ -94,10 +94,12 @@
 "t_a_carregar_mensagens_anteriores" = "A carregar mensagens anteriores…";
 "t_a_chamada_ja_nao_esta_disponivel" = "A chamada já não está disponível";
 "t_a_chamar" = "A chamar…";
+"t_a_enviar_tamanho" = "A enviar… %1$@";
 "t_a_foto_tem_mais_de_20" = "A foto tem mais de 20 MB. Escolhe uma mais pequena.";
 "t_a_imagem_ja_nao_esta_disponivel" = "A imagem já não está disponível (passaram mais de 24 horas).";
 "t_a_imagem_tem_mais_de_25" = "A imagem tem mais de 25 MB.";
 "t_a_impressao_digital_ou_o_bloqueio" = "A impressão digital ou o bloqueio do ecrã mudaram. Usa o código e volta a ativar a biometria.";
+"t_a_receber_tamanho" = "A receber… %1$@";
 "t_a_sealer_esta_em_testes_ao" = "A SEALER está em testes. Ao usá-la, aceitas o seguinte:";
 "t_a_tocar" = "A tocar…";
 "t_a_tua_foto" = "A tua foto";

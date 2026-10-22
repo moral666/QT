@@ -281,8 +281,8 @@ fun FileContent(m: ChatMessage, att: AttachmentInfo, progress: Float?, onOpen: (
     val subtitle = when (att.state) {
         AttachmentState.EXPIRED -> s(R.string.t_ja_nao_esta_disponivel_passaram_mais)
         AttachmentState.FAILED -> if (m.outgoing) s(R.string.t_nao_foi_possivel_enviar) else s(R.string.t_nao_foi_possivel_receber)
-        AttachmentState.UPLOADING -> "A enviar… ${formatSize(att.size.toLong())}"
-        AttachmentState.DOWNLOADING -> "A receber… ${formatSize(att.size.toLong())}"
+        AttachmentState.UPLOADING -> s(R.string.t_a_enviar_tamanho, formatSize(att.size.toLong()))
+        AttachmentState.DOWNLOADING -> s(R.string.t_a_receber_tamanho, formatSize(att.size.toLong()))
         else -> if (ext.isNotEmpty()) "${formatSize(att.size.toLong())} · $ext" else formatSize(att.size.toLong())
     }
     Row(

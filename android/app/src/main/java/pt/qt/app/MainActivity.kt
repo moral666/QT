@@ -295,6 +295,46 @@ class MainActivity : FragmentActivity() {
         vm.onAppVisible()
     }
 
+    /**
+     * Ecras que pedem FLAG_SECURE enquanto estao abertos (as 12 palavras da recuperacao).
+     * Contados aqui para nao se misturarem com o FLAG_SECURE da lista de apps recentes.
+     */
+    var secureScreens = 0
+        set(v) {
+            field = v.coerceAtLeast(0)
+            applySecure()
+        }
+
+    /**
+     * Android 7 a 12: o `setRecentsScreenshotEnabled(false)` nao existe e a miniatura nas apps
+     * recentes mostrava as conversas. Enquanto a app nao esta em primeiro plano liga-se o
+     * FLAG_SECURE (a miniatura fica vazia), como a capa do iPhone. Com a app aberta as
+     * capturas de ecra continuam permitidas. Desde a 0.9.22.
+     */
+    private var hiddenForRecents = false
+
+    private fun applySecure() {
+        val on = secureScreens > 0 || hiddenForRecents
+        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (Build.VERSION.SDK_INT < 33) {
+            hiddenForRecents = true
+            applySecure()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (hiddenForRecents) {
+            hiddenForRecents = false
+            applySecure()
+        }
+    }
+
     override fun onStop() {
         super.onStop()
         if (!isChangingConfigurations) vm.onAppHidden()
