@@ -29,12 +29,20 @@
  *     "envio_mediana_ms", "entrega_mediana_ms": número | null  (medianas da última hora)
  *     "ultimo_envio_mediana_ms", "ultima_mediana_ms": número | null  (últimas medianas conhecidas;
  *       null com um relay anterior a 19/10/2026, que só publicava a média)
+ *     "leituras": [{ "ms": número, "minuto": número }] | null
+ *       (leituras de telefone a telefone, da mais recente para a mais antiga: uma por mensagem
+ *       real entre duas apps abertas, sem médias, só com o minuto em que foi medida; até
+ *       MAX_READINGS; null com um relay anterior a 22/10/2026, que não as publicava)
  *   }
  */
 
-const CACHE_SECONDS = 30;
+/** A resposta inteira (o relay reescreve as leituras a cada 5 s). */
+const CACHE_SECONDS = 5;
+/** A verificação por WebSocket ao relay: mais espaçada, para não abrir uma ligação a cada 5 s. */
+const ONLINE_CACHE_SECONDS = 30;
+const MAX_READINGS = 10;
 const TIMEOUT_MS = 5000;
-/** O estado.json é reescrito a cada minuto; mais velho do que isto, já não vale. */
+/** O estado.json é reescrito a cada 5 s (a cada minuto num relay anterior a 22/10/2026); mais velho do que isto, já não vale. */
 const STATUS_MAX_AGE_S = 180;
 
 export default {
@@ -57,7 +65,7 @@ async function estado(request, env, ctx) {
   const cached = await cache.match(key);
   if (cached) return cached;
 
-  const [on, delivery] = await Promise.all([relayOnline(env.RELAY_URL), relayDelivery(env.RELAY_URL)]);
+  const [on, delivery] = await Promise.all([relayOnlineCached(request, env, ctx), relayDelivery(env.RELAY_URL)]);
   const body = {
     estado: on ? 'on' : 'off',
     verificado: new Date().toISOString(),
@@ -74,10 +82,29 @@ async function estado(request, env, ctx) {
     entrega_mediana_ms: on && delivery ? delivery.median : null,
     ultimo_envio_mediana_ms: delivery ? delivery.lastIdaMedian : null,
     ultima_mediana_ms: delivery ? delivery.lastMedian : null,
+    leituras: delivery ? delivery.readings : null,
   };
   const response = json(body, 200, `public, max-age=${CACHE_SECONDS}`);
   ctx.waitUntil(cache.put(key, response.clone()));
   return response;
+}
+
+/** `relayOnline`, guardado ONLINE_CACHE_SECONDS (à parte da resposta, que dura menos). */
+async function relayOnlineCached(request, env, ctx) {
+  const cache = caches.default;
+  const key = new Request(new URL('/api/estado-online', request.url).toString(), { method: 'GET' });
+  const cached = await cache.match(key);
+  if (cached) {
+    try {
+      return (await cached.json()).on === true;
+    } catch {
+      // Entrada estragada: volta a verificar.
+    }
+  }
+  const on = await relayOnline(env.RELAY_URL);
+  const entry = json({ on }, 200, `public, max-age=${ONLINE_CACHE_SECONDS}`);
+  ctx.waitUntil(cache.put(key, entry));
+  return on;
 }
 
 /** Tenta abrir uma ligação WebSocket ao relay (pelo Caddy, com TLS) e fecha-a logo. */
@@ -128,10 +155,23 @@ async function relayDelivery(relayUrl) {
       median: fresh ? num(d.entrega_mediana_ms) : null,
       lastIdaMedian: lastIda == null ? null : num(d.ultima_ida_mediana_ms),
       lastMedian: lastAvg == null ? null : num(d.ultima_mediana_ms),
+      readings: readingsOf(d.leituras, num),
     };
   } catch {
     return null;
   }
+}
+
+/** Leituras de telefone a telefone do relay: só `ms` e `minuto`, números válidos; null sem o campo. */
+function readingsOf(list, num) {
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  for (const r of list.slice(0, MAX_READINGS)) {
+    const ms = num(r?.ms);
+    const minuto = num(r?.minuto);
+    if (ms != null && minuto != null) out.push({ ms, minuto });
+  }
+  return out;
 }
 
 function json(body, status, cacheControl) {

@@ -1042,7 +1042,8 @@ p {
   animation: status-pulse 1.2s ease-in-out infinite;
 }
 
-/* Tempo médio de envio (telemóvel até ao servidor): "envio 23 ms", a seguir ao estado. */
+/* Última leitura de telefone a telefone ("telefone a telefone 182 ms"), a seguir ao estado.
+   O rótulo vem de data-label, na língua da página (src/status.js). */
 .status-pill__ms {
   grid-row: 1;
   grid-column: 3;
@@ -1054,7 +1055,7 @@ p {
 }
 
 .status-pill__ms::before {
-  content: "entre telemóveis ";
+  content: attr(data-label) " ";
   color: var(--mist);
   font-weight: 500;
 }

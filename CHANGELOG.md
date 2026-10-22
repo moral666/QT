@@ -6,6 +6,18 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 22 de outubro de 2026: leituras de telefone a telefone no site (relay e site)
+
+- O marcador do site deixa de mostrar a soma das medianas da última hora (os 22 s vinham de
+  recibos, "online" e telemóveis com a app fechada) e passa a mostrar a última mensagem real de
+  telefone a telefone ("telefone a telefone 182 ms"); ao passar o rato, as 10 últimas leituras.
+- Relay (`latency.rs`): uma leitura por mensagem normal (sem `silent` nem chamadas) para quem
+  estava a espera (`WaitMessages`): ida de quem envia + entrega ate quem recebe confirmar. Sem
+  IDs, so o minuto. `estado.json` reescrito a cada 5 s, com o campo novo `leituras`.
+- Site: o worker junta as `leituras` (resposta guardada 5 s; a verificacao por WebSocket
+  continua de 30 em 30 s) e o marcador pergunta de 10 em 10 s. Com um relay antigo, tudo como
+  antes. O rotulo do numero passa a vir na lingua da pagina (antes era sempre em portugues).
+
 ### 22 de outubro de 2026: correções das apps (0.9.23, Android e iPhone)
 
 - Contactos: se a lista guardada não abrir, a app já não grava uma lista vazia por cima nem envia

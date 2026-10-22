@@ -11,7 +11,8 @@
 
 import { L, locale } from './i18n.js';
 
-const INTERVAL_MS = 60_000;
+// O relay reescreve as leituras a cada 5 s e o site guarda a resposta 5 s (worker/index.js).
+const INTERVAL_MS = 10_000;
 
 // A app está em testes fechados (versão 0.9.x): o marcador mostra o estado do serviço usado
 // pelos testadores, não quer dizer que a app já esteja disponível ao público.
@@ -123,12 +124,65 @@ const W = L({
   },
 });
 
+/** Leituras telefone a telefone (relay desde 22/10/2026): uma por mensagem, sem médias. */
+const RD = L({
+  pt: {
+    label: 'telefone a telefone',
+    how: 'Cada leitura é uma mensagem real entre duas apps abertas, do telemóvel de quem envia até o telemóvel de quem recebe a ter guardada, sem médias',
+    last: (v, when) => ` Última mensagem de telefone a telefone: ${v} ms (${when}).`,
+    list: (vs) => ` Últimas leituras: ${vs} ms.`,
+    none: ' Ainda não há leituras de telefone a telefone (só contam mensagens entre duas apps abertas).',
+    lt1: 'há menos de 1 minuto',
+  },
+  en: {
+    label: 'phone to phone',
+    how: 'Each reading is a real message between two open apps, from the sender’s phone until the recipient’s phone has it saved, with no averages',
+    last: (v, when) => ` Last phone-to-phone message: ${v} ms (${when}).`,
+    list: (vs) => ` Latest readings: ${vs} ms.`,
+    none: ' No phone-to-phone readings yet (only messages between two open apps count).',
+    lt1: 'less than 1 minute ago',
+  },
+  fr: {
+    label: 'téléphone à téléphone',
+    how: 'Chaque mesure est un vrai message entre deux apps ouvertes, du téléphone de l’expéditeur jusqu’à ce que le téléphone du destinataire l’ait enregistré, sans moyennes',
+    last: (v, when) => ` Dernier message de téléphone à téléphone : ${v} ms (${when}).`,
+    list: (vs) => ` Dernières mesures : ${vs} ms.`,
+    none: ' Pas encore de mesures de téléphone à téléphone (seuls comptent les messages entre deux apps ouvertes).',
+    lt1: 'il y a moins d’une minute',
+  },
+  es: {
+    label: 'de móvil a móvil',
+    how: 'Cada lectura es un mensaje real entre dos apps abiertas, desde el móvil de quien lo envía hasta que el móvil de quien lo recibe lo tiene guardado, sin medias',
+    last: (v, when) => ` Último mensaje de móvil a móvil: ${v} ms (${when}).`,
+    list: (vs) => ` Últimas lecturas: ${vs} ms.`,
+    none: ' Todavía no hay lecturas de móvil a móvil (solo cuentan los mensajes entre dos apps abiertas).',
+    lt1: 'hace menos de 1 minuto',
+  },
+  de: {
+    label: 'Handy zu Handy',
+    how: 'Jede Messung ist eine echte Nachricht zwischen zwei geöffneten Apps, vom Handy des Absenders, bis das Handy des Empfängers sie gespeichert hat, ohne Durchschnitte',
+    last: (v, when) => ` Letzte Nachricht von Handy zu Handy: ${v} ms (${when}).`,
+    list: (vs) => ` Letzte Messungen: ${vs} ms.`,
+    none: ' Noch keine Messungen von Handy zu Handy (es zählen nur Nachrichten zwischen zwei geöffneten Apps).',
+    lt1: 'vor weniger als 1 Minute',
+  },
+  it: {
+    label: 'da telefono a telefono',
+    how: 'Ogni misura è un messaggio reale tra due app aperte, dal telefono di chi lo invia finché il telefono di chi lo riceve non l’ha salvato, senza medie',
+    last: (v, when) => ` Ultimo messaggio da telefono a telefono: ${v} ms (${when}).`,
+    list: (vs) => ` Ultime misure: ${vs} ms.`,
+    none: ' Ancora nessuna misura da telefono a telefono (contano solo i messaggi tra due app aperte).',
+    lt1: 'meno di 1 minuto fa',
+  },
+});
+
 export function initStatus(el) {
   if (!el) return;
   const label = el.querySelector('.status-pill__text');
   // Versão curta, só para telemóveis muito estreitos (ver styles.css).
   const mini = el.querySelector('.status-pill__mini');
   const ms = el.querySelector('.status-pill__ms');
+  if (ms) ms.dataset.label = RD.label;
   const fmt = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
   const tagEl = el.querySelector('.status-pill__tag');
   if (tagEl) tagEl.innerHTML = TAG;
@@ -173,7 +227,28 @@ export function initStatus(el) {
     return W.days(Math.round(h / 24));
   }
 
-  /** Frase sobre o tempo entre telemóveis, para o title; vazia se não se aplica. */
+  /** Leituras telefone a telefone vindas do relay; `null` com um relay anterior (sem leituras). */
+  function readingsOf(data) {
+    if (!data || !Array.isArray(data.leituras)) return null;
+    return data.leituras.filter((r) => r && Number.isFinite(r.ms) && r.ms >= 0);
+  }
+
+  /** "há menos de 1 minuto", "há 5 minutos": o relay só dá o minuto, nunca a hora exata. */
+  function agoMinute(minuteUnix) {
+    return Date.now() / 1000 - minuteUnix < 60 ? RD.lt1 : ago(minuteUnix);
+  }
+
+  /** Frase das leituras, para o title. */
+  function readingsText(list) {
+    if (!list.length) return RD.none;
+    const first = list[0];
+    const when = Number.isFinite(first.minuto) ? agoMinute(first.minuto) : '';
+    const last = when ? RD.last(fmt.format(first.ms), when) : RD.last(fmt.format(first.ms), '').replace(' ()', '');
+    const many = list.length > 1 ? RD.list(list.map((r) => fmt.format(r.ms)).join(', ')) : '';
+    return `${last}${many} ${RD.how}.`;
+  }
+
+  /** Frase sobre o tempo entre telemóveis (relay anterior, com medianas), para o title. */
   function totalText(data) {
     const now = currentValue(data);
     if (now != null) {
@@ -193,15 +268,28 @@ export function initStatus(el) {
     el.dataset.state = state;
     label.textContent = TEXT[state].short;
     if (mini) mini.textContent = TEXT[state].mini;
+    const readings = readingsOf(data);
     if (ms) {
-      // Fica sempre a última leitura conhecida, mesmo sem mensagens recentes ou com o serviço em baixo.
-      const value = totalValue(data);
-      if (value != null) {
-        ms.hidden = false;
-        ms.textContent = `${fmt.format(value)} ms`;
+      if (readings) {
+        // Relay com leituras: a última mensagem real de telefone a telefone (nunca uma média).
+        if (readings.length) {
+          ms.hidden = false;
+          ms.textContent = `${fmt.format(readings[0].ms)} ms`;
+        } else {
+          ms.hidden = true;
+        }
+      } else {
+        // Relay anterior: fica sempre a última leitura conhecida, mesmo sem mensagens recentes
+        // ou com o serviço em baixo.
+        const value = totalValue(data);
+        if (value != null) {
+          ms.hidden = false;
+          ms.textContent = `${fmt.format(value)} ms`;
+        }
       }
     }
-    const full = `${TEXT[state].long}.${totalText(data)} ${TESTING}`;
+    const times = readings ? readingsText(readings) : totalText(data);
+    const full = `${TEXT[state].long}.${times} ${TESTING}`;
     el.title = full;
     el.setAttribute('aria-label', full);
   }
