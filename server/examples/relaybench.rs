@@ -79,8 +79,23 @@ async fn login(url: &str, s: &SigningKeyPair) -> Result<(Ws, NoiseTransport), St
         signature: s.sign(&m).to_bytes().to_vec(),
     };
     match req(&mut ws, &mut n, &auth).await? {
+        ServerMessage::Ack => {}
+        _ => return Err("autenticacao recusada".into()),
+    }
+    // So contas registadas (bundle + prova de trabalho) trocam mensagens no relay.
+    let id = qt_core::primitives::DhKeyPair::generate();
+    let spk = qt_core::primitives::DhKeyPair::generate();
+    let bundle_bytes = qt_core::identity::encode_bundle(&id.public, s, &spk.public, 1, &[7u8; qt_core::identity::PQ_PUBLIC_KEY_BYTES])
+        .ok_or("bundle")?;
+    let reg = ClientMessage::RegisterPreKeyBundle {
+        user_id: user_id_from_signing_public(&s.verifying_key.to_bytes()),
+        bundle_bytes,
+        pow: qt_core::pow::pow_solve(&s.verifying_key.to_bytes(), qt_core::pow::POW_BITS),
+        one_time_pre_keys: None,
+    };
+    match req(&mut ws, &mut n, &reg).await? {
         ServerMessage::Ack => Ok((ws, n)),
-        _ => Err("autenticacao recusada".into()),
+        other => Err(format!("registo recusado: {other:?}")),
     }
 }
 

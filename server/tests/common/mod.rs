@@ -123,3 +123,12 @@ pub fn valid_bundle(signing: &qt_core::primitives::SigningKeyPair, tag: u8) -> V
     let spk = qt_core::primitives::DhKeyPair::generate();
     qt_core::identity::encode_bundle(&id.public, signing, &spk.public, 1, &[tag; qt_core::identity::PQ_PUBLIC_KEY_BYTES]).unwrap()
 }
+
+/// Da um bundle a `user_id` diretamente no Redis do relay de teste (sem prova de
+/// trabalho). Desde 22/10/2026 so contas registadas escrevem no relay (mensagens,
+/// tokens, anexos); os testes cujo assunto nao e o registo usam isto.
+#[allow(dead_code)]
+pub async fn registar(relay: &TestRelay, user_id: &str) {
+    let s = qt_server::Store::with_prefix("redis://127.0.0.1:6379", &relay.prefix).unwrap();
+    s.register_bundle(user_id.to_string(), vec![0xB0]).await.unwrap();
+}

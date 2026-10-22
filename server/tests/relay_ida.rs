@@ -20,6 +20,8 @@ async fn mensagem_enviada_mede_a_ida_ate_ao_relay() {
     let cfg = RelayConfig { max_retries: 0, ..RelayConfig::default() };
     let mut a = RelayClient::connect(&relay.url, n.private, alice.to_bytes(), cfg).await.unwrap();
     let bob_id = user_id_from_signing_public(&bob.verifying_key.to_bytes());
+    registar(&relay, &user_id_from_signing_public(&alice.verifying_key.to_bytes())).await;
+    registar(&relay, &bob_id).await;
 
     // Pedidos que nao sao mensagens nao medem nada.
     a.fetch_messages().await.unwrap();

@@ -16,7 +16,9 @@ fn uid(s: &SigningKeyPair) -> String {
     user_id_from_signing_public(&s.verifying_key.to_bytes())
 }
 
+/// Conta registada (so contas registadas escrevem no relay).
 async fn client(relay: &TestRelay, s: &SigningKeyPair) -> RelayClient {
+    registar(relay, &user_id_from_signing_public(&s.verifying_key.to_bytes())).await;
     let n = generate_static_keypair().unwrap();
     let cfg = RelayConfig { max_retries: 0, ..RelayConfig::default() };
     RelayClient::connect(&relay.url, n.private, s.to_bytes(), cfg).await.unwrap()
@@ -27,6 +29,7 @@ async fn com_mensagens_na_fila_responde_logo() {
     let relay = TestRelay::start(ServerConfig::default()).await;
     let (alice, bob) = (SigningKeyPair::generate(), SigningKeyPair::generate());
     let mut a = client(&relay, &alice).await;
+    registar(&relay, &uid(&bob)).await;
     a.send_message(&uid(&bob), vec![], b"ola".to_vec()).await.unwrap();
 
     let mut b = client(&relay, &bob).await;
@@ -85,6 +88,7 @@ async fn mensagem_para_outra_pessoa_nao_acorda() {
     let mut b = client(&relay, &bob).await;
     let mut a = client(&relay, &alice).await;
     let carol_id = uid(&carol);
+    registar(&relay, &carol_id).await;
 
     let espera = tokio::spawn(async move {
         let t = Instant::now();

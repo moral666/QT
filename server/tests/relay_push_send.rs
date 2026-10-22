@@ -25,7 +25,9 @@ fn uid(s: &SigningKeyPair) -> String {
     user_id_from_signing_public(&s.verifying_key.to_bytes())
 }
 
+/// Conta registada (so contas registadas escrevem no relay).
 async fn client(relay: &TestRelay, s: &SigningKeyPair) -> RelayClient {
+    registar(relay, &user_id_from_signing_public(&s.verifying_key.to_bytes())).await;
     let n = generate_static_keypair().unwrap();
     let cfg = RelayConfig { max_retries: 0, ..RelayConfig::default() };
     RelayClient::connect(&relay.url, n.private, s.to_bytes(), cfg).await.unwrap()

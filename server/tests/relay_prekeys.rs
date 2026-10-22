@@ -92,6 +92,8 @@ async fn limite_de_envios_e_de_bundles_por_conta() {
     };
     let relay = TestRelay::start(cfg).await;
     let (a, b) = (SigningKeyPair::generate(), SigningKeyPair::generate());
+    registar(&relay, &uid(&a)).await;
+    registar(&relay, &uid(&b)).await;
     let mut ca = client(&relay, &a).await;
     for i in 0..5 {
         assert!(ca.send_message(&uid(&b), vec![], vec![i; 8]).await.is_ok(), "envio {i}");

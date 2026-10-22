@@ -77,6 +77,8 @@ async fn conversa_a_b_pelo_relay_com_quedas_e_reinicios() {
         .register_bundle(rb.user_id().to_string(), bob.qt.publishable_bundle().unwrap())
         .await
         .unwrap();
+    // A caixa da Alice tambem precisa de registo para poder enviar.
+    registar(&relay, ra.user_id()).await;
     let bytes = ra.fetch_bundle(rb.user_id()).await.unwrap().expect("bundle de Bob");
     let peer = peer_bundle_from_relay_bytes(bytes).unwrap();
     let bob_cid = alice.qt.start_session(bob.id.public_id.clone(), peer).unwrap();
@@ -179,6 +181,9 @@ async fn android_connect(qt: &Arc<QtClient>, url: &str) -> AndroidLink {
     let auth = qt.relay_auth_message(link.noise.handshake_hash().unwrap()).unwrap();
     let resp = link.rpc(auth).await;
     assert!(matches!(resp, RelayResponse::Ack), "auth: {}", match &resp { RelayResponse::Error { reason } => reason.clone(), _ => "?".into() });
+    // Como a app ao ligar-se: publica o bundle (so contas registadas escrevem no relay).
+    let reg = link.rpc(qt.relay_request_register_bundle(qt.publishable_bundle().unwrap()).unwrap()).await;
+    assert!(matches!(reg, RelayResponse::Ack), "registo: {}", match &reg { RelayResponse::Error { reason } => reason.clone(), _ => "?".into() });
     link
 }
 

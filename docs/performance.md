@@ -5,6 +5,36 @@ medido, como repetir a medição e o que ficou de fora.
 
 ---
 
+## 22 de outubro de 2026: abuso (encher o Redis)
+
+Teste de abuso controlado: `server/examples/abuso.rs`. Relay de teste em 127.0.0.1:9550 com um
+Redis que usa o `deploy/redis/qt-redis.conf` de produção (ACL e `noeviction`), mas com
+`maxmemory 64mb` e a porta 6390. Antes e depois do ataque, duas contas normais trocam uma mensagem.
+
+```
+cargo run -p qt_server --example abuso -- --relay ws://127.0.0.1:9550 --modo descartaveis --ligacoes 20 --msgs 300
+cargo run -p qt_server --example abuso -- --relay ws://127.0.0.1:9550 --modo contas --contas 10 --msgs 300
+```
+
+| Ataque (build de debug, 2 núcleos) | Antes da correção | Depois |
+|---|---|---|
+| 20 chaves descartáveis, 6000 × 15 KB para IDs inventados | 4007 aceites (60 MB) em 45 s; Redis cheio; contas normais deixam de se registar | 0 aceites; contas normais OK |
+| 20 tokens de notificações de 4 KB sem conta | aceites | recusados |
+| 10 contas com prova de trabalho (0,24 s cada), 300 × 15 KB cada | (igual) | 3000 aceites (45 MB) em 26 s; contas normais OK |
+
+O ataque sem custo ficou fechado. O que resta: contas registadas com prova de trabalho (7 bits,
+0,24 s cada aqui) continuam a poder encher filas umas das outras, ~14 MB por fila. Para os 512 MB
+de produção bastam umas 40 contas (cerca de 10 s de CPU) e uns 3 minutos.
+
+Em produção, depois de atualizar o relay, um teste pequeno (1 ligação, até 10 mensagens, nada fica
+guardado se for recusado):
+
+```
+cargo run --release -p qt_server --example abuso -- --relay wss://relay.sealer.pt --pin <pin> --modo descartaveis
+```
+
+---
+
 ## 16 de outubro de 2026: entrega imediata (`WaitMessages`)
 
 As apps perguntavam ao relay se havia mensagens de 3 em 3 s; uma mensagem

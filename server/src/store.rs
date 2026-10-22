@@ -50,6 +50,14 @@ pub enum StoreError {
     QueueFull,
     #[error("o destinatário apagou a conta")]
     RecipientDeleted,
+    /// Quem envia nao tem bundle no relay (nunca registou, ou expirou ha mais de
+    /// 90 dias). Sem isto, chaves descartaveis (sem prova de trabalho) enchiam o Redis.
+    #[error("o remetente nao tem conta registada")]
+    SenderNotRegistered,
+    /// O destinatario nao tem bundle: o ID nunca existiu (ou expirou). Sem isto,
+    /// qualquer conta enchia filas de IDs inventados (1000 mensagens cada, 30 dias).
+    #[error("destinatário desconhecido")]
+    RecipientUnknown,
 }
 
 pub struct Store {
@@ -211,8 +219,17 @@ impl Store {
         Ok(value)
     }
 
+    /// A conta tem bundle publicado (passou a prova de trabalho e abriu a app nos
+    /// ultimos 90 dias)? So estas contas podem escrever no relay alem do registo.
+    pub async fn is_registered(&self, user_id: &str) -> Result<bool, StoreError> {
+        Ok(self.get_bundle(user_id).await?.is_some())
+    }
+
+    /// Poe uma mensagem na fila de `to`. So entre contas registadas: `from` (quem
+    /// esta autenticado na ligacao) e `to` tem de ter bundle no relay.
     pub async fn enqueue_message(
         &self,
+        from: &str,
         to: UserId,
         sealed_from: Vec<u8>,
         ciphertext: Vec<u8>,
@@ -220,19 +237,30 @@ impl Store {
         let mut conn = self.connection().await?;
         let key = format!("{}:queue:{}", self.key_prefix, to);
 
-        // Duas idas ao Redis em vez de quatro: (tamanho da fila + id novo) e depois
-        // (guardar + renovar o TTL), cada par num so pedido (pipeline). Os comandos
-        // sao os mesmos de antes; um id gasto com a fila cheia nao faz falta (os ids
-        // so tem de ser unicos).
-        // GET em vez de EXISTS: so comandos permitidos pelo ACL do relay.
-        let (current_len, id, deleted): (usize, u64, Option<Vec<u8>>) = redis::pipe()
+        // Duas idas ao Redis em vez de quatro: (verificacoes + id novo) e depois
+        // (guardar + renovar o TTL), cada grupo num so pedido (pipeline). Um id gasto
+        // numa mensagem recusada nao faz falta (os ids so tem de ser unicos).
+        // GET em vez de EXISTS: so comandos permitidos pelo ACL do relay (o bundle
+        // tem ~1,4 KB, lido no mesmo pedido, sem ida extra ao Redis).
+        type Checks = (usize, u64, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
+        let (current_len, id, deleted, to_bundle, from_bundle): Checks = redis::pipe()
             .llen(&key)
             .incr(format!("{}:seq", self.key_prefix), 1u64)
             .get(self.deleted_key(&to))
+            .get(format!("{}:bundle:{}", self.key_prefix, to))
+            .get(format!("{}:bundle:{}", self.key_prefix, from))
             .query_async(&mut conn)
             .await?;
+        // Por esta ordem: "apagou a conta" continua a ser a resposta para quem apagou
+        // (a app mostra um aviso), mesmo que o bundle ja nao exista.
         if deleted.is_some() {
             return Err(StoreError::RecipientDeleted);
+        }
+        if from_bundle.is_none() {
+            return Err(StoreError::SenderNotRegistered);
+        }
+        if to_bundle.is_none() {
+            return Err(StoreError::RecipientUnknown);
         }
         if current_len >= MAX_QUEUED_MESSAGES_PER_USER {
             return Err(StoreError::QueueFull);

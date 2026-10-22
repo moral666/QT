@@ -12,9 +12,16 @@ fn store(tag: &str) -> Arc<Store> {
     Arc::new(Store::with_prefix("redis://127.0.0.1:6379", &format!("t-fila-{tag}-{}-{}", std::process::id(), u32::from_le_bytes(b))).unwrap())
 }
 
+/// So contas com bundle trocam mensagens (o relay recusa as outras): aqui cada
+/// utilizador escreve para si proprio.
+async fn reg(s: &Store, user: &str) {
+    s.register_bundle(user.into(), vec![1]).await.unwrap();
+}
+
 async fn fill(s: &Store, user: &str, n: u8) -> Vec<u64> {
+    reg(s, user).await;
     for i in 0..n {
-        s.enqueue_message(user.into(), vec![], vec![i; 10]).await.unwrap();
+        s.enqueue_message(user, user.into(), vec![], vec![i; 10]).await.unwrap();
     }
     s.peek_messages(user, 1_000_000).await.unwrap().iter().map(|m| m.id).collect()
 }
@@ -69,11 +76,12 @@ async fn confirmacoes_ao_mesmo_tempo_nunca_apagam_mensagens_por_confirmar() {
 async fn fila_cheia_recusa_e_ids_sao_unicos() {
     let s = store("cheia");
     let u = "d".repeat(64);
+    reg(&s, &u).await;
     for i in 0..1000u32 {
-        s.enqueue_message(u.clone(), vec![], i.to_be_bytes().to_vec()).await.unwrap();
+        s.enqueue_message(&u, u.clone(), vec![], i.to_be_bytes().to_vec()).await.unwrap();
     }
     assert!(matches!(
-        s.enqueue_message(u.clone(), vec![], vec![1]).await,
+        s.enqueue_message(&u, u.clone(), vec![], vec![1]).await,
         Err(qt_server::store::StoreError::QueueFull)
     ));
     let mut all = Vec::new();
@@ -98,7 +106,34 @@ async fn fila_cheia_recusa_e_ids_sao_unicos() {
 async fn ack_devolve_so_os_ids_que_sairam_da_fila() {
     let s = store("ids");
     let u = "c".repeat(64);
-    let id = s.enqueue_message(u.clone(), vec![], vec![1]).await.unwrap();
+    reg(&s, &u).await;
+    let id = s.enqueue_message(&u, u.clone(), vec![], vec![1]).await.unwrap();
     assert_eq!(s.ack_messages_ids(&u, &[id, id + 1_000_000]).await.unwrap(), vec![id]);
     assert!(s.ack_messages_ids(&u, &[id]).await.unwrap().is_empty());
+}
+
+/// Regressao (22/10/2026): chaves descartaveis, sem bundle nem prova de trabalho,
+/// enchiam filas de IDs inventados ate o Redis ficar sem memoria. So contas com
+/// bundle escrevem, e so para contas com bundle; o que e recusado nao fica guardado.
+#[tokio::test]
+async fn so_contas_registadas_trocam_mensagens() {
+    use qt_server::store::StoreError;
+    let s = store("registo");
+    let (a, b, x) = ("e".repeat(64), "f".repeat(64), "1".repeat(64));
+    // Remetente sem bundle: recusado (mesmo para um destinatario que existe).
+    reg(&s, &b).await;
+    assert!(matches!(s.enqueue_message(&a, b.clone(), vec![], vec![1]).await, Err(StoreError::SenderNotRegistered)));
+    assert!(s.peek_messages(&b, 40_000).await.unwrap().is_empty());
+    // Remetente registado, destinatario que nunca existiu: recusado e nada guardado.
+    reg(&s, &a).await;
+    assert!(matches!(s.enqueue_message(&a, x.clone(), vec![], vec![1]).await, Err(StoreError::RecipientUnknown)));
+    assert!(s.peek_messages(&x, 40_000).await.unwrap().is_empty());
+    // Os dois registados: entregue.
+    s.enqueue_message(&a, b.clone(), vec![], vec![2]).await.unwrap();
+    assert_eq!(remaining(&s, &b).await, vec![2]);
+    // Quem apagou a conta continua a ter a resposta propria (a app mostra o aviso).
+    s.delete_account(&b).await.unwrap();
+    assert!(matches!(s.enqueue_message(&a, b.clone(), vec![], vec![3]).await, Err(StoreError::RecipientDeleted)));
+    assert!(s.is_registered(&a).await.unwrap());
+    assert!(!s.is_registered(&b).await.unwrap());
 }

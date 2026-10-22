@@ -67,7 +67,7 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     // Mensagens e bundles (o que ja existia).
     store.register_bundle(alice.clone(), vec![1, 2, 3]).await.unwrap();
     assert_eq!(store.get_bundle(&alice).await.unwrap(), Some(vec![1, 2, 3]));
-    store.enqueue_message(alice.clone(), vec![], vec![9; 10]).await.unwrap();
+    store.enqueue_message(&alice, alice.clone(), vec![], vec![9; 10]).await.unwrap();
     let q = store.peek_messages(&alice, 40_000).await.unwrap();
     assert_eq!(q.len(), 1);
     assert_eq!(store.ack_messages(&alice, &[q[0].id]).await.unwrap(), 1);
@@ -95,16 +95,16 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     assert!(store.blob_create(&alice, 5).await.is_ok());
 
     // Apagar a conta (DeleteAccount): so comandos da lista (DEL, SET, EXPIRE, GET).
-    store.enqueue_message(alice.clone(), vec![], vec![1; 4]).await.unwrap();
+    store.enqueue_message(&alice, alice.clone(), vec![], vec![1; 4]).await.unwrap();
     store.delete_account(&alice).await.unwrap();
     assert_eq!(store.get_bundle(&alice).await.unwrap(), None);
     assert!(store.peek_messages(&alice, 40_000).await.unwrap().is_empty());
     assert!(matches!(
-        store.enqueue_message(alice.clone(), vec![], vec![1; 4]).await,
+        store.enqueue_message(&alice, alice.clone(), vec![], vec![1; 4]).await,
         Err(qt_server::store::StoreError::RecipientDeleted)
     ));
     // Publicar um bundle de novo desfaz a eliminacao.
     store.register_bundle(alice.clone(), vec![4]).await.unwrap();
-    store.enqueue_message(alice.clone(), vec![], vec![1; 4]).await.unwrap();
+    store.enqueue_message(&alice, alice.clone(), vec![], vec![1; 4]).await.unwrap();
     let _ = std::fs::remove_dir_all(dir);
 }

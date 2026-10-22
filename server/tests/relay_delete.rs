@@ -29,6 +29,7 @@ async fn apagar_a_conta_apaga_bundle_e_fila_e_recusa_mensagens_novas() {
     let bob_id = uid(&bob);
 
     b.register_bundle(valid_bundle(&bob, 1)).await.unwrap();
+    a.register_bundle(valid_bundle(&alice, 2)).await.unwrap();
     a.send_message(&bob_id, vec![], b"antes".to_vec()).await.unwrap();
     assert_eq!(b.fetch_messages().await.unwrap().len(), 1);
 
@@ -42,6 +43,7 @@ async fn apagar_a_conta_apaga_bundle_e_fila_e_recusa_mensagens_novas() {
     }
     // Mensagens para outras pessoas continuam a funcionar.
     let carol = SigningKeyPair::generate();
+    registar(&relay, &uid(&carol)).await;
     a.send_message(&uid(&carol), vec![], b"ola".to_vec()).await.unwrap();
 }
 
