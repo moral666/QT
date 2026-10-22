@@ -29,7 +29,7 @@ class FakeMon:
              "custom": {"memory": {"value": 41.2, "points": pts(40, 1.5)}, "disk": {"value": 23.8, "points": pts(23.7, 0.05)},
                         "connections": {"value": 7.0, "points": pts(6, 2)}, "errors": {"value": 0.0, "points": []},
                         "relay_up": {"value": 1.0, "points": []}},
-             "cost": {"amount": 3.47, "unit": "USD", "ts": time.time() - 3600}}
+             "cost": {"amount": 0.0, "usage": 3.47, "credits": -3.47, "unit": "USD", "ts": time.time() - 3600}}
         aws.evaluate(d)
         return d
 aws.AWSMonitor = FakeMon

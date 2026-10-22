@@ -175,10 +175,13 @@ class RelayPage(Page):
                                  "idle" if errors is None else ("bad" if errors > 0 else "ok"))
 
         cost = d.get("cost") or {}
-        if cost.get("amount") is not None:
+        if cost.get("usage") is not None:
             age = age_text(time.time() - cost.get("ts", 0))
-            self.cards["cost"].set(f"{cost['amount']:.2f} {cost.get('unit', '')}".strip(),
-                                   f"desde o dia 1 · lido {age}", "warn" if cost["amount"] > 20 else "info")
+            unit = cost.get("unit", "USD")
+            note = f"uso desde o dia 1 · lido {age}"
+            if cost.get("credits"):
+                note = f"créditos {cost['credits']:.2f} · a pagar {cost['amount']:.2f} {unit} · lido {age}"
+            self.cards["cost"].set(f"{cost['usage']:.2f} {unit}", note, "warn" if cost["amount"] > 20 else "info")
         else:
             denied = "AccessDenied" in cost.get("error", "")
             self.cards["cost"].set("Indisponível", "Falta ce:GetCostAndUsage" if denied else "Cost Explorer desligado?", "idle")

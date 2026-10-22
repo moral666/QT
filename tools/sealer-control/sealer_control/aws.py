@@ -164,7 +164,12 @@ class AWSMonitor:
 
     # --- Custos ----------------------------------------------------------
     def cost_month_to_date(self, force: bool = False) -> dict[str, Any]:
-        key = f"cost:{self.profile or 'default'}"
+        """Custo do mês separado por tipo de registo, num só pedido.
+
+        O UnblendedCost total já vem com os créditos descontados (fica ~0 enquanto
+        houver créditos). Agrupando por RECORD_TYPE vê-se o uso real e os créditos.
+        """
+        key = f"cost2:{self.profile or 'default'}"
         cache = config.load_cache()
         hit = cache.get(key)
         today = date.today()
@@ -174,12 +179,12 @@ class AWSMonitor:
         start = today.replace(day=1).isoformat()
         end = (today + timedelta(days=1)).isoformat()  # o fim é exclusivo
         self.calls += 1
-        res = self.ce.get_cost_and_usage(TimePeriod={"Start": start, "End": end},
-                                         Granularity="MONTHLY", Metrics=["UnblendedCost"])
-        totals = res.get("ResultsByTime", [])
-        cost = totals[-1].get("Total", {}).get("UnblendedCost", {}) if totals else {}
-        obj = {"amount": float(cost["Amount"]) if cost.get("Amount") else None,
-               "unit": cost.get("Unit", ""), "ts": time.time(), "month": today.strftime("%Y-%m")}
+        res = self.ce.get_cost_and_usage(TimePeriod={"Start": start, "End": end}, Granularity="MONTHLY",
+                                         Metrics=["UnblendedCost"],
+                                         GroupBy=[{"Type": "DIMENSION", "Key": "RECORD_TYPE"}])
+        obj = summarize_cost(res)
+        obj.update(ts=time.time(), month=today.strftime("%Y-%m"))
+        cache.pop(f"cost:{self.profile or 'default'}", None)  # formato antigo
         cache[key] = obj
         config.save_cache(cache)
         return obj
@@ -208,7 +213,7 @@ class AWSMonitor:
         data["native"] = self._native_metrics(iid, alerts) if not force else self._refresh_native(iid, alerts)
         data["custom"] = self._custom_metrics(iid)
         try:
-            data["cost"] = self.cost_month_to_date(force)
+            data["cost"] = self.cost_month_to_date()  # nunca forçado: cada pedido custa 0,01 USD
         except Exception as exc:  # Cost Explorer desligado ou sem permissão
             data["cost"] = {"amount": None, "unit": "", "error": _short(exc, 240)}
         data["calls"] = self.calls
@@ -218,6 +223,33 @@ class AWSMonitor:
     def _refresh_native(self, iid: str, alerts: list) -> dict[str, Any]:
         self._native = None
         return self._native_metrics(iid, alerts)
+
+
+CREDIT_TYPES = {"Credit", "Refund", "BundledDiscount", "DiscountedUsage", "SavingsPlanNegation"}
+
+
+def summarize_cost(res: dict[str, Any]) -> dict[str, Any]:
+    """usage = tudo menos créditos/reembolsos; credits = créditos (negativo); net = a pagar."""
+    usage = credits = 0.0
+    unit = ""
+    found = False
+    for period in res.get("ResultsByTime", []):
+        for g in period.get("Groups", []):
+            m = g.get("Metrics", {}).get("UnblendedCost", {})
+            if m.get("Amount") is None:
+                continue
+            found = True
+            unit = m.get("Unit", unit)
+            amount = float(m["Amount"])
+            if (g.get("Keys") or [""])[0] in CREDIT_TYPES:
+                credits += amount
+            else:
+                usage += amount
+    if not found:
+        return {"amount": None, "usage": None, "credits": None, "unit": unit}
+    net = usage + credits
+    clean = lambda v: 0.0 if abs(v) < 0.005 else round(v, 2)  # evita "-0.00"
+    return {"amount": clean(net), "usage": clean(usage), "credits": clean(credits), "unit": unit or "USD"}
 
 
 def evaluate(data: dict[str, Any]) -> None:

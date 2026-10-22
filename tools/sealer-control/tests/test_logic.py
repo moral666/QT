@@ -47,6 +47,17 @@ def test_evaluate():
     d = {"instance": {"state": "running"}, "system_status": "ok", "instance_status": "initializing", "alerts": [], "native": {}, "custom": {}}
     aws.evaluate(d); assert d["tone"] == "ok"
 
+def test_cost_with_credits():
+    res = {"ResultsByTime": [{"Groups": [
+        {"Keys": ["Usage"], "Metrics": {"UnblendedCost": {"Amount": "3.4712", "Unit": "USD"}}},
+        {"Keys": ["Tax"], "Metrics": {"UnblendedCost": {"Amount": "0.0", "Unit": "USD"}}},
+        {"Keys": ["Credit"], "Metrics": {"UnblendedCost": {"Amount": "-3.4731", "Unit": "USD"}}}]}]}
+    c = aws.summarize_cost(res)
+    assert c["usage"] == 3.47 and c["credits"] == -3.47 and c["amount"] == 0.0  # nunca "-0.00"
+    assert f"{c['amount']:.2f}" == "0.00"
+    assert aws.summarize_cost({"ResultsByTime": [{"Groups": []}]})["usage"] is None
+
+
 if __name__ == "__main__":
     for n, f in list(globals().items()):
         if n.startswith("test_"): f(); print("ok", n)
