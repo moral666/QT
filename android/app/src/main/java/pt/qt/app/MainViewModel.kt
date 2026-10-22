@@ -44,6 +44,7 @@ import uniffi.qt_ffi.groupIdOfConversation
 import uniffi.qt_ffi.peerBundleFromRelayBytes
 import uniffi.qt_ffi.presenceHeartbeatMs
 import uniffi.qt_ffi.relayIdOfPublicId
+import uniffi.qt_ffi.relayPremiumRequiredReason
 import uniffi.qt_ffi.relayRecipientDeletedReason
 import uniffi.qt_ffi.BackupContact
 
@@ -302,7 +303,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 presenceOn = prefs.getBoolean("presence", true),
                 online = emptySet(),
                 recoveryOn = has && client.recoveryEnabled(),
-                premiumLock = prefs.getBoolean(PREF_PREMIUM_LOCK, false),
+                premiumLock = prefs.getBoolean(PREF_PREMIUM_ENFORCED, false),
                 premiumUntil = prefs.getLong(PREF_PREMIUM_UNTIL, 0),
                 premium = premiumNow(prefs.getLong(PREF_PREMIUM_UNTIL, 0)),
             )
@@ -1088,8 +1089,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Acao paga (fazer chamadas, criar grupos, enviar fotos, GIFs, voz e ficheiros): sem
      * premium e com o bloqueio ligado, abre o ecra Premium e devolve `true` (a acao nao segue).
+     * Quem decide e o operador (sealer-control): pergunta-se ao relay antes de cada acao paga,
+     * para o premium dado ou tirado contar logo. Sem rede, fica o ultimo estado conhecido.
      */
-    private fun premiumBlocked(): Boolean {
+    private suspend fun premiumBlocked(): Boolean {
+        val c = qt
+        val l = link
+        if (c != null && l != null) refreshPremium(c, l)
         val u = _ui.value
         if (!u.premiumLock || u.premium) return false
         _ui.update { it.copy(showPremium = true) }
@@ -1102,28 +1108,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun closePremium() = _ui.update { it.copy(showPremium = false) }
 
-    /** Premium agora: dado pelo relay e dentro do prazo, ou simulado (so na build de debug). */
-    private fun premiumNow(until: Long): Boolean =
-        until > System.currentTimeMillis() || (BuildConfig.RELAY_EDITABLE && prefs.getBoolean(PREF_PREMIUM_TEST, false))
+    /** Premium agora: so o que o relay diz (dado pelo operador) e dentro do prazo. */
+    private fun premiumNow(until: Long): Boolean = until > System.currentTimeMillis()
 
-    /** Interruptores de teste (ate haver Play Billing): ligar o bloqueio e (debug) simular premium. */
-    fun setPremiumTest(lock: Boolean, premium: Boolean) {
-        prefs.edit().putBoolean(PREF_PREMIUM_LOCK, lock).putBoolean(PREF_PREMIUM_TEST, premium).apply()
-        _ui.update { it.copy(premiumLock = lock, premium = premiumNow(it.premiumUntil)) }
-    }
-
-    /** Pergunta ao relay ate quando esta conta tem premium (ao ligar e ao abrir o ecra Premium). */
+    /**
+     * Pergunta ao relay ate quando esta conta tem premium e se o operador ligou o bloqueio (ao
+     * ligar, ao abrir o ecra Premium e antes de cada acao paga).
+     */
     private suspend fun refreshPremium(client: QtClient, l: RelayLink) {
         try {
-            val r = l.request(client.relayRequestPremiumStatus())
+            val r = l.request(client.relayRequestPremiumStatus(), PREMIUM_TIMEOUT_MS)
             if (r is RelayResponse.Premium) {
                 val until = r.untilMs.toLong()
-                prefs.edit().putLong(PREF_PREMIUM_UNTIL, until).apply()
-                _ui.update { it.copy(premiumUntil = until, premium = premiumNow(until)) }
+                prefs.edit().putLong(PREF_PREMIUM_UNTIL, until).putBoolean(PREF_PREMIUM_ENFORCED, r.enforced).apply()
+                _ui.update { it.copy(premiumUntil = until, premium = premiumNow(until), premiumLock = r.enforced) }
             }
         } catch (e: Exception) {
             // Sem rede: fica o ultimo estado conhecido.
         }
+    }
+
+    /** O relay recusou um anexo ou uma chamada por falta de premium: mostra o ecra Premium. */
+    private fun premiumRefused() {
+        _ui.update { it.copy(showPremium = true) }
+        io { val c = qt ?: return@io; val l = link ?: return@io; refreshPremium(c, l) }
     }
 
     // ------------------------------------------------------------ chave de recuperacao
@@ -1760,7 +1768,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 is RelayResponse.Error -> {
                     client.attachmentFailed(cid, mid, false)
                     refreshViews(client)
-                    error(relayRefusal(resp.reason))
+                    if (resp.reason == relayPremiumRequiredReason()) premiumRefused() else error(relayRefusal(resp.reason))
                     return
                 }
                 else -> throw IOException("resposta inesperada do relay")
@@ -1902,6 +1910,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (r is RelayResponse.Ack) {
                 client.outboxSent(item.outboxId)
                 changed = true
+            } else if (r is RelayResponse.Error && r.reason == relayPremiumRequiredReason()) {
+                // Chamada sem premium (o operador tirou-o entretanto): a oferta nao segue.
+                client.outboxSent(item.outboxId)
+                changed = true
+                if (_ui.value.call?.phase == CallPhase.CALLING) endCallLocal(s(R.string.t_chamada_terminada))
+                premiumRefused()
             } else if (r is RelayResponse.Error && r.reason == relayRecipientDeletedReason()) {
                 // O contacto apagou a conta: avisa uma vez por sessao (a mensagem fica por enviar).
                 if (deletedNotified.add(item.contactId)) {
@@ -2343,8 +2357,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
-        private const val PREF_PREMIUM_LOCK = "premium_lock_test"
-        private const val PREF_PREMIUM_TEST = "premium_test"
+        private const val PREF_PREMIUM_ENFORCED = "premium_enforced"
+        private const val PREMIUM_TIMEOUT_MS = 4_000L
         private const val PREF_PREMIUM_UNTIL = "premium_until"
         /** Copia de recuperacao: espera um pouco depois de uma mudanca (junta varias seguidas). */
         private const val BACKUP_DELAY_MS = 3_000L

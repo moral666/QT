@@ -491,6 +491,14 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 stats::inc(&STATS.rate_limited);
                 return err(crate::protocol::RATE_LIMITED);
             }
+            // Fazer chamadas e pago (0.9.21): a oferta vai com a campainha marcada.
+            if wake == Some(crate::protocol::WakeKind::Call) {
+                match store.premium_allows(me).await {
+                    Ok(true) => {}
+                    Ok(false) => return err(crate::protocol::PREMIUM_REQUIRED),
+                    Err(e) => return internal(e),
+                }
+            }
             let recipient = to.clone();
             match store.enqueue_message(me, to, sealed_from, ciphertext).await {
                 Ok(id) => {
@@ -605,12 +613,17 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 err(crate::protocol::NOT_REGISTERED)
             }
             Err(e) => internal(e),
-            Ok(true) => match store.blob_create(me, size).await {
-                Ok((blob_id, token)) => {
-                    stats::inc(&STATS.blob_uploads);
-                    ServerMessage::BlobCreated { blob_id, token }
-                }
-                Err(e) => blob_err(e),
+            // Enviar fotos, GIFs, voz e ficheiros e pago (0.9.21); receber continua gratis.
+            Ok(true) => match store.premium_allows(me).await {
+                Err(e) => internal(e),
+                Ok(false) => err(crate::protocol::PREMIUM_REQUIRED),
+                Ok(true) => match store.blob_create(me, size).await {
+                    Ok((blob_id, token)) => {
+                        stats::inc(&STATS.blob_uploads);
+                        ServerMessage::BlobCreated { blob_id, token }
+                    }
+                    Err(e) => blob_err(e),
+                },
             },
         },
         ClientMessage::BlobPut { blob_id, token, offset, data } => {
@@ -662,6 +675,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
         ClientMessage::AdminListReports { .. }
         | ClientMessage::AdminGrantPremium { .. }
         | ClientMessage::AdminListPremium
+        | ClientMessage::AdminPremiumEnforce { .. }
         | ClientMessage::AdminDeleteReport { .. }
         | ClientMessage::AdminBan { .. }
         | ClientMessage::AdminUnban { .. }
@@ -764,10 +778,21 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             Ok(()) => ServerMessage::Ack,
             Err(e) => internal(e),
         },
-        ClientMessage::PremiumStatus => match store.premium_until(me).await {
-            Ok(until_ms) => ServerMessage::Premium { until_ms },
-            Err(e) => internal(e),
+        ClientMessage::PremiumStatus => match (store.premium_until(me).await, store.premium_enforced().await) {
+            (Ok(until_ms), Ok(enforced)) => ServerMessage::Premium { until_ms, enforced },
+            (Err(e), _) | (_, Err(e)) => internal(e),
         },
+        ClientMessage::AdminPremiumEnforce { on } => {
+            if let Some(on) = on {
+                if let Err(e) = store.set_premium_enforced(on).await {
+                    return internal(e);
+                }
+            }
+            match store.premium_enforced().await {
+                Ok(on) => ServerMessage::PremiumEnforce { on },
+                Err(e) => internal(e),
+            }
+        }
         ClientMessage::AdminGrantPremium { user_id, until_ms } => {
             if !is_valid_user_id(&user_id) {
                 return err("user_id invalido");

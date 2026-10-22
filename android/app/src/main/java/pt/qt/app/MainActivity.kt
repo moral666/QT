@@ -444,7 +444,7 @@ fun AppRoot(
         !ui.hasIdentity -> SetupScreen(ui, onCreate = vm::createIdentity, onRestore = { showRestore = true })
         ui.showPremium -> {
             BackHandler { vm.closePremium() }
-            PremiumScreen(ui, onBack = vm::closePremium, onTest = vm::setPremiumTest)
+            PremiumScreen(ui, onBack = vm::closePremium)
         }
         openGroup != null && showGroupInfo -> {
             BackHandler { showGroupInfo = false }

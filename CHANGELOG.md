@@ -6,9 +6,19 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 22 de outubro de 2026: premium controlado pelo operador (apps 0.9.21, Android e iPhone)
+
+- Quem tem premium e se o bloqueio está ligado passa a ser decidido só no relay, pela aba "Premium"
+  do sealer-control: botão "Ligar o bloqueio" (para todos), dar, tirar e lista com "Tirar".
+- Com o bloqueio ligado, o relay recusa anexos e ofertas de chamada de contas sem premium
+  (`AdminPremiumEnforce`, `PREMIUM_REQUIRED`), mesmo de uma app alterada.
+- As apps perguntam ao relay antes de cada ação paga: tirar o premium conta logo. Saíram o
+  interruptor de teste e o "simular premium".
+- Preço: 5 €/ano.
+
 ### 22 de outubro de 2026: Sealer Premium (apps 0.9.20, Android e iPhone)
 
-- Ecrã "Sealer Premium" (12 €/ano): o premium desbloqueia fazer chamadas, criar grupos e enviar
+- Ecrã "Sealer Premium" (12 €/ano, 5 €/ano desde a 0.9.21): o premium desbloqueia fazer chamadas, criar grupos e enviar
   fotos, GIFs, voz e ficheiros. Texto grátis para sempre; sem premium recebe-se tudo.
 - Bloqueio com interruptor de teste, até haver pagamentos; com ele ligado, uma ação paga sem
   premium abre o ecrã Premium.

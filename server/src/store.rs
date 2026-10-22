@@ -707,7 +707,33 @@ impl Store {
 //
 //   {p}:premium:{conta}  ate quando (ms desde 1970, texto); expira sozinho 30 dias depois
 //   {p}:premiums         lista das contas (as que expiraram saem ao listar)
+//   {p}:premium_enforce  "1" = bloqueio ligado (0.9.21); ausente = desligado
 impl Store {
+    pub async fn premium_enforced(&self) -> Result<bool, StoreError> {
+        let mut conn = self.connection().await?;
+        let v: Option<String> = conn.get(format!("{}:premium_enforce", self.key_prefix)).await?;
+        Ok(v.as_deref() == Some("1"))
+    }
+
+    pub async fn set_premium_enforced(&self, on: bool) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let key = format!("{}:premium_enforce", self.key_prefix);
+        if on {
+            conn.set::<_, _, ()>(&key, "1").await?;
+        } else {
+            conn.del::<_, ()>(&key).await?;
+        }
+        Ok(())
+    }
+
+    /// A acao paga pode seguir: bloqueio desligado, ou premium dentro do prazo.
+    pub async fn premium_allows(&self, user_id: &str) -> Result<bool, StoreError> {
+        if !self.premium_enforced().await? {
+            return Ok(true);
+        }
+        Ok(self.premium_until(user_id).await? > now_ms())
+    }
+
     pub async fn premium_until(&self, user_id: &str) -> Result<u64, StoreError> {
         let mut conn = self.connection().await?;
         let v: Option<String> = conn.get(format!("{}:premium:{user_id}", self.key_prefix)).await?;

@@ -167,6 +167,10 @@ pub enum ClientMessage {
     AdminGrantPremium { user_id: UserId, until_ms: u64 },
     /// OPERADOR: contas com premium. Resposta: `PremiumList`.
     AdminListPremium,
+    /// OPERADOR (0.9.21): liga ou desliga o bloqueio premium para todos. Com ele ligado, o
+    /// relay recusa anexos (`BlobCreate`) e chamadas (`SendMessage` com `wake: Call`) a contas
+    /// sem premium e as apps fecham as funcoes pagas. `None` so pergunta. Resposta: `PremiumEnforce`.
+    AdminPremiumEnforce { on: Option<bool> },
 }
 
 /// Uma conta com premium (lista do operador).
@@ -211,6 +215,9 @@ pub const OTPK_LEN: usize = 36;
 /// Motivo do `Error` a um registo de conta nova sem prova de trabalho valida.
 pub const POW_REQUIRED: &str = "prova de trabalho em falta ou invalida";
 /// Motivo do `Error` quando uma conta passa o limite de pedidos.
+/// Acao paga (anexo ou chamada) de uma conta sem premium, com o bloqueio ligado (0.9.21).
+pub const PREMIUM_REQUIRED: &str = "precisa de premium";
+
 pub const RATE_LIMITED: &str = "demasiados pedidos, tenta daqui a pouco";
 
 /// Tamanho maximo de um token FCM (na pratica ~160 a 200 caracteres).
@@ -281,8 +288,15 @@ pub enum ServerMessage {
     /// Resposta a `BackupGet`: `data` em base64.
     BackupPart { part: u32, parts: u32, data: String },
     BackupNotFound,
-    /// Resposta a `PremiumStatus`: ate quando (ms desde 1970); 0 = sem premium.
-    Premium { until_ms: u64 },
+    /// Resposta a `PremiumStatus`: ate quando (ms desde 1970); 0 = sem premium. `enforced`
+    /// (0.9.21): o bloqueio premium esta ligado (relays antigos: ausente = `false`).
+    Premium {
+        until_ms: u64,
+        #[serde(default)]
+        enforced: bool,
+    },
+    /// Resposta a `AdminPremiumEnforce`: estado do bloqueio depois do pedido.
+    PremiumEnforce { on: bool },
     /// Resposta a `AdminListPremium`.
     PremiumList { entries: Vec<PremiumEntry> },
 }

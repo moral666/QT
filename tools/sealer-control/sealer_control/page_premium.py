@@ -1,4 +1,8 @@
-"""Página Premium: dar ou tirar premium a uma conta (testadores, ofertas) e ver quem tem."""
+"""Página Premium: ligar o bloqueio para todos, dar ou tirar premium a uma conta e ver quem tem.
+
+O relay é quem decide (0.9.21): com o bloqueio ligado, recusa anexos e chamadas a contas sem
+premium, e as apps fecham as funções pagas. Desligado, está tudo aberto para toda a gente.
+"""
 from __future__ import annotations
 
 import time
@@ -9,7 +13,7 @@ from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLineEdit, QMessageBox, Q
                                QVBoxLayout, QWidget)
 
 from .page_relay import Page
-from .reports import build_command, parse_premium, validate_public_id
+from .reports import build_command, parse_enforce, parse_premium, validate_public_id
 from .theme import C
 from .widgets import Card, label
 
@@ -25,15 +29,29 @@ class PremiumPage(Page):
     finished = Signal(bool, str)
 
     def __init__(self, get_cfg):
-        super().__init__("Premium", "Dar premium a testadores e ofertas (a chave do operador assina o pedido)")
+        super().__init__("Premium", "Quem tem premium e o bloqueio para todos (a chave do operador assina cada pedido)")
         self.get_cfg = get_cfg
         self.proc: QProcess | None = None
         self.pending: str = ""
+        self.enforced: bool | None = None
 
         self.refresh_btn = QPushButton("↻  Atualizar")
         self.refresh_btn.setObjectName("primary")
-        self.refresh_btn.clicked.connect(lambda: self._run("premium-lista", {}))
+        self.refresh_btn.clicked.connect(self.refresh)
         self.actions.addWidget(self.refresh_btn)
+
+        lock = Card(padding=18)
+        lock.lay.addWidget(label("BLOQUEIO PREMIUM (PARA TODOS)", "cardTitle"))
+        self.lock_state = label("Estado desconhecido: carrega em Atualizar.", "cardNote")
+        lock.lay.addWidget(self.lock_state)
+        lrow = QHBoxLayout()
+        self.lock_btn = QPushButton("Ligar o bloqueio")
+        self.lock_btn.setEnabled(False)
+        self.lock_btn.clicked.connect(self._toggle_lock)
+        lrow.addWidget(self.lock_btn)
+        lrow.addStretch(1)
+        lock.lay.addLayout(lrow)
+        self.root.addWidget(lock)
 
         card = Card(padding=18)
         card.lay.addWidget(label("ID DA CONTA", "cardTitle"))
@@ -91,6 +109,41 @@ class PremiumPage(Page):
         self.give_btn.setEnabled(ok)
         self.take_btn.setEnabled(ok)
 
+    def refresh(self):
+        """Estado do bloqueio e depois a lista (um pedido de cada vez)."""
+        self._run("premium-bloqueio", {})
+
+    def _show_lock(self, on: bool):
+        self.enforced = on
+        if on:
+            self.lock_state.setText("LIGADO: quem não tem premium só envia texto (anexos e chamadas recusados pelo relay).")
+            self.lock_state.setStyleSheet(f"color: {C['red']};")
+            self.lock_btn.setText("Desligar o bloqueio")
+            self.lock_btn.setObjectName("")
+        else:
+            self.lock_state.setText("Desligado: todas as funções estão abertas a toda a gente.")
+            self.lock_state.setStyleSheet(f"color: {C['green']};")
+            self.lock_btn.setText("Ligar o bloqueio")
+            self.lock_btn.setObjectName("danger")
+        self.lock_btn.style().unpolish(self.lock_btn)
+        self.lock_btn.style().polish(self.lock_btn)
+        self.lock_btn.setEnabled(self.proc is None)
+
+    def _toggle_lock(self):
+        if self.enforced is None:
+            return
+        on = not self.enforced
+        text = ("Ligar o bloqueio?\n\nQuem não tiver premium deixa logo de enviar fotos, voz, ficheiros, "
+                "de fazer chamadas e de criar grupos.") if on else "Desligar o bloqueio?\n\nTudo fica aberto para toda a gente."
+        if QMessageBox.question(self, "Bloqueio premium", text,
+                                QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel) == QMessageBox.Yes:
+            self._run("premium-bloqueio", {"on": on})
+
+    def _take_listed(self, user_id: str):
+        if QMessageBox.question(self, "Tirar premium", f"Tirar o premium a\n{user_id}?",
+                                QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel) == QMessageBox.Yes:
+            self._run("premium-tirar", {"user": user_id})
+
     def _give(self):
         text, days = DURATIONS[self.duration.currentIndex()]
         user = self.user.text().strip().lower()
@@ -123,6 +176,7 @@ class PremiumPage(Page):
         proc.finished.connect(self._on_finished)
         self.proc = proc
         self.refresh_btn.setEnabled(False)
+        self.lock_btn.setEnabled(False)
         self.status.setStyleSheet("")
         self.status.setText("A falar com o relay…")
         self._validate()
@@ -136,6 +190,7 @@ class PremiumPage(Page):
         self.proc.deleteLater()
         self.proc = None
         self.refresh_btn.setEnabled(True)
+        self.lock_btn.setEnabled(self.enforced is not None)
         self._validate()
         for line in err.splitlines():
             if line.strip():
@@ -144,6 +199,14 @@ class PremiumPage(Page):
             self.status.setText(f"✗ Falhou (código {code}). Vê o registo.")
             self.status.setStyleSheet(f"color: {C['red']};")
             self.finished.emit(False, "Falhou")
+            return
+        if self.pending == "premium-bloqueio":
+            try:
+                self._show_lock(parse_enforce(out))
+            except ValueError as exc:
+                self.status.setText(f"✗ {exc}")
+                return
+            QTimer.singleShot(0, lambda: self._run("premium-lista", {}))
             return
         if self.pending == "premium-lista":
             try:
@@ -173,4 +236,8 @@ class PremiumPage(Page):
             t.setToolTip(e["user_id"])
             t.setTextInteractionFlags(Qt.TextSelectableByMouse)
             lay.addWidget(t, 1)
+            take = QPushButton("Tirar")
+            take.setObjectName("danger")
+            take.clicked.connect(lambda _=False, u=e["user_id"]: self._take_listed(u))
+            lay.addWidget(take)
             self.list_box.addWidget(row)

@@ -15,7 +15,8 @@ from .badges import BadgeCommand
 from .config import expand
 
 RELAY_ID_RE = re.compile(r"^[0-9a-f]{64}$")
-ACTIONS = ("listar", "banidos", "apagar", "banir", "desbanir", "premium-dar", "premium-tirar", "premium-lista")
+ACTIONS = ("listar", "banidos", "apagar", "banir", "desbanir", "premium-dar", "premium-tirar", "premium-lista",
+           "premium-bloqueio")
 PUBLIC_ID_RE = re.compile(r"^qt1:[0-9a-f]{128}$")
 
 
@@ -33,8 +34,16 @@ def validate_relay_id(user: str) -> str | None:
     return None
 
 
+def validate_account(user: str) -> str | None:
+    """None se for um ID Sealer (qt1:...) ou um id do relay (64 hex), senão a explicação."""
+    u = user.strip().lower()
+    if PUBLIC_ID_RE.match(u) or RELAY_ID_RE.match(u):
+        return None
+    return validate_public_id(u)
+
+
 def build_command(cfg: dict, action: str, *, report_id: int | None = None, user: str | None = None,
-                  days: int | None = None) -> BadgeCommand:
+                  days: int | None = None, on: bool | None = None) -> BadgeCommand:
     if action not in ACTIONS:
         raise ValueError(f"Ação desconhecida: {action}")
     repo, key = expand(cfg["repo_path"]), expand(cfg["operator_key"])
@@ -47,10 +56,12 @@ def build_command(cfg: dict, action: str, *, report_id: int | None = None, user:
     if not cargo:
         raise ValueError("Não encontrei o cargo (Rust). Instala com rustup.")
     args = ["run", "-q", "--release", "-p", "qt_server", "--example", "denuncias", "--", action, "--key", key]
-    if action in ("listar", "banidos", "premium-lista"):
+    if action in ("listar", "banidos", "premium-lista", "premium-bloqueio"):
         args.append("--json")
+    if action == "premium-bloqueio" and on is not None:
+        args.append("--ligar" if on else "--desligar")
     if action in ("premium-dar", "premium-tirar"):
-        problem = validate_public_id(user or "")
+        problem = validate_account(user or "") if action == "premium-tirar" else validate_public_id(user or "")
         if problem:
             raise ValueError(problem)
         args += ["--user", (user or "").strip().lower()]
@@ -96,3 +107,11 @@ def parse_premium(stdout: str) -> list[dict]:
     if not isinstance(data, list):
         raise ValueError("resposta inesperada da ferramenta")
     return [d for d in data if isinstance(d, dict) and isinstance(d.get("user_id"), str) and isinstance(d.get("until_ms"), int)]
+
+
+def parse_enforce(stdout: str) -> bool:
+    """Estado do bloqueio premium de `premium-bloqueio --json`: {"ligado": bool}."""
+    data = json.loads(stdout.strip() or "{}")
+    if not isinstance(data, dict) or not isinstance(data.get("ligado"), bool):
+        raise ValueError("resposta inesperada da ferramenta")
+    return data["ligado"]
