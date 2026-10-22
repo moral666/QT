@@ -42,6 +42,16 @@ val fcm: FcmConfig? = run {
     FcmConfig(info["project_id"] as String, appId, apiKey, info["project_number"] as String)
 }
 
+// Uma build de release sem notificacoes passava sem ninguem dar por isso (0.9.23): avisa.
+gradle.taskGraph.whenReady {
+    if (fcm == null && allTasks.any { it.project == project && it.name.contains("Release") }) {
+        logger.warn(
+            "AVISO: release SEM notificacoes (falta android/app/google-services.json ou nao tem o " +
+                "pacote sealer.app). Com a app fechada nao chegam avisos nem chamadas.",
+        )
+    }
+}
+
 android {
     namespace = "pt.qt.app"
     compileSdk = 36
@@ -53,8 +63,8 @@ android {
         minSdk = 24            // igual ao `-P 24` do cargo-ndk
         // Android 16. Exigido pela Play Store para apps novas e atualizacoes.
         targetSdk = 36
-        versionCode = 29
-        versionName = "0.9.22"
+        versionCode = 30
+        versionName = "0.9.23"
         // So as 6 linguas da app (0.9.12): sem isto iam tambem as ~80 traducoes das bibliotecas
         // (AndroidX, Firebase, ZXing), que a app nunca mostra. A base (values/) e o portugues.
         @Suppress("DEPRECATION")

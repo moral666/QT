@@ -6,9 +6,19 @@
 "badge_dev" = "Dev";
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
+"call_mic_lost" = "The microphone stopped working (another app may be using it). The other person can no longer hear you.";
 "confirm_word" = "DELETE";
+"contacts_unreadable_new" = "Start a new list";
+"contacts_unreadable_text" = "The saved contact list could not be read. So that it is not lost, the app will not save anything over it. Close and reopen the app. If this keeps happening, you can start a new list (the old one is kept aside).";
+"contacts_unreadable_title" = "Contacts could not be opened";
 "core_unsupported" = "This message uses a feature this version of the app does not support yet. Update SEALER to see it.";
 "core_voice_message" = "Voice message";
+"err_contact_no_keys" = "The contact hasn't opened the SEALER app yet (they need to open it once).";
+"err_unknown_contact" = "This contact is no longer in your list.";
+"full_screen_later" = "Not now";
+"full_screen_open" = "Open settings";
+"full_screen_text" = "For a call to appear full screen when your phone is locked, Android needs your permission. Without it, the call only shows as a small notification.";
+"full_screen_title" = "Full-screen calls";
 "ios_bio_changed" = "Face ID, Touch ID or the iPhone passcode changed. Use the app code and turn quick unlock on again.";
 "ios_bio_confirm" = "Confirm with your code. Next, the iPhone asks for Face ID, Touch ID or the iPhone passcode.";
 "ios_bio_unavailable" = "Unavailable: this iPhone has no passcode.";
@@ -45,6 +55,7 @@
 "premium_until" = "Active until %1$@";
 "premium_until_forever" = "Active, no end date";
 "push_new" = "You have new messages";
+"recovery_auth" = "Confirm it's you to continue: the words give access to your account.";
 "recovery_bad_backup" = "Could not open the copy.";
 "recovery_bad_words" = "The words are not right. Check the order and spelling.";
 "recovery_check" = "Word no. %1$@";

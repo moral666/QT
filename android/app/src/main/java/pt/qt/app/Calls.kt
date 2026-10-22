@@ -57,6 +57,8 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
     private val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     @Volatile private var running = false
     @Volatile var muted = false
+    /** O microfone deixou de funcionar a meio da chamada (outra app ficou com ele). */
+    @Volatile var onMicLost: (() -> Unit)? = null
     private var record: AudioRecord? = null
     private var track: AudioTrack? = null
     private var aec: AcousticEchoCanceler? = null
@@ -145,6 +147,7 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
                 // O microfone morreu (outra app ficou com ele, mudanca de saida): para de ler.
                 if (err == AudioRecord.ERROR_DEAD_OBJECT) {
                     Log.w(TAG, "microfone: perdido")
+                    onMicLost?.invoke()   // avisa (0.9.23; antes o outro lado so deixava de ouvir)
                     break
                 }
                 // Outro erro: espera um pouco em vez de repetir sem pausa (antes gastava 100% de um nucleo).
@@ -259,6 +262,10 @@ class CallSounds(private val ctx: Context) {
                 start()
             }
         }.onFailure { player?.release(); player = null }
+        // Modo silencio: nem som nem vibracao (0.9.23; antes vibrava na mesma). O som ja segue
+        // o volume do toque do telemovel (fica mudo em silencio e em vibracao).
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        if (am?.ringerMode == AudioManager.RINGER_MODE_SILENT) return
         runCatching {
             val v = ContextCompat.getSystemService(ctx, Vibrator::class.java)
             val pattern = longArrayOf(0, 800, 800)
@@ -339,7 +346,7 @@ class CallService : Service() {
 
         private fun notification(ctx: Context): Notification {
             ensureChannel(ctx)
-            val open = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            val open = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             val pi = PendingIntent.getActivity(ctx, 1, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             val hang = PendingIntent.getService(
                 ctx, 2, Intent(ctx, CallService::class.java).setAction(ACTION_HANGUP),
@@ -423,7 +430,12 @@ object CallNotify {
         return PendingIntent.getActivity(ctx, code, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
-    /** Chamada a chegar: ecra inteiro (telemovel bloqueado) ou aviso no topo. `sound`: toca pelo canal. */
+    /**
+     * Chamada a chegar: ecra inteiro (telemovel bloqueado) ou aviso no topo. `sound`: toca pelo canal.
+     * Nao depende do interruptor "Notificacoes" (de proposito): e a forma de atender. Com ele
+     * desligado o relay nao acorda o telemovel, por isso so toca com a app ainda a correr.
+     * A chamada perdida e um aviso como os outros e segue o interruptor.
+     */
     @SuppressLint("MissingPermission")   // verificada em Push.permissionGranted
     fun ringing(ctx: Context, name: String?, sound: Boolean) {
         if (!Push.permissionGranted(ctx)) return
@@ -467,7 +479,7 @@ object CallNotify {
     fun missed(ctx: Context, name: String?) {
         if (!Push.permissionGranted(ctx) || !Push.isOn(ctx)) return
         CallService.ensureChannel(ctx)
-        val open = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val open = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val pi = PendingIntent.getActivity(ctx, 7, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         fun base() = NotificationCompat.Builder(ctx, CallService.CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_sealer)
@@ -491,6 +503,25 @@ object CallNotify {
     fun clear(ctx: Context) {
         NotificationManagerCompat.from(ctx).cancel(ID)
     }
+
+    /**
+     * Android 14+: a permissao de ecra inteiro pode estar desligada (vem desligada se a Play
+     * Console nao tiver a declaracao). Sem ela, a chamada so aparece como um aviso pequeno.
+     */
+    fun fullScreenAllowed(ctx: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= 34) {
+            ctx.getSystemService(NotificationManager::class.java)?.canUseFullScreenIntent() ?: true
+        } else {
+            true
+        }
+
+    /** Ecra das definicoes do Android onde se liga o ecra inteiro desta app (Android 14+). */
+    fun fullScreenSettings(ctx: Context): Intent =
+        if (Build.VERSION.SDK_INT >= 34) {
+            Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:${ctx.packageName}"))
+        } else {
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}"))
+        }
 
     fun clearMissed(ctx: Context) {
         NotificationManagerCompat.from(ctx).cancel(MISSED_ID)

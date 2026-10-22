@@ -2,6 +2,7 @@
 name = "qt_call"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88"
 license = "AGPL-3.0-or-later"
 description = "Motor das chamadas de voz: Opus 1.6 (DRED, PLC neural), jitter buffer e ligacao ao relay das chamadas"
 publish = false

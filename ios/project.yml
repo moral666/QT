@@ -55,3 +55,13 @@ targets:
               exit 1
             fi
           fi
+    postBuildScripts:
+      # Release: sem a excecao de redes locais do ATS (so serve ao relay de teste no Mac, na
+      # Debug). Corre antes da assinatura, que e sempre o ultimo passo (0.9.23).
+      - name: Tirar NSAllowsLocalNetworking da Release
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "${CONFIGURATION}" = "Release" ]; then
+            /usr/libexec/PlistBuddy -c "Delete :NSAppTransportSecurity:NSAllowsLocalNetworking" \
+              "${TARGET_BUILD_DIR}/${INFOPLIST_PATH}" 2>/dev/null || true
+          fi

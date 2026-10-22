@@ -8,7 +8,9 @@
 #  * Python: a partir de uma build com `--features pq,legacy-api`, so para
 #    testes locais sem Android Studio/Xcode.
 #
-# Uso: ./ffi/generate_bindings.sh        (requer Rust >= 1.81)
+# Uso: ./ffi/generate_bindings.sh        (requer Rust >= 1.88)
+#      QT_BINDINGS_FEATURES=android ./ffi/generate_bindings.sh   (as features do .so Android;
+#      o scripts/build-android.sh usa esta, para os bindings e a biblioteca coincidirem)
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -25,14 +27,16 @@ bindgen() { # $1=features $2=language $3=outdir
 # ---------- 1) Perfil de producao: Kotlin + Swift ----------
 # Android e iOS: com o audio das chamadas (feature `calls`, precisa do cmake). Os bindings
 # Swift a serio sao gerados pelo scripts/build-ios.sh (no Mac).
-echo ">>> [producao] a compilar qt_ffi --features pq,calls ..."
-cargo build -p qt_ffi --features pq,calls
+FEATURES="${QT_BINDINGS_FEATURES:-pq,calls}"
+case ",$FEATURES," in *,legacy-api,*) echo "ERRO: legacy-api nao pode ir para os bindings de producao"; exit 1 ;; esac
+echo ">>> [producao] a compilar qt_ffi --features $FEATURES ..."
+cargo build -p qt_ffi --features "$FEATURES"
 rm -rf ffi/bindings/kotlin ffi/bindings/swift
 mkdir -p ffi/bindings
 echo ">>> A gerar bindings Kotlin (Android)..."
-bindgen pq,calls kotlin ffi/bindings/kotlin
+bindgen "$FEATURES" kotlin ffi/bindings/kotlin
 echo ">>> A gerar bindings Swift (iOS)..."
-bindgen pq,calls swift ffi/bindings/swift
+bindgen "$FEATURES" swift ffi/bindings/swift
 
 KT=ffi/bindings/kotlin/uniffi/qt_ffi/qt_ffi.kt
 grep -q "class QtClient" "$KT" \

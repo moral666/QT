@@ -6,9 +6,19 @@
 "badge_dev" = "Dev";
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
+"call_mic_lost" = "Il microfono ha smesso di funzionare (forse lo usa un'altra app). L'altra persona non ti sente più.";
 "confirm_word" = "ELIMINA";
+"contacts_unreadable_new" = "Nuovo elenco";
+"contacts_unreadable_text" = "Impossibile leggere l'elenco dei contatti salvato. Per non perderlo, l'app non salva nulla sopra. Chiudi e riapri l'app. Se l'avviso continua, puoi iniziare un nuovo elenco (quello vecchio viene conservato a parte).";
+"contacts_unreadable_title" = "Impossibile aprire i contatti";
 "core_unsupported" = "Questo messaggio usa una funzione che questa versione dell'app non supporta ancora. Aggiorna SEALER per vederlo.";
 "core_voice_message" = "Messaggio vocale";
+"err_contact_no_keys" = "Il contatto non ha ancora aperto l'app SEALER (deve aprirla una volta).";
+"err_unknown_contact" = "Questo contatto non è più nel tuo elenco.";
+"full_screen_later" = "Non ora";
+"full_screen_open" = "Apri impostazioni";
+"full_screen_text" = "Perché una chiamata appaia a schermo intero con il telefono bloccato, Android ha bisogno del tuo permesso. Senza, la chiamata appare solo come una piccola notifica.";
+"full_screen_title" = "Chiamate a schermo intero";
 "ios_bio_changed" = "Face ID, Touch ID o il codice dell'iPhone sono cambiati. Usa il codice dell'app e riattiva lo sblocco rapido.";
 "ios_bio_confirm" = "Conferma con il tuo codice. Poi l'iPhone chiede Face ID, Touch ID o il codice dell'iPhone.";
 "ios_bio_unavailable" = "Non disponibile: questo iPhone non ha un codice.";
@@ -45,6 +55,7 @@
 "premium_until" = "Attivo fino al %1$@";
 "premium_until_forever" = "Attivo, senza data di fine";
 "push_new" = "Hai nuovi messaggi";
+"recovery_auth" = "Conferma che sei tu per continuare: le parole danno accesso al tuo account.";
 "recovery_bad_backup" = "Impossibile aprire la copia.";
 "recovery_bad_words" = "Le parole non sono corrette. Controlla ordine e ortografia.";
 "recovery_check" = "Parola n. %1$@";

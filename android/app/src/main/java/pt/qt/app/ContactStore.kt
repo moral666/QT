@@ -61,19 +61,55 @@ class ContactStore(ctx: Context, private val box: KeystoreBox, private val bgBox
         return box.open(raw)
     }
 
-    /** @param innerKey chave dos contactos ([contactsKeyFrom]). */
+    /**
+     * @param innerKey chave dos contactos ([contactsKeyFrom]).
+     * @return a lista guardada, ou vazia se ainda nao ha ficheiro (normal numa conta nova).
+     * @throws ContactsUnreadableException se o ficheiro existe mas nao abre. Desde a 0.9.23:
+     *   antes devolvia uma lista vazia e a gravacao seguinte apagava a lista verdadeira.
+     */
     fun load(innerKey: ByteArray): List<Contact> = synchronized(lock) {
         // Sem verificar raw.exists(): o AtomicFile recupera sozinho a copia de
         // seguranca (.bak) se a ultima gravacao foi interrompida.
-        runCatching {
-            val outer = openOuter(file.readFully())
+        val raw = try {
+            file.readFully()
+        } catch (e: java.io.FileNotFoundException) {
+            return emptyList()
+        } catch (e: Exception) {
+            throw ContactsUnreadableException(e)
+        }
+        try {
+            val outer = openOuter(raw)
             val plain = if (startsWithMagic(outer)) openInner(innerKey, outer) else outer
             val arr = JSONArray(String(plain, Charsets.UTF_8))
             (0 until arr.length()).map {
                 val o = arr.getJSONObject(it)
                 Contact(o.getString("n"), o.getString("p"), o.getString("r"))
             }
-        }.getOrDefault(emptyList())
+        } catch (e: Exception) {
+            throw ContactsUnreadableException(e)
+        }
+    }
+
+    /** Como [load], mas vazia em qualquer erro. So para leituras que nunca gravam (segundo plano). */
+    fun loadOrEmpty(innerKey: ByteArray): List<Contact> =
+        try { load(innerKey) } catch (e: ContactsUnreadableException) { emptyList() }
+
+    /**
+     * Guarda uma copia do ficheiro que nao abriu ("qt_contacts.bad-<hora>.bin", cifrada como
+     * estava) e tira-o do caminho: a lista seguinte comeca vazia. So quando o utilizador o
+     * escolhe ("Comecar uma lista nova").
+     */
+    fun quarantine() = synchronized(lock) {
+        val base = file.baseFile
+        if (base.exists()) {
+            val dest = File(base.parentFile, "qt_contacts.bad-${System.currentTimeMillis()}.bin")
+            if (!base.renameTo(dest)) {
+                base.copyTo(dest, overwrite = false)
+                file.delete()
+            }
+        }
+        // A copia de seguranca do AtomicFile (.bak) tambem nao abriria.
+        File(base.path + ".bak").delete()
     }
 
     /** `true` se o ficheiro existe e ainda esta num formato antigo (sem a segunda camada, ou
@@ -114,8 +150,12 @@ class ContactStore(ctx: Context, private val box: KeystoreBox, private val bgBox
         return c.doFinal(blob, start, blob.size - start)
     }
 
-    /** Apaga o ficheiro (ja cifrado) da lista de contactos. */
+    /** Apaga o ficheiro (ja cifrado) da lista de contactos e as copias que nao abriam. */
     fun wipe() = synchronized(lock) {
         file.delete()
+        file.baseFile.parentFile?.listFiles { f -> f.name.startsWith("qt_contacts.bad-") }?.forEach { it.delete() }
     }
 }
+
+/** O ficheiro dos contactos existe mas nao abre (chave, Keystore ou ficheiro estragado). */
+class ContactsUnreadableException(cause: Throwable) : Exception("lista de contactos ilegivel", cause)

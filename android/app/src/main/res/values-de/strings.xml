@@ -380,4 +380,15 @@
     <string name="premium_until_forever">Aktiv, ohne Enddatum</string>
     <string name="t_a_enviar_tamanho">Wird gesendet… %1$s</string>
     <string name="t_a_receber_tamanho">Wird empfangen… %1$s</string>
+    <string name="contacts_unreadable_title">Kontakte konnten nicht geöffnet werden</string>
+    <string name="contacts_unreadable_text">Die gespeicherte Kontaktliste konnte nicht gelesen werden. Damit sie nicht verloren geht, speichert die App nichts darüber. Schließe die App und öffne sie erneut. Wenn der Hinweis bleibt, kannst du eine neue Liste beginnen (die alte wird separat aufbewahrt).</string>
+    <string name="contacts_unreadable_new">Neue Liste beginnen</string>
+    <string name="recovery_auth">Bestätige, dass du es bist: Die Wörter geben Zugriff auf dein Konto.</string>
+    <string name="full_screen_title">Anrufe im Vollbild</string>
+    <string name="full_screen_text">Damit ein Anruf bei gesperrtem Handy im Vollbild erscheint, braucht Android deine Erlaubnis. Ohne sie erscheint der Anruf nur als kleine Benachrichtigung.</string>
+    <string name="full_screen_open">Einstellungen öffnen</string>
+    <string name="full_screen_later">Nicht jetzt</string>
+    <string name="call_mic_lost">Das Mikrofon funktioniert nicht mehr (vielleicht nutzt es eine andere App). Die andere Person hört dich nicht mehr.</string>
+    <string name="err_unknown_contact">Dieser Kontakt ist nicht mehr in deiner Liste.</string>
+    <string name="err_contact_no_keys">Der Kontakt hat die SEALER-App noch nicht geöffnet (er muss sie einmal öffnen).</string>
 </resources>

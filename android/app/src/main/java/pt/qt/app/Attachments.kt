@@ -63,6 +63,80 @@ import kotlin.math.roundToInt
 
 // ======================================================================= preparar
 
+/**
+ * Tira os metadados de um PNG ou WebP sem voltar a gravar a imagem (fica igual, com a
+ * transparencia e a animacao). PNG: sem os blocos de texto, EXIF e data (tEXt, zTXt, iTXt,
+ * eXIf, tIME). WebP: sem os blocos EXIF e XMP. `null` se o ficheiro estiver mal formado.
+ * Igual a `MetaStrip` do iPhone.
+ */
+object MetaStrip {
+    private val PNG_DROP = setOf("tEXt", "zTXt", "iTXt", "eXIf", "tIME")
+    private val WEBP_DROP = setOf("EXIF", "XMP ")
+
+    fun strip(b: ByteArray, mime: String): ByteArray? = try {
+        when (mime) {
+            "image/png" -> png(b)
+            "image/webp" -> webp(b)
+            else -> b
+        }
+    } catch (e: IndexOutOfBoundsException) {
+        null
+    }
+
+    private fun be32(b: ByteArray, i: Int) =
+        ((b[i].toLong() and 0xFF) shl 24) or ((b[i + 1].toLong() and 0xFF) shl 16) or
+            ((b[i + 2].toLong() and 0xFF) shl 8) or (b[i + 3].toLong() and 0xFF)
+
+    private fun le32(b: ByteArray, i: Int) =
+        (b[i].toLong() and 0xFF) or ((b[i + 1].toLong() and 0xFF) shl 8) or
+            ((b[i + 2].toLong() and 0xFF) shl 16) or ((b[i + 3].toLong() and 0xFF) shl 24)
+
+    private fun png(b: ByteArray): ByteArray? {
+        if (b.size < 8) return null
+        val out = java.io.ByteArrayOutputStream(b.size)
+        out.write(b, 0, 8)
+        var i = 8
+        while (i + 12 <= b.size) {
+            val len = be32(b, i)
+            val total = 12L + len
+            if (len < 0 || i + total > b.size) return null
+            val type = String(b, i + 4, 4, Charsets.ISO_8859_1)
+            if (type !in PNG_DROP) out.write(b, i, total.toInt())
+            i += total.toInt()
+            if (type == "IEND") return out.toByteArray()
+        }
+        return null
+    }
+
+    private fun webp(b: ByteArray): ByteArray? {
+        if (b.size < 12) return null
+        val body = java.io.ByteArrayOutputStream(b.size)
+        var i = 12
+        while (i + 8 <= b.size) {
+            val type = String(b, i, 4, Charsets.ISO_8859_1)
+            val len = le32(b, i + 4)
+            val total = 8L + len + (len and 1L)
+            if (i + 8 + len > b.size) return null
+            val end = minOf(b.size.toLong(), i + total).toInt()
+            if (type !in WEBP_DROP) {
+                val chunk = b.copyOfRange(i, end)
+                // VP8X: tira as marcas "tem EXIF" (0x08) e "tem XMP" (0x04).
+                if (type == "VP8X" && chunk.size > 8) chunk[8] = (chunk[8].toInt() and 0x08.inv() and 0x04.inv()).toByte()
+                body.write(chunk)
+            }
+            i = end
+        }
+        val payload = body.toByteArray()
+        val size = payload.size + 4
+        val out = java.io.ByteArrayOutputStream(payload.size + 12)
+        out.write("RIFF".toByteArray(Charsets.ISO_8859_1))
+        out.write(byteArrayOf(size.toByte(), (size shr 8).toByte(), (size shr 16).toByte(), (size shr 24).toByte()))
+        out.write("WEBP".toByteArray(Charsets.ISO_8859_1))
+        out.write(payload)
+        return out.toByteArray()
+    }
+}
+
 class ImageTooBigException : Exception("imagem maior que 25 MB")
 
 /** Ficheiro temporario pronto a cifrar pelo Rust (apagar depois de `attachmentCreate`). */
@@ -73,7 +147,8 @@ data class PreparedImage(val file: File, val mime: String, val width: Int, val h
  *  - GIF: vai como esta (para continuar animado);
  *  - fotos: reduzidas para 1600 px no lado maior e JPEG 80 (~300 KB), ou, com
  *    "qualidade original", ate 4096 px e JPEG 92;
- *  - PNG/WebP do teclado (autocolantes) ou em qualidade original: como estao.
+ *  - PNG/WebP do teclado (autocolantes) ou em qualidade original: a mesma imagem, sem os
+ *    metadados ([MetaStrip], desde a 0.9.23; antes iam tal como estavam).
  * Voltar a gravar a foto apaga os metadados (incluindo a localizacao GPS).
  */
 object ImagePrep {
@@ -88,6 +163,11 @@ object ImagePrep {
         try {
             if (asIs) {
                 copyLimited(ctx, uri, out)
+                // Data, aparelho e as vezes a localizacao: fora (a imagem fica igual, bit a bit).
+                if (mime != "image/gif") {
+                    val clean = MetaStrip.strip(out.readBytes(), mime) ?: throw IOException("imagem invalida")
+                    out.writeBytes(clean)
+                }
                 val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(out.path, o)
                 return PreparedImage(out, mime, max(o.outWidth, 1), max(o.outHeight, 1))
@@ -106,18 +186,20 @@ object ImagePrep {
         }
     }
 
-    /** Copia o que o teclado mandou (enquanto a permissao de leitura e valida). */
-    fun copyToCache(ctx: Context, uri: Uri): File? = try {
-        val out = File(ctx.cacheDir, "envio").apply { mkdirs() }.let { File.createTempFile("kbd", ".tmp", it) }
+    /** Copia o que o teclado mandou (ja aberto, enquanto a permissao de leitura e valida). Fecha `input`. */
+    fun copyToCache(ctx: Context, input: java.io.InputStream): File? = input.use { inp ->
         try {
-            copyLimited(ctx, uri, out)
-            out
+            val out = File(ctx.cacheDir, "envio").apply { mkdirs() }.let { File.createTempFile("kbd", ".tmp", it) }
+            try {
+                copyStreamLimited(inp, out)
+                out
+            } catch (e: Exception) {
+                out.delete()
+                null
+            }
         } catch (e: Exception) {
-            out.delete()
             null
         }
-    } catch (e: Exception) {
-        null
     }
 
     /**
@@ -133,7 +215,11 @@ object ImagePrep {
 
     private fun copyLimited(ctx: Context, uri: Uri, out: File) {
         val input = ctx.contentResolver.openInputStream(uri) ?: throw IOException("sem acesso")
-        input.use { inp ->
+        input.use { copyStreamLimited(it, out) }
+    }
+
+    private fun copyStreamLimited(inp: java.io.InputStream, out: File) {
+        run {
             out.outputStream().use { o ->
                 val buf = ByteArray(64 * 1024)
                 var total = 0L

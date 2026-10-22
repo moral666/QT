@@ -2,13 +2,14 @@
 name = "qt_ffi"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88"
 license = "AGPL-3.0-or-later"
 description = "Bindings FFI (uniffi) do core para Android/iOS/Python/etc"
 publish = false
 
 [features]
 # `pq` expoe a API de alto nivel (QtClient) com PQXDH (X25519 + ML-KEM-768).
-# Ativo por omissao; exige rustc >= 1.81.
+# Ativo por omissao. O workspace exige rustc >= 1.88 (`rust-version`).
 default = ["pq"]
 pq = ["qt_core/pq", "qt_storage/pq"]
 # API ANTIGA (bytes de chaves privadas e estados de ratchet atravessam a FFI).

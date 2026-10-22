@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @main
 struct SealerMessengerApp: App {
@@ -20,12 +21,41 @@ struct SealerMessengerApp: App {
             }
         }
         .onChange(of: scenePhase) { _, phase in
+            // A capa tambem tapa as janelas por cima (fotos, documentos, denuncia, numero de
+            // seguranca): numa janela propria, acima de todas as da app (0.9.23).
+            if phase == .active { PrivacyShield.shared.hide() } else { PrivacyShield.shared.show() }
             switch phase {
             case .active: model.onAppVisible()
             case .background: model.onAppHidden()
             default: break   // .inactive: Face ID, centro de controlo, pedidos de permissao
             }
         }
+    }
+}
+
+/// Janela da capa de privacidade, acima das `.sheet` e `.fullScreenCover` (que ficam por cima
+/// da janela principal e, por isso, da capa que esta dentro dela).
+@MainActor
+final class PrivacyShield {
+    static let shared = PrivacyShield()
+    private var window: UIWindow?
+
+    func show() {
+        guard window == nil else { return }
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let scene = scenes.first(where: { $0.activationState != .unattached }) ?? scenes.first else { return }
+        let w = UIWindow(windowScene: scene)
+        w.windowLevel = .alert + 1
+        let host = UIHostingController(rootView: SealerTheme { PrivacyCover() })
+        host.view.backgroundColor = .clear
+        w.rootViewController = host
+        w.isHidden = false
+        window = w
+    }
+
+    func hide() {
+        window?.isHidden = true
+        window = nil
     }
 }
 

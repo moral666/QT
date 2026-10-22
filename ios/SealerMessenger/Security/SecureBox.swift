@@ -304,6 +304,9 @@ enum StorageKeyProvider {
         var raw = Data(count: 32)
         let ok = raw.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }
         guard ok == errSecSuccess else { throw SecureStoreError(message: "gerador aleatorio indisponivel") }
+        // O Keychain sobrevive a apagar a app: um Face ID de uma instalacao antiga (com outra
+        // chave) faria aparecer o botao, que depois falhava.
+        BioUnlock.disable()
         try write(raw)
         // Confirma que o que ficou em disco abre e da a mesma chave antes de a usar.
         guard try SecureBox.background.open(try readBlob().dropFirst(magic3.count)) == raw else {
@@ -333,9 +336,12 @@ enum StorageKeyProvider {
 /// Desbloqueio com Face ID, Touch ID ou o codigo do iPhone (igual a impressao digital no Android).
 ///
 /// Guarda uma segunda copia da chave do armazenamento no Keychain, num item que so se le
-/// depois de o utilizador se autenticar (`biometryCurrentSet` ou o codigo do iPhone). Se for
-/// registado um rosto/dedo novo, o iOS invalida o item: passa a ser preciso o codigo da app.
+/// depois de o utilizador se autenticar (`biometryCurrentSet` ou o codigo do iPhone, como no
+/// Android: decisao de desenho). Com `.or`, um rosto/dedo novo deixa de servir para este item,
+/// mas o codigo do iPhone continua a abri-lo (o item nao e apagado).
 /// So existe neste iPhone (`WhenPasscodeSetThisDeviceOnly`: sem codigo no iPhone, nao existe).
+/// O Keychain fica depois de apagar a app: uma chave do armazenamento nova apaga este item
+/// (`StorageKeyProvider.createNew`, 0.9.23).
 enum BioUnlock {
     private static let service = "sealer.bio.v1"
     private static let account = "storage-key"
@@ -370,6 +376,22 @@ enum BioUnlock {
         q[kSecReturnAttributes as String] = true
         let status = SecItemCopyMatching(q as CFDictionary, nil)
         return status == errSecSuccess || status == errSecInteractionNotAllowed
+    }
+
+    /// Pede o Face ID / codigo do iPhone so para confirmar que e o dono (sem chave). `true` se o
+    /// iPhone nao tem codigo (nao ha como confirmar). Bloqueante: fora da thread principal.
+    static func confirmOwner(reason: String) -> Bool {
+        let ctx = LAContext()
+        var err: NSError?
+        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else { return true }
+        var ok = false
+        let done = DispatchSemaphore(value: 0)
+        ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
+            ok = success
+            done.signal()
+        }
+        done.wait()
+        return ok
     }
 
     /// Pede o Face ID / codigo do iPhone e guarda a copia da chave. Bloqueante: fora da thread principal.

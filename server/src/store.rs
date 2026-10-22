@@ -88,7 +88,7 @@ fn today() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() / 86_400).unwrap_or(0)
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
@@ -194,21 +194,59 @@ impl Store {
         Ok(())
     }
 
+    /// Chave "de quem e este token" (o token so aparece como SHA-256).
+    fn push_owner_key(&self, token: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let h = Sha256::digest(token.as_bytes());
+        let hex: String = h.iter().map(|b| format!("{b:02x}")).collect();
+        format!("{}:pushowner:{hex}", self.key_prefix)
+    }
+
     /// Guarda (`Some`) ou apaga (`None`) o token de notificacoes do utilizador.
+    ///
+    /// Um telemovel so acorda por uma conta (0.9.23): se o mesmo token estava noutra conta
+    /// (ex.: "Esqueci-me do codigo" apaga a conta so no telemovel e cria outra), essa conta
+    /// deixa de o ter. Antes o telemovel continuava a tocar por chamadas para a conta antiga.
     pub async fn set_push_token(&self, user_id: &str, token: Option<&str>) -> Result<(), StoreError> {
         let mut conn = self.connection().await?;
-        let key = format!("{}:push:{}", self.key_prefix, user_id);
+        let p = &self.key_prefix;
+        let key = format!("{p}:push:{user_id}");
         match token {
             Some(t) => {
-                redis::pipe()
-                    .set(&key, t)
+                let owner_key = self.push_owner_key(t);
+                let mut pipe = redis::pipe();
+                let prev: Option<String> = conn.get(&owner_key).await?;
+                if let Some(prev) = prev.filter(|u| u != user_id) {
+                    // So se essa conta ainda tiver este token (pode ja estar noutro telemovel).
+                    let prev_key = format!("{p}:push:{prev}");
+                    let cur: Option<String> = conn.get(&prev_key).await?;
+                    if cur.as_deref() == Some(t) {
+                        pipe.del(&prev_key).ignore();
+                    }
+                }
+                pipe.set(&key, t)
                     .ignore()
                     .expire(&key, PUSH_TTL_SECONDS as i64)
+                    .ignore()
+                    .set(&owner_key, user_id)
+                    .ignore()
+                    .expire(&owner_key, PUSH_TTL_SECONDS as i64)
                     .ignore()
                     .query_async::<_, ()>(&mut conn)
                     .await?
             }
-            None => conn.del::<_, ()>(&key).await?,
+            None => {
+                let cur: Option<String> = conn.get(&key).await?;
+                let mut pipe = redis::pipe();
+                if let Some(cur) = cur {
+                    let owner_key = self.push_owner_key(&cur);
+                    let owner: Option<String> = conn.get(&owner_key).await?;
+                    if owner.as_deref() == Some(user_id) {
+                        pipe.del(&owner_key).ignore();
+                    }
+                }
+                pipe.del(&key).ignore().query_async::<_, ()>(&mut conn).await?
+            }
         }
         Ok(())
     }

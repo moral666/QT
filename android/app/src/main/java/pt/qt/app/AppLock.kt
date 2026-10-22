@@ -25,10 +25,14 @@ val LOCK_TIMEOUTS: List<Pair<String, Long>> get() = listOf(
 )
 
 /** Para que serve um pedido de autenticacao do sistema (BiometricPrompt). */
-enum class BioPurpose { UNLOCK, ENABLE }
+enum class BioPurpose {
+    UNLOCK, ENABLE,
+    /** Confirmar que e o dono antes de mostrar ou gerar as 12 palavras (sem Cipher). */
+    RECOVERY,
+}
 
-/** Pedido do ViewModel a Activity: mostrar o BiometricPrompt com esta Cipher. */
-class BioRequest(val purpose: BioPurpose, val cipher: Cipher)
+/** Pedido do ViewModel a Activity: mostrar o BiometricPrompt com esta Cipher (RECOVERY: sem). */
+class BioRequest(val purpose: BioPurpose, val cipher: Cipher?)
 
 /**
  * Chave da lista de contactos, derivada da chave do armazenamento. Com o bloqueio
@@ -66,7 +70,15 @@ class BioUnlock(ctx: Context) {
         /** Impressao digital/rosto (classe forte) ou o PIN/padrao do telemovel. */
         const val AUTHENTICATORS =
             BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+
+        /** So confirmar quem e (sem chave do Keystore): funciona em todas as versoes do Android. */
+        const val DEVICE_AUTHENTICATORS =
+            BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL
     }
+
+    /** O telemovel tem bloqueio de ecra (PIN, padrao, impressao digital ou rosto). */
+    fun deviceAuthAvailable(): Boolean =
+        BiometricManager.from(appCtx).canAuthenticate(DEVICE_AUTHENTICATORS) == BiometricManager.BIOMETRIC_SUCCESS
 
     /** Android 11+ e o telemovel tem bloqueio de ecra (com ou sem biometria). */
     fun isAvailable(): Boolean = Build.VERSION.SDK_INT >= 30 &&

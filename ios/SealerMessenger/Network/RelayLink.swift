@@ -101,25 +101,45 @@ actor RelayLink {
 
     private func requestLocked(_ bytes: Data, timeout: Double) async throws -> RelayResponse {
         var last: Error?
+        let repeatable = Self.repeatable(bytes)
         for attempt in 0...Self.maxRetries {
             if attempt > 0 {
                 let ms = min(Self.backoffMs << UInt64(attempt - 1), 8_000)
                 try await Task.sleep(nanoseconds: ms * 1_000_000)
             }
+            var sent = false
             do {
                 let c: Conn
                 if let existing = conn { c = existing } else { c = try await connect(); conn = c }
-                return try await roundtrip(c, bytes, timeout: timeout)
+                try await c.ws.send(.data(try c.noise.encrypt(plaintext: bytes)))
+                sent = true
+                let frame = try await Self.withTimeout(timeout, ws: c.ws) { try await Self.receiveData(c.ws) }
+                return try relayParseResponse(bytes: try c.noise.decrypt(ciphertext: frame))
             } catch let e as RelayLinkError {
                 close()
+                log("SealerRelay", "pedido falhou (tentativa \(attempt + 1)): \(e.errorDescription ?? "?")")
                 if case .permanent = e { throw e }
                 last = e
             } catch {
                 close()
+                log("SealerRelay", "pedido falhou (tentativa \(attempt + 1)): \(String(error.localizedDescription.prefix(120)))")
                 last = error                  // timeout, queda de rede, frame invalido...
             }
+            // Ja tinha saido e a resposta perdeu-se: um envio ou um anexo novo nao se repete aqui
+            // (podia chegar duas vezes). Quem chama tenta mais tarde (a outbox fica).
+            if sent && !repeatable { throw RelayLinkError.unavailable(last.map { String($0.localizedDescription.prefix(120)) } ?? "sem resposta") }
         }
-        throw RelayLinkError.unavailable(last.map { safeMessage($0) } ?? "?")
+        throw RelayLinkError.unavailable(last.map { String($0.localizedDescription.prefix(120)) } ?? "?")
+    }
+
+    /// Pode repetir-se sem efeito duplicado (leituras, confirmacoes, registos)? Desde a 0.9.23
+    /// nao se repetem automaticamente, depois de enviados: mensagens, anexos novos, denuncias e
+    /// a espera por mensagens.
+    private static let notRepeatable = ["{\"SendMessage\"", "{\"BlobCreate\"", "{\"SubmitReport\"", "{\"WaitMessages\""]
+
+    private static func repeatable(_ bytes: Data) -> Bool {
+        let head = String(decoding: bytes.prefix(24), as: UTF8.self)
+        return !notRepeatable.contains { head.hasPrefix($0) }
     }
 
     private func connect() async throws -> Conn {
@@ -144,6 +164,11 @@ actor RelayLink {
                         try noise.readStep(message: try await Self.receiveData(ws))
                     }
                 }
+            }
+            // Fora da Debug o pin e obrigatorio: sem ele nao se liga (0.9.23, defesa extra; o
+            // script da build Release ja obriga a ter o pin).
+            if pinnedRelayKeyHex.isEmpty && !Config.relayEditable {
+                throw RelayLinkError.permanent("falta a chave do relay (pin)")
             }
             // Pinning: se a chave do relay nao for a esperada, aborta SEM repetir (possivel MITM)
             if !pinnedRelayKeyHex.isEmpty, try noise.remoteStaticPublicKey().hex != pinnedRelayKeyHex {

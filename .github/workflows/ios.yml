@@ -1,0 +1,73 @@
+name: iPhone
+
+# Compila a app iPhone a cada push que mexa nela ou no nucleo Rust (0.9.23). Apanha erros de
+# Swift antes da build no Mac. Nao assina nem publica nada (CODE_SIGNING_ALLOWED=NO) e so
+# compila para o iPhone (arm64), para ser mais rapido. Gratis em repositorios publicos.
+
+on:
+  push:
+    branches: [site-sealer, develop, main]
+    paths:
+      - "ios/**"
+      - "ffi/**"
+      - "core/**"
+      - "storage/**"
+      - "transport/**"
+      - "call/**"
+      - "scripts/strings-ios.py"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - "ffi/**"
+  workflow_dispatch:
+
+jobs:
+  ios:
+    name: Compilar (sem assinar)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: XcodeGen e cmake
+        run: |
+          brew install xcodegen
+          command -v cmake || brew install cmake
+
+      - name: Nucleo Rust para o iPhone (XCFramework + bindings Swift)
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        run: |
+          set -euo pipefail
+          FEATURES="--no-default-features --features ios"
+          cargo build --release -p qt_ffi $FEATURES --target aarch64-apple-ios
+          cargo build -p qt_ffi $FEATURES
+          TMP=target/ios-pack
+          rm -rf "$TMP" && mkdir -p "$TMP/headers" ios/Generated ios/Frameworks
+          cargo run -q -p qt_ffi $FEATURES --bin uniffi-bindgen -- \
+            generate --library target/debug/libqt_ffi.dylib --language swift --out-dir "$TMP/swift"
+          cp "$TMP/swift/qt_ffi.swift" ios/Generated/qt_ffi.swift
+          cp "$TMP/swift/qt_ffiFFI.h" "$TMP/headers/"
+          cp "$TMP/swift/qt_ffiFFI.modulemap" "$TMP/headers/module.modulemap"
+          xcodebuild -create-xcframework \
+            -library target/aarch64-apple-ios/release/libqt_ffi.a -headers "$TMP/headers" \
+            -output ios/Frameworks/QtFFI.xcframework
+
+      - name: Projeto Xcode
+        working-directory: ios
+        run: xcodegen
+
+      - name: Compilar a app
+        working-directory: ios
+        run: |
+          xcodebuild -project SealerMessenger.xcodeproj -target SealerMessenger \
+            -configuration Debug -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            build | tail -200
+          test "${PIPESTATUS[0]}" -eq 0

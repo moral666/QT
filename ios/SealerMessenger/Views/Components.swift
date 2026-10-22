@@ -527,8 +527,20 @@ private func formatter(_ pattern: String, locale: Locale = .current) -> DateForm
 }
 
 private let timeFmt = formatter("HH:mm")
-private let dateFmt = formatter("dd/MM/yyyy")
-private let shortDateFmt = formatter("dd/MM")
+/// Datas na lingua do iPhone (0.9.23; antes sempre "dd/MM/yyyy").
+private let dateFmt: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = .current
+    f.dateStyle = .short
+    f.timeStyle = .none
+    return f
+}()
+private let shortDateFmt: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = .current
+    f.setLocalizedDateFormatFromTemplate("dM")
+    return f
+}()
 private let dayFmt = formatter("yyyyMMdd", locale: Locale(identifier: "en_US_POSIX"))
 
 private func date(_ ms: Int64) -> Date { Date(timeIntervalSince1970: Double(ms) / 1000) }

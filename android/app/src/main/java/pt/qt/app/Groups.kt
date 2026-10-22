@@ -86,6 +86,7 @@ fun GroupChatScreen(
     onSendImage: (Uri, Boolean, File?) -> Unit = { _, _, _ -> },
     onSendFile: (Uri) -> Unit = {},
     onSendVoice: (File, Long) -> Unit = { _, _ -> },
+    onDraftRestored: () -> Unit = {},
 ) {
     val colors = LocalChatColors.current
     var reactingTo by remember { mutableStateOf<ChatMessage?>(null) }
@@ -178,6 +179,8 @@ fun GroupChatScreen(
                     onSendImage = onSendImage,
                     onSendFile = onSendFile,
                     onSendVoice = onSendVoice,
+                    restoreText = ui.unsentText?.takeIf { it.first == group.conversationId }?.second,
+                    onRestored = onDraftRestored,
                 )
             }
         }

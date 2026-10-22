@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -39,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +57,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import java.io.File
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.rememberCoroutineScope
 
 /**
  * Caixa de escrita das conversas (a dois e de grupo): texto, imagens e GIFs (galeria e
@@ -68,11 +74,19 @@ fun ChatComposer(
     onSendImage: (Uri, Boolean, File?) -> Unit,
     onSendFile: (Uri) -> Unit,
     onSendVoice: (File, Long) -> Unit,
+    /** Texto que nao chegou a ser enviado (0.9.23): volta a caixa se ela estiver vazia. */
+    restoreText: String? = null,
+    onRestored: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     // TextFieldState (e nao String): so este campo recebe GIFs e autocolantes do
     // teclado (Gboard, SwiftKey...). Tambem sobrevive a rodar o ecra.
     val input = rememberTextFieldState()
+    LaunchedEffect(restoreText) {
+        val t = restoreText ?: return@LaunchedEffect
+        if (input.text.isEmpty()) input.setTextAndPlaceCursorAtEnd(t)
+        onRestored()
+    }
     // Imagem ou ficheiro escolhido, a espera de confirmacao.
     var picked by rememberSaveable { mutableStateOf<Uri?>(null) }
     var pickedFile by rememberSaveable { mutableStateOf<Uri?>(null) }
@@ -87,6 +101,19 @@ fun ChatComposer(
     val recorder = remember { VoiceRecorder(ctx) }
     var recording by remember { mutableStateOf(false) }
     DisposableEffect(Unit) { onDispose { recorder.cancel() } }
+    // A app saiu do ecra a meio de uma gravacao: cancela (0.9.23). Antes continuava a gravar
+    // em segundo plano e enviava silencio.
+    val owner = ctx as? androidx.lifecycle.LifecycleOwner
+    DisposableEffect(owner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP && recording) {
+                recorder.cancel()
+                recording = false
+            }
+        }
+        owner?.lifecycle?.addObserver(obs)
+        onDispose { owner?.lifecycle?.removeObserver(obs) }
+    }
     fun startRecording() {
         recording = try {
             recorder.start(); true
@@ -100,6 +127,7 @@ fun ChatComposer(
         else Toast.makeText(ctx, s(R.string.t_sem_acesso_ao_microfone_nao_e), Toast.LENGTH_SHORT).show()
     }
     val sendImage by rememberUpdatedState(onSendImage)
+    val scope = rememberCoroutineScope()
     val keyboardImages = remember {
         ReceiveContentListener { content ->
             if (!content.hasMediaType(MediaType.Image)) return@ReceiveContentListener content
@@ -108,8 +136,13 @@ fun ChatComposer(
                 val uri = item.uri ?: return@consume false
                 if (!taken) {
                     taken = true
-                    // Copia ja, enquanto o teclado da permissao de leitura.
-                    ImagePrep.copyToCache(ctx, uri)?.let { f -> sendImage(Uri.fromFile(f), false, f) }
+                    // Abre ja, enquanto o teclado da permissao de leitura; a copia (ate 25 MB) e
+                    // feita fora da thread do ecra (0.9.23; antes podia prender o ecra).
+                    val input = runCatching { ctx.contentResolver.openInputStream(uri) }.getOrNull()
+                    if (input != null) scope.launch {
+                        val f = withContext(Dispatchers.IO) { ImagePrep.copyToCache(ctx, input) }
+                        f?.let { sendImage(Uri.fromFile(it), false, it) }
+                    }
                 }
                 true
             }

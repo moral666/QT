@@ -89,6 +89,8 @@ fun RecoveryScreen(
     onWritten: () -> Unit,
     onHide: () -> Unit,
     onDisable: () -> Unit,
+    onCode: (String) -> Unit = {},
+    onCancelCode: () -> Unit = {},
 ) {
     var checking by remember(ui.recoveryWords) { mutableStateOf(false) }
     var confirmNew by remember { mutableStateOf(false) }
@@ -138,6 +140,15 @@ fun RecoveryScreen(
                 }
             }
         }
+    }
+    if (ui.recoveryAskCode) {
+        // Com o bloqueio da app: o codigo dela antes de ver ou gerar as palavras (0.9.23).
+        CodeDialog(
+            title = s(R.string.recovery_title), text = s(R.string.recovery_auth),
+            askCurrent = true, askNew = false, confirm = s(R.string.t_continuar),
+            onDismiss = onCancelCode,
+            onConfirm = { cur, _ -> onCode(cur) },
+        )
     }
     if (confirmNew) {
         AlertDialog(

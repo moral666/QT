@@ -33,6 +33,8 @@ struct RecoveryScreen: View {
     let onWritten: () -> Void
     let onHide: () -> Void
     let onDisable: () -> Void
+    var onCode: (String) -> Void = { _ in }
+    var onCancelCode: () -> Void = {}
     @State private var checking = false
     @State private var justCreated = false
     @State private var confirmNew = false
@@ -72,6 +74,11 @@ struct RecoveryScreen: View {
             }
         }
         .background(c.background.ignoresSafeArea())
+        // Com o bloqueio da app: o codigo dela antes de ver ou gerar as palavras (0.9.23).
+        .sheet(isPresented: Binding(get: { ui.recoveryAskCode }, set: { if !$0 { onCancelCode() } })) {
+            CodeSheet(title: s("recovery_title"), text: s("recovery_auth"), askCurrent: true, askNew: false,
+                      confirm: s("t_continuar")) { cur, _ in onCode(cur) }
+        }
         .alert(s("recovery_new"), isPresented: $confirmNew) {
             Button(s("recovery_new")) { justCreated = true; onCreate() }
             Button(s("t_cancelar"), role: .cancel) {}
