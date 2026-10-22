@@ -6,6 +6,14 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 22 de outubro de 2026: tempo de entrega só com o destinatário ligado (relay)
+
+- O tempo de entrega (e o "entre telemóveis" do site) só conta mensagens para quem estava com a
+  app aberta e ligada ao relay no momento em que a mensagem chegou. Antes contava também o tempo
+  até a pessoa abrir a app (até 60 s), o que fazia o site mostrar mais de 20 s com poucos testers.
+- O relay lembra-se, só em memória e durante 5 s, de quando acabou a última espera de cada conta
+  (para não perder mensagens que chegam entre duas esperas). Teste: `server/tests/relay_entrega.rs`.
+
 ### 22 de outubro de 2026: correções das apps (0.9.23, Android e iPhone)
 
 - Contactos: se a lista guardada não abrir, a app já não grava uma lista vazia por cima nem envia

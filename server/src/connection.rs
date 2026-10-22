@@ -503,7 +503,12 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             match store.enqueue_message(me, to, sealed_from, ciphertext).await {
                 Ok(id) => {
                     stats::inc(&STATS.sends);
-                    crate::latency::queued(id);
+                    // Tempo de entrega: so conta se o destinatario estava ligado (app
+                    // aberta). Com a app fechada mediria quanto tempo a pessoa demorou
+                    // a abri-la, nao quanto o servico demorou a entregar.
+                    if crate::waiters::is_online(&recipient) {
+                        crate::latency::queued(id);
+                    }
                     // Entrega imediata: acorda o destinatario se estiver a espera (WaitMessages).
                     crate::waiters::wake(&recipient);
                     // App fechada (ninguem a espera): campainha pela Google (FCM), vazia.
