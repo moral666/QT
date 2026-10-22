@@ -583,15 +583,31 @@ final class AppModel: ObservableObject {
         }
         ContactStore.wipe()
         for k in ["relay_url", "relay_key", "read_receipts", "push_on", "push_asked", "lock_timeout_ms", "terms_version",
-                  "presence", "lock_fails", "lock_until"] {
+                  "presence", "lock_fails", "lock_until", "lock_wait", "lock_wait_at"] {
             prefs.removeObject(forKey: k)
         }
         ui = UiState()
         await openStorage()
     }
 
+    /// Relogio desde que o iPhone ligou, em ms. Conta tambem com o iPhone a dormir e nao se muda
+    /// nas definicoes (ao contrario da hora): mudar a hora ja nao salta a espera (0.9.22).
+    private static func bootClockMs() -> Int64 {
+        Int64(clock_gettime_nsec_np(CLOCK_MONOTONIC) / 1_000_000)
+    }
+
+    /// Espera que falta. Depois de reiniciar o iPhone o relogio volta a zero e a espera recomeca
+    /// inteira (nunca fica mais curta).
     private func lockWaitMs() -> Int64 {
-        max(0, Int64(prefs.double(forKey: "lock_until") * 1000) - Int64(Date().timeIntervalSince1970 * 1000))
+        let wait = Int64(prefs.integer(forKey: "lock_wait"))
+        guard wait > 0 else { return 0 }
+        let now = Self.bootClockMs()
+        var at = (prefs.object(forKey: "lock_wait_at") as? NSNumber)?.int64Value ?? now
+        if at > now {   // o iPhone reiniciou
+            at = now
+            prefs.set(NSNumber(value: at), forKey: "lock_wait_at")
+        }
+        return max(0, wait - (now - at))
     }
 
     /// Tentativas erradas: depois de 5, espera 30 s, 1 min, 2 min... ate 15 min.
@@ -599,13 +615,15 @@ final class AppModel: ObservableObject {
         let n = prefs.integer(forKey: "lock_fails") + 1
         let wait: Int64 = n < 5 ? 0 : min(30_000 << Int64(min(n - 5, 5)), 900_000)
         prefs.set(n, forKey: "lock_fails")
-        prefs.set(Date().timeIntervalSince1970 + Double(wait) / 1000, forKey: "lock_until")
+        prefs.set(Int(wait), forKey: "lock_wait")
+        prefs.set(NSNumber(value: Self.bootClockMs()), forKey: "lock_wait_at")
+        prefs.removeObject(forKey: "lock_until")   // formato antigo (hora do iPhone), ate a 0.9.21
+        prefs.synchronize()   // no disco antes de mostrar "codigo errado"
         return wait
     }
 
     private func resetFails() {
-        prefs.removeObject(forKey: "lock_fails")
-        prefs.removeObject(forKey: "lock_until")
+        for k in ["lock_fails", "lock_wait", "lock_wait_at", "lock_until"] { prefs.removeObject(forKey: k) }
     }
 
     private func waitMessage(_ ms: Int64) -> String { s("t_demasiadas_tentativas_tenta_de_novo_daqui", (ms + 999) / 1000) }
@@ -1063,6 +1081,9 @@ final class AppModel: ObservableObject {
             ui.notice = s("recovery_restored")
             await refreshViews(client)
             await startLink()
+            // Presenca, fotos e o meu badge (vem na copia): sem isto o badge so aparecia depois
+            // de reiniciar a app (0.9.22).
+            await syncPresence(client)
         }
     }
 

@@ -284,12 +284,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val url = if (BuildConfig.RELAY_EDITABLE) prefs.getString("relay_url", null) ?: BuildConfig.RELAY_URL else BuildConfig.RELAY_URL
         val pin = if (BuildConfig.RELAY_EDITABLE) prefs.getString("relay_key", null) ?: BuildConfig.RELAY_PIN else BuildConfig.RELAY_PIN
         val has = client.hasIdentity()
+        // Tudo lido antes do update: a funcao do update pode correr mais de uma vez (concorrencia).
+        val publicId = if (has) client.exportPublicIdentity().publicId else ""
+        val contacts = contactStore.load(ck)
+        val conversations = client.conversations()
+        val blocked = client.blockedContacts().toSet()
+        val invites = client.pendingIntros().toSet()
+        val recoveryOn = has && client.recoveryEnabled()
         _ui.update {
             it.copy(
                 loading = false, hasIdentity = has, relayUrl = url, relayKeyHex = pin,
-                publicId = if (has) client.exportPublicIdentity().publicId else "",
-                contacts = contactStore.load(ck),
-                conversations = client.conversations(),
+                publicId = publicId,
+                contacts = contacts,
+                conversations = conversations,
                 readReceipts = prefs.getBoolean("read_receipts", true),
                 pushOn = Push.isOn(getApplication()),
                 pushAsked = prefs.getBoolean("push_asked", false),
@@ -297,12 +304,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 lockEnabled = storageKeys.lockEnabled(),
                 bioEnabled = bio.isEnabled(), bioAvailable = bio.isAvailable(),
                 lockTimeoutMs = prefs.getLong("lock_timeout_ms", DEFAULT_LOCK_TIMEOUT_MS),
-                blocked = client.blockedContacts().toSet(),
-                invites = client.pendingIntros().toSet(),
+                blocked = blocked,
+                invites = invites,
                 termsAccepted = prefs.getInt("terms_version", 0) >= TERMS_VERSION,
                 presenceOn = prefs.getBoolean("presence", true),
                 online = emptySet(),
-                recoveryOn = has && client.recoveryEnabled(),
+                recoveryOn = recoveryOn,
                 premiumLock = prefs.getBoolean(PREF_PREMIUM_ENFORCED, false),
                 premiumUntil = prefs.getLong(PREF_PREMIUM_UNTIL, 0),
                 premium = premiumNow(prefs.getLong(PREF_PREMIUM_UNTIL, 0)),
@@ -641,17 +648,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // Tentativas erradas: depois de 5, espera 30 s, 1 min, 2 min... ate 15 min.
-    private fun lockWaitMs(): Long = (prefs.getLong("lock_until", 0L) - System.currentTimeMillis()).coerceAtLeast(0L)
+    // Desde a 0.9.22 a espera conta pelo relogio desde que o telemovel ligou
+    // (`elapsedRealtime`, conta tambem com o ecra desligado), que nao se muda nas definicoes:
+    // mudar a hora do telemovel ja nao salta a espera. Depois de reiniciar o telemovel esse
+    // relogio volta a zero e a espera recomeca inteira (nunca fica mais curta).
+    private fun lockWaitMs(): Long {
+        val wait = prefs.getLong("lock_wait", 0L)
+        if (wait <= 0L) return 0L
+        val now = SystemClock.elapsedRealtime()
+        var at = prefs.getLong("lock_wait_at", now)
+        if (at > now) {   // o telemovel reiniciou: a espera recomeca
+            at = now
+            prefs.edit().putLong("lock_wait_at", at).apply()
+        }
+        return (wait - (now - at)).coerceAtLeast(0L)
+    }
 
     private fun registerFail(): Long {
         val n = prefs.getInt("lock_fails", 0) + 1
         val wait = if (n < 5) 0L else (30_000L shl (n - 5).coerceAtMost(5)).coerceAtMost(900_000L)
-        prefs.edit().putInt("lock_fails", n).putLong("lock_until", System.currentTimeMillis() + wait).apply()
+        prefs.edit()
+            .putInt("lock_fails", n)
+            .putLong("lock_wait", wait)
+            .putLong("lock_wait_at", SystemClock.elapsedRealtime())
+            .remove("lock_until")   // formato antigo (hora do telemovel), ate a 0.9.21
+            .commit()   // escrito no disco antes de mostrar "codigo errado" (fechar a app nao apaga a tentativa)
         return wait
     }
 
     private fun resetFails() {
-        prefs.edit().remove("lock_fails").remove("lock_until").apply()
+        prefs.edit().remove("lock_fails").remove("lock_wait").remove("lock_wait_at").remove("lock_until").apply()
     }
 
     private fun waitMessage(ms: Long) = s(R.string.t_demasiadas_tentativas_tenta_de_novo_daqui, (ms + 999) / 1000)
@@ -1252,15 +1278,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 runCatching { Contact(c.nickname.ifBlank { s(R.string.t_contacto) }, c.publicId, relayIdOfPublicId(c.publicId)) }.getOrNull()
             }
             contactStore.save(list, contactsKey ?: return@io)
+            val blocked = client.blockedContacts().toSet()
             _ui.update {
                 it.copy(
                     hasIdentity = true, publicId = acc.publicId, contacts = list,
-                    blocked = client.blockedContacts().toSet(), recoveryOn = true,
+                    blocked = blocked, recoveryOn = true,
                     notice = s(R.string.recovery_restored),
                 )
             }
             refreshViews(client)
             startLink()
+            // Presenca, fotos e o meu badge (vem na copia): sem isto o badge so aparecia depois
+            // de reiniciar a app (0.9.22), porque so o arranque da app fazia esta sincronizacao.
+            syncPresence(client)
         } finally {
             _ui.update { it.copy(recoveryBusy = false) }
         }
@@ -1427,12 +1457,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val invites = client.pendingIntros().toSet()
         val groups = client.groups()
         val online = client.presenceOnline().toSet()
+        // Lida antes do update: a funcao do update pode correr mais de uma vez (concorrencia).
+        val conversations = client.conversations()
         _ui.update {
             it.copy(
                 invites = invites,
                 groups = groups,
                 online = online,
-                conversations = client.conversations(),
+                conversations = conversations,
                 chatMessages = if (window != null && it.openChatId == cid) mergeWindow(window, it.chatMessages, n) else it.chatMessages,
             )
         }

@@ -378,4 +378,6 @@
     <string name="premium_all_open">Pour l\'instant, toutes les fonctions sont ouvertes à tout le monde.</string>
     <string name="premium_until">Actif jusqu\'au %1$s</string>
     <string name="premium_until_forever">Actif, sans date de fin</string>
+    <string name="t_a_enviar_tamanho">Envoi… %1$s</string>
+    <string name="t_a_receber_tamanho">Réception… %1$s</string>
 </resources>

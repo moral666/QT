@@ -50,10 +50,10 @@ private const val CHECKS = 3
  */
 @Composable
 private fun SecureWhileShown() {
-    val activity = LocalContext.current as? android.app.Activity ?: return
+    val activity = LocalContext.current as? MainActivity ?: return
     DisposableEffect(Unit) {
-        activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose { activity.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
+        activity.secureScreens++
+        onDispose { activity.secureScreens-- }
     }
 }
 

@@ -6,6 +6,17 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 22 de outubro de 2026: revisão das apps (0.9.22, Android e iPhone)
+
+- Bloqueio da app: a espera depois de 5 códigos errados conta pelo relógio desde que o telemóvel
+  ligou, que não se muda nas definições. Mudar a hora já não salta a espera; depois de reiniciar o
+  telemóvel a espera recomeça inteira. A tentativa errada fica gravada antes de aparecer "código errado".
+- Android 7 a 12: a miniatura na lista de apps recentes já não mostra as conversas (como no
+  Android 13+ e no iPhone). Com a app aberta as capturas de ecrã continuam permitidas.
+- Depois de recuperar a conta, o meu badge, as fotos e a presença aparecem logo, sem reiniciar a app.
+- Android: "A enviar…" e "A receber…" dos ficheiros traduzidos nas 6 línguas; leituras da base de
+  dados fora das atualizações do estado do ecrã.
+
 ### 22 de outubro de 2026: premium controlado pelo operador (apps 0.9.21, Android e iPhone)
 
 - Quem tem premium e se o bloqueio está ligado passa a ser decidido só no relay, pela aba "Premium"

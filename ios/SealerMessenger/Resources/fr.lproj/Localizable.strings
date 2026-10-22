@@ -94,10 +94,12 @@
 "t_a_carregar_mensagens_anteriores" = "Chargement des messages précédents…";
 "t_a_chamada_ja_nao_esta_disponivel" = "L'appel n'est plus disponible";
 "t_a_chamar" = "Appel en cours…";
+"t_a_enviar_tamanho" = "Envoi… %1$@";
 "t_a_foto_tem_mais_de_20" = "La photo dépasse 20 Mo. Choisis-en une plus petite.";
 "t_a_imagem_ja_nao_esta_disponivel" = "L'image n'est plus disponible (plus de 24 heures se sont écoulées).";
 "t_a_imagem_tem_mais_de_25" = "L'image dépasse 25 Mo.";
 "t_a_impressao_digital_ou_o_bloqueio" = "L'empreinte ou le verrouillage d'écran a changé. Utilise le code et réactive la biométrie.";
+"t_a_receber_tamanho" = "Réception… %1$@";
 "t_a_sealer_esta_em_testes_ao" = "SEALER est en test. En l'utilisant, tu acceptes ce qui suit :";
 "t_a_tocar" = "Ça sonne…";
 "t_a_tua_foto" = "Ta photo";

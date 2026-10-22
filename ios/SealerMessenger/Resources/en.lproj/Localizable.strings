@@ -94,10 +94,12 @@
 "t_a_carregar_mensagens_anteriores" = "Loading earlier messages…";
 "t_a_chamada_ja_nao_esta_disponivel" = "The call is no longer available";
 "t_a_chamar" = "Calling…";
+"t_a_enviar_tamanho" = "Sending… %1$@";
 "t_a_foto_tem_mais_de_20" = "The photo is larger than 20 MB. Choose a smaller one.";
 "t_a_imagem_ja_nao_esta_disponivel" = "The image is no longer available (more than 24 hours have passed).";
 "t_a_imagem_tem_mais_de_25" = "The image is larger than 25 MB.";
 "t_a_impressao_digital_ou_o_bloqueio" = "Your fingerprint or screen lock changed. Use the passcode and turn biometrics back on.";
+"t_a_receber_tamanho" = "Receiving… %1$@";
 "t_a_sealer_esta_em_testes_ao" = "SEALER is in testing. By using it, you agree to the following:";
 "t_a_tocar" = "Ringing…";
 "t_a_tua_foto" = "Your photo";
