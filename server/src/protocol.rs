@@ -148,6 +148,15 @@ pub fn is_valid_push_token(t: &str) -> bool {
 /// Motivo do `Error` a um `SendMessage` para quem apagou a conta.
 pub const RECIPIENT_DELETED: &str = "o destinatario apagou a conta";
 
+/// Motivo do `Error` a quem envia (mensagem, token de notificacoes, anexo) sem ter
+/// bundle no relay. As apps registam o bundle sempre que abrem; o que ficar por
+/// enviar continua na outbox e segue no ciclo seguinte.
+pub const NOT_REGISTERED: &str = "conta sem registo no relay";
+
+/// Motivo do `Error` a um `SendMessage` para um ID sem bundle (nunca existiu ou nao
+/// abre a app ha mais de 90 dias). A mensagem fica na outbox de quem envia.
+pub const RECIPIENT_UNKNOWN: &str = "destinatario desconhecido";
+
 /// Contexto de dominio da assinatura de autenticacao.
 pub const AUTH_CONTEXT: &[u8] = b"QT-RELAY-AUTH-v1";
 

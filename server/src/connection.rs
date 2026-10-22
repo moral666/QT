@@ -469,7 +469,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 return err(crate::protocol::RATE_LIMITED);
             }
             let recipient = to.clone();
-            match store.enqueue_message(to, sealed_from, ciphertext).await {
+            match store.enqueue_message(me, to, sealed_from, ciphertext).await {
                 Ok(id) => {
                     stats::inc(&STATS.sends);
                     crate::latency::queued(id);
@@ -487,6 +487,14 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                     err("fila do destinatario cheia")
                 }
                 Err(StoreError::RecipientDeleted) => err(crate::protocol::RECIPIENT_DELETED),
+                Err(StoreError::SenderNotRegistered) => {
+                    stats::inc(&STATS.not_registered);
+                    err(crate::protocol::NOT_REGISTERED)
+                }
+                Err(StoreError::RecipientUnknown) => {
+                    stats::inc(&STATS.recipient_unknown);
+                    err(crate::protocol::RECIPIENT_UNKNOWN)
+                }
                 Err(e) => internal(e),
             }
         }
@@ -508,6 +516,18 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             }
             if !token.is_empty() && !crate::protocol::is_valid_push_token(&token) {
                 return err("token invalido");
+            }
+            // Guardar um token (ate 4 KB, 90 dias) so com conta registada: chaves
+            // descartaveis enchiam o Redis. Apagar (token vazio) e sempre permitido.
+            if !token.is_empty() {
+                match store.is_registered(me).await {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        stats::inc(&STATS.not_registered);
+                        return err(crate::protocol::NOT_REGISTERED);
+                    }
+                    Err(e) => return internal(e),
+                }
             }
             match store.set_push_token(&user_id, (!token.is_empty()).then_some(token.as_str())).await {
                 Ok(()) => {
@@ -552,12 +572,21 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 Err(e) => internal(e),
             }
         }
-        ClientMessage::BlobCreate { size } => match store.blob_create(me, size).await {
-            Ok((blob_id, token)) => {
-                stats::inc(&STATS.blob_uploads);
-                ServerMessage::BlobCreated { blob_id, token }
+        // Anexo novo so com conta registada: chaves descartaveis contornavam a quota
+        // diaria por conta e enchiam o espaco dos anexos (2 GB) para toda a gente.
+        ClientMessage::BlobCreate { size } => match store.is_registered(me).await {
+            Ok(false) => {
+                stats::inc(&STATS.not_registered);
+                err(crate::protocol::NOT_REGISTERED)
             }
-            Err(e) => blob_err(e),
+            Err(e) => internal(e),
+            Ok(true) => match store.blob_create(me, size).await {
+                Ok((blob_id, token)) => {
+                    stats::inc(&STATS.blob_uploads);
+                    ServerMessage::BlobCreated { blob_id, token }
+                }
+                Err(e) => blob_err(e),
+            },
         },
         ClientMessage::BlobPut { blob_id, token, offset, data } => {
             match store.blob_put(&blob_id, &token, offset, &data).await {

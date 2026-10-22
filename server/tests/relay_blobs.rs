@@ -36,9 +36,11 @@ fn getrandom(b: &mut [u8]) {
     std::fs::File::open("/dev/urandom").unwrap().read_exact(b).unwrap();
 }
 
-async fn login(url: &str, s: &SigningKeyPair) -> (Ws, Noise) {
+/// Liga e autentica uma conta registada (so contas registadas criam anexos).
+async fn login(relay: &TestRelay, s: &SigningKeyPair) -> (Ws, Noise) {
+    registar(relay, &user_id_from_signing_public(&s.verifying_key.to_bytes())).await;
     let k = generate_static_keypair().unwrap();
-    let (mut ws, mut n) = ws_transport::client_connect(url, &k.private).await.unwrap();
+    let (mut ws, mut n) = ws_transport::client_connect(&relay.url, &k.private).await.unwrap();
     let mut m = AUTH_CONTEXT.to_vec();
     m.extend_from_slice(n.handshake_hash());
     let auth = ClientMessage::Authenticate {
@@ -71,8 +73,8 @@ async fn envio_por_blocos_leitura_e_apagar() {
     let relay = TestRelay::start_with_blobs(fast_cfg(), cfg(dir.clone())).await;
     let alice = SigningKeyPair::generate();
     let bob = SigningKeyPair::generate();
-    let (mut wa, mut na) = login(&relay.url, &alice).await;
-    let (mut wb, mut nb) = login(&relay.url, &bob).await;
+    let (mut wa, mut na) = login(&relay, &alice).await;
+    let (mut wb, mut nb) = login(&relay, &bob).await;
 
     // ~2,5 blocos de bytes "cifrados" (para o relay sao so bytes).
     let mut file = vec![0u8; BLOB_CHUNK * 2 + 1234];
@@ -137,7 +139,7 @@ async fn limites_de_tamanho_quota_e_ids_invalidos() {
     let dir = tmpdir("limites");
     let relay = TestRelay::start_with_blobs(fast_cfg(), cfg(dir.clone())).await;
     let a = SigningKeyPair::generate();
-    let (mut ws, mut n) = login(&relay.url, &a).await;
+    let (mut ws, mut n) = login(&relay, &a).await;
 
     for size in [0, MAX_BLOB_BYTES + 1] {
         let r = req(&mut ws, &mut n, &ClientMessage::BlobCreate { size }).await;
@@ -174,7 +176,7 @@ async fn espaco_total_e_reposto_ao_apagar() {
     let mut c = cfg(dir.clone());
     c.max_total_bytes = 30 << 20;
     let relay = TestRelay::start_with_blobs(fast_cfg(), c).await;
-    let (mut ws, mut n) = login(&relay.url, &SigningKeyPair::generate()).await;
+    let (mut ws, mut n) = login(&relay, &SigningKeyPair::generate()).await;
     let ServerMessage::BlobCreated { blob_id, .. } = req(&mut ws, &mut n, &ClientMessage::BlobCreate { size: 20 << 20 }).await else {
         panic!()
     };
@@ -192,7 +194,7 @@ async fn disco_quase_cheio_recusa_anexos_novos() {
     let mut c = cfg(dir.clone());
     c.min_free_bytes = u64::MAX / 2; // nenhum disco tem isto livre
     let relay = TestRelay::start_with_blobs(fast_cfg(), c).await;
-    let (mut ws, mut n) = login(&relay.url, &SigningKeyPair::generate()).await;
+    let (mut ws, mut n) = login(&relay, &SigningKeyPair::generate()).await;
     let r = req(&mut ws, &mut n, &ClientMessage::BlobCreate { size: 1000 }).await;
     assert!(matches!(&r, ServerMessage::Error { reason } if reason.contains("espaco")), "{r:?}");
     let _ = std::fs::remove_dir_all(dir);
@@ -201,7 +203,7 @@ async fn disco_quase_cheio_recusa_anexos_novos() {
 #[tokio::test]
 async fn sem_anexos_ativos_o_relay_responde_com_erro() {
     let relay = TestRelay::start(fast_cfg()).await;
-    let (mut ws, mut n) = login(&relay.url, &SigningKeyPair::generate()).await;
+    let (mut ws, mut n) = login(&relay, &SigningKeyPair::generate()).await;
     let r = req(&mut ws, &mut n, &ClientMessage::BlobCreate { size: 10 }).await;
     assert!(matches!(&r, ServerMessage::Error { reason } if reason.contains("desativados")), "{r:?}");
     // A ligacao continua a funcionar para o resto.

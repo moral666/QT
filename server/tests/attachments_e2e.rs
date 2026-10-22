@@ -55,6 +55,9 @@ async fn connect(qt: &Arc<QtClient>, url: &str) -> Link {
     let mut l = Link { ws, noise };
     let auth = qt.relay_auth_message(l.noise.handshake_hash().unwrap()).unwrap();
     assert!(matches!(l.rpc(auth).await, RelayResponse::Ack));
+    // Como a app ao ligar-se: publica o bundle (so contas registadas escrevem no relay).
+    let reg = qt.relay_request_register_bundle(qt.publishable_bundle().unwrap()).unwrap();
+    assert!(matches!(l.rpc(reg).await, RelayResponse::Ack));
     l
 }
 

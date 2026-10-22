@@ -475,6 +475,13 @@ Um pedido ↔ uma resposta, sequenciais.
    chamada de voz (secção 17).
    Limite: 300 envelopes seguidos e 300 por minuto por conta (`Error{"demasiados pedidos…"}`;
    as apps deixam o envelope na outbox e voltam a tentar).
+   **Só entre contas registadas** (desde 22/10/2026): quem envia e quem recebe têm de ter
+   bundle no relay. Sem bundle de quem envia: `Error{"conta sem registo no relay"}`; sem
+   bundle de `to` (ID que nunca existiu ou que não abre a app há 90 dias):
+   `Error{"destinatario desconhecido"}`. Quem apagou a conta continua a dar
+   `Error{"o destinatario apagou a conta"}`. Nos três casos nada fica guardado e as apps
+   deixam o envelope na outbox. Também `RegisterPushToken` (com token) e `BlobCreate`
+   exigem bundle de quem pede.
 5. `FetchMessages{user_id}`: só a própria fila; **não apaga**; devolve uma
    página (≈ 40 kB de JSON) de `{id, sealed_from, ciphertext}`.
    `WaitMessages{user_id, timeout_secs}`: igual a `FetchMessages`, mas, com a

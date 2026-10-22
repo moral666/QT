@@ -25,6 +25,11 @@ use tokio::net::TcpListener;
 /// README.md), com um prefixo de namespace unico por chamada para nao
 /// colidir com outros testes a correr em paralelo no mesmo Redis.
 async fn spawn_test_server() -> String {
+    spawn_test_server_with_store().await.0
+}
+
+/// Como `spawn_test_server`, mas devolve tambem o `Store` (para registar contas).
+async fn spawn_test_server_with_store() -> (String, Arc<Store>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -33,6 +38,7 @@ async fn spawn_test_server() -> String {
         Store::with_prefix("redis://127.0.0.1:6379", &unique_prefix)
             .expect("falha ao ligar ao Redis - certifica-te que esta a correr em localhost:6379"),
     );
+    let store_out = store.clone();
     let static_keys = generate_static_keypair().unwrap();
 
     tokio::spawn(async move {
@@ -50,7 +56,7 @@ async fn spawn_test_server() -> String {
         }
     });
 
-    format!("ws://{}", addr)
+    (format!("ws://{}", addr), store_out)
 }
 
 /// Helper: liga-se (autenticado como `signing`), envia UMA ClientMessage e fecha.
@@ -103,7 +109,10 @@ async fn entrega_assincrona_atraves_do_relay() {
     wire_bytes.extend_from_slice(&encrypted.ciphertext);
 
     // ---------- Servidor real em localhost ----------
-    let server_url = spawn_test_server().await;
+    let (server_url, store) = spawn_test_server_with_store().await;
+    // So contas registadas (com bundle) trocam mensagens no relay.
+    store.register_bundle(uid(&alice_signing), vec![1]).await.unwrap();
+    store.register_bundle(uid(&bob_identity_signing), vec![1]).await.unwrap();
 
     // Alice sela a sua identidade contra a chave publica de Bob - o
     // servidor vai receber isto, mas NAO consegue abri-lo (so Bob consegue).

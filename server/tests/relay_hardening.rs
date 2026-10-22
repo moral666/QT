@@ -25,7 +25,9 @@ fn quick() -> RelayConfig {
         expected_server_static: None,
     }
 }
+/// Conta registada (so contas registadas escrevem no relay).
 async fn client(relay: &TestRelay, s: &SigningKeyPair, cfg: RelayConfig) -> RelayClient {
+    registar(relay, &uid(s)).await;
     let n = generate_static_keypair().unwrap();
     RelayClient::connect(&relay.url, n.private, s.to_bytes(), cfg).await.unwrap()
 }
@@ -128,6 +130,7 @@ async fn entrega_at_least_once_so_apaga_apos_ack() {
     let relay = TestRelay::start(fast_cfg()).await;
     let (alice, bob) = (SigningKeyPair::generate(), SigningKeyPair::generate());
     let mut a = client(&relay, &alice, quick()).await;
+    registar(&relay, &uid(&bob)).await; // o Bob tem conta, mas ainda nao se ligou
     for i in 0..3u8 {
         a.send_message(&uid(&bob), vec![], vec![i; 20]).await.unwrap();
     }
@@ -184,6 +187,7 @@ async fn fila_cheia_e_rejeitada_sem_derrubar_o_relay() {
     let relay = TestRelay::start(ServerConfig { send_rate: no_rate, ..fast_cfg() }).await;
     let (alice, bob) = (SigningKeyPair::generate(), SigningKeyPair::generate());
     let mut a = client(&relay, &alice, RelayConfig { request_timeout: Duration::from_secs(5), ..quick() }).await;
+    registar(&relay, &uid(&bob)).await;
     let mut last = Ok(());
     for _ in 0..1005 {
         last = a.send_message(&uid(&bob), vec![], vec![1; 10]).await;
@@ -297,6 +301,7 @@ async fn relay_indisponivel_e_depois_recuperado() {
     let mut relay = TestRelay::start(fast_cfg()).await;
     let (alice, bob) = (SigningKeyPair::generate(), SigningKeyPair::generate());
     let mut a = client(&relay, &alice, RelayConfig { max_retries: 2, ..quick() }).await;
+    registar(&relay, &uid(&bob)).await;
     a.send_message(&uid(&bob), vec![], b"antes da queda".to_vec()).await.unwrap();
 
     relay.kill(); // perda total de rede / relay em baixo

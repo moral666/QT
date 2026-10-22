@@ -35,8 +35,10 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     60 pedidos de bundle por minuto por conta, e prova de trabalho (Argon2id, uns segundos)
     para criar conta. Um atacante com muitas máquinas continua a conseguir criar contas.
     Desde 19/10/2026 há limites de ligações (100 por IP no HAProxy, 2 000 por autenticar e 8 por
-    conta no relay), mas criar contas não custa nada, por isso os limites por conta contornam-se
-    com contas novas.
+    conta no relay), mas criar contas custa pouco, por isso os limites por conta contornam-se
+    com contas novas. Desde 22/10/2026 só contas registadas (com bundle) escrevem no relay, e só
+    para contas registadas; ainda assim, umas 40 contas com prova de trabalho (segundos de CPU)
+    conseguem encher o Redis de produção (512 MB) em poucos minutos (`docs/performance.md`).
 13. **Metadados visíveis ao relay:** destinatário, instante, IP e o tamanho arredondado
     (desde a 0.9.3 o texto leva enchimento até 256, 1024, 4096 ou 10 240 bytes). Ainda sem
     atraso aleatório (*jitter*).

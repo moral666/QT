@@ -49,6 +49,10 @@ pub struct Stats {
     pub rate_limited: AtomicU64,
     /// One-time prekeys entregues com um bundle.
     pub otpks_served: AtomicU64,
+    /// Escritas recusadas (envio, token, anexo) a contas sem bundle no relay.
+    pub not_registered: AtomicU64,
+    /// Envios recusados para IDs sem bundle (inexistentes ou expirados).
+    pub recipient_unknown: AtomicU64,
 }
 
 pub static STATS: Stats = Stats {
@@ -81,6 +85,8 @@ pub static STATS: Stats = Stats {
     pow_rejected: AtomicU64::new(0),
     rate_limited: AtomicU64::new(0),
     otpks_served: AtomicU64::new(0),
+    not_registered: AtomicU64::new(0),
+    recipient_unknown: AtomicU64::new(0),
 };
 
 pub fn inc(c: &AtomicU64) {
@@ -124,6 +130,8 @@ pub fn take_line(s: &Stats) -> Option<String> {
         ("sem_prova_de_trabalho", t(&s.pow_rejected)),
         ("limite_por_conta", t(&s.rate_limited)),
         ("otpks_entregues", t(&s.otpks_served)),
+        ("sem_registo", t(&s.not_registered)),
+        ("destinatario_desconhecido", t(&s.recipient_unknown)),
     ];
     let active = s.active.load(Relaxed);
     if active == 0 && v.iter().all(|(_, n)| *n == 0) {

@@ -6,6 +6,17 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 22 de outubro de 2026: relay só aceita escritas de contas registadas
+
+- Uma chave criada no momento (sem bundle nem prova de trabalho) conseguia pôr mensagens na fila de
+  IDs que nunca existiram, guardar tokens de notificações e criar anexos. Num teste local com a
+  configuração do Redis de produção (64 MB), 20 ligações encheram o Redis em 45 s e a seguir nem
+  contas normais conseguiam registar-se. Agora `SendMessage` exige bundle de quem envia e de quem
+  recebe; `RegisterPushToken` (com token) e `BlobCreate` exigem bundle de quem pede. As apps não
+  mudam: o que for recusado fica na outbox e segue no ciclo seguinte.
+- Ferramenta `server/examples/abuso.rs` (teste de abuso controlado) e testes de regressão em
+  `server/tests/relay_registo.rs`. Contadores novos: `sem_registo` e `destinatario_desconhecido`.
+
 ### 20 de outubro de 2026: teste entre Android 0.9.16 e iPhone 0.9.15
 
 - Testado sem erros: contactos (adicionar, apagar, voltar a adicionar), QR, partilha do ID, menus,
