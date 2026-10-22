@@ -38,7 +38,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
 - O **site, a documentação e a app nunca mencionam auditorias em falta** ("sem auditoria", "não auditada", 19/10/2026).
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.9.17**, `versionCode` 24), em
+- Versões da app: série 0.x (agora **0.9.18**, `versionCode` 25), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
   0.9.3...) e o `versionCode` mais 1, no mesmo commit. Só se passa a **1.0.0** quando o Nuno disser.
 - Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
@@ -165,6 +165,18 @@ cores (`Badges.kt`, `Views/Badges.swift`). Enquanto `ISSUER_PUBLIC_KEY` estiver 
 é aceite. Desde a 0.9.16 há também a medalha do badge no canto da foto (`badge_coin_*.png`,
 `BadgeCoin1..5`, recortadas da folha de badges do Nuno): em baixo à direita nos contactos (o ponto
 online passa para cima) e em baixo à esquerda na minha foto do cabeçalho.
+
+### Denúncias e banimentos (desde a 0.9.18, aprovado pelo Nuno a 22/10/2026)
+
+Menu da conversa → Denunciar (Android `ReportDialog`, iPhone `ReportSheet`): motivo + até 20
+mensagens, cifradas na app para a chave do operador (`core/src/report.rs`, `ffi/src/report.rs`),
+e o contacto fica bloqueado. O relay guarda-as 30 dias sem as ler e sem o ID de quem denunciou
+(`SubmitReport`, 10 por conta e por dia). Só a chave Ed25519 em `/etc/qt/operator.pub` faz os
+pedidos `Admin*` (listar, apagar, banir, desbanir). Ferramenta no PC do Nuno:
+`cargo run --release -p qt_server --example denuncias -- chave|listar|apagar|banir|desbanir|banidos --key ...`
+e a página "Denúncias" do sealer-control. A chave do operador fica fora do git e do servidor.
+Enquanto `OPERATOR_REPORT_PUBLIC` estiver a zeros, a opção não aparece nas apps.
+Ver `docs/protocol-spec.md`, secção 21.
 
 ### Funcionalidades da 0.9.0
 

@@ -6,6 +6,20 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 22 de outubro de 2026: denunciar contactos e banir contas (apps 0.9.18, Android e iPhone)
+
+- Menu da conversa → **Denunciar**: a pessoa escolhe o motivo e as mensagens a incluir (até 20).
+  A denúncia é cifrada na app para a chave do operador; o relay guarda-a 30 dias sem a conseguir
+  ler e sem o ID de quem denunciou. Depois de enviada, o contacto fica bloqueado.
+- Relay: `SubmitReport` (até 10 por conta e por dia) e pedidos de operador (`AdminListReports`,
+  `AdminDeleteReport`, `AdminBan`, `AdminUnban`, `AdminListBans`), aceites só da chave em
+  `/etc/qt/operator.pub`. Conta banida: o relay apaga o que guarda dela e deixa de a aceitar.
+  Contadores novos: `denuncias` e `banidas`.
+- Ferramenta do operador `server/examples/denuncias.rs` (chave, listar, apagar, banir, desbanir,
+  banidos) e página "Denúncias" no sealer-control.
+- A opção só aparece nas apps depois de a chave pública do operador estar em
+  `OPERATOR_REPORT_PUBLIC` (`core/src/report.rs`).
+
 ### 22 de outubro de 2026: revisão de segurança do núcleo (apps 0.9.17, Android e iPhone)
 
 - Chave da base de dados (SQLCipher): o texto com a chave já não é copiado a meio, por isso não

@@ -923,6 +923,42 @@ emissor, que segue cifrado como qualquer mensagem.
 
 Testes: `ffi/tests/badges.rs` e `core/src/badge.rs`.
 
+## 21. Denúncias e banimentos (desde a app 0.9.18)
+
+Quem recebe mensagens abusivas pode denunciar o contacto. A denúncia vai cifrada para o
+operador (o Nuno): o relay guarda-a sem a conseguir ler e sem saber quem denunciou.
+
+- **Chave do operador** (`core/src/report.rs`): uma semente de 32 bytes, só no PC do operador
+  (`server/examples/denuncias.rs -- chave`). Com HKDF-SHA256 (sal `SEALER-OPERATOR`) dá duas
+  chaves: X25519 das denúncias (`report-x25519`; a pública está fixa em `OPERATOR_REPORT_PUBLIC`,
+  igual no Android e no iPhone) e Ed25519 do relay (`relay-ed25519`; a pública, em hex, fica em
+  `/etc/qt/operator.pub` no servidor). Com a chave das apps a zeros, a opção "Denunciar" não
+  aparece.
+- **Cifra** (estilo "sealed box"): `[1 versão=1][32 pública efémera][ChaCha20-Poly1305]`, chave =
+  HKDF-SHA256(DH(efémera, operador), sal = efémera ‖ operador, info `SEALER-REPORT-v1`), nonce a
+  zeros (chave única por denúncia), AAD = versão. Dentro: `[4 tamanho][JSON][zeros até um múltiplo
+  de 1024]`. No máximo 12 288 bytes.
+- **Conteúdo** (`ffi/src/report.rs`, JSON): `denunciado_public_id`, `denunciado_relay_id`,
+  `motivo` (spam, assedio, ilegal, outro), `criada_em_ms` e até 20 `mensagens` escolhidas pela
+  pessoa (`de_denunciado`, `enviada_em_ms`, `texto` até 1000 caracteres, `anexo`). Os anexos não
+  seguem. Não leva o ID de quem denuncia.
+- **App:** menu da conversa → Denunciar → motivo e mensagens (vêm marcadas as 10 mais recentes da
+  outra pessoa) → `SubmitReport`. Se o relay aceitar, a app bloqueia o contacto.
+- **Relay** (`SubmitReport { sealed }`): só contas registadas, até 10 por conta e por dia, até
+  5 000 guardadas. Fica `{p}:report:{id}` = `[8 recebida_em ms][denúncia]` com TTL de 30 dias. O
+  contador diário `{p}:reportday:{conta}:{dia}` (TTL 2 dias) é o único sítio onde aparece quem
+  denunciou, e não diz qual denúncia.
+- **Operador:** a ferramenta autentica-se com a chave Ed25519 do operador. Só essa conta faz
+  `AdminListReports { after }` (resposta `Reports { reports, more }`), `AdminDeleteReport { id }`,
+  `AdminBan { user_id }`, `AdminUnban { user_id }` e `AdminListBans` (resposta `Bans`); as outras
+  recebem `Error` "so o operador". Banir apaga o bundle, as one-time prekeys, a fila e a
+  campainha, fecha as ligações abertas e passa a recusar a autenticação e o registo ("conta
+  banida"). Limite: sem número de telefone, a pessoa pode criar um ID novo (com prova de trabalho).
+- Na app do PC (`tools/sealer-control`), a página "Denúncias" usa esta ferramenta.
+
+Testes: `core/src/report.rs`, `ffi/src/report.rs`, `server/tests/relay_reports.rs` e
+`server/tests/redis_acl.rs`.
+
 ## Documentos relacionados
 
 - [`threat-model.md`](threat-model.md): modelo de ameaças formal (quem

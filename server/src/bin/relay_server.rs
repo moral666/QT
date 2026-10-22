@@ -145,6 +145,22 @@ fn write_status(
     }
 }
 
+/// Conta do operador (denuncias e banimentos): a chave publica Ed25519, em hex, no ficheiro
+/// `RELAY_OPERATOR_FILE` (por omissao `/etc/qt/operator.pub`, fora do git). Sem ficheiro, os
+/// pedidos de operador ficam desligados; as denuncias das apps continuam a ser guardadas.
+fn load_operator() -> Option<String> {
+    let path = std::env::var("RELAY_OPERATOR_FILE").unwrap_or_else(|_| "/etc/qt/operator.pub".to_string());
+    let text = std::fs::read_to_string(&path).ok()?;
+    let id = text.trim().to_ascii_lowercase();
+    if qt_server::protocol::is_valid_user_id(&id) {
+        println!("Operador: denuncias e banimentos ligados ({}...)", &id[..8]);
+        Some(id)
+    } else {
+        eprintln!("Operador: {path} invalido (esperava 64 caracteres hex); pedidos de operador desligados");
+        None
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let bind_addr = std::env::var("RELAY_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:9443".to_string());
@@ -253,6 +269,7 @@ async fn main() {
             .ok()
             .and_then(|v| v.trim().parse().ok())
             .unwrap_or(defaults.max_connections_per_user),
+        operator: load_operator(),
         ..defaults
     });
     println!(

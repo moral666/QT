@@ -37,6 +37,13 @@ pub const PUSH_TTL_SECONDS: u64 = BUNDLE_TTL_SECONDS;
 /// So guarda o `user_id` (a chave publica), nada mais.
 pub const DELETED_TTL_SECONDS: u64 = 60 * 60 * 24 * 30;
 
+/// Denuncias (cifradas para o operador): apagadas sozinhas ao fim de 30 dias.
+pub const REPORT_TTL_SECONDS: u64 = 60 * 60 * 24 * 30;
+/// Denuncias por conta e por dia (contra quem quer encher o relay de denuncias).
+pub const MAX_REPORTS_PER_DAY: u64 = 10;
+/// Denuncias guardadas ao mesmo tempo, no maximo (o operador apaga as tratadas).
+pub const MAX_REPORTS_STORED: usize = 5_000;
+
 /// Entradas lidas do Redis por pedido de mensagens: primeiro estas...
 const PEEK_FIRST: isize = 16;
 /// ...e, se couberem todas na pagina, ate este total (o limite de sempre).
@@ -58,6 +65,20 @@ pub enum StoreError {
     /// qualquer conta enchia filas de IDs inventados (1000 mensagens cada, 30 dias).
     #[error("destinatário desconhecido")]
     RecipientUnknown,
+    /// A conta ja fez `MAX_REPORTS_PER_DAY` denuncias hoje.
+    #[error("limite diario de denuncias")]
+    ReportLimit,
+    /// Ha `MAX_REPORTS_STORED` denuncias por tratar.
+    #[error("demasiadas denuncias guardadas")]
+    ReportsFull,
+}
+
+fn today() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() / 86_400).unwrap_or(0)
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 pub struct Store {
@@ -381,6 +402,146 @@ impl Store {
         }
         let removed: Vec<usize> = pipe.query_async(&mut conn).await?;
         Ok(order.into_iter().zip(removed).filter(|(_, n)| *n > 0).map(|(id, _)| id).collect())
+    }
+}
+
+// ------------------------------------------------------------ denuncias e banimentos
+//
+// Chaves (so comandos permitidos pelo ACL do relay):
+//   {p}:report:{id}            [8 recebida_em ms BE][denuncia cifrada], TTL 30 dias
+//   {p}:reports                lista dos ids (os que expiraram saem ao listar)
+//   {p}:report_seq             contador dos ids
+//   {p}:reportday:{conta}:{dia} denuncias feitas hoje por esta conta (TTL 2 dias). E o
+//                              unico sitio onde aparece quem denuncia, e nao diz qual.
+//   {p}:ban:{conta}            conta banida (sem TTL)
+//   {p}:bans                   lista das contas banidas
+impl Store {
+    /// Guarda uma denuncia (bytes opacos). Devolve o id.
+    pub async fn submit_report(&self, reporter: &str, sealed: Vec<u8>) -> Result<u64, StoreError> {
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        let day_key = format!("{p}:reportday:{reporter}:{}", today());
+        let (count, stored): (u64, usize) = redis::pipe()
+            .incr(&day_key, 1u64)
+            .expire(&day_key, 2 * 86_400)
+            .ignore()
+            .llen(format!("{p}:reports"))
+            .query_async(&mut conn)
+            .await?;
+        if count > MAX_REPORTS_PER_DAY {
+            return Err(StoreError::ReportLimit);
+        }
+        if stored >= MAX_REPORTS_STORED {
+            return Err(StoreError::ReportsFull);
+        }
+        let id: u64 = conn.incr(format!("{p}:report_seq"), 1u64).await?;
+        let key = format!("{p}:report:{id}");
+        let mut value = now_ms().to_be_bytes().to_vec();
+        value.extend_from_slice(&sealed);
+        redis::pipe()
+            .set(&key, value)
+            .ignore()
+            .expire(&key, REPORT_TTL_SECONDS as i64)
+            .ignore()
+            .rpush(format!("{p}:reports"), id)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        Ok(id)
+    }
+
+    /// Denuncias com id maior do que `after`, ate `max_bytes` estimados. `more`: ha mais.
+    pub async fn list_reports(
+        &self,
+        after: u64,
+        max_bytes: usize,
+    ) -> Result<(Vec<crate::protocol::StoredReport>, bool), StoreError> {
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        let list = format!("{p}:reports");
+        let ids: Vec<u64> = conn.lrange(&list, 0, -1).await?;
+        let mut out = Vec::new();
+        let mut budget = 0usize;
+        for id in ids.into_iter().filter(|id| *id > after) {
+            let raw: Option<Vec<u8>> = conn.get(format!("{p}:report:{id}")).await?;
+            let Some(raw) = raw.filter(|r| r.len() > 8) else {
+                // Expirou (30 dias) ou estragada: sai da lista.
+                conn.lrem::<_, _, ()>(&list, 0, id).await?;
+                continue;
+            };
+            let est = raw.len() * 4 + 64; // JSON: ate 4 caracteres por byte
+            if !out.is_empty() && budget + est > max_bytes {
+                return Ok((out, true));
+            }
+            budget += est;
+            out.push(crate::protocol::StoredReport {
+                id,
+                received_at_ms: u64::from_be_bytes(raw[..8].try_into().unwrap_or_default()),
+                sealed: raw[8..].to_vec(),
+            });
+        }
+        Ok((out, false))
+    }
+
+    pub async fn delete_report(&self, id: u64) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        redis::pipe()
+            .del(format!("{p}:report:{id}"))
+            .ignore()
+            .lrem(format!("{p}:reports"), 0, id)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        Ok(())
+    }
+
+    /// Bane a conta: apaga o bundle, as one-time prekeys, a fila e a campainha, e marca-a.
+    pub async fn ban(&self, user_id: &str) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        redis::pipe()
+            .del(format!("{p}:bundle:{user_id}"))
+            .ignore()
+            .del(format!("{p}:otpk:{user_id}"))
+            .ignore()
+            .del(format!("{p}:queue:{user_id}"))
+            .ignore()
+            .del(format!("{p}:push:{user_id}"))
+            .ignore()
+            .set(format!("{p}:ban:{user_id}"), 1u8)
+            .ignore()
+            .lrem(format!("{p}:bans"), 0, user_id)
+            .ignore()
+            .rpush(format!("{p}:bans"), user_id)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn unban(&self, user_id: &str) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        redis::pipe()
+            .del(format!("{p}:ban:{user_id}"))
+            .ignore()
+            .lrem(format!("{p}:bans"), 0, user_id)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn is_banned(&self, user_id: &str) -> Result<bool, StoreError> {
+        let mut conn = self.connection().await?;
+        let v: Option<Vec<u8>> = conn.get(format!("{}:ban:{}", self.key_prefix, user_id)).await?;
+        Ok(v.is_some())
+    }
+
+    pub async fn list_bans(&self) -> Result<Vec<String>, StoreError> {
+        let mut conn = self.connection().await?;
+        Ok(conn.lrange(format!("{}:bans", self.key_prefix), 0, -1).await?)
     }
 }
 

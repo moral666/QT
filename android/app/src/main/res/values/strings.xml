@@ -323,4 +323,18 @@
     <string name="badge_dev">Dev</string>
     <string name="badge_tester">Tester</string>
     <string name="badge_contributor">Contributor</string>
+    <string name="report">Denunciar</string>
+    <string name="report_title">Denunciar %1$s?</string>
+    <string name="report_explain">As mensagens que escolheres seguem cifradas só para a equipa do Sealer, sem o teu ID. %1$s não é avisado e fica bloqueado.</string>
+    <string name="report_reason">Motivo</string>
+    <string name="report_reason_spam">Spam ou burla</string>
+    <string name="report_reason_harassment">Assédio ou ameaças</string>
+    <string name="report_reason_illegal">Conteúdo ilegal</string>
+    <string name="report_reason_other">Outro</string>
+    <string name="report_messages">Mensagens a incluir (%1$s de %2$s)</string>
+    <string name="report_no_messages">Sem mensagens: segue só o motivo.</string>
+    <string name="report_from_me">Eu</string>
+    <string name="report_confirm">Denunciar e bloquear</string>
+    <string name="report_sent">Denúncia enviada. O contacto foi bloqueado.</string>
+    <string name="report_failed">Não foi possível preparar a denúncia.</string>
 </resources>

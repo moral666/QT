@@ -37,6 +37,7 @@ struct ChatScreen: View {
     @State private var reactingTo: ChatMessage?
     @State private var showAdd = false
     @State private var confirmBlock = false
+    @State private var showReport = false
     @Environment(\.chat) private var c
 
     private var contact: Contact? { group == nil ? ui.contact(conversationId) : nil }
@@ -101,6 +102,12 @@ struct ChatScreen: View {
             Button(s("t_cancelar"), role: .cancel) {}
         } message: { Text(s("t_as_mensagens_desta_pessoa_deixam_de")) }
         .deleteConfirmation($deleteTarget, onDeleteConversation: model.deleteConversation, onDeleteContact: model.deleteContact)
+        .sheet(isPresented: $showReport) {
+            ReportSheet(name: name, msgs: ui.chatMessages) { ids, reason in
+                showReport = false
+                model.reportContact(conversationId, messageIds: ids, reason: reason)
+            } onCancel: { showReport = false }
+        }
     }
 
     @ViewBuilder
@@ -142,6 +149,9 @@ struct ChatScreen: View {
                         Button(s("t_desbloquear_2"), systemImage: "checkmark") { model.unblockContact(conversationId) }
                     } else {
                         Button(s("t_bloquear"), systemImage: "hand.raised") { confirmBlock = true }
+                    }
+                    if reportsAvailable() {
+                        Button(s("report"), systemImage: "exclamationmark.bubble") { showReport = true }
                     }
                     Button(s("t_eliminar_conversa_ou_contacto"), systemImage: "trash") {
                         deleteTarget = .choose(id: conversationId, name: name, hasHistory: !ui.chatMessages.isEmpty)
@@ -446,5 +456,81 @@ struct ReactionPicker: View {
         .padding(24)
         .presentationDetents([.height(220)])
         .presentationBackground(c.surface)
+    }
+}
+
+// =========================================================================== denunciar
+
+/// Denunciar (0.9.18), igual ao ReportDialog do Android: motivo + mensagens a incluir (vem
+/// marcadas as 10 mais recentes da outra pessoa; maximo 20). Seguem cifradas so para a
+/// equipa do Sealer e o contacto fica bloqueado. Nada segue sem a pessoa confirmar.
+struct ReportSheet: View {
+    let name: String
+    let shown: [ChatMessage]
+    let onConfirm: ([String], String) -> Void
+    let onCancel: () -> Void
+    @State private var picked: Set<String>
+    @State private var reason = "spam"
+
+    private static let maxPicked = 20
+    private let reasons: [(String, String)] = [
+        ("spam", s("report_reason_spam")),
+        ("assedio", s("report_reason_harassment")),
+        ("ilegal", s("report_reason_illegal")),
+        ("outro", s("report_reason_other")),
+    ]
+
+    init(name: String, msgs: [ChatMessage], onConfirm: @escaping ([String], String) -> Void, onCancel: @escaping () -> Void) {
+        self.name = name
+        let shown = Array(msgs.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.prefix(30))
+        self.shown = shown
+        self.onConfirm = onConfirm
+        self.onCancel = onCancel
+        _picked = State(initialValue: Set(shown.filter { !$0.outgoing }.prefix(10).map(\.messageId)))
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text(s("report_explain", name)).font(.footnote)
+                }
+                Section(s("report_reason")) {
+                    Picker(s("report_reason"), selection: $reason) {
+                        ForEach(reasons, id: \.0) { Text($0.1).tag($0.0) }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                }
+                Section(s("report_messages", picked.count, Self.maxPicked)) {
+                    if shown.isEmpty { Text(s("report_no_messages")).font(.footnote) }
+                    ForEach(shown, id: \.messageId) { m in
+                        Button {
+                            if picked.contains(m.messageId) { picked.remove(m.messageId) }
+                            else if picked.count < Self.maxPicked { picked.insert(m.messageId) }
+                        } label: {
+                            HStack {
+                                Image(systemName: picked.contains(m.messageId) ? "checkmark.square.fill" : "square")
+                                VStack(alignment: .leading) {
+                                    Text(m.outgoing ? s("report_from_me") : name).font(.caption).lineLimit(1)
+                                    Text(m.text).font(.footnote).lineLimit(2)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .navigationTitle(s("report_title", name))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(s("t_cancelar"), action: onCancel) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(s("report_confirm"), role: .destructive) {
+                        onConfirm(shown.map(\.messageId).filter { picked.contains($0) }, reason)
+                    }
+                }
+            }
+        }
     }
 }

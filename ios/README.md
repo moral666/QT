@@ -26,6 +26,7 @@ falam entre si pelo mesmo relay.
 | `Keystore.kt`, `AppLock.kt`   | `Security/SecureBox.swift` (Secure Enclave, Face ID)       |
 | `ContactStore.kt`             | `Security/ContactStore.swift`                              |
 | `Badges.kt`                   | `Views/Badges.swift` (aro do badge, `CIFalseColor`)       |
+| `ReportDialog` (`MainActivity.kt`) | `ReportSheet` (`Views/ChatScreen.swift`): denunciar, 0.9.18 |
 | `Profile.kt`                  | `Views/MediaSupport.swift` (`ProfilePhoto`) e `Views/CallScreen.swift` (`ProfilePhotoSheet`) |
 | `Lang.kt` + `res/values*/strings.xml` | `App/Lang.swift` + `Resources/*.lproj` (gerados)   |
 | `RelayLink.kt`                | `Network/RelayLink.swift`                                  |

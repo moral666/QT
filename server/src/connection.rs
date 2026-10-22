@@ -50,6 +50,9 @@ pub struct ServerConfig {
     pub send_rate: crate::limits::Rate,
     /// Pedidos de bundle por conta (`FetchPreKeyBundle`).
     pub fetch_bundle_rate: crate::limits::Rate,
+    /// Conta do operador (`hex` da chave Ed25519 de `/etc/qt/operator.pub`): so ela faz
+    /// pedidos `Admin*` (denuncias e banimentos). `None` = desligados.
+    pub operator: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -67,6 +70,7 @@ impl Default for ServerConfig {
             // (e para avisar todos os contactos ao abrir a app), nao para spam em massa.
             send_rate: crate::limits::Rate { burst: 300, per_minute: 300 },
             fetch_bundle_rate: crate::limits::Rate { burst: 60, per_minute: 60 },
+            operator: None,
         }
     }
 }
@@ -134,6 +138,14 @@ pub async fn handle_connection_with(
             return Err(ConnectionError::AuthFailed);
         }
     };
+    // Conta banida pelo operador: recusada. Se o Redis falhar, deixa entrar (o resto dos
+    // pedidos falha na mesma e uma avaria nao deve fechar o relay a toda a gente).
+    if matches!(store.is_banned(&user_id).await, Ok(true)) {
+        stats::inc(&STATS.auth_failed);
+        reply(&mut ws, &mut noise, &err(crate::protocol::BANNED)).await?;
+        ws_transport::close_gracefully(&mut ws).await;
+        return Err(ConnectionError::AuthFailed);
+    }
     stats::inc(&STATS.auth_ok);
     drop(unauthenticated);
     // No maximo `max_connections_per_user` por conta: as mais antigas fecham.
@@ -402,6 +414,11 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                     return err("one-time prekeys invalidas");
                 }
             }
+            match store.is_banned(me).await {
+                Ok(false) => {}
+                Ok(true) => return err(crate::protocol::BANNED),
+                Err(e) => return internal(e),
+            }
             // Conta nova (ou que expirou): so com prova de trabalho valida.
             if cfg.require_pow {
                 match store.get_bundle(me).await {
@@ -610,6 +627,72 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
         ClientMessage::BlobDelete { blob_id } => match store.blob_delete(&blob_id).await {
             Ok(()) => ServerMessage::Ack,
             Err(e) => blob_err(e),
+        },
+        ClientMessage::SubmitReport { sealed } => {
+            let len_ok = sealed.len() > 1 + 32 + 16 + 4 && sealed.len() <= qt_core::report::MAX_SEALED;
+            if !len_ok || sealed[0] != qt_core::report::VERSION {
+                return err("denuncia invalida");
+            }
+            match store.is_registered(me).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    stats::inc(&STATS.not_registered);
+                    return err(crate::protocol::NOT_REGISTERED);
+                }
+                Err(e) => return internal(e),
+            }
+            match store.submit_report(me, sealed).await {
+                Ok(_) => {
+                    stats::inc(&STATS.reports);
+                    ServerMessage::Ack
+                }
+                Err(StoreError::ReportLimit) => err(crate::protocol::REPORT_LIMIT),
+                Err(StoreError::ReportsFull) => err("demasiadas denuncias, tenta mais tarde"),
+                Err(e) => internal(e),
+            }
+        }
+        ClientMessage::AdminListReports { .. }
+        | ClientMessage::AdminDeleteReport { .. }
+        | ClientMessage::AdminBan { .. }
+        | ClientMessage::AdminUnban { .. }
+        | ClientMessage::AdminListBans
+            if cfg.operator.as_deref() != Some(me) =>
+        {
+            err(crate::protocol::NOT_OPERATOR)
+        }
+        ClientMessage::AdminListReports { after } => match store.list_reports(after, MAX_PAGE_BYTES).await {
+            Ok((reports, more)) => ServerMessage::Reports { reports, more },
+            Err(e) => internal(e),
+        },
+        ClientMessage::AdminDeleteReport { id } => match store.delete_report(id).await {
+            Ok(()) => ServerMessage::Ack,
+            Err(e) => internal(e),
+        },
+        ClientMessage::AdminBan { user_id } => {
+            if !is_valid_user_id(&user_id) || user_id == me {
+                return err("user_id invalido");
+            }
+            match store.ban(&user_id).await {
+                Ok(()) => {
+                    crate::limits::UserSlot::close_all(&user_id);
+                    stats::inc(&STATS.bans);
+                    ServerMessage::Ack
+                }
+                Err(e) => internal(e),
+            }
+        }
+        ClientMessage::AdminUnban { user_id } => {
+            if !is_valid_user_id(&user_id) {
+                return err("user_id invalido");
+            }
+            match store.unban(&user_id).await {
+                Ok(()) => ServerMessage::Ack,
+                Err(e) => internal(e),
+            }
+        }
+        ClientMessage::AdminListBans => match store.list_bans().await {
+            Ok(user_ids) => ServerMessage::Bans { user_ids },
+            Err(e) => internal(e),
         },
     }
 }

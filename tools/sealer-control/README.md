@@ -5,6 +5,7 @@ Junta numa só app as três ferramentas antigas (`sealer_aws_monitor`, `Site Sea
 - **Relay AWS:** estado da EC2, CPU, RAM, disco, ligações, serviço do relay, erros, custo do mês e alertas. Mostra também a latência real lida do `estado.json`: o envio, a entrega e a soma entre telemóveis. Se a entrega for de há mais de 1 hora, aparece marcada como antiga.
 - **Site:** verifica o sealer.pt a cada 60 s e mostra a disponibilidade, o tempo de resposta e o histórico de mudanças.
 - **Badges:** valida o `qt1:…` e emite o badge sem passar pelo shell, com confirmação antes de retirar e um registo do resultado.
+- **Denúncias:** lista as denúncias das apps (abertas neste PC com a chave do operador, pela ferramenta `cargo run --example denuncias`), apaga-as e bane ou desbane contas no relay, sempre com confirmação. Caminho da chave em Definições → Denúncias.
 - **Bandeja e notificações:** recebes um aviso quando o site cai, o relay para ou a AWS dá alerta, e outro quando recupera. Fechar a janela deixa a app a correr na bandeja.
 
 ## Correr a partir do código

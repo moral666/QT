@@ -106,5 +106,17 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     // Publicar um bundle de novo desfaz a eliminacao.
     store.register_bundle(alice.clone(), vec![4]).await.unwrap();
     store.enqueue_message(&alice, alice.clone(), vec![], vec![1; 4]).await.unwrap();
+
+    // Denuncias e banimentos (operador).
+    let id = store.submit_report(&alice, vec![1; 100]).await.unwrap();
+    let (reports, more) = store.list_reports(0, 40_000).await.unwrap();
+    assert_eq!((reports.len(), more, reports[0].id), (1, false, id));
+    store.delete_report(id).await.unwrap();
+    assert!(store.list_reports(0, 40_000).await.unwrap().0.is_empty());
+    store.ban(&alice).await.unwrap();
+    assert!(store.is_banned(&alice).await.unwrap());
+    assert_eq!(store.list_bans().await.unwrap(), vec![alice.clone()]);
+    store.unban(&alice).await.unwrap();
+    assert!(!store.is_banned(&alice).await.unwrap());
     let _ = std::fs::remove_dir_all(dir);
 }

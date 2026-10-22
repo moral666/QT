@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QDialog, Q
 
 from . import __version__, aws, config, services
 from .page_badges import BadgesPage
+from .page_reports import ReportsPage
 from .page_relay import RelayPage
 from .page_site import SitePage
 from .tasks import run_async
@@ -161,6 +162,9 @@ class SettingsDialog(QDialog):
         text(f, "badge_key", "Chave do emissor", "file")
         text(f, "badge_db", "Base de dados", "file")
 
+        f = section("Denúncias")
+        text(f, "operator_key", "Chave do operador", "file")
+
         f = section("Geral")
         for key, caption in (("notifications", "Notificações no ambiente de trabalho"),
                              ("minimize_to_tray", "Fechar a janela mantém a app na bandeja")):
@@ -237,7 +241,8 @@ class MainWindow(QMainWindow):
         self.relay = RelayPage()
         self.site = SitePage()
         self.badges = BadgesPage(lambda: self.cfg)
-        for page in (self.relay, self.site, self.badges):
+        self.reports = ReportsPage(lambda: self.cfg)
+        for page in (self.relay, self.site, self.badges, self.reports):
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setWidget(page)
@@ -247,6 +252,7 @@ class MainWindow(QMainWindow):
         self.relay.refresh_btn.clicked.connect(lambda: self.refresh_aws(force=True))
         self.site.check_btn.clicked.connect(self.check_site)
         self.badges.finished.connect(self._badge_done)
+        self.reports.finished.connect(self._reports_done)
 
         self._build_tray()
         self.notifier = Notifier(self.tray)
@@ -281,7 +287,7 @@ class MainWindow(QMainWindow):
 
         self.nav_group = QButtonGroup(self)
         self.nav_dots: list[Dot] = []
-        for i, (icon, text) in enumerate((("◉", "Relay AWS"), ("◎", "Site"), ("✦", "Badges"))):
+        for i, (icon, text) in enumerate((("◉", "Relay AWS"), ("◎", "Site"), ("✦", "Badges"), ("⚑", "Denúncias"))):
             row = QHBoxLayout()
             btn = QPushButton(f"{icon}   {text}")
             btn.setObjectName("navButton")
@@ -467,6 +473,10 @@ class MainWindow(QMainWindow):
     def _badge_done(self, ok: bool, text: str):
         if not self.isActiveWindow():
             self.notifier.send("Badge atribuído" if ok else "Falha ao atribuir badge", text, "ok" if ok else "bad")
+
+    def _reports_done(self, ok: bool, text: str):
+        if not self.isActiveWindow():
+            self.notifier.send("Denúncias" if ok else "Falha nas denúncias", text, "ok" if ok else "bad")
 
     # --- janela -------------------------------------------------------------
     def show_window(self):

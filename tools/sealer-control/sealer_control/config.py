@@ -30,6 +30,8 @@ DEFAULTS: dict[str, Any] = {
     "repo_path": "~/QT-repo",
     "badge_key": "~/Documentos/SENSIVEL /badge-emissor.key",
     "badge_db": "~/Documentos/SENSIVEL /badge-emissor.db",
+    # Denúncias (chave do operador, criada com `--example denuncias -- chave`)
+    "operator_key": "~/Documentos/SENSIVEL /operador.key",
     # Geral
     "notifications": True,
     "minimize_to_tray": True,

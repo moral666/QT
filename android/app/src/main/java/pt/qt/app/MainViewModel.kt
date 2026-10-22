@@ -1016,6 +1016,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Denunciar (0.9.18): as mensagens escolhidas seguem cifradas para o operador (o Rust
+     * cifra; o relay nao as le e nao guarda quem denunciou). Se o relay aceitar, bloqueia o
+     * contacto. `reason`: "spam", "assedio", "ilegal" ou "outro".
+     */
+    fun reportContact(contactId: String, messageIds: List<String>, reason: String) = io {
+        val client = qt ?: return@io
+        val publicId = _ui.value.contacts.firstOrNull { it.contactId == contactId }?.publicId
+            ?: runCatching { client.pendingIntro(contactId) }.getOrNull()
+        if (publicId == null) {
+            error(s(R.string.report_failed))
+            return@io
+        }
+        val l = link ?: run { error(s(R.string.t_sem_ligacao_ao_servidor)); return@io }
+        val outcome = try {
+            when (val r = l.request(client.relayRequestReport(publicId, messageIds, reason))) {
+                is RelayResponse.Ack -> null
+                is RelayResponse.Error ->
+                    if (r.reason == RELAY_UNKNOWN_REQUEST) s(R.string.t_o_servidor_ainda_nao_tem_esta) else s(R.string.t_o_servidor_respondeu, r.reason)
+                else -> s(R.string.t_resposta_inesperada_do_servidor)
+            }
+        } catch (e: QtException) {
+            Log.w("SealerRelay", "denuncia: ${e.safeMsg()}")
+            s(R.string.report_failed)
+        } catch (e: Exception) {
+            s(R.string.t_sem_ligacao_ao_servidor)
+        }
+        if (outcome != null) {
+            error(outcome)
+            return@io
+        }
+        try {
+            client.blockContact(contactId)
+            _ui.update { it.copy(blocked = it.blocked + contactId, notice = s(R.string.report_sent)) }
+            refreshViews(client)
+        } catch (e: Exception) {
+            _ui.update { it.copy(notice = s(R.string.report_sent)) }
+        }
+    }
+
     fun unblockContact(contactId: String) = io {
         val client = qt ?: return@io
         try {
