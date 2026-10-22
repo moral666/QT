@@ -1,20 +1,26 @@
 /**
- * Línguas do site: as mesmas seis da app. Português (o texto das páginas), inglês,
- * francês, espanhol, alemão e italiano.
+ * Línguas do site: as mesmas nove da app. Português (o texto das páginas), inglês,
+ * francês, espanhol, alemão, italiano, japonês, chinês simplificado e hindi.
  *
- * Escolha: `?lang=pt|en|fr|es|de|it` no endereço (o seletor PT · EN · FR · ES · DE · IT
- * põe-no); sem isso, a língua do navegador (uma destas; outra qualquer: inglês). Nada é guardado no
+ * Escolha: `?lang=pt|en|fr|es|de|it|ja|zh|hi` no endereço (o menu de línguas põe-no); sem
+ * isso, a língua do navegador (uma destas; outra qualquer: inglês; chinês tradicional, de
+ * Taiwan, Hong Kong ou Macau, também inglês, porque o site só tem o simplificado). Nada é guardado no
  * navegador (a política de cookies diz que o site não usa armazenamento): a escolha
  * passa de página em página pelos links, com o `?lang=`.
  *
  * As páginas marcam os textos com data-i18n="chave" (e data-i18n-alt, -aria-label,
  * -title, -content para atributos). Nas outras línguas os textos vêm de
  * i18n/<língua>.js, carregado só nesse caso. Os textos criados por JavaScript usam
- * L({ pt, en, fr, es, de, it }) (uma língua que falte fica em inglês).
+ * L({ pt, en, fr, es, de, it, ja, zh, hi }) (uma língua que falte fica em inglês).
+ *
+ * Nas línguas traduzidas, o rodapé ganha uma linha para avisar de erros de tradução
+ * (email para privacidade@sealer.pt, com a língua e a página no assunto).
  */
 
-const SUPPORTED = ['pt', 'en', 'fr', 'es', 'de', 'it'];
-const HTML_LANG = { pt: 'pt-PT', en: 'en', fr: 'fr', es: 'es', de: 'de', it: 'it' };
+const SUPPORTED = ['pt', 'en', 'fr', 'es', 'de', 'it', 'ja', 'zh', 'hi'];
+const HTML_LANG = { pt: 'pt-PT', en: 'en', fr: 'fr', es: 'es', de: 'de', it: 'it', ja: 'ja', zh: 'zh-Hans', hi: 'hi' };
+/** Nome de cada língua na própria língua (menu de línguas). */
+const NAMES = { pt: 'Português', en: 'English', fr: 'Français', es: 'Español', de: 'Deutsch', it: 'Italiano', ja: '日本語', zh: '简体中文', hi: 'हिन्दी' };
 
 function fromUrl() {
   try {
@@ -28,7 +34,10 @@ function fromUrl() {
 function fromBrowser() {
   const list = navigator.languages?.length ? navigator.languages : [navigator.language || 'pt'];
   for (const l of list) {
-    const base = String(l).slice(0, 2).toLowerCase();
+    const tag = String(l).toLowerCase();
+    // Chinês tradicional: o site só tem o simplificado, por isso passa à língua seguinte.
+    if (/^zh-(hant|tw|hk|mo)\b/.test(tag)) continue;
+    const base = tag.slice(0, 2);
     if (SUPPORTED.includes(base)) return base;
   }
   return 'en';
@@ -37,7 +46,7 @@ function fromBrowser() {
 const chosen = fromUrl();
 export const lang = chosen ?? fromBrowser();
 
-/** Texto na língua da página: L({ pt: '...', en: '...', fr: '...', es: '...', de: '...', it: '...' }). */
+/** Texto na língua da página: L({ pt: '...', en: '...', ..., ja: '...', zh: '...', hi: '...' }). */
 export const L = (o) => o[lang] ?? o.en ?? o.pt;
 
 /** Formato de números na língua da página. */
@@ -49,7 +58,52 @@ const loaders = {
   es: () => import('./i18n/es.js'),
   de: () => import('./i18n/de.js'),
   it: () => import('./i18n/it.js'),
+  ja: () => import('./i18n/ja.js'),
+  zh: () => import('./i18n/zh.js'),
+  hi: () => import('./i18n/hi.js'),
 };
+
+/**
+ * Linha no fim de cada página traduzida para avisar de erros de tradução por email
+ * (o português é o original, por isso não a tem). Vai só a língua e a página.
+ */
+const REPORT = {
+  en: 'Found a translation error? <a href="%s">Let us know</a>.',
+  fr: 'Une erreur de traduction ? <a href="%s">Dis-le-nous</a>.',
+  es: '¿Has visto un error de traducción? <a href="%s">Avísanos</a>.',
+  de: 'Einen Übersetzungsfehler gefunden? <a href="%s">Sag uns Bescheid</a>.',
+  it: 'Hai trovato un errore di traduzione? <a href="%s">Faccelo sapere</a>.',
+  ja: '翻訳の誤りを見つけた場合は、<a href="%s">お知らせください</a>。',
+  zh: '发现翻译错误？<a href="%s">请告诉我们</a>。',
+  hi: 'अनुवाद में कोई गलती दिखी? <a href="%s">हमें बताएं</a>।',
+};
+
+function addReportLine() {
+  const text = REPORT[lang];
+  const footer = document.querySelector('.legal-footer, .footer');
+  if (!text || !footer || footer.querySelector('.i18n-report')) return;
+  const page = document.documentElement.dataset.page || 'index';
+  const href = 'mailto:privacidade@sealer.pt?subject=' + encodeURIComponent(`SEALER: erro de tradução (site, ${lang}, ${page})`);
+  const p = document.createElement('p');
+  p.className = 'i18n-report';
+  p.innerHTML = text.replace('%s', href);
+  footer.append(p);
+}
+
+/** O menu de línguas fecha ao tocar fora dele ou com Esc. */
+function closeLangMenuOutside() {
+  const box = document.querySelector('details.lang');
+  if (!box) return;
+  document.addEventListener('click', (e) => {
+    if (box.open && !box.contains(e.target)) box.open = false;
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && box.open) {
+      box.open = false;
+      box.querySelector('summary')?.focus();
+    }
+  });
+}
 
 function applyDict(dict) {
   const page = document.documentElement.dataset.page;
@@ -83,8 +137,12 @@ function keepLangInLinks() {
   }
 }
 
-/** Seletor PT · EN · FR · ES · DE · IT: marca a língua atual e mantém a página e o #. */
+/** Menu de línguas: marca a língua atual e mantém a página e o #. */
 function markSwitcher() {
+  for (const cur of document.querySelectorAll('.lang .lang__current')) {
+    cur.textContent = NAMES[lang];
+    cur.setAttribute('lang', HTML_LANG[lang]);
+  }
   for (const a of document.querySelectorAll('.lang a[data-lang]')) {
     const l = a.dataset.lang;
     const url = new URL(location.href);
@@ -105,8 +163,10 @@ export function translatePage() {
 async function run() {
   document.documentElement.lang = HTML_LANG[lang];
   markSwitcher();
+  closeLangMenuOutside();
   keepLangInLinks();
   if (lang === 'pt') return;
+  addReportLine();
   try {
     const { default: dict } = await loaders[lang]();
     applyDict(dict);

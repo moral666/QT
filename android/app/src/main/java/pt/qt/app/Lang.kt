@@ -2,10 +2,13 @@ package pt.qt.app
 
 import android.app.Application
 import android.app.LocaleManager
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
 import android.content.res.Resources
 import android.os.Build
+import android.net.Uri
 import android.os.LocaleList
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
@@ -21,10 +24,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import java.text.Normalizer
 import java.util.Locale
 
 /**
- * Idiomas da app: PT (base, `values/`), EN, FR, ES, DE e IT (`values-xx/`).
+ * Idiomas da app: PT (base, `values/`), EN, FR, ES, DE, IT, JA, ZH (chines simplificado,
+ * `values-zh-rCN/`) e HI (`values-xx/`).
  * Por omissao segue a lingua do telemovel (PT se nao for nenhuma destas); no menu
  * "Idioma" pode escolher-se uma a mao. No Android 13+ a escolha fica no sistema
  * (tambem aparece nas definicoes da app); antes disso aplica-se aqui.
@@ -38,7 +43,12 @@ object Lang {
         "es" to "Español",
         "de" to "Deutsch",
         "it" to "Italiano",
+        "ja" to "日本語",
+        "zh-CN" to "简体中文",
+        "hi" to "हिन्दी",
     )
+    /** Para onde vao os avisos de erros de traducao (Definicoes > Reportar erro de traducao). */
+    const val REPORT_EMAIL = "privacidade@sealer.pt"
     private const val PREFS = "idioma"
     private const val KEY = "lang"
 
@@ -80,6 +90,34 @@ object Lang {
     /** A lingua em que a app esta a mostrar os textos (para datas e numeros). */
     fun locale(): Locale = (res ?: app.resources).configuration.locales[0]
 
+    /**
+     * Abre a app de email com um aviso de erro de traducao para [REPORT_EMAIL]. Vai so a lingua
+     * e a versao da app (nada do utilizador: nem o ID, nem contactos).
+     */
+    fun reportTranslation(ctx: Context) {
+        val subject = "SEALER: erro de tradução (${locale().toLanguageTag()}, ${BuildConfig.VERSION_NAME})"
+        val uri = Uri.parse(
+            "mailto:$REPORT_EMAIL?subject=" + Uri.encode(subject) + "&body=" + Uri.encode(str(R.string.lang_report_body)),
+        )
+        try {
+            ctx.startActivity(Intent(Intent.ACTION_SENDTO, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: ActivityNotFoundException) {
+            android.widget.Toast.makeText(ctx, str(R.string.lang_report_no_app, REPORT_EMAIL), android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /**
+     * A palavra escrita para confirmar "Destruir perfil e dados" (APAGAR, 削除, हटाएं...) esta
+     * certa? Aceita tambem as outras grafias de `confirm_word_alt` (separadas por virgulas: em
+     * japones sem converter, em hindi as grafias comuns e DELETE de quem so tem teclado latino).
+     * Ignora maiusculas, espacos nas pontas e as duas formas do nasal em hindi (ँ e ं).
+     */
+    fun confirmWordOk(typed: String): Boolean {
+        fun norm(t: String) = Normalizer.normalize(t.trim(), Normalizer.Form.NFC).replace('\u0901', '\u0902')
+        val words = listOf(str(R.string.confirm_word)) + str(R.string.confirm_word_alt).split(',').filter { it.isNotBlank() }
+        return words.any { norm(typed).equals(norm(it), ignoreCase = true) }
+    }
+
     fun str(@StringRes id: Int, vararg args: Any?): String {
         val r = res ?: app.resources
         return if (args.isEmpty()) r.getString(id) else r.getString(id, *args)
@@ -110,7 +148,7 @@ class SealerApp : Application() {
     }
 }
 
-/** Menu "Idioma": a lingua do telemovel ou uma das seis. */
+/** Menu "Idioma": a lingua do telemovel ou uma das nove. */
 @Composable
 fun LanguageDialog(onPick: (String) -> Unit, onDismiss: () -> Unit) {
     val current = Lang.chosen()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Textos da app iPhone a partir dos da app Android (as mesmas chaves, nas seis linguas).
+"""Textos da app iPhone a partir dos da app Android (as mesmas chaves, nas nove linguas).
 
     python3 scripts/strings-ios.py
 
@@ -18,9 +18,11 @@ RES = os.path.join(ROOT, "android", "app", "src", "main", "res")
 OUT = os.path.join(ROOT, "ios", "SealerMessenger", "Resources")
 
 # Lingua do Android -> pasta .lproj do iPhone (PT e a base, como no Android).
-LANGS = {"": "pt-PT", "-en": "en", "-fr": "fr", "-es": "es", "-de": "de", "-it": "it"}
+LANGS = {"": "pt-PT", "-en": "en", "-fr": "fr", "-es": "es", "-de": "de", "-it": "it",
+         "-ja": "ja", "-zh-rCN": "zh-Hans", "-hi": "hi"}
 
-# Textos so do iPhone (nao existem no Android). Ordem: pt, en, fr, es, de, it.
+# Textos so do iPhone (nao existem no Android). Ordem: pt, en, fr, es, de, it (ja, zh-Hans e hi
+# mais abaixo, em EXTRA_JA_ZH_HI).
 EXTRA = {
     # Notificacao das mensagens: a Apple so recebe esta chave, o texto e traduzido no iPhone.
     "push_new": ("Tens mensagens novas", "You have new messages", "Vous avez de nouveaux messages",
@@ -105,7 +107,61 @@ PLIST = {
         "Per sbloccare SEALER senza digitare il codice."),
 }
 
-ORDER = ["pt-PT", "en", "fr", "es", "de", "it"]
+# Japones, chines simplificado e hindi (22/10/2026): mesma ordem de chaves, acrescentados
+# no fim de cada tuplo. Ver claude/glossario no projeto (Apple na China: 面容 ID e 触控 ID).
+EXTRA_JA_ZH_HI = {
+    "push_new": ("新しいメッセージがあります", "你有新消息", "आपके लिए नए मैसेज हैं"),
+    "ios_open_settings": ("設定を開く", "打开设置", "सेटिंग्ज़ खोलें"),
+    "ios_paste_image": ("画像またはGIFをペースト", "粘贴图片或GIF", "इमेज या GIF पेस्ट करें"),
+    "ios_no_image_to_paste": ("コピーされた画像がありません。", "没有已复制的图片。", "कोई कॉपी की गई इमेज नहीं है।"),
+    "ios_no_image_to_paste_hint": (
+        "GIFキーボードでGIFをタップしてコピーし、「画像またはGIFをペースト」を選んでください。",
+        "在GIF键盘中点击GIF进行复制，然后选择“粘贴图片或GIF”。",
+        "GIF कीबोर्ड में किसी GIF पर टैप करके उसे कॉपी करें, फिर \"इमेज या GIF पेस्ट करें\" चुनें।"),
+    "ios_record_voice": ("ボイスメッセージを録音", "录制语音消息", "वॉइस मैसेज रिकॉर्ड करें"),
+    "ios_quick_unlock": ("Face ID、Touch ID、またはiPhoneのパスコード", "面容 ID、触控 ID或iPhone密码",
+                         "Face ID, Touch ID या iPhone पासकोड"),
+    "ios_quick_unlock_hint": ("アプリのパスコードを入力せずにロックを解除できます。", "无需输入应用密码即可解锁。",
+                              "ऐप का पासकोड टाइप किए बिना अनलॉक करने के लिए।"),
+    "ios_bio_unavailable": ("利用できません：このiPhoneにはパスコードが設定されていません。", "不可用：此iPhone未设置密码。",
+                            "उपलब्ध नहीं: इस iPhone में पासकोड सेट नहीं है।"),
+    "ios_mic_denied_call": (
+        "マイクへのアクセスがないと通話できません。iPhoneの設定でオンにできます。",
+        "没有麦克风权限，无法进行通话。你可以在iPhone设置中开启。",
+        "माइक्रोफ़ोन की अनुमति के बिना कॉल नहीं की जा सकती। आप इसे iPhone की सेटिंग्ज़ में चालू कर सकते हैं।"),
+    "ios_bio_confirm": (
+        "アプリのパスコードで確認してください。次に、iPhoneがFace ID、Touch ID、またはiPhoneのパスコードを求めます。",
+        "请输入应用密码确认。接下来，iPhone会要求验证面容 ID、触控 ID或iPhone密码。",
+        "ऐप के पासकोड से पुष्टि करें। इसके बाद iPhone आपसे Face ID, Touch ID या iPhone पासकोड मांगेगा।"),
+    "ios_bio_changed": (
+        "Face ID、Touch ID、またはiPhoneのパスコードが変更されました。アプリのパスコードを使って、クイックロック解除をもう一度オンにしてください。",
+        "面容 ID、触控 ID或iPhone密码已更改。请使用应用密码，并重新开启快速解锁。",
+        "Face ID, Touch ID या iPhone पासकोड बदल गया है। ऐप का पासकोड इस्तेमाल करें और क्विक अनलॉक फिर से चालू करें।"),
+    "ios_use_face_id": ("Face IDを使用", "使用面容 ID", "Face ID इस्तेमाल करें"),
+    "ios_use_touch_id": ("Touch IDを使用", "使用触控 ID", "Touch ID इस्तेमाल करें"),
+    "ios_use_passcode": ("iPhoneのパスコードを使用", "使用iPhone密码", "iPhone पासकोड इस्तेमाल करें"),
+}
+PLIST_JA_ZH_HI = {
+    "NSCameraUsageDescription": (
+        "相手のQRコードを読み取って連絡先に追加するために使用します。",
+        "用于扫描他人的二维码并将其添加为联系人。",
+        "किसी दूसरे व्यक्ति का QR कोड स्कैन करके उन्हें अपने संपर्कों में जोड़ने के लिए।"),
+    "NSMicrophoneUsageDescription": (
+        "音声通話とボイスメッセージに使用します。",
+        "用于语音通话和语音消息。",
+        "वॉइस कॉल और वॉइस मैसेज के लिए।"),
+    "NSFaceIDUsageDescription": (
+        "パスコードを入力せずにSEALERのロックを解除するために使用します。",
+        "使用面容 ID 解锁SEALER，无需输入密码。",
+        "पासकोड टाइप किए बिना SEALER अनलॉक करने के लिए।"),
+}
+for _k, _v in EXTRA_JA_ZH_HI.items():
+    EXTRA[_k] = EXTRA[_k] + _v
+for _k, _v in PLIST_JA_ZH_HI.items():
+    PLIST[_k] = PLIST[_k] + _v
+assert all(len(v) == 9 for v in EXTRA.values()) and all(len(v) == 9 for v in PLIST.values())
+
+ORDER = ["pt-PT", "en", "fr", "es", "de", "it", "ja", "zh-Hans", "hi"]
 
 
 def android_text(raw: str) -> str:

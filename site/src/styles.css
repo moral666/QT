@@ -1228,33 +1228,159 @@ p {
   }
 }
 
-/* ---------- Seletor de língua (PT · EN · FR · ES · DE · IT) ---------- */
+/* ---------- Seletor de língua: menu com as nove línguas, cada uma no seu nome ---------- */
 
 .lang {
+  position: relative;
+  display: inline-block;
   margin: var(--space-s, 0.75rem) 0 0;
   font-size: 0.875rem;
-  letter-spacing: 0.04em;
   color: var(--mist);
-}
-
-.lang a {
-  color: var(--mist);
-  text-decoration: none;
-  padding: 0.25rem 0.2rem;
   pointer-events: auto;
 }
 
-.lang a:hover {
+.lang > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--mist);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.lang > summary::-webkit-details-marker {
+  display: none;
+}
+
+.lang > summary::after {
+  content: "";
+  width: 0.4em;
+  height: 0.4em;
+  margin-left: 0.1em;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-0.12em) rotate(45deg);
+}
+
+.lang[open] > summary::after {
+  transform: translateY(0.1em) rotate(-135deg);
+}
+
+.lang > summary:hover {
   color: var(--ice, #fff);
 }
 
-.lang a[aria-current='true'] {
+.lang > summary:focus-visible {
+  outline: 2px solid var(--lilac);
+  outline-offset: 3px;
+}
+
+.lang__icon {
+  width: 1.1em;
+  height: 1.1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.lang__list {
+  position: absolute;
+  z-index: 40;
+  /* Abre para cima: o seletor está no fundo do herói, que no telemóvel ocupa o ecrã todo. */
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-height: min(70svh, 26rem);
+  overflow-y: auto;
+  min-width: 11rem;
+  margin: 0;
+  padding: 0.35rem;
+  list-style: none;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 18px 40px rgb(0 0 0 / 0.45);
+}
+
+.lang__list a {
+  display: block;
+  padding: 0.5rem 0.75rem;
+  border-radius: 9px;
+  color: var(--mist);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.lang__list a:hover {
+  color: var(--ice, #fff);
+  background: rgb(255 255 255 / 0.05);
+}
+
+.lang__list a[aria-current='true'] {
   color: var(--lilac);
   font-weight: 600;
 }
 
-.lang a:focus-visible {
+.lang__list a:focus-visible {
   outline: 2px solid var(--lilac);
-  outline-offset: 3px;
-  border-radius: 2px;
+  outline-offset: -2px;
+}
+
+/* Linha para avisar de erros de tradução (só nas línguas traduzidas, ver i18n.js). */
+.i18n-report a {
+  color: var(--lilac);
+}
+
+/* ---------- Japonês, chinês e hindi ---------- */
+
+/* Letras do sistema para cada escrita. O japonês e o chinês partilham caracteres com
+   desenhos diferentes: cada língua tem a sua lista, para o japonês nunca sair com letra
+   chinesa (e o contrário). */
+html:lang(ja) {
+  --font-text: "Manrope", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, "Noto Sans JP", "Noto Sans CJK JP", system-ui, sans-serif;
+  --font-display: "Unbounded", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, "Noto Sans JP", "Noto Sans CJK JP", system-ui, sans-serif;
+}
+
+html:lang(zh-Hans) {
+  --font-text: "Manrope", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --font-display: "Unbounded", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", system-ui, sans-serif;
+}
+
+html:lang(hi) {
+  --font-text: "Manrope", "Noto Sans Devanagari", "Nirmala UI", "Kohinoor Devanagari", "Devanagari Sangam MN", Mangal, system-ui, sans-serif;
+  --font-display: "Unbounded", "Noto Sans Devanagari", "Nirmala UI", "Kohinoor Devanagari", "Devanagari Sangam MN", Mangal, system-ui, sans-serif;
+}
+
+/* O espaçamento entre letras separa as letras do hindi (parte a linha de cima) e
+   fica estranho no japonês e no chinês. */
+html:lang(ja) *,
+html:lang(zh-Hans) *,
+html:lang(hi) * {
+  letter-spacing: normal !important;
+}
+
+/* Japonês e chinês: sem espaços entre palavras, quebra de linha pelas regras da língua. */
+html:lang(ja),
+html:lang(zh-Hans) {
+  line-break: strict;
+  overflow-wrap: anywhere;
+}
+
+html:lang(ja) {
+  word-break: auto-phrase;
+}
+
+/* O hindi precisa de mais altura de linha para os sinais por cima e por baixo. */
+html:lang(hi) body {
+  line-height: 1.75;
+}
+
+/* O menu de línguas abre por baixo do botão: o herói não o pode cortar. */
+.hero:has(.lang[open]) {
+  overflow: visible;
 }

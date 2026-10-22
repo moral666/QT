@@ -396,4 +396,8 @@
     <string name="call_mic_lost">O microfone deixou de funcionar (outra app pode estar a usá-lo). O outro lado deixou de te ouvir.</string>
     <string name="err_unknown_contact">Este contacto já não está na tua lista.</string>
     <string name="err_contact_no_keys">O contacto ainda não abriu a app SEALER (tem de a abrir uma vez).</string>
+    <string name="lang_report">Reportar erro de tradução</string>
+    <string name="lang_report_body">Ecrã onde está o erro:\nTexto atual:\nComo devia ficar:\n</string>
+    <string name="lang_report_no_app">Não há nenhuma app de email. Escreve para %1$s.</string>
+    <string name="confirm_word_alt"></string>
 </resources>

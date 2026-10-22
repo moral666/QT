@@ -1,0 +1,4 @@
+/* Gerado por scripts/strings-ios.py. Nao editar a mao. */
+"NSCameraUsageDescription" = "用于扫描他人的二维码并将其添加为联系人。";
+"NSMicrophoneUsageDescription" = "用于语音通话和语音消息。";
+"NSFaceIDUsageDescription" = "使用面容 ID 解锁SEALER，无需输入密码。";

@@ -22,7 +22,9 @@ struct ProfileSettingsScreen: View {
     let onWipeAll: () -> Void
     @State private var showBlocked = false
     @State private var showWipe = false
+    @State private var showNoMail = false
     @Environment(\.chat) private var c
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,6 +73,10 @@ struct ProfileSettingsScreen: View {
                     SectionLabel(text: s("t_sec_app"))
                     SettingsSwitch(icon: "bell.fill", title: s("t_notificacoes"), isOn: ui.pushOn, onChange: onPush)
                     SettingsRow(icon: nil, glyph: "Aa", title: s("lang_menu"), action: onLanguage)
+                    SettingsRow(icon: "envelope.fill", title: s("lang_report"), action: {
+                        guard let u = Lang.reportURL(version: Config.version) else { return }
+                        openURL(u) { ok in if !ok { showNoMail = true } }
+                    })
                     if Config.relayEditable { SettingsRow(icon: "wrench.fill", title: s("t_relay_teste"), action: onRelay) }
                     SettingsRow(icon: "info.circle.fill", title: s("t_versao", Config.version), divider: false, action: nil)
 
@@ -89,6 +95,9 @@ struct ProfileSettingsScreen: View {
             )
         }
         .sheet(isPresented: $showWipe) { WipeAllSheet(onConfirm: onWipeAll) }
+        .alert(s("lang_report_no_app", Lang.reportEmail), isPresented: $showNoMail) {
+            Button(s("t_fechar"), role: .cancel) {}
+        }
     }
 }
 

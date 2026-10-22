@@ -8,6 +8,7 @@
 "badge_tester" = "Tester";
 "call_mic_lost" = "Le micro ne fonctionne plus (une autre app l'utilise peut-être). Votre correspondant ne vous entend plus.";
 "confirm_word" = "SUPPRIMER";
+"confirm_word_alt" = "";
 "contacts_unreadable_new" = "Nouvelle liste";
 "contacts_unreadable_text" = "La liste de contacts enregistrée n'a pas pu être lue. Pour ne pas la perdre, l'app n'enregistre rien par-dessus. Fermez puis rouvrez l'app. Si l'avertissement persiste, vous pouvez commencer une nouvelle liste (l'ancienne est conservée à part).";
 "contacts_unreadable_title" = "Les contacts n'ont pas pu être ouverts";
@@ -34,6 +35,9 @@
 "ios_use_passcode" = "Utiliser le code de l'iPhone";
 "ios_use_touch_id" = "Utiliser Touch ID";
 "lang_menu" = "Langue";
+"lang_report" = "Signaler une erreur de traduction";
+"lang_report_body" = "Écran où se trouve l'erreur :\nTexte actuel :\nCe qu'il devrait dire :\n";
+"lang_report_no_app" = "Aucune app d'e-mail. Écris à %1$@.";
 "lang_system" = "Langue du téléphone";
 "photo_invalid" = "Cette image ne peut pas servir de photo de profil.";
 "photo_preview_note" = "Une fois appliquée, tu ne pourras changer ta photo qu'après 72 heures.";

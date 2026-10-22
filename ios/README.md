@@ -130,7 +130,7 @@ Para um relay no próprio Mac (simulador): "Opções de teste" → `ws://127.0.0
 
 ## Idiomas
 
-PT, EN, FR, ES, DE e IT, **os mesmos textos da app Android**: `python3 scripts/strings-ios.py` gera
+PT, EN, FR, ES, DE, IT, JA, ZH (chinês simplificado, `zh-Hans.lproj`) e HI, **os mesmos textos da app Android**: `python3 scripts/strings-ios.py` gera
 `Resources/<língua>.lproj/Localizable.strings` e `InfoPlist.strings` a partir de
 `android/app/src/main/res/values*/strings.xml` (mais os poucos textos só do iPhone, no próprio
 script). Correr sempre que mudar um texto no Android. A língua segue a do iPhone; a escolha manual

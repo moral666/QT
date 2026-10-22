@@ -629,3 +629,13 @@
   color: var(--mist);
   font-size: 0.85rem;
 }
+
+/* Japonês: "ルイ、こんにちは！" é mais largo do que "Olá, Rui!"; letra mais pequena para caber
+   no balão e no envelope. */
+html:lang(ja) .bubble-text {
+  font-size: 12.5px;
+}
+
+html:lang(ja) .cf-stage .env-text {
+  font-size: 15px;
+}

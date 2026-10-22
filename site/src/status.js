@@ -23,6 +23,9 @@ const TESTING = L({
   es: 'SEALER está en pruebas cerradas: por ahora solo 5 probadores invitados tienen acceso al servicio.',
   de: 'SEALER ist in einem geschlossenen Test: Vorerst haben nur 5 eingeladene Tester Zugang zum Dienst.',
   it: 'SEALER è in test chiuso: per ora solo 5 tester invitati hanno accesso al servizio.',
+  ja: 'SEALERはクローズドテスト中です。現在、サービスを利用できるのは招待された5人のテスターだけです。',
+  zh: 'SEALER正在封闭测试中：目前只有5名受邀测试人员可以使用该服务。',
+  hi: 'SEALER क्लोज़्ड टेस्टिंग में है: अभी सिर्फ़ 5 आमंत्रित टेस्टर ही सेवा का इस्तेमाल कर सकते हैं।',
 });
 const TAG = L({
   pt: 'Testes fechados<span class="status-pill__count"> · 5 pessoas</span>',
@@ -31,6 +34,9 @@ const TAG = L({
   es: 'Pruebas cerradas<span class="status-pill__count"> · 5 personas</span>',
   de: 'Geschlossener Test<span class="status-pill__count"> · 5 Personen</span>',
   it: 'Test chiuso<span class="status-pill__count"> · 5 persone</span>',
+  ja: 'クローズドテスト<span class="status-pill__count"> · 5人</span>',
+  zh: '封闭测试<span class="status-pill__count"> · 5人</span>',
+  hi: 'क्लोज़्ड टेस्टिंग<span class="status-pill__count"> · 5 लोग</span>',
 });
 
 const TEXT = L({
@@ -69,6 +75,24 @@ const TEXT = L({
     on: { short: 'Servicios en línea', mini: 'En línea', long: 'Los servicios de SEALER están funcionando' },
     off: { short: 'Servicios caídos', mini: 'Caídos', long: 'Los servicios de SEALER están caídos en este momento' },
     unknown: { short: 'Estado desconocido', mini: 'Sin datos', long: 'No se ha podido saber el estado de los servicios de SEALER' },
+  },
+  ja: {
+    checking: { short: 'サービスを確認中', mini: '確認中', long: 'SEALERのサービスが動作しているか確認しています' },
+    on: { short: 'サービス稼働中', mini: '稼働中', long: 'SEALERのサービスは正常に動作しています' },
+    off: { short: 'サービス停止中', mini: '停止中', long: 'SEALERのサービスは現在停止しています' },
+    unknown: { short: '状態不明', mini: 'データなし', long: 'SEALERのサービスの状態を確認できませんでした' },
+  },
+  zh: {
+    checking: { short: '正在检查服务', mini: '检查中', long: '正在检查SEALER的服务是否正常运行' },
+    on: { short: '服务在线', mini: '在线', long: 'SEALER的服务运行正常' },
+    off: { short: '服务离线', mini: '离线', long: 'SEALER的服务目前已中断' },
+    unknown: { short: '状态未知', mini: '无数据', long: '无法获取SEALER服务的状态' },
+  },
+  hi: {
+    checking: { short: 'सेवाएं जांची जा रही हैं', mini: 'जांच जारी', long: 'जांच की जा रही है कि SEALER की सेवाएं काम कर रही हैं या नहीं' },
+    on: { short: 'सेवाएं ऑनलाइन', mini: 'ऑनलाइन', long: 'SEALER की सेवाएं काम कर रही हैं' },
+    off: { short: 'सेवाएं ऑफ़लाइन', mini: 'ऑफ़लाइन', long: 'SEALER की सेवाएं अभी बंद हैं' },
+    unknown: { short: 'स्थिति अज्ञात', mini: 'डेटा नहीं', long: 'SEALER की सेवाओं की स्थिति पता नहीं चल सकी' },
   },
 });
 
@@ -120,6 +144,33 @@ const W = L({
     hour: (v, n, how) => ` Tiempo entre móviles en la última hora: ${v} ms (${n}), ${how}.`,
     last: (v, when, how) => ` Último tiempo entre móviles: ${v} ms${when}, ${how}.`,
     measured: (a) => ` (medido ${a})`,
+  },
+  ja: {
+    how: '一般的なメッセージが、送る人のスマートフォンを出てから、受け取る人のスマートフォンが受信を確認するまでにかかる時間（サーバーへの送信と配信の合計）',
+    now: 'たった今', min1: '1分前', mins: (n) => `${n}分前`, h1: '1時間前', hs: (n) => `${n}時間前`, days: (n) => `${n}日前`,
+    msg1: '1件のメッセージ', msgs: (n) => `${n}件のメッセージ`,
+    hour: (v, n, how) => `直近1時間のスマートフォン間の時間：${v} ms（${n}）。これは${how}です。`,
+    last: (v, when, how) => `最後に測定したスマートフォン間の時間：${v} ms${when}。これは${how}です。`,
+    measured: (a) => `（測定：${a}）`,
+    stop: '。', sep: '',
+  },
+  zh: {
+    how: '一条典型消息从发送者的手机发出，到收件人的手机确认收到所需的时间（发送到服务器加上送达）',
+    now: '刚刚', min1: '1分钟前', mins: (n) => `${n}分钟前`, h1: '1小时前', hs: (n) => `${n}小时前`, days: (n) => `${n}天前`,
+    msg1: '1条消息', msgs: (n) => `${n}条消息`,
+    hour: (v, n, how) => `最近1小时手机到手机的耗时：${v} ms（${n}），即${how}。`,
+    last: (v, when, how) => `最近一次测得的手机到手机耗时：${v} ms${when}，即${how}。`,
+    measured: (a) => `（${a}测得）`,
+    stop: '。', sep: '',
+  },
+  hi: {
+    how: 'एक आम मैसेज को भेजने वाले के फ़ोन से लेकर पाने वाले के फ़ोन द्वारा उसके मिलने की पुष्टि तक लगने वाला समय (सर्वर तक भेजना और फिर पहुंचाना)',
+    now: 'अभी-अभी', min1: '1 मिनट पहले', mins: (n) => `${n} मिनट पहले`, h1: '1 घंटा पहले', hs: (n) => `${n} घंटे पहले`, days: (n) => `${n} दिन पहले`,
+    msg1: '1 मैसेज', msgs: (n) => `${n} मैसेज`,
+    hour: (v, n, how) => ` पिछले एक घंटे में फ़ोन से फ़ोन तक का समय: ${v} ms (${n}), यानी ${how}।`,
+    last: (v, when, how) => ` फ़ोन से फ़ोन तक का पिछला समय: ${v} ms${when}, यानी ${how}।`,
+    measured: (a) => ` (${a} मापा गया)`,
+    stop: '।',
   },
 });
 
@@ -201,7 +252,8 @@ export function initStatus(el) {
         ms.textContent = `${fmt.format(value)} ms`;
       }
     }
-    const full = `${TEXT[state].long}.${totalText(data)} ${TESTING}`;
+    // Japones e chines: ponto final 。 e sem espacos entre frases; hindi: ponto final ।.
+    const full = `${TEXT[state].long}${W.stop ?? '.'}${totalText(data)}${W.sep ?? ' '}${TESTING}`;
     el.title = full;
     el.setAttribute('aria-label', full);
   }
