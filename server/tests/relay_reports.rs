@@ -138,3 +138,36 @@ async fn sem_operador_configurado_ninguem_faz_pedidos_de_operador() {
     let r = op.request(ClientMessage::AdminListBans).await.unwrap();
     assert!(matches!(r, ServerMessage::Error { ref reason } if reason == NOT_OPERATOR), "{r:?}");
 }
+
+#[tokio::test]
+async fn premium_dado_pelo_operador_e_lido_pela_conta() {
+    let relay = TestRelay::start(cfg()).await;
+    let alice = SigningKeyPair::generate();
+    let mut a = client(&relay, &alice).await.unwrap();
+    let r = a.request(ClientMessage::PremiumStatus).await.unwrap();
+    assert!(matches!(r, ServerMessage::Premium { until_ms: 0 }), "{r:?}");
+
+    // Outra conta nao da premium.
+    let r = a.request(ClientMessage::AdminGrantPremium { user_id: uid(&alice), until_ms: u64::MAX / 2 }).await.unwrap();
+    assert!(matches!(r, ServerMessage::Error { ref reason } if reason == NOT_OPERATOR), "{r:?}");
+
+    let mut op = client(&relay, &operator()).await.unwrap();
+    let until = 4_102_444_800_000; // 2100
+    let r = op.request(ClientMessage::AdminGrantPremium { user_id: uid(&alice), until_ms: until }).await.unwrap();
+    assert!(matches!(r, ServerMessage::Ack), "{r:?}");
+    let r = a.request(ClientMessage::PremiumStatus).await.unwrap();
+    assert!(matches!(r, ServerMessage::Premium { until_ms } if until_ms == until), "{r:?}");
+    match op.request(ClientMessage::AdminListPremium).await.unwrap() {
+        ServerMessage::PremiumList { entries } => assert_eq!(entries, vec![PremiumEntry { user_id: uid(&alice), until_ms: until }]),
+        other => panic!("{other:?}"),
+    }
+
+    // Tirar.
+    let r = op.request(ClientMessage::AdminGrantPremium { user_id: uid(&alice), until_ms: 0 }).await.unwrap();
+    assert!(matches!(r, ServerMessage::Ack));
+    assert!(matches!(a.request(ClientMessage::PremiumStatus).await.unwrap(), ServerMessage::Premium { until_ms: 0 }));
+    match op.request(ClientMessage::AdminListPremium).await.unwrap() {
+        ServerMessage::PremiumList { entries } => assert!(entries.is_empty()),
+        other => panic!("{other:?}"),
+    }
+}

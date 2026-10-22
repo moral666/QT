@@ -6,6 +6,7 @@ Junta numa só app as três ferramentas antigas (`sealer_aws_monitor`, `Site Sea
 - **Site:** verifica o sealer.pt a cada 60 s e mostra a disponibilidade, o tempo de resposta e o histórico de mudanças.
 - **Badges:** valida o `qt1:…` e emite o badge sem passar pelo shell, com confirmação antes de retirar e um registo do resultado.
 - **Denúncias:** lista as denúncias das apps (abertas neste PC com a chave do operador, pela ferramenta `cargo run --example denuncias`), apaga-as e bane ou desbane contas no relay, sempre com confirmação. Caminho da chave em Definições → Denúncias.
+- **Premium:** dá premium a uma conta (cola o `qt1:…`, escolhe 1 mês, 3 meses, 1 ano ou sem fim) ou tira-o, e mostra quem tem. Usa a mesma chave do operador.
 - **Bandeja e notificações:** recebes um aviso quando o site cai, o relay para ou a AWS dá alerta, e outro quando recupera. Fechar a janela deixa a app a correr na bandeja.
 
 ## Correr a partir do código

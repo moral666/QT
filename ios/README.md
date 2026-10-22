@@ -28,6 +28,7 @@ falam entre si pelo mesmo relay.
 | `Badges.kt`                   | `Views/Badges.swift` (aro do badge, `CIFalseColor`)       |
 | `ReportDialog` (`MainActivity.kt`) | `ReportSheet` (`Views/ChatScreen.swift`): denunciar, 0.9.18 |
 | `Recovery.kt` (`RecoveryScreen`, `RestoreScreen`) | `Views/RecoveryViews.swift`: chave de recuperação, 0.9.19 |
+| `Premium.kt` (`PremiumScreen`) | `Views/PremiumViews.swift`: Sealer Premium, 0.9.20 |
 | `Profile.kt`                  | `Views/MediaSupport.swift` (`ProfilePhoto`) e `Views/CallScreen.swift` (`ProfilePhotoSheet`) |
 | `Lang.kt` + `res/values*/strings.xml` | `App/Lang.swift` + `Resources/*.lproj` (gerados)   |
 | `RelayLink.kt`                | `Network/RelayLink.swift`                                  |

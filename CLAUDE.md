@@ -38,7 +38,7 @@ está cada coisa. Mantém-no atualizado quando algo mudar.
 - O **servidor fica em Estocolmo** (AWS eu-north-1). Não propor mudar de região.
 - O **site, a documentação e a app nunca mencionam auditorias em falta** ("sem auditoria", "não auditada", 19/10/2026).
 - README: não falar da mudança de critérios dos tempos (ms) da página de estado.
-- Versões da app: série 0.x (agora **0.9.19**, `versionCode` 26), em
+- Versões da app: série 0.x (agora **0.9.20**, `versionCode` 27), em
   `android/app/build.gradle.kts`. **Cada mudança na app sobe o último número** (0.9.1, 0.9.2,
   0.9.3...) e o `versionCode` mais 1, no mesmo commit. Só se passa a **1.0.0** quando o Nuno disser.
 - Conta de programador da Google Play (25 USD): só depois de testar a app. Conta pessoal ou de
@@ -189,6 +189,15 @@ bloqueados e badge; **sem grupos nem histórico** (decisão do Nuno). Relay: `Ba
 A app refaz a cópia quando os contactos ou bloqueados mudam (`scheduleBackup`). Num telemóvel sem
 identidade, `relay_auth_message` usa uma chave temporária só em memória. Depois de recuperar, os
 contactos ficam em `sessions_to_restart` com convite. Ver `docs/protocol-spec.md`, secção 22.
+
+### Premium (desde a 0.9.20, aprovado pelo Nuno a 22/10/2026)
+
+Grátis: texto (também em grupos onde foi adicionado) e **receber tudo**. Pago: fazer chamadas, criar
+grupos, enviar fotos/GIFs/voz/ficheiros (`premiumBlocked()` no `MainViewModel` e no `AppModel`).
+Ecrã `Premium.kt` / `Views/PremiumViews.swift`. O relay guarda `premium:{conta}` = até quando;
+o operador dá/tira com `--example denuncias -- premium-dar|premium-tirar|premium-lista` ou a aba
+"Premium" do sealer-control. O bloqueio só liga com o interruptor de teste (até haver pagamentos);
+"simular premium" só na build de debug. Falta: Play Billing e verificação no relay. Ver secção 23.
 
 ### Funcionalidades da 0.9.0
 

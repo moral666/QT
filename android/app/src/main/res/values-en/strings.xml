@@ -363,4 +363,22 @@
     <string name="recovery_not_found">There is no copy for these words (it was never created, it was deleted, or the app was not opened for 90 days).</string>
     <string name="recovery_bad_backup">Could not open the copy.</string>
     <string name="recovery_restored">Account recovered. Conversations restart by themselves.</string>
+    <string name="premium_title">Sealer Premium</string>
+    <string name="premium_title_on">Sealer Premium (active)</string>
+    <string name="premium_price">€12 per year</string>
+    <string name="premium_active">Your Premium is active. Thank you for supporting Sealer.</string>
+    <string name="premium_free_text">Text messages are and will always be free.</string>
+    <string name="premium_unlocks">Premium unlocks:</string>
+    <string name="premium_perk_calls">Making encrypted voice calls</string>
+    <string name="premium_perk_groups">Creating groups</string>
+    <string name="premium_perk_media">Sending photos, GIFs, voice messages and files up to 25 MB</string>
+    <string name="premium_perk_receive">Without Premium you still receive everything and answer calls</string>
+    <string name="premium_active_short">Premium active</string>
+    <string name="premium_soon">Coming soon on Google Play</string>
+    <string name="premium_test_title">Test mode</string>
+    <string name="premium_test_hint">Only while payments are not available.</string>
+    <string name="premium_test_lock">Turn on the Premium lock</string>
+    <string name="premium_test_paid">Simulate paid Premium</string>
+    <string name="premium_until">Active until %1$s</string>
+    <string name="premium_until_forever">Active, no end date</string>
 </resources>

@@ -134,6 +134,16 @@ data class UiState(
     val recoveryWords: List<String>? = null,
     /** A gerar palavras, a recuperar a conta ou a apagar a copia (mostra progresso). */
     val recoveryBusy: Boolean = false,
+    /**
+     * Premium (0.9.20): com o bloqueio ligado, quem nao tem premium so envia texto (recebe e
+     * atende tudo). Antes do Play Billing, os dois vem dos interruptores de teste do ecra Premium.
+     */
+    val premiumLock: Boolean = false,
+    val premium: Boolean = false,
+    /** Premium dado pelo relay (operador ou, mais tarde, Play Billing): ate quando, em ms; 0 = nao. */
+    val premiumUntil: Long = 0,
+    /** Ecra "Sealer Premium" aberto (por um cadeado ou pelas Definicoes). */
+    val showPremium: Boolean = false,
 )
 
 enum class CallPhase { CALLING, RINGING_OUT, INCOMING, ACTIVE, ENDED }
@@ -292,6 +302,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 presenceOn = prefs.getBoolean("presence", true),
                 online = emptySet(),
                 recoveryOn = has && client.recoveryEnabled(),
+                premiumLock = prefs.getBoolean(PREF_PREMIUM_LOCK, false),
+                premiumUntil = prefs.getLong(PREF_PREMIUM_UNTIL, 0),
+                premium = premiumNow(prefs.getLong(PREF_PREMIUM_UNTIL, 0)),
             )
         }
         syncPresence(client)
@@ -714,6 +727,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Copia de recuperacao: so se mudou alguma coisa desde a ultima (o relay renova o prazo
         // da que la esta quando recebe o bundle).
         if (publishBundle) scheduleBackup()
+        refreshPremium(client, bundleLink)
         // Presenca: "online" aos contactos (se a app estiver no ecra).
         if (visible) presenceAnnounce(true)
     }
@@ -1069,6 +1083,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ------------------------------------------------------------------- premium
+
+    /**
+     * Acao paga (fazer chamadas, criar grupos, enviar fotos, GIFs, voz e ficheiros): sem
+     * premium e com o bloqueio ligado, abre o ecra Premium e devolve `true` (a acao nao segue).
+     */
+    private fun premiumBlocked(): Boolean {
+        val u = _ui.value
+        if (!u.premiumLock || u.premium) return false
+        _ui.update { it.copy(showPremium = true) }
+        return true
+    }
+
+    fun openPremium() {
+        _ui.update { it.copy(showPremium = true) }
+        io { val c = qt ?: return@io; val l = link ?: return@io; refreshPremium(c, l) }
+    }
+    fun closePremium() = _ui.update { it.copy(showPremium = false) }
+
+    /** Premium agora: dado pelo relay e dentro do prazo, ou simulado (so na build de debug). */
+    private fun premiumNow(until: Long): Boolean =
+        until > System.currentTimeMillis() || (BuildConfig.RELAY_EDITABLE && prefs.getBoolean(PREF_PREMIUM_TEST, false))
+
+    /** Interruptores de teste (ate haver Play Billing): ligar o bloqueio e (debug) simular premium. */
+    fun setPremiumTest(lock: Boolean, premium: Boolean) {
+        prefs.edit().putBoolean(PREF_PREMIUM_LOCK, lock).putBoolean(PREF_PREMIUM_TEST, premium).apply()
+        _ui.update { it.copy(premiumLock = lock, premium = premiumNow(it.premiumUntil)) }
+    }
+
+    /** Pergunta ao relay ate quando esta conta tem premium (ao ligar e ao abrir o ecra Premium). */
+    private suspend fun refreshPremium(client: QtClient, l: RelayLink) {
+        try {
+            val r = l.request(client.relayRequestPremiumStatus())
+            if (r is RelayResponse.Premium) {
+                val until = r.untilMs.toLong()
+                prefs.edit().putLong(PREF_PREMIUM_UNTIL, until).apply()
+                _ui.update { it.copy(premiumUntil = until, premium = premiumNow(until)) }
+            }
+        } catch (e: Exception) {
+            // Sem rede: fica o ultimo estado conhecido.
+        }
+    }
+
     // ------------------------------------------------------------ chave de recuperacao
 
     /** Gera 12 palavras novas (as antigas deixam de servir) e mostra-as. Argon2: fora da UI. */
@@ -1415,6 +1472,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Voz para uma conversa a dois ou de grupo ("g:..."). */
     fun sendVoiceTo(conversationId: String, file: File, durationMs: Long) = io {
+        if (premiumBlocked()) { file.delete(); return@io }
         val client = qt ?: run { file.delete(); return@io }
         try {
             prepareTarget(client, conversationId)
@@ -1466,6 +1524,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** NOVO GRUPO: eu (administrador) + ate 9 contactos. Abre a conversa do grupo. */
     fun createGroup(name: String, members: List<Contact>) = io {
+        if (premiumBlocked()) return@io
         val client = qt ?: return@io
         try {
             ensureSessions(client, members.map { it.publicId })
@@ -1557,6 +1616,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Imagem/GIF para uma conversa a dois ou de grupo ("g:..."). */
     fun sendImageTo(conversationId: String, uri: Uri, original: Boolean, keyboardCopy: File? = null) = io {
+        if (premiumBlocked()) { keyboardCopy?.delete(); return@io }
         val client = qt ?: run { keyboardCopy?.delete(); return@io }
         val prepared = try {
             ImagePrep.prepare(getApplication<Application>(), uri, original, keepAsIs = keyboardCopy != null)
@@ -1586,6 +1646,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Ficheiro para uma conversa a dois ou de grupo ("g:..."). O original nao e alterado. */
     fun sendFileTo(conversationId: String, uri: Uri) = io {
+        if (premiumBlocked()) return@io
         val client = qt ?: return@io
         val prepared = try {
             FilePrep.prepare(getApplication<Application>(), uri)
@@ -2055,6 +2116,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** LIGAR a um contacto. A permissao do microfone ja foi dada (MainActivity). */
     fun startCall(contact: Contact) = io {
+        if (premiumBlocked()) return@io
         val client = qt ?: return@io
         if (_ui.value.call != null) return@io
         if (contact.contactId in _ui.value.blocked) return@io
@@ -2281,6 +2343,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
+        private const val PREF_PREMIUM_LOCK = "premium_lock_test"
+        private const val PREF_PREMIUM_TEST = "premium_test"
+        private const val PREF_PREMIUM_UNTIL = "premium_until"
         /** Copia de recuperacao: espera um pouco depois de uma mudanca (junta varias seguidas). */
         private const val BACKUP_DELAY_MS = 3_000L
         /** Sem entrega imediata (relay antigo ou sem rede): perguntar de 3 em 3 s. */

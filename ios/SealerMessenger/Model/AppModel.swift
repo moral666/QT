@@ -75,6 +75,12 @@ struct UiState {
     var recoveryWords: [String]?
     /// A gerar palavras, a recuperar a conta ou a apagar a copia.
     var recoveryBusy = false
+    /// Premium (0.9.20): com o bloqueio ligado, quem nao tem premium so envia texto.
+    var premiumLock = false
+    var premium = false
+    /// Premium dado pelo relay: ate quando (ms); 0 = nao.
+    var premiumUntil: Int64 = 0
+    var showPremium = false
 
     func groupOf(_ conversationId: String) -> GroupInfo? {
         conversationId.hasPrefix("g:") ? groups.first { $0.conversationId == conversationId } : nil
@@ -281,6 +287,9 @@ final class AppModel: ObservableObject {
         u.blocked = Set(l.blocked)
         u.invites = Set(l.invites)
         u.recoveryOn = l.recoveryOn
+        u.premiumLock = prefs.bool(forKey: "premium_lock_test")
+        u.premiumUntil = (prefs.object(forKey: "premium_until") as? Int64) ?? 0
+        u.premium = premiumNow(u.premiumUntil)
         u.termsAccepted = prefs.integer(forKey: "terms_version") >= termsVersion
         u.presenceOn = prefs.object(forKey: "presence") as? Bool ?? true
         u.online = []
@@ -674,6 +683,7 @@ final class AppModel: ObservableObject {
         if visible { await presenceAnnounce(true) }
         // Copia de recuperacao: so se mudou alguma coisa desde a ultima.
         if publishBundle { scheduleBackup() }
+        await refreshPremium(client, f)
     }
 
     // ================================================================ notificacoes
@@ -884,6 +894,46 @@ final class AppModel: ObservableObject {
         try await background { try ContactStore.save(list, key: ck) }
         ui.contacts = list
         scheduleBackup()
+    }
+
+    // ================================================================ premium
+
+    /// Premium agora: dado pelo relay e dentro do prazo, ou simulado (so na build de debug).
+    private func premiumNow(_ until: Int64) -> Bool {
+        until > Int64(Date().timeIntervalSince1970 * 1000) || (Config.relayEditable && prefs.bool(forKey: "premium_test"))
+    }
+
+    /// Acao paga sem premium e com o bloqueio ligado: abre o ecra Premium e devolve `true`.
+    private func premiumBlocked() -> Bool {
+        guard ui.premiumLock && !ui.premium else { return false }
+        ui.showPremium = true
+        return true
+    }
+
+    func openPremium() {
+        ui.showPremium = true
+        guard let client = qt, let l = link else { return }
+        Task { await refreshPremium(client, l) }
+    }
+
+    func closePremium() { ui.showPremium = false }
+
+    /// Interruptores de teste (ate haver Play Billing): ligar o bloqueio e (debug) simular premium.
+    func setPremiumTest(lock: Bool, premium: Bool) {
+        prefs.set(lock, forKey: "premium_lock_test")
+        prefs.set(premium, forKey: "premium_test")
+        ui.premiumLock = lock
+        ui.premium = premiumNow(ui.premiumUntil)
+    }
+
+    /// Pergunta ao relay ate quando esta conta tem premium.
+    private func refreshPremium(_ client: QtClient, _ l: RelayLink) async {
+        guard let req = try? await background({ try client.relayRequestPremiumStatus() }),
+              let r = try? await l.request(req), case .premium(let until) = r else { return }
+        let u = Int64(clamping: until)
+        prefs.set(u, forKey: "premium_until")
+        ui.premiumUntil = u
+        ui.premium = premiumNow(u)
     }
 
     // ================================================================ chave de recuperacao
@@ -1339,6 +1389,7 @@ final class AppModel: ObservableObject {
 
     /// Mensagem de voz (o ficheiro e apagado no fim, cifrado ou nao).
     func sendVoice(to conv: String, file: URL, durationMs: Int64) {
+        if premiumBlocked() { try? FileManager.default.removeItem(at: file); return }
         guard let client = qt else { try? FileManager.default.removeItem(at: file); return }
         Task {
             defer { try? FileManager.default.removeItem(at: file) }
@@ -1397,6 +1448,7 @@ final class AppModel: ObservableObject {
     }
 
     func createGroup(name: String, members: [Contact]) {
+        if premiumBlocked() { return }
         guard let client = qt else { return }
         Task {
             do {
@@ -1479,6 +1531,7 @@ final class AppModel: ObservableObject {
 
     /// Imagem/GIF (galeria ou colada) para uma conversa a dois ou de grupo.
     func sendImage(to conv: String, data: Data, original: Bool, pasted: Bool) {
+        if premiumBlocked() { return }
         guard let client = qt else { return }
         Task {
             let prepared: PreparedImage
@@ -1506,6 +1559,7 @@ final class AppModel: ObservableObject {
 
     /// Ficheiro (PDF, documento...) ate 25 MB, tal como esta.
     func sendFile(to conv: String, url: URL) {
+        if premiumBlocked() { return }
         guard let client = qt else { return }
         Task {
             let prepared: PreparedFile
@@ -2002,6 +2056,7 @@ final class AppModel: ObservableObject {
 
     /// LIGAR a um contacto (o microfone e pedido pelo ecra antes).
     func startCall(_ contact: Contact) {
+        if premiumBlocked() { return }
         guard let client = qt, ui.call == nil, !ui.blocked.contains(contact.contactId) else { return }
         Task {
             do {

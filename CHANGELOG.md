@@ -6,6 +6,16 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 22 de outubro de 2026: Sealer Premium (apps 0.9.20, Android e iPhone)
+
+- Ecrã "Sealer Premium" (12 €/ano): o premium desbloqueia fazer chamadas, criar grupos e enviar
+  fotos, GIFs, voz e ficheiros. Texto grátis para sempre; sem premium recebe-se tudo.
+- Bloqueio com interruptor de teste, até haver pagamentos; com ele ligado, uma ação paga sem
+  premium abre o ecrã Premium.
+- O relay guarda até quando cada conta tem premium (`PremiumStatus`, `AdminGrantPremium`,
+  `AdminListPremium`). O operador dá ou tira premium (testadores, ofertas) pela ferramenta
+  `denuncias` ou pela aba "Premium" do sealer-control.
+
 ### 22 de outubro de 2026: chave de recuperação da conta (apps 0.9.19, Android e iPhone)
 
 - Definições → **Chave de recuperação**: 12 palavras (mostradas uma vez, com confirmação de 3).

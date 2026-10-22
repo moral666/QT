@@ -660,6 +660,12 @@ impl QtClient {
         json_bytes(serde_json::json!({"RegisterPushToken": {"user_id": uid, "token": token}}))
     }
 
+    /// Premium (0.9.20): ate quando esta conta tem premium. Resposta `Premium { until_ms }`
+    /// (0 = sem premium); um relay antigo responde `Error` (tratar como sem premium).
+    pub fn relay_request_premium_status(&self) -> Result<Vec<u8>, QtError> {
+        json_bytes(serde_json::json!("PremiumStatus"))
+    }
+
     /// Confirmar so DEPOIS de `decrypt` ter persistido cada mensagem.
     pub fn relay_request_ack(&self, ids: Vec<u64>) -> Result<Vec<u8>, QtError> {
         let uid = self.relay_user_id()?;
@@ -1013,6 +1019,8 @@ pub enum RelayResponse {
     BackupPart { part: u32, parts: u32, data: Vec<u8> },
     /// Nao ha copia para estas palavras (nunca houve, expirou ou foi apagada).
     BackupNotFound,
+    /// Ate quando esta conta tem premium (ms desde 1970); 0 = sem premium.
+    Premium { until_ms: u64 },
 }
 
 #[derive(serde::Deserialize)]
@@ -1039,6 +1047,7 @@ enum WireServerMsg {
     BlobNotFound,
     BackupPart { part: u32, parts: u32, data: String },
     BackupNotFound,
+    Premium { until_ms: u64 },
 }
 
 /// Interpreta uma resposta do relay (ja decifrada pelo Noise).
@@ -1086,6 +1095,7 @@ pub fn relay_parse_response(bytes: Vec<u8>) -> Result<RelayResponse, QtError> {
             RelayResponse::BackupPart { part, parts, data }
         }
         WireServerMsg::BackupNotFound => RelayResponse::BackupNotFound,
+        WireServerMsg::Premium { until_ms } => RelayResponse::Premium { until_ms },
     })
 }
 

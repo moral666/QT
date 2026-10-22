@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QDialog, Q
 from . import __version__, aws, config, services
 from .page_badges import BadgesPage
 from .page_reports import ReportsPage
+from .page_premium import PremiumPage
 from .page_relay import RelayPage
 from .page_site import SitePage
 from .tasks import run_async
@@ -242,7 +243,8 @@ class MainWindow(QMainWindow):
         self.site = SitePage()
         self.badges = BadgesPage(lambda: self.cfg)
         self.reports = ReportsPage(lambda: self.cfg)
-        for page in (self.relay, self.site, self.badges, self.reports):
+        self.premium = PremiumPage(lambda: self.cfg)
+        for page in (self.relay, self.site, self.badges, self.reports, self.premium):
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setWidget(page)
@@ -253,6 +255,7 @@ class MainWindow(QMainWindow):
         self.site.check_btn.clicked.connect(self.check_site)
         self.badges.finished.connect(self._badge_done)
         self.reports.finished.connect(self._reports_done)
+        self.premium.finished.connect(self._reports_done)
 
         self._build_tray()
         self.notifier = Notifier(self.tray)
@@ -287,7 +290,7 @@ class MainWindow(QMainWindow):
 
         self.nav_group = QButtonGroup(self)
         self.nav_dots: list[Dot] = []
-        for i, (icon, text) in enumerate((("◉", "Relay AWS"), ("◎", "Site"), ("✦", "Badges"), ("⚑", "Denúncias"))):
+        for i, (icon, text) in enumerate((("◉", "Relay AWS"), ("◎", "Site"), ("✦", "Badges"), ("⚑", "Denúncias"), ("★", "Premium"))):
             row = QHBoxLayout()
             btn = QPushButton(f"{icon}   {text}")
             btn.setObjectName("navButton")

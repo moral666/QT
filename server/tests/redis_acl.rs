@@ -126,5 +126,12 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     store.renew_backup(&alice).await.unwrap();
     store.delete_backup(&alice).await.unwrap();
     assert_eq!(store.backup_get(&lookup, 0).await.unwrap(), None);
+
+    // Premium.
+    store.set_premium(&alice, 4_102_444_800_000).await.unwrap();
+    assert_eq!(store.premium_until(&alice).await.unwrap(), 4_102_444_800_000);
+    assert_eq!(store.list_premium().await.unwrap().len(), 1);
+    store.set_premium(&alice, 0).await.unwrap();
+    assert_eq!(store.premium_until(&alice).await.unwrap(), 0);
     let _ = std::fs::remove_dir_all(dir);
 }

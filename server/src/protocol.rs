@@ -159,6 +159,21 @@ pub enum ClientMessage {
     BackupGet { lookup: String, part: u32 },
     /// Apaga a copia desta conta. Resposta: `Ack`.
     BackupDelete,
+
+    // ----- Premium (desde a 0.9.20). -----
+    /// Ate quando esta conta tem premium. Resposta: `Premium`.
+    PremiumStatus,
+    /// OPERADOR: da premium a uma conta ate `until_ms` (ms desde 1970); 0 tira. `Ack`.
+    AdminGrantPremium { user_id: UserId, until_ms: u64 },
+    /// OPERADOR: contas com premium. Resposta: `PremiumList`.
+    AdminListPremium,
+}
+
+/// Uma conta com premium (lista do operador).
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct PremiumEntry {
+    pub user_id: UserId,
+    pub until_ms: u64,
 }
 
 /// Maior parte de uma copia de recuperacao (bytes, antes do base64).
@@ -266,6 +281,10 @@ pub enum ServerMessage {
     /// Resposta a `BackupGet`: `data` em base64.
     BackupPart { part: u32, parts: u32, data: String },
     BackupNotFound,
+    /// Resposta a `PremiumStatus`: ate quando (ms desde 1970); 0 = sem premium.
+    Premium { until_ms: u64 },
+    /// Resposta a `AdminListPremium`.
+    PremiumList { entries: Vec<PremiumEntry> },
 }
 
 pub fn serialize_client_message(msg: &ClientMessage) -> Vec<u8> {
