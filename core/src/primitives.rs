@@ -120,7 +120,8 @@ pub(crate) fn hkdf_derive(ikm: &[u8], salt: &[u8], info: &[u8], length: usize) -
 /// Deriva (novo root key, nova chain key) a partir do root key atual e de uma saida DH.
 /// Usado no passo de "DH ratchet" do Double Ratchet.
 pub fn kdf_root_key(root_key: &[u8; 32], dh_output: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
-    let okm = hkdf_derive(dh_output, root_key, b"DoubleRatchet_RootKDF_v1", 64);
+    // Zeroizing: o Vec intermedio (root key + chain key novas) e zerado ao sair.
+    let okm = zeroize::Zeroizing::new(hkdf_derive(dh_output, root_key, b"DoubleRatchet_RootKDF_v1", 64));
     let mut new_root = [0u8; 32];
     let mut chain_key = [0u8; 32];
     new_root.copy_from_slice(&okm[0..32]);
@@ -131,8 +132,9 @@ pub fn kdf_root_key(root_key: &[u8; 32], dh_output: &[u8; 32]) -> ([u8; 32], [u8
 /// Deriva (message key, proxima chain key) a partir da chain key atual.
 /// Usado a cada mensagem enviada/recebida ("symmetric-key ratchet").
 pub fn kdf_chain_key(chain_key: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
-    let message_key = hkdf_derive(chain_key, &[], b"DoubleRatchet_MsgKey_v1", 32);
-    let next_chain_key = hkdf_derive(chain_key, &[], b"DoubleRatchet_ChainKey_v1", 32);
+    // Zeroizing: as copias intermedias (Vec) sao zeradas ao sair.
+    let message_key = zeroize::Zeroizing::new(hkdf_derive(chain_key, &[], b"DoubleRatchet_MsgKey_v1", 32));
+    let next_chain_key = zeroize::Zeroizing::new(hkdf_derive(chain_key, &[], b"DoubleRatchet_ChainKey_v1", 32));
     let mut mk = [0u8; 32];
     let mut nck = [0u8; 32];
     mk.copy_from_slice(&message_key);

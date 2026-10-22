@@ -251,25 +251,35 @@ impl RatchetState {
 
     fn dh_ratchet_step(&mut self, their_new_dh_public: PublicKey) {
         self.prev_send_n = self.send_n;
-        let dh_out = crate::primitives::dh(&self.dh_send.private, &their_new_dh_public);
-        let (new_root, recv_chain) = kdf_root_key(&self.root_key, &dh_out);
+        // As saidas DH e as copias locais das chaves derivadas sao zeradas logo a seguir
+        // (o estado guarda a sua propria copia).
+        let mut dh_out = crate::primitives::dh(&self.dh_send.private, &their_new_dh_public);
+        let (mut new_root, mut recv_chain) = kdf_root_key(&self.root_key, &dh_out);
+        dh_out.zeroize();
         self.root_key = new_root;
         self.receiving_chain_key = Some(recv_chain);
+        new_root.zeroize();
+        recv_chain.zeroize();
         self.dh_recv = Some(their_new_dh_public);
         self.recv_n = 0;
 
         self.dh_send = DhKeyPair::generate();
-        let dh_out2 = crate::primitives::dh(&self.dh_send.private, &their_new_dh_public);
-        let (new_root2, send_chain) = kdf_root_key(&self.root_key, &dh_out2);
+        let mut dh_out2 = crate::primitives::dh(&self.dh_send.private, &their_new_dh_public);
+        let (mut new_root2, mut send_chain) = kdf_root_key(&self.root_key, &dh_out2);
+        dh_out2.zeroize();
         self.root_key = new_root2;
         self.sending_chain_key = Some(send_chain);
+        new_root2.zeroize();
+        send_chain.zeroize();
         self.send_n = 0;
     }
 
     pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<EncryptedMessage, RatchetError> {
-        let chain = self.sending_chain_key.ok_or(RatchetError::Uninitialized)?;
-        let (message_key, next_chain) = kdf_chain_key(&chain);
+        let mut chain = self.sending_chain_key.ok_or(RatchetError::Uninitialized)?;
+        let (mut message_key, mut next_chain) = kdf_chain_key(&chain);
+        chain.zeroize();
         self.sending_chain_key = Some(next_chain);
+        next_chain.zeroize();
 
         let n = self.send_n;
         self.send_n += 1;
@@ -277,7 +287,10 @@ impl RatchetState {
         let dh_public = self.dh_send.public;
         let pn = self.prev_send_n;
         let aad = build_aad(&self.ad, &dh_public, pn, n);
-        let ciphertext = aead_encrypt(&message_key, plaintext, &aad)?;
+        // A chave da mensagem e zerada logo depois de usada (tambem se a cifra falhar).
+        let ciphertext = aead_encrypt(&message_key, plaintext, &aad);
+        message_key.zeroize();
+        let ciphertext = ciphertext?;
 
         Ok(EncryptedMessage { dh_public, pn, n, ciphertext })
     }
@@ -302,12 +315,14 @@ impl RatchetState {
         }
         let mut chain = self.receiving_chain_key.ok_or(RatchetError::Uninitialized)?;
         while self.recv_n < until {
-            let (mk, next) = kdf_chain_key(&chain);
+            let (mk, mut next) = kdf_chain_key(&chain);
             self.skipped_keys.push(((*dh_public, self.recv_n), mk));
             chain = next;
+            next.zeroize();
             self.recv_n += 1;
         }
         self.receiving_chain_key = Some(chain);
+        chain.zeroize();
         while self.skipped_keys.len() > MAX_SKIPPED_TOTAL {
             let (_, mut old) = self.skipped_keys.remove(0);
             old.zeroize();
@@ -347,9 +362,11 @@ impl RatchetState {
             return Err(RatchetError::MessageTooOld);
         }
         self.skip_message_keys(&dh_bytes, msg.n)?;
-        let chain = self.receiving_chain_key.ok_or(RatchetError::Uninitialized)?;
-        let (mut mk, next) = kdf_chain_key(&chain);
+        let mut chain = self.receiving_chain_key.ok_or(RatchetError::Uninitialized)?;
+        let (mut mk, mut next) = kdf_chain_key(&chain);
+        chain.zeroize();
         self.receiving_chain_key = Some(next);
+        next.zeroize();
         self.recv_n = self.recv_n.checked_add(1).ok_or(RatchetError::MessageTooOld)?;
         let r = aead_decrypt(&mk, &msg.ciphertext, &aad);
         mk.zeroize();
