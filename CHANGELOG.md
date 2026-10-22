@@ -6,6 +6,17 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 22 de outubro de 2026: revisão de segurança do núcleo (apps 0.9.17, Android e iPhone)
+
+- Chave da base de dados (SQLCipher): o texto com a chave já não é copiado a meio, por isso não
+  ficam pedaços da chave na memória libertada.
+- Ratchet: os valores intermédios das chaves (HKDF, DH, chave de cada mensagem enviada) são
+  apagados da memória logo depois de usados. Nada muda nas mensagens: testes com valores do código
+  anterior confirmam que as sessões guardadas e as apps antigas continuam a funcionar.
+- Um erro interno (panic) no Rust já não deixa a app a dar "erro de armazenamento" até ser
+  reiniciada.
+- Fuzzing local (`fuzz/`): 5 alvos, nenhum erro na primeira volta.
+
 ### 22 de outubro de 2026: relay só aceita escritas de contas registadas
 
 - Uma chave criada no momento (sem bundle nem prova de trabalho) conseguia pôr mensagens na fila de
