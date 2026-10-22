@@ -12,10 +12,19 @@
 //! nao contam para a media: mediriam a ausencia da pessoa, nao o servico.
 //! Ao reiniciar o relay, perde-se tudo.
 //!
+//! LEITURAS TELEFONE A TELEFONE (`Reading`): uma por mensagem, sem medias. So
+//! mensagens normais (nem recibos, reacoes, presenca ou chamadas) para quem tinha
+//! a app aberta e estava a espera (`WaitMessages`) no instante em que a mensagem
+//! chegou. Cada leitura e a ida de quem enviou + a entrega ate quem recebeu
+//! confirmar. Guardam-se as `MAX_READINGS` mais recentes, com o minuto em que
+//! foram medidas (arredondado ao minuto, para nao mostrar a hora exata de cada
+//! conversa).
+//!
 //! O que sai daqui: a media (em ms) e o numero de mensagens dos ultimos
-//! `WINDOW_MINUTES` minutos, e a ultima media conhecida (`LastReading`), que
-//! fica no ficheiro de estado para o site nunca ficar sem numero. O `relay_server` escreve-o uma vez por minuto em
-//! `RELAY_STATUS_FILE` (um JSON pequeno que o Caddy publica em
+//! `WINDOW_MINUTES` minutos, a ultima media conhecida (`LastReading`), que
+//! fica no ficheiro de estado para o site nunca ficar sem numero, e as leituras.
+//! O `relay_server` escreve-o a cada `STATUS_EVERY` em
+//! `RELAY_STATUS_FILE` (um JSON pequeno que o HAProxy publica em
 //! `https://<relay>/estado.json` e que o site sealer.pt mostra).
 
 use std::collections::{HashMap, VecDeque};
@@ -32,6 +41,42 @@ const MAX_TRACKED: usize = 50_000;
 pub const MAX_ROUND_TRIP: Duration = Duration::from_secs(10);
 /// Tempos guardados por minuto para a mediana e o p95 (protege a memoria; a media conta todos).
 const MAX_SAMPLES_PER_MINUTE: usize = 2_000;
+/// Leituras telefone a telefone publicadas (as mais recentes).
+pub const MAX_READINGS: usize = 10;
+/// De quanto em quanto tempo o `relay_server` reescreve o ficheiro de estado.
+pub const STATUS_EVERY: Duration = Duration::from_secs(5);
+
+/// Uma leitura telefone a telefone (uma mensagem, ver o inicio do ficheiro).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Reading {
+    /// Do telemovel de quem enviou ate ao relay (metade da ida e volta).
+    pub ida_ms: u64,
+    /// Do relay ate o telemovel de quem recebeu confirmar.
+    pub entrega_ms: u64,
+    /// Minuto da medicao (segundos desde 1970, arredondado ao minuto para baixo).
+    pub minute_unix: u64,
+}
+
+impl Reading {
+    /// Telefone a telefone: ida + entrega.
+    pub fn total_ms(&self) -> u64 {
+        self.ida_ms + self.entrega_ms
+    }
+}
+
+/// Uma mensagem em fila, ainda por confirmar.
+struct Pending {
+    at: Instant,
+    /// Mensagem normal para quem estava a espera: da uma leitura.
+    live: bool,
+    /// Ida de quem enviou, quando o pong ja chegou.
+    ida_ms: Option<u64>,
+}
+
+/// Minuto (segundos desde 1970) arredondado para baixo.
+fn minute_of(unix: u64) -> u64 {
+    unix - unix % 60
+}
 
 /// Resultado da janela atual.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -99,7 +144,11 @@ impl Window {
 
 #[derive(Default)]
 pub struct Tracker {
-    pending: HashMap<u64, Instant>,
+    pending: HashMap<u64, Pending>,
+    /// Leituras ja confirmadas a espera do pong de quem enviou: id -> (entrega em ms, quando).
+    awaiting_ida: HashMap<u64, (u64, Instant)>,
+    /// Leituras telefone a telefone, da mais recente para a mais antiga.
+    readings: VecDeque<Reading>,
     /// Entrega: do relay ate o destinatario confirmar.
     delivery: Window,
     /// Ida: do telemovel de quem envia ate ao relay (metade da ida e volta, ver `ida_sample`).
@@ -107,20 +156,31 @@ pub struct Tracker {
 }
 
 impl Tracker {
-    /// Uma mensagem entrou na fila.
-    pub fn queued(&mut self, id: u64, at: Instant) {
+    /// Uma mensagem entrou na fila. `live`: mensagem normal para quem estava a espera.
+    pub fn queued(&mut self, id: u64, at: Instant, live: bool) {
         if self.pending.len() < MAX_TRACKED {
-            self.pending.insert(id, at);
+            self.pending.insert(id, Pending { at, live, ida_ms: None });
         }
     }
 
     /// O destinatario confirmou estas mensagens (so ids que sairam mesmo da fila).
-    pub fn acked(&mut self, ids: &[u64], now: Instant) {
+    pub fn acked(&mut self, ids: &[u64], now: Instant, now_unix: u64) {
         for id in ids {
-            if let Some(at) = self.pending.remove(id) {
-                let waited = now.saturating_duration_since(at);
+            if let Some(p) = self.pending.remove(id) {
+                let waited = now.saturating_duration_since(p.at);
                 if waited <= MAX_WAIT {
-                    self.delivery.push(waited.as_millis() as u64);
+                    let ms = waited.as_millis() as u64;
+                    self.delivery.push(ms);
+                    if p.live {
+                        match p.ida_ms {
+                            Some(ida_ms) => self.push_reading(Reading { ida_ms, entrega_ms: ms, minute_unix: minute_of(now_unix) }),
+                            // Confirmada antes do pong de quem enviou: completa-se em `ida_sample`.
+                            None if self.awaiting_ida.len() < MAX_TRACKED => {
+                                self.awaiting_ida.insert(*id, (ms, now));
+                            }
+                            None => {}
+                        }
+                    }
                 }
             }
         }
@@ -128,10 +188,35 @@ impl Tracker {
 
     /// Uma ida e volta (ping do relay -> pong do telemovel) logo a seguir a uma
     /// mensagem enviada. Conta metade: o tempo de ida do telemovel ate ao relay.
-    pub fn ida_sample(&mut self, round_trip: Duration) {
-        if round_trip <= MAX_ROUND_TRIP {
-            self.ida.push((round_trip.as_micros() as u64 / 2 + 500) / 1000);
+    /// `ids`: as mensagens enviadas nessa ligacao que esperavam por este ping.
+    pub fn ida_sample(&mut self, round_trip: Duration, ids: &[u64], now_unix: u64) {
+        if round_trip > MAX_ROUND_TRIP {
+            return;
         }
+        let ida_ms = (round_trip.as_micros() as u64 / 2 + 500) / 1000;
+        self.ida.push(ida_ms);
+        for id in ids {
+            if let Some(p) = self.pending.get_mut(id) {
+                p.ida_ms = Some(ida_ms);
+            } else if let Some((entrega_ms, _)) = self.awaiting_ida.remove(id) {
+                self.push_reading(Reading { ida_ms, entrega_ms, minute_unix: minute_of(now_unix) });
+            }
+        }
+    }
+
+    fn push_reading(&mut self, r: Reading) {
+        self.readings.push_front(r);
+        self.readings.truncate(MAX_READINGS);
+    }
+
+    /// Leituras telefone a telefone, da mais recente para a mais antiga.
+    pub fn readings(&self) -> Vec<Reading> {
+        self.readings.iter().copied().collect()
+    }
+
+    /// Repoe as leituras lidas do ficheiro de estado (depois de reiniciar o relay).
+    pub fn restore_readings(&mut self, rs: &[Reading]) {
+        self.readings = rs.iter().copied().take(MAX_READINGS).collect();
     }
 
     /// Fecha o minuto atual, esquece as mensagens a espera ha mais de `MAX_WAIT`
@@ -139,7 +224,9 @@ impl Tracker {
     pub fn roll_minute(&mut self, now: Instant) -> Summary {
         self.delivery.roll();
         self.ida.roll();
-        self.pending.retain(|_, at| now.saturating_duration_since(*at) <= MAX_WAIT);
+        self.pending.retain(|_, p| now.saturating_duration_since(p.at) <= MAX_WAIT);
+        // Um pong que nao chegou em `MAX_ROUND_TRIP` ja nao conta (ver `ida_sample`).
+        self.awaiting_ida.retain(|_, (_, at)| now.saturating_duration_since(*at) <= MAX_ROUND_TRIP);
         self.summary()
     }
 
@@ -165,9 +252,14 @@ fn with<R>(f: impl FnOnce(&mut Tracker) -> R) -> R {
     f(guard.get_or_insert_with(Tracker::default))
 }
 
-/// Chamado pelo relay quando uma mensagem entra na fila.
-pub fn queued(id: u64) {
-    with(|t| t.queued(id, Instant::now()));
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Chamado pelo relay quando uma mensagem entra na fila. `live`: mensagem normal
+/// (nao silenciosa, sem campainha de chamada) para quem estava a espera (`WaitMessages`).
+pub fn queued(id: u64, live: bool) {
+    with(|t| t.queued(id, Instant::now(), live));
 }
 
 /// Chamado pelo relay com os ids que uma confirmacao tirou da fila.
@@ -175,12 +267,13 @@ pub fn acked(ids: &[u64]) {
     if ids.is_empty() {
         return;
     }
-    with(|t| t.acked(ids, Instant::now()));
+    with(|t| t.acked(ids, Instant::now(), unix_now()));
 }
 
-/// Chamado pelo relay quando chega o pong de um ping enviado logo a seguir a uma mensagem.
-pub fn ida_sample(round_trip: Duration) {
-    with(|t| t.ida_sample(round_trip));
+/// Chamado pelo relay quando chega o pong de um ping enviado logo a seguir a uma
+/// mensagem; `ids`: as mensagens dessa ligacao que esperavam por ele.
+pub fn ida_sample(round_trip: Duration, ids: &[u64]) {
+    with(|t| t.ida_sample(round_trip, ids, unix_now()));
 }
 
 /// Chamado uma vez por minuto pelo `relay_server`: fecha o minuto e devolve
@@ -190,6 +283,22 @@ pub fn roll_minute() -> (Summary, Summary) {
         let entrega = t.roll_minute(Instant::now());
         (entrega, t.ida_summary())
     })
+}
+
+/// Resumos atuais (entrega, ida), sem fechar o minuto: para reescrever o ficheiro de
+/// estado entre dois `roll_minute`.
+pub fn summaries() -> (Summary, Summary) {
+    with(|t| (t.summary(), t.ida_summary()))
+}
+
+/// Leituras telefone a telefone, da mais recente para a mais antiga.
+pub fn readings() -> Vec<Reading> {
+    with(|t| t.readings())
+}
+
+/// Repoe as leituras lidas do ficheiro de estado (ao arrancar o relay).
+pub fn restore_readings(rs: &[Reading]) {
+    with(|t| t.restore_readings(rs));
 }
 
 /// Ultima media conhecida (a mais recente janela com mensagens). Fica no ficheiro
@@ -225,11 +334,38 @@ pub fn parse_last_ida(json: &str) -> Option<LastReading> {
     })
 }
 
+/// Le as leituras telefone a telefone de um ficheiro de estado (vazio em ficheiros antigos).
+pub fn parse_readings(json: &str) -> Vec<Reading> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return Vec::new() };
+    let Some(list) = v.get("leituras").and_then(|l| l.as_array()) else { return Vec::new() };
+    list.iter()
+        .filter_map(|r| {
+            Some(Reading {
+                ida_ms: r.get("ida_ms")?.as_u64()?,
+                entrega_ms: r.get("entrega_ms")?.as_u64()?,
+                minute_unix: minute_of(r.get("minuto")?.as_u64()?),
+            })
+        })
+        .take(MAX_READINGS)
+        .collect()
+}
+
 /// JSON publicado em `RELAY_STATUS_FILE` (sem serde na escrita: so numeros).
-pub fn to_json(s: &Summary, updated_unix: u64, last: Option<LastReading>, ida: &Summary, last_ida: Option<LastReading>) -> String {
+pub fn to_json(
+    s: &Summary,
+    updated_unix: u64,
+    last: Option<LastReading>,
+    ida: &Summary,
+    last_ida: Option<LastReading>,
+    readings: &[Reading],
+) -> String {
     let opt = |v: Option<u64>| v.map(|v| v.to_string()).unwrap_or_else(|| "null".to_string());
+    let leituras: Vec<String> = readings
+        .iter()
+        .map(|r| format!("{{\"ms\":{},\"ida_ms\":{},\"entrega_ms\":{},\"minuto\":{}}}", r.total_ms(), r.ida_ms, r.entrega_ms, r.minute_unix))
+        .collect();
     format!(
-        "{{\"entrega_media_ms\":{},\"entrega_mediana_ms\":{},\"entrega_p95_ms\":{},\"mensagens\":{},\"janela_minutos\":{},\"espera_maxima_s\":{},\"atualizado\":{updated_unix},\"ultima_media_ms\":{},\"ultima_mediana_ms\":{},\"ultima_medicao\":{},\"ida_media_ms\":{},\"ida_mediana_ms\":{},\"ida_p95_ms\":{},\"ida_amostras\":{},\"ultima_ida_ms\":{},\"ultima_ida_mediana_ms\":{},\"ultima_ida_medicao\":{}}}\n",
+        "{{\"entrega_media_ms\":{},\"entrega_mediana_ms\":{},\"entrega_p95_ms\":{},\"mensagens\":{},\"janela_minutos\":{},\"espera_maxima_s\":{},\"atualizado\":{updated_unix},\"ultima_media_ms\":{},\"ultima_mediana_ms\":{},\"ultima_medicao\":{},\"ida_media_ms\":{},\"ida_mediana_ms\":{},\"ida_p95_ms\":{},\"ida_amostras\":{},\"ultima_ida_ms\":{},\"ultima_ida_mediana_ms\":{},\"ultima_ida_medicao\":{},\"leituras\":[{}]}}\n",
         opt(s.avg_ms),
         opt(s.median_ms),
         opt(s.p95_ms),
@@ -246,6 +382,7 @@ pub fn to_json(s: &Summary, updated_unix: u64, last: Option<LastReading>, ida: &
         opt(last_ida.map(|l| l.avg_ms)),
         opt(last_ida.and_then(|l| l.median_ms)),
         opt(last_ida.map(|l| l.at_unix)),
+        leituras.join(","),
     )
 }
 
@@ -270,10 +407,10 @@ mod tests {
     fn media_das_mensagens_confirmadas() {
         let t0 = Instant::now();
         let mut t = Tracker::default();
-        t.queued(1, t0);
-        t.queued(2, t0);
-        t.acked(&[1], t0 + Duration::from_millis(100));
-        t.acked(&[2], t0 + Duration::from_millis(301));
+        t.queued(1, t0, false);
+        t.queued(2, t0, false);
+        t.acked(&[1], t0 + Duration::from_millis(100), 0);
+        t.acked(&[2], t0 + Duration::from_millis(301), 0);
         let s = t.roll_minute(t0 + Duration::from_secs(1));
         assert_eq!(s, Summary { avg_ms: Some(201), median_ms: Some(301), p95_ms: Some(301), messages: 2, minutes: 1 });
         assert_eq!(t.tracked(), 0);
@@ -283,9 +420,9 @@ mod tests {
     fn confirmacao_repetida_ou_desconhecida_nao_conta() {
         let t0 = Instant::now();
         let mut t = Tracker::default();
-        t.queued(7, t0);
-        t.acked(&[7, 99], t0 + Duration::from_millis(50));
-        t.acked(&[7], t0 + Duration::from_millis(5000));
+        t.queued(7, t0, false);
+        t.acked(&[7, 99], t0 + Duration::from_millis(50), 0);
+        t.acked(&[7], t0 + Duration::from_millis(5000), 0);
         let s = t.roll_minute(t0 + Duration::from_secs(6));
         assert_eq!(s.messages, 1);
         assert_eq!(s.avg_ms, Some(50));
@@ -295,9 +432,9 @@ mod tests {
     fn destinatario_offline_nao_entra_na_media() {
         let t0 = Instant::now();
         let mut t = Tracker::default();
-        t.queued(1, t0);
-        t.queued(2, t0);
-        t.acked(&[1], t0 + MAX_WAIT + Duration::from_millis(1));
+        t.queued(1, t0, false);
+        t.queued(2, t0, false);
+        t.acked(&[1], t0 + MAX_WAIT + Duration::from_millis(1), 0);
         let s = t.roll_minute(t0 + MAX_WAIT + Duration::from_secs(1));
         assert_eq!(s, Summary { avg_ms: None, median_ms: None, p95_ms: None, messages: 0, minutes: 1 });
         // A mensagem 2 (nunca confirmada) foi esquecida ao fechar o minuto.
@@ -308,8 +445,8 @@ mod tests {
     fn janela_guarda_so_os_ultimos_minutos() {
         let t0 = Instant::now();
         let mut t = Tracker::default();
-        t.queued(1, t0);
-        t.acked(&[1], t0 + Duration::from_millis(1000));
+        t.queued(1, t0, false);
+        t.acked(&[1], t0 + Duration::from_millis(1000), 0);
         t.roll_minute(t0);
         for _ in 0..WINDOW_MINUTES {
             t.roll_minute(t0);
@@ -326,9 +463,9 @@ mod tests {
         let t0 = Instant::now();
         let mut t = Tracker::default();
         for id in 0..10u64 {
-            t.queued(id, t0);
+            t.queued(id, t0, false);
             let ms = if id == 9 { 40_000 } else { 200 };
-            t.acked(&[id], t0 + Duration::from_millis(ms));
+            t.acked(&[id], t0 + Duration::from_millis(ms), 0);
         }
         let s = t.roll_minute(t0 + Duration::from_secs(41));
         assert_eq!(s.avg_ms, Some(4_180), "a media e puxada pela mensagem lenta");
@@ -340,9 +477,9 @@ mod tests {
     fn ida_e_metade_da_ida_e_volta() {
         let t0 = Instant::now();
         let mut t = Tracker::default();
-        t.ida_sample(Duration::from_millis(40));
-        t.ida_sample(Duration::from_millis(61));
-        t.ida_sample(MAX_ROUND_TRIP + Duration::from_millis(1)); // ligacao presa: nao conta
+        t.ida_sample(Duration::from_millis(40), &[], 0);
+        t.ida_sample(Duration::from_millis(61), &[], 0);
+        t.ida_sample(MAX_ROUND_TRIP + Duration::from_millis(1), &[], 0); // ligacao presa: nao conta
         t.roll_minute(t0);
         let s = t.ida_summary();
         assert_eq!(s.messages, 2);
@@ -355,15 +492,15 @@ mod tests {
         let s = Summary { avg_ms: Some(1520), median_ms: Some(180), p95_ms: Some(9000), messages: 37, minutes: 60 };
         let last = Some(LastReading { avg_ms: 1520, median_ms: Some(180), at_unix: 1_792_000_000 });
         assert_eq!(
-            to_json(&s, 1_792_000_000, last, &Summary::default(), None),
-            "{\"entrega_media_ms\":1520,\"entrega_mediana_ms\":180,\"entrega_p95_ms\":9000,\"mensagens\":37,\"janela_minutos\":60,\"espera_maxima_s\":60,\"atualizado\":1792000000,\"ultima_media_ms\":1520,\"ultima_mediana_ms\":180,\"ultima_medicao\":1792000000,\"ida_media_ms\":null,\"ida_mediana_ms\":null,\"ida_p95_ms\":null,\"ida_amostras\":0,\"ultima_ida_ms\":null,\"ultima_ida_mediana_ms\":null,\"ultima_ida_medicao\":null}\n"
+            to_json(&s, 1_792_000_000, last, &Summary::default(), None, &[]),
+            "{\"entrega_media_ms\":1520,\"entrega_mediana_ms\":180,\"entrega_p95_ms\":9000,\"mensagens\":37,\"janela_minutos\":60,\"espera_maxima_s\":60,\"atualizado\":1792000000,\"ultima_media_ms\":1520,\"ultima_mediana_ms\":180,\"ultima_medicao\":1792000000,\"ida_media_ms\":null,\"ida_mediana_ms\":null,\"ida_p95_ms\":null,\"ida_amostras\":0,\"ultima_ida_ms\":null,\"ultima_ida_mediana_ms\":null,\"ultima_ida_medicao\":null,\"leituras\":[]}\n"
         );
         let vazio = Summary { minutes: 3, ..Summary::default() };
-        let j = to_json(&vazio, 1, None, &vazio, None);
+        let j = to_json(&vazio, 1, None, &vazio, None, &[]);
         assert!(j.starts_with("{\"entrega_media_ms\":null,") && j.contains("\"ultima_media_ms\":null,\"ultima_mediana_ms\":null,\"ultima_medicao\":null,"), "{j}");
         let ida = Summary { avg_ms: Some(23), median_ms: Some(21), p95_ms: Some(60), messages: 12, minutes: 60 };
-        let j = to_json(&vazio, 1, None, &ida, Some(LastReading { avg_ms: 23, median_ms: Some(21), at_unix: 5 }));
-        assert!(j.contains("\"ida_media_ms\":23,\"ida_mediana_ms\":21,\"ida_p95_ms\":60,\"ida_amostras\":12,\"ultima_ida_ms\":23,\"ultima_ida_mediana_ms\":21,\"ultima_ida_medicao\":5}"), "{j}");
+        let j = to_json(&vazio, 1, None, &ida, Some(LastReading { avg_ms: 23, median_ms: Some(21), at_unix: 5 }), &[]);
+        assert!(j.contains("\"ida_media_ms\":23,\"ida_mediana_ms\":21,\"ida_p95_ms\":60,\"ida_amostras\":12,\"ultima_ida_ms\":23,\"ultima_ida_mediana_ms\":21,\"ultima_ida_medicao\":5,\"leituras\":[]}"), "{j}");
         assert_eq!(parse_last_ida(&j), Some(LastReading { avg_ms: 23, median_ms: Some(21), at_unix: 5 }));
         assert_eq!(parse_last_ida("{\"entrega_media_ms\":1}"), None);
     }
@@ -372,7 +509,7 @@ mod tests {
     fn ultima_medicao_sobrevive_a_um_reinicio() {
         // Ficheiro desta versao: a ultima medicao vem dos campos proprios.
         let last = LastReading { avg_ms: 1311, median_ms: Some(150), at_unix: 1_792_100_000 };
-        let j = to_json(&Summary { minutes: 60, ..Summary::default() }, 1_792_200_000, Some(last), &Summary::default(), None);
+        let j = to_json(&Summary { minutes: 60, ..Summary::default() }, 1_792_200_000, Some(last), &Summary::default(), None, &[]);
         assert_eq!(parse_last(&j), Some(last));
         // Ficheiro da versao anterior: usa a media e a hora em que foi escrito.
         let antigo = "{\"entrega_media_ms\":2096,\"mensagens\":9,\"janela_minutos\":12,\"espera_maxima_s\":60,\"atualizado\":1792000000}";
@@ -384,5 +521,76 @@ mod tests {
         // Sem medicao nenhuma, ou ficheiro estragado: nada.
         assert_eq!(parse_last("{\"entrega_media_ms\":null,\"atualizado\":1}"), None);
         assert_eq!(parse_last("lixo"), None);
+    }
+
+    #[test]
+    fn leitura_por_mensagem_normal_para_quem_estava_a_espera() {
+        let t0 = Instant::now();
+        let mut t = Tracker::default();
+        // 1: normal, destinatario a espera; 2: recibo/presenca ou app fechada (nao e "live").
+        t.queued(1, t0, true);
+        t.queued(2, t0, false);
+        t.ida_sample(Duration::from_millis(88), &[1, 2], 1_792_000_059);
+        t.acked(&[1, 2], t0 + Duration::from_millis(140), 1_792_000_061);
+        assert_eq!(t.readings(), vec![Reading { ida_ms: 44, entrega_ms: 140, minute_unix: 1_792_000_020 }]);
+        assert_eq!(t.readings()[0].total_ms(), 184);
+        // A entrega da mensagem 2 continua a contar para a mediana antiga.
+        assert_eq!(t.roll_minute(t0 + Duration::from_secs(1)).messages, 2);
+    }
+
+    #[test]
+    fn leitura_confirmada_antes_do_pong_completa_se_depois() {
+        let t0 = Instant::now();
+        let mut t = Tracker::default();
+        t.queued(5, t0, true);
+        t.acked(&[5], t0 + Duration::from_millis(90), 120);
+        assert!(t.readings().is_empty(), "ainda sem a ida de quem enviou");
+        t.ida_sample(Duration::from_millis(60), &[5], 125);
+        assert_eq!(t.readings(), vec![Reading { ida_ms: 30, entrega_ms: 90, minute_unix: 120 }]);
+        // Sem pong (ligacao presa): a leitura e esquecida.
+        t.queued(6, t0, true);
+        t.acked(&[6], t0 + Duration::from_millis(90), 130);
+        t.roll_minute(t0 + MAX_ROUND_TRIP + Duration::from_secs(1));
+        t.ida_sample(Duration::from_millis(60), &[6], 140);
+        assert_eq!(t.readings().len(), 1);
+    }
+
+    #[test]
+    fn so_as_ultimas_leituras_da_mais_recente_para_a_mais_antiga() {
+        let t0 = Instant::now();
+        let mut t = Tracker::default();
+        for id in 0..(MAX_READINGS as u64 + 3) {
+            t.queued(id, t0, true);
+            t.ida_sample(Duration::from_millis(20), &[id], 0);
+            t.acked(&[id], t0 + Duration::from_millis(100 + id), 0);
+        }
+        let r = t.readings();
+        assert_eq!(r.len(), MAX_READINGS);
+        assert_eq!(r[0].entrega_ms, 100 + MAX_READINGS as u64 + 2, "a mais recente primeiro");
+        // Mais de `MAX_WAIT` (nao estava mesmo a olhar): nao da leitura.
+        t.queued(99, t0, true);
+        t.ida_sample(Duration::from_millis(20), &[99], 0);
+        t.acked(&[99], t0 + MAX_WAIT + Duration::from_millis(1), 0);
+        assert_eq!(t.readings()[0].entrega_ms, 100 + MAX_READINGS as u64 + 2);
+    }
+
+    #[test]
+    fn leituras_no_json_e_de_volta_ao_arrancar() {
+        let rs = [
+            Reading { ida_ms: 44, entrega_ms: 140, minute_unix: 1_792_000_020 },
+            Reading { ida_ms: 40, entrega_ms: 95, minute_unix: 1_791_999_960 },
+        ];
+        let j = to_json(&Summary::default(), 1, None, &Summary::default(), None, &rs);
+        assert!(
+            j.ends_with("\"leituras\":[{\"ms\":184,\"ida_ms\":44,\"entrega_ms\":140,\"minuto\":1792000020},{\"ms\":135,\"ida_ms\":40,\"entrega_ms\":95,\"minuto\":1791999960}]}\n"),
+            "{j}"
+        );
+        assert!(serde_json::from_str::<serde_json::Value>(&j).is_ok());
+        assert_eq!(parse_readings(&j), rs.to_vec());
+        assert!(parse_readings("{\"entrega_media_ms\":1}").is_empty(), "ficheiro antigo: sem leituras");
+        assert!(parse_readings("lixo").is_empty());
+        let mut t = Tracker::default();
+        t.restore_readings(&rs);
+        assert_eq!(t.readings(), rs.to_vec());
     }
 }

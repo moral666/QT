@@ -171,7 +171,8 @@ pub async fn handle_connection_with(
                     None => break,
                 },
             };
-            let mut sent_message = false;
+            // Mensagem aceite nesta volta (id interno da fila), para medir a ida.
+            let mut sent_message = None;
             let response = match deserialize_client_message(&payload) {
                 Ok(ClientMessage::WaitMessages { user_id: asked, timeout_secs }) => {
                     match wait_messages(&store, &user_id, &asked, timeout_secs, &mut ws, &mut noise, &mut probe).await {
@@ -183,10 +184,12 @@ pub async fn handle_connection_with(
                         WaitEnd::Closed => break,
                     }
                 }
-                Ok(m) => {
-                    sent_message = matches!(m, ClientMessage::SendMessage { .. });
-                    handle_client_message(&store, &user_id, m, cfg).await
+                Ok(ClientMessage::SendMessage { to, sealed_from, ciphertext, silent, wake }) => {
+                    let (r, id) = send_message(&store, &user_id, to, sealed_from, ciphertext, silent, wake, cfg).await;
+                    sent_message = id;
+                    r
                 }
+                Ok(m) => handle_client_message(&store, &user_id, m, cfg).await,
                 Err(_) => {
                     stats::inc(&STATS.invalid_requests);
                     err("mensagem invalida")
@@ -196,8 +199,8 @@ pub async fn handle_connection_with(
                 break;
             }
             // Acabou de enviar uma mensagem: mede a ida e volta ate este telemovel.
-            if sent_message && matches!(response, ServerMessage::Ack) {
-                if let Some(ping) = probe.start() {
+            if let Some(id) = sent_message {
+                if let Some(ping) = probe.start(id) {
                     if ws_transport::send_ping(&mut ws, ping).await.is_err() {
                         break;
                     }
@@ -218,24 +221,35 @@ pub async fn handle_connection_with(
 /// Mede o tempo de ida do telemovel ate ao relay: logo depois de aceitar uma
 /// mensagem (`SendMessage`), o relay manda um ping nesta ligacao e espera pelo
 /// pong. A ida e metade dessa ida e volta (ver `latency::ida_sample`). Um ping de
-/// cada vez por ligacao; o conteudo e so um contador, para reconhecer o pong.
+/// cada vez por ligacao; o conteudo e so um contador, para reconhecer o pong. As
+/// mensagens enviadas enquanto um ping espera resposta ficam com essa mesma medicao.
 #[derive(Default)]
 struct IdaProbe {
     counter: u64,
     sent: Option<(u64, std::time::Instant)>,
+    /// Ids (internos da fila) das mensagens a espera deste ping.
+    ids: Vec<u64>,
 }
 
+/// Mensagens que partilham um ping, no maximo (protege a memoria).
+const MAX_IDS_PER_PROBE: usize = 64;
+
 impl IdaProbe {
-    /// Conteudo do ping a enviar, ou `None` se ainda ha um a espera de resposta.
-    fn start(&mut self) -> Option<Vec<u8>> {
+    /// A mensagem `id` foi aceite. Devolve o conteudo do ping a enviar, ou `None` se ja
+    /// ha um a espera de resposta (a mensagem fica com a medicao desse).
+    fn start(&mut self, id: u64) -> Option<Vec<u8>> {
         let now = std::time::Instant::now();
         if let Some((_, at)) = self.sent {
             if now.duration_since(at) < crate::latency::MAX_ROUND_TRIP {
+                if self.ids.len() < MAX_IDS_PER_PROBE {
+                    self.ids.push(id);
+                }
                 return None;
             }
         }
         self.counter += 1;
         self.sent = Some((self.counter, now));
+        self.ids = vec![id];
         Some(format!("qt-ida-{}", self.counter).into_bytes())
     }
 
@@ -244,7 +258,7 @@ impl IdaProbe {
         if let Some((n, at)) = self.sent {
             if payload == format!("qt-ida-{n}").as_bytes() {
                 self.sent = None;
-                crate::latency::ida_sample(at.elapsed());
+                crate::latency::ida_sample(at.elapsed(), &std::mem::take(&mut self.ids));
             }
         }
     }
@@ -481,53 +495,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             }
         }
         ClientMessage::SendMessage { to, sealed_from, ciphertext, silent, wake } => {
-            if !is_valid_user_id(&to) {
-                return err("destinatario invalido");
-            }
-            if sealed_from.len() > MAX_SEALED_FROM || ciphertext.is_empty() || ciphertext.len() > MAX_CIPHERTEXT {
-                return err("mensagem com tamanho invalido");
-            }
-            if !crate::limits::allow(crate::limits::Limited::Send, me, cfg.send_rate) {
-                stats::inc(&STATS.rate_limited);
-                return err(crate::protocol::RATE_LIMITED);
-            }
-            // Fazer chamadas e pago (0.9.21): a oferta vai com a campainha marcada.
-            if wake == Some(crate::protocol::WakeKind::Call) {
-                match store.premium_allows(me).await {
-                    Ok(true) => {}
-                    Ok(false) => return err(crate::protocol::PREMIUM_REQUIRED),
-                    Err(e) => return internal(e),
-                }
-            }
-            let recipient = to.clone();
-            match store.enqueue_message(me, to, sealed_from, ciphertext).await {
-                Ok(id) => {
-                    stats::inc(&STATS.sends);
-                    crate::latency::queued(id);
-                    // Entrega imediata: acorda o destinatario se estiver a espera (WaitMessages).
-                    crate::waiters::wake(&recipient);
-                    // App fechada (ninguem a espera): campainha pela Google (FCM), vazia.
-                    // Recibos, reacoes e presenca (`silent`) nao tocam. Chamadas: campainha marcada.
-                    if !silent || wake.is_some() {
-                        crate::push::after_enqueue(store, &recipient, wake).await;
-                    }
-                    ServerMessage::Ack
-                }
-                Err(StoreError::QueueFull) => {
-                    stats::inc(&STATS.queue_full);
-                    err("fila do destinatario cheia")
-                }
-                Err(StoreError::RecipientDeleted) => err(crate::protocol::RECIPIENT_DELETED),
-                Err(StoreError::SenderNotRegistered) => {
-                    stats::inc(&STATS.not_registered);
-                    err(crate::protocol::NOT_REGISTERED)
-                }
-                Err(StoreError::RecipientUnknown) => {
-                    stats::inc(&STATS.recipient_unknown);
-                    err(crate::protocol::RECIPIENT_UNKNOWN)
-                }
-                Err(e) => internal(e),
-            }
+            send_message(store, me, to, sealed_from, ciphertext, silent, wake, cfg).await.0
         }
         ClientMessage::DeleteAccount { user_id } => {
             if user_id != me {
@@ -818,5 +786,69 @@ fn blob_err(e: BlobError) -> ServerMessage {
             err("erro interno")
         }
         other => err(&other.to_string()),
+    }
+}
+
+/// `SendMessage`. Devolve tambem o id interno da fila quando a mensagem foi aceite.
+#[allow(clippy::too_many_arguments)]
+async fn send_message(
+    store: &Store,
+    me: &str,
+    to: crate::protocol::UserId,
+    sealed_from: Vec<u8>,
+    ciphertext: Vec<u8>,
+    silent: bool,
+    wake: Option<crate::protocol::WakeKind>,
+    cfg: &ServerConfig,
+) -> (ServerMessage, Option<u64>) {
+    if !is_valid_user_id(&to) {
+        return (err("destinatario invalido"), None);
+    }
+    if sealed_from.len() > MAX_SEALED_FROM || ciphertext.is_empty() || ciphertext.len() > MAX_CIPHERTEXT {
+        return (err("mensagem com tamanho invalido"), None);
+    }
+    if !crate::limits::allow(crate::limits::Limited::Send, me, cfg.send_rate) {
+        stats::inc(&STATS.rate_limited);
+        return (err(crate::protocol::RATE_LIMITED), None);
+    }
+    // Fazer chamadas e pago (0.9.21): a oferta vai com a campainha marcada.
+    if wake == Some(crate::protocol::WakeKind::Call) {
+        match store.premium_allows(me).await {
+            Ok(true) => {}
+            Ok(false) => return (err(crate::protocol::PREMIUM_REQUIRED), None),
+            Err(e) => return (internal(e), None),
+        }
+    }
+    let recipient = to.clone();
+    // Leitura telefone a telefone (latency.rs): so mensagens normais para quem tem a app
+    // aberta a espera neste instante (visto antes de o acordar).
+    let live = !silent && wake.is_none() && crate::waiters::is_waiting(&recipient);
+    match store.enqueue_message(me, to, sealed_from, ciphertext).await {
+        Ok(id) => {
+            stats::inc(&STATS.sends);
+            crate::latency::queued(id, live);
+            // Entrega imediata: acorda o destinatario se estiver a espera (WaitMessages).
+            crate::waiters::wake(&recipient);
+            // App fechada (ninguem a espera): campainha pela Google (FCM), vazia.
+            // Recibos, reacoes e presenca (`silent`) nao tocam. Chamadas: campainha marcada.
+            if !silent || wake.is_some() {
+                crate::push::after_enqueue(store, &recipient, wake).await;
+            }
+            (ServerMessage::Ack, Some(id))
+        }
+        Err(StoreError::QueueFull) => {
+            stats::inc(&STATS.queue_full);
+            (err("fila do destinatario cheia"), None)
+        }
+        Err(StoreError::RecipientDeleted) => (err(crate::protocol::RECIPIENT_DELETED), None),
+        Err(StoreError::SenderNotRegistered) => {
+            stats::inc(&STATS.not_registered);
+            (err(crate::protocol::NOT_REGISTERED), None)
+        }
+        Err(StoreError::RecipientUnknown) => {
+            stats::inc(&STATS.recipient_unknown);
+            (err(crate::protocol::RECIPIENT_UNKNOWN), None)
+        }
+        Err(e) => (internal(e), None),
     }
 }

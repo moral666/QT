@@ -127,11 +127,11 @@ fn redact_url(url: &str) -> String {
     }
 }
 
-/// Escreve o JSON de estado (tempo medio de entrega); uma falha so fica no registo.
 fn unix_now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
+/// Escreve o JSON de estado (tempos e leituras); uma falha so fica no registo.
 fn write_status(
     path: &str,
     summary: &qt_server::latency::Summary,
@@ -139,7 +139,7 @@ fn write_status(
     ida: &qt_server::latency::Summary,
     last_ida: Option<qt_server::latency::LastReading>,
 ) {
-    let json = qt_server::latency::to_json(summary, unix_now(), last, ida, last_ida);
+    let json = qt_server::latency::to_json(summary, unix_now(), last, ida, last_ida, &qt_server::latency::readings());
     if qt_server::latency::write_status_file(path, &json).is_err() {
         eprintln!("estado: nao foi possivel escrever RELAY_STATUS_FILE");
     }
@@ -216,22 +216,39 @@ async fn main() {
         .unwrap_or_else(|_| fatal("nao foi possivel abrir o socket TCP (porta ocupada/permissoes?)"));
 
     // Estatisticas anonimas (so contagens), uma linha por minuto. No mesmo ciclo,
-    // a media do tempo de entrega (latency.rs) e, se RELAY_STATUS_FILE estiver
-    // definido, o JSON de estado que o HAProxy publica em /estado.json.
+    // a media do tempo de entrega (latency.rs). Se RELAY_STATUS_FILE estiver definido,
+    // o JSON de estado que o HAProxy publica em /estado.json e reescrito a cada
+    // `latency::STATUS_EVERY`, para as leituras telefone a telefone chegarem logo ao site.
     let status_file = std::env::var("RELAY_STATUS_FILE").ok().filter(|p| !p.is_empty());
-    // Ultima media conhecida: recuperada do ficheiro de estado, para nao se perder ao reiniciar.
+    // Ultima media conhecida e ultimas leituras: recuperadas do ficheiro de estado, para nao
+    // se perderem ao reiniciar.
     let previous = status_file.as_deref().and_then(|p| std::fs::read_to_string(p).ok());
     let mut last = previous.as_deref().and_then(qt_server::latency::parse_last);
     let mut last_ida = previous.as_deref().and_then(qt_server::latency::parse_last_ida);
+    if let Some(json) = previous.as_deref() {
+        qt_server::latency::restore_readings(&qt_server::latency::parse_readings(json));
+    }
     if let Some(path) = &status_file {
         let empty = qt_server::latency::Summary::default();
         write_status(path, &empty, last, &empty, last_ida);
     }
     tokio::spawn(async move {
-        let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+        let every = qt_server::latency::STATUS_EVERY;
+        let per_minute = (60 / every.as_secs().max(1)).max(1);
+        let mut tick = tokio::time::interval(every);
         tick.tick().await;
+        let mut n: u64 = 0;
         loop {
             tick.tick().await;
+            n += 1;
+            if !n.is_multiple_of(per_minute) {
+                // Entre dois minutos: so as leituras novas (os resumos sao os do ultimo minuto).
+                if let Some(path) = &status_file {
+                    let (summary, ida) = qt_server::latency::summaries();
+                    write_status(path, &summary, last, &ida, last_ida);
+                }
+                continue;
+            }
             let (summary, ida) = qt_server::latency::roll_minute();
             if let Some(mut line) = qt_server::stats::take_line(&qt_server::stats::STATS) {
                 if let (Some(avg), Some(med), Some(p95)) = (ida.avg_ms, ida.median_ms, ida.p95_ms) {
