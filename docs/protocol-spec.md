@@ -846,8 +846,10 @@ CMake), com o DRED e o PLC neural (os modelos vêm no pacote).
   bits do DRED ao débito total, e na prática cada pacote cobre ~200 ms para trás. Medido: ~90
   bytes por frame. Descodificador com complexidade 5 (PLC neural).
 * Jitter buffer (`call/src/jitter.rs`): atraso alvo de 40 a 200 ms, pelo percentil 95 da variação
-  das chegadas dos últimos 3 s. Frame em falta com um pacote mais à frente: perdido, reconstruído
-  com o DRED desse pacote. Sem nada à frente: espera até 200 ms, contados no relógio e não em
+  das chegadas dos últimos 3 s (desde 23/10/2026 os pacotes que chegam tarde demais também contam).
+  Frame em falta com um pacote mais à frente: se o atraso ainda está abaixo do alvo, espera por ele
+  (PLC sem avançar, até 200 ms); senão é perdido, reconstruído com o DRED desse pacote. É isto que
+  deixa a cópia pelo relay da ligação direta em duplicado chegar a tempo. Sem nada à frente: espera até 200 ms, contados no relógio e não em
   pedidos do altifalante (PLC sem avançar, o atraso cresce 20 ms de cada vez) e depois desiste.
   As estatísticas separam os perdidos na rede dos que não chegaram a tempo. Se depois de desistir
   voltar a chegar um pacote mais antigo do que o seguinte (o outro lado parou e retomou atrasado em
