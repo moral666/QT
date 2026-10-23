@@ -41,13 +41,6 @@
     <string name="video_view_and_camera">打开我的摄像头</string>
     <string name="video_not_now">暂不</string>
     <string name="video_waiting">正在等待 %1$s…</string>
-    <string name="video_declined">%1$s 不想观看视频</string>
-    <string name="video_paused_weak">视频已暂停 · 网络较弱</string>
-    <string name="video_paused_limit">视频已暂停 · 已达本月上限</string>
-    <string name="p2p_notice">你的对话依然受到保护，和消息、文件一样。为了提高质量，你的手机会直接连接 %1$s 的手机。这会与对方共享你网络连接的部分信息。</string>
-    <string name="p2p_ok">好</string>
-    <string name="p2p_not_now">暂不</string>
-    <string name="p2p_option">通话直连</string>
     <string name="video_call_button">视频通话</string>
     <string name="video_call_from">来自 %1$s 的视频通话</string>
     <string name="video_call_sealer">SEALER视频通话</string>

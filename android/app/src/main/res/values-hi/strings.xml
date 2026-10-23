@@ -41,13 +41,6 @@
     <string name="video_view_and_camera">मेरा कैमरा चालू करें</string>
     <string name="video_not_now">अभी नहीं</string>
     <string name="video_waiting">%1$s का इंतज़ार…</string>
-    <string name="video_declined">%1$s ने वीडियो नहीं देखना चाहा</string>
-    <string name="video_paused_weak">वीडियो रुका हुआ · नेटवर्क कमज़ोर</string>
-    <string name="video_paused_limit">वीडियो रुका हुआ · इस महीने की सीमा पूरी हो गई</string>
-    <string name="p2p_notice">आपकी बातचीत सुरक्षित रहती है, बिल्कुल मैसेज और फ़ाइलों की तरह। क्वालिटी बेहतर करने के लिए आपका फ़ोन सीधे %1$s के फ़ोन से जुड़ता है। इससे आपके इंटरनेट कनेक्शन की कुछ जानकारी उनके साथ साझा होती है।</string>
-    <string name="p2p_ok">ठीक है</string>
-    <string name="p2p_not_now">अभी नहीं</string>
-    <string name="p2p_option">कॉल में सीधा कनेक्शन</string>
     <string name="video_call_button">वीडियो कॉल</string>
     <string name="video_call_from">%1$s की वीडियो कॉल</string>
     <string name="video_call_sealer">SEALER वीडियो कॉल</string>

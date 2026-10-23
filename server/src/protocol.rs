@@ -171,6 +171,17 @@ pub enum ClientMessage {
     /// relay recusa anexos (`BlobCreate`) e chamadas (`SendMessage` com `wake: Call`) a contas
     /// sem premium e as apps fecham as funcoes pagas. `None` so pergunta. Resposta: `PremiumEnforce`.
     AdminPremiumEnforce { on: Option<bool> },
+
+    // ----- Fichas anonimas do video pelo relay (0006, ver `qt_core::fichas`). -----
+    /// Pede fichas do mes `epoch` (AAAAMM, UTC), CEGAS: `blinded` sao n elementos de 32 bytes
+    /// (ristretto255) em base64, com n ate `qt_core::fichas::MAX_BATCH`. O relay so conta
+    /// quantas deu a esta conta neste mes (ate ao teto: `ServerConfig::fichas_per_month`, ou o
+    /// desta conta) e nunca guarda o pedido nem a resposta. So contas registadas.
+    /// Resposta: `Fichas`. Relays antigos respondem `Error` (pedido desconhecido).
+    IssueFichas { epoch: u32, blinded: String },
+    /// OPERADOR: fichas por mes desta conta (quota propria); `None` volta
+    /// ao valor do relay. Resposta: `Ack`.
+    AdminSetFichasQuota { user_id: UserId, per_month: Option<u32> },
 }
 
 /// Uma conta com premium (lista do operador).
@@ -219,6 +230,9 @@ pub const POW_REQUIRED: &str = "prova de trabalho em falta ou invalida";
 pub const PREMIUM_REQUIRED: &str = "precisa de premium";
 
 pub const RATE_LIMITED: &str = "demasiados pedidos, tenta daqui a pouco";
+
+/// Motivo do `Error` a `IssueFichas` num relay sem a semente das fichas.
+pub const FICHAS_OFF: &str = "fichas desligadas neste relay";
 
 /// Tamanho maximo de um token FCM (na pratica ~160 a 200 caracteres).
 pub const MAX_PUSH_TOKEN: usize = 4096;
@@ -303,6 +317,12 @@ pub enum ServerMessage {
     PremiumEnforce { on: bool },
     /// Resposta a `AdminListPremium`.
     PremiumList { entries: Vec<PremiumEntry> },
+    /// Resposta a `IssueFichas`: as primeiras `granted` fichas pedidas, avaliadas
+    /// (`evaluated`: base64 de granted x 32 bytes) com a prova DLEQ em lote (`proof`: base64
+    /// de 64 bytes) para a chave publica do mes (`public_key`: base64 de 32 bytes). `epoch`
+    /// diferente do pedido: o relay ja esta noutro mes (pedir outra vez para esse, sem nada
+    /// dado). `remaining`: quantas esta conta ainda pode pedir neste mes; `per_month`: o teto.
+    Fichas { epoch: u32, public_key: String, evaluated: String, proof: String, granted: u32, remaining: u32, per_month: u32 },
 }
 
 pub fn serialize_client_message(msg: &ClientMessage) -> Vec<u8> {

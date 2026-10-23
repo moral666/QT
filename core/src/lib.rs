@@ -15,6 +15,7 @@
 
 pub mod badge;
 pub mod call;
+pub mod fichas;
 pub mod identity;
 pub mod pow;
 pub mod primitives;

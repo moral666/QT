@@ -41,13 +41,6 @@
     <string name="video_view_and_camera">Turn on my camera</string>
     <string name="video_not_now">Not now</string>
     <string name="video_waiting">Waiting for %1$s…</string>
-    <string name="video_declined">%1$s didn\'t want to see the video</string>
-    <string name="video_paused_weak">Video paused · Weak network</string>
-    <string name="video_paused_limit">Video paused · Monthly limit reached</string>
-    <string name="p2p_notice">Your conversation stays protected, just like your messages and files. To improve quality, your phone connects directly to %1$s\'s phone. This shares some details of your internet connection with them.</string>
-    <string name="p2p_ok">OK</string>
-    <string name="p2p_not_now">Not now</string>
-    <string name="p2p_option">Direct connection in calls</string>
     <string name="video_call_button">Video call</string>
     <string name="video_call_from">Video call from %1$s</string>
     <string name="video_call_sealer">SEALER video call</string>

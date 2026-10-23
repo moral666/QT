@@ -488,13 +488,9 @@ fun AppRoot(
             askCamera.launch(Manifest.permission.CAMERA)
         }
     }
-    // Ligar (voz ou video): as permissoes so no fim, depois da janela de aviso.
-    val launchCall: (Contact, Boolean) -> Unit = { c, video ->
-        withMic { if (video) withCamera { vm.startCall(c, video = true) } else vm.startCall(c) }
-    }
-    // Antes da primeira chamada a um contacto: a janela de aviso da ligacao direta (uma vez).
+    // Ligar (voz ou video): primeiro as permissoes (microfone; camara na videochamada).
     val requestCall: (Contact, Boolean) -> Unit = { c, video ->
-        if (vm.needsDirectAsk(c.contactId)) vm.askDirect(c, video) else launchCall(c, video)
+        withMic { if (video) withCamera { vm.startCall(c, video = true) } else vm.startCall(c) }
     }
     LaunchedEffect(ui.hasIdentity, ui.locked, ui.termsAccepted, ui.loading) {
         val ready = !ui.loading && ui.hasIdentity && !ui.locked && ui.termsAccepted
@@ -614,8 +610,6 @@ fun AppRoot(
                 onCall = { c -> requestCall(c, false) },
                 canVideoCall = chatId in ui.videoContacts,
                 onVideoCall = { c -> requestCall(c, true) },
-                directOn = ui.directChoices[chatId] == true,
-                onDirect = { on -> vm.setDirectChoice(chatId, on) },
                 canReport = reportsAvailable(), onReport = vm::reportContact,
                 onDraftRestored = vm::draftRestored,
             )
@@ -739,20 +733,6 @@ fun AppRoot(
             },
             dismissButton = { TextButton(onClick = { showFullScreen = false; vm.markFullScreenAsked() }) { Text(s(R.string.full_screen_later)) } },
         )
-    }
-    ui.directAsk?.let { ask ->
-        // Nunca durante uma chamada: espera que acabe.
-        if (call == null && !ui.locked) {
-            val contact = ui.contacts.firstOrNull { it.contactId == ask.contactId }
-            DirectCallDialog(
-                ask.name,
-                onAnswer = { ok ->
-                    vm.answerDirect(ok)
-                    if (ask.call && contact != null) launchCall(contact, ask.video)
-                },
-                onDismiss = vm::dismissDirectAsk,
-            )
-        }
     }
     if (ui.contactsUnreadable && !ui.locked) {
         // A lista de contactos guardada nao abriu (0.9.23): nada e gravado por cima.
@@ -1371,9 +1351,6 @@ fun ChatScreen(
     /** O contacto tem video: aparece o botao da videochamada ao lado do de ligar. */
     canVideoCall: Boolean = false,
     onVideoCall: (Contact) -> Unit = {},
-    /** Ligacao direta nas chamadas com este contacto (opcao no menu, muda a janela de aviso). */
-    directOn: Boolean = false,
-    onDirect: (Boolean) -> Unit = {},
     canReport: Boolean = false,
     onReport: (String, List<String>, String) -> Unit = { _, _, _ -> },
     onDraftRestored: () -> Unit = {},
@@ -1446,14 +1423,6 @@ fun ChatScreen(
                                     text = { Text(s(R.string.t_bloquear)) },
                                     leadingIcon = { Icon(Icons.Filled.Close, contentDescription = null) },
                                     onClick = { chatMenu = false; confirmBlock = true },
-                                )
-                            }
-                            if (contact != null && !blocked && !invite) {
-                                DropdownMenuItem(
-                                    text = { Text(s(R.string.p2p_option)) },
-                                    leadingIcon = { Icon(Icons.Filled.Call, contentDescription = null) },
-                                    trailingIcon = { Switch(checked = directOn, onCheckedChange = null) },
-                                    onClick = { chatMenu = false; onDirect(!directOn) },
                                 )
                             }
                             if (canReport) {
@@ -2343,21 +2312,5 @@ fun CodeField(value: String, onChange: (String) -> Unit, label: String) {
         visualTransformation = PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
         modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-/**
- * Janela de aviso da ligacao direta (uma vez por contacto, antes da primeira chamada direta,
- * nunca durante uma chamada). [OK]: liga direto quando o outro tambem o tiver nos contactos.
- * [Agora nao]: esse contacto fica pelo servidor (muda-se no menu da conversa).
- */
-@Composable
-private fun DirectCallDialog(name: String, onAnswer: (Boolean) -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Filled.Call, contentDescription = null) },
-        text = { Text(s(R.string.p2p_notice, name)) },
-        confirmButton = { TextButton(onClick = { onAnswer(true) }) { Text(s(R.string.p2p_ok)) } },
-        dismissButton = { TextButton(onClick = { onAnswer(false) }) { Text(s(R.string.p2p_not_now)) } },
     )
 }

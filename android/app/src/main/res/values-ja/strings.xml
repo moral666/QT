@@ -41,13 +41,6 @@
     <string name="video_view_and_camera">自分のカメラもオン</string>
     <string name="video_not_now">今はしない</string>
     <string name="video_waiting">%1$sさんを待っています…</string>
-    <string name="video_declined">%1$sさんはビデオを見ませんでした</string>
-    <string name="video_paused_weak">ビデオ一時停止 · ネットワークが弱い</string>
-    <string name="video_paused_limit">ビデオ一時停止 · 今月の上限に達しました</string>
-    <string name="p2p_notice">メッセージやファイルと同じく、会話は引き続き保護されます。品質を上げるため、あなたのスマートフォンは%1$sさんのスマートフォンと直接つながります。その際、インターネット接続に関する一部の情報が相手と共有されます。</string>
-    <string name="p2p_ok">OK</string>
-    <string name="p2p_not_now">今はしない</string>
-    <string name="p2p_option">通話の直接接続</string>
     <string name="video_call_button">ビデオ通話</string>
     <string name="video_call_from">%1$sさんからのビデオ通話</string>
     <string name="video_call_sealer">SEALERビデオ通話</string>

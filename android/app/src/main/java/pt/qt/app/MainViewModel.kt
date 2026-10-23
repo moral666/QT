@@ -30,7 +30,6 @@ import uniffi.qt_ffi.AttachmentRef
 import uniffi.qt_ffi.CallAudio
 import uniffi.qt_ffi.CallEndReason
 import uniffi.qt_ffi.CallEvent
-import uniffi.qt_ffi.VideoPause
 import uniffi.qt_ffi.VideoResponse
 import uniffi.qt_ffi.AttachmentState
 import uniffi.qt_ffi.ChatMessage
@@ -115,13 +114,6 @@ data class UiState(
     val online: Set<String> = emptySet(),
     /** Chamada de voz a decorrer (a chamar, a tocar, atendida ou acabada de terminar). */
     val call: CallUi? = null,
-    /**
-     * Resposta a janela de aviso da ligacao direta, por contacto (true = OK, false = "Agora
-     * nao"). Sem entrada: ainda nao foi perguntado (fica pelo servidor). Guardado no Rust.
-     */
-    val directChoices: Map<String, Boolean> = emptyMap(),
-    /** Janela de aviso da ligacao direta a mostrar (nunca durante uma chamada). */
-    val directAsk: DirectAsk? = null,
     /** Contactos com video (o botao da videochamada so aparece para eles). Vem do Rust. */
     val videoContacts: Set<String> = emptySet(),
     /** "Atender" carregado na notificacao: o ecra atende (pedindo o microfone, se faltar). */
@@ -189,12 +181,6 @@ data class CallUi(
     val videoCall: Boolean = false,
 )
 
-/**
- * Janela de aviso da ligacao direta para `contactId` (uma vez por contacto). `call`: depois
- * da resposta, liga (`video`: videochamada). Sem `call`: aparece depois de uma chamada recebida.
- */
-data class DirectAsk(val contactId: String, val name: String, val call: Boolean, val video: Boolean = false)
-
 /** Video da chamada (fase 5b). */
 data class VideoUi(
     /** Os dois lados tem video: o botao da camara aparece. */
@@ -209,7 +195,11 @@ data class VideoUi(
     val peerCamera: Boolean = false,
     val peerAccepts: Boolean = false,
     val peerDeclined: Boolean = false,
-    val paused: VideoPause? = null,
+    /**
+     * O video do outro parou (pausa por rede, sem fichas ou outra razao): o ecra mostra so a
+     * foto ou a inicial dele, sem texto. A app nunca diz porque.
+     */
+    val remoteStalled: Boolean = false,
     /** Imagem do outro: tamanho e rotacao (para a por direita no ecra). */
     val remoteW: Int = 0,
     val remoteH: Int = 0,
@@ -263,6 +253,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     @Volatile private var waitLink: RelayLink? = null
     @Volatile private var transferJob: Job? = null
+    /** Pedido das fichas do video (0006), numa hora aleatoria: ver `scheduleFichas`. */
+    @Volatile private var fichasJob: Job? = null
     /** "Ha anexos para enviar/descarregar": acorda o ciclo de transferencias. */
     private val transferKick = Channel<Unit>(Channel.CONFLATED)
     /** Chave da lista de contactos; so existe em memoria com a base de dados aberta. */
@@ -430,6 +422,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         poller = null
         transferJob?.cancel()
         transferJob = null
+        fichasJob?.cancel()
+        fichasJob = null
         link?.shutdown()
         link = null
         fileLink?.shutdown()
@@ -919,6 +913,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // da que la esta quando recebe o bundle).
         if (publishBundle) scheduleBackup()
         refreshPremium(client, bundleLink)
+        scheduleFichas()
         // Presenca: "online" aos contactos (se a app estiver no ecra).
         if (visible) presenceAnnounce(true)
     }
@@ -993,8 +988,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ------------------------------------------------------------------- chamadas: contactos
 
     /**
-     * Diz ao Rust quem sao os contactos: so com eles (e so se me tiverem tambem) ha ligacao
-     * direta, e so eles recebem o aviso "tenho video" (uma vez). Rele as respostas a janela.
+     * Diz ao Rust quem sao os contactos: com eles (se me tiverem tambem) a chamada liga direto,
+     * sem perguntar nada, e so eles recebem o aviso "tenho video" (uma vez).
      */
     private suspend fun syncCallContacts(client: QtClient) {
         try {
@@ -1002,38 +997,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             Log.w(TAG, "chamadas: ${e.safeMsg()}")
         }
-        val choices = _ui.value.contacts.mapNotNull { c ->
-            runCatching { client.callDirectChoice(c.contactId) }.getOrNull()?.let { c.contactId to it }
-        }.toMap()
         val video = runCatching { client.callVideoContacts().toSet() }.getOrDefault(emptySet())
-        _ui.update { it.copy(directChoices = choices, videoContacts = video) }
-    }
-
-    /** A janela de aviso da ligacao direta deste contacto ainda nao foi mostrada? */
-    fun needsDirectAsk(contactId: String): Boolean {
-        val u = _ui.value
-        return u.contacts.any { it.contactId == contactId } && contactId !in u.blocked && contactId !in u.directChoices
-    }
-
-    /** Antes da primeira chamada a este contacto: mostra a janela; quem a mostra liga depois. */
-    fun askDirect(contact: Contact, video: Boolean) =
-        _ui.update { it.copy(directAsk = DirectAsk(contact.contactId, contact.nickname, call = true, video = video)) }
-
-    /** Resposta a janela ([OK] ou [Agora nao]). Fecha-a; a chamada (se houver) segue no ecra. */
-    fun answerDirect(allowed: Boolean) {
-        val ask = _ui.value.directAsk ?: return
-        _ui.update { it.copy(directAsk = null) }
-        setDirectChoice(ask.contactId, allowed)
-    }
-
-    /** Fechou a janela sem responder: nao liga, e volta a aparecer na proxima chamada. */
-    fun dismissDirectAsk() = _ui.update { it.copy(directAsk = null) }
-
-    /** Ligacao direta com este contacto (janela de aviso ou opcao no menu da conversa). */
-    fun setDirectChoice(contactId: String, allowed: Boolean) = io {
-        val client = qt ?: return@io
-        client.callSetDirectChoice(contactId, allowed)
-        _ui.update { it.copy(directChoices = it.directChoices + (contactId to allowed)) }
+        _ui.update { it.copy(videoContacts = video) }
     }
 
     // ------------------------------------------------------------------- foto de perfil
@@ -1416,6 +1381,68 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         } catch (e: Exception) {
             // Sem rede: fica o ultimo estado conhecido.
+        }
+    }
+
+    /**
+     * Fichas do video pelo relay (0006): o relay das chamadas so passa o video de quem as tem
+     * (quota configuravel no servidor; pelo caminho direto nao se gastam). Pedem-se numa hora ALEATORIA depois
+     * de a app abrir (e depois mais ou menos de hora a hora, enquanto faltarem), nunca com uma
+     * chamada a decorrer nem ao comecar uma: assim o relay nao junta o pedido a uma chamada.
+     * Nada disto aparece no ecra.
+     */
+    private fun scheduleFichas() {
+        fichasJob?.cancel()
+        fichasJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(kotlin.random.Random.nextLong(FICHAS_FIRST_MIN_MS, FICHAS_FIRST_MAX_MS))
+            while (isActive) {
+                val client = qt ?: break
+                val l = fileLink ?: link ?: break
+                requestFichas(client, l)
+                delay(FICHAS_AGAIN_MS + kotlin.random.Random.nextLong(0L, FICHAS_AGAIN_MS))
+            }
+        }
+    }
+
+    private suspend fun requestFichas(client: QtClient, l: RelayLink) {
+        refreshFichasKeys(client)
+        // Varios lotes seguidos so com uma quota maior; para no primeiro sem nada.
+        repeat(FICHAS_MAX_BATCHES) {
+            if (_ui.value.call != null) return
+            val req = runCatching { client.relayRequestFichas() }.getOrNull() ?: return
+            try {
+                when (val r = l.request(req, FICHAS_TIMEOUT_MS)) {
+                    is RelayResponse.Fichas -> if (client.fichasAccept(r.issued) == 0u) return
+                    else -> {
+                        // Relay antigo, sem fichas ou conta sem registo: tenta daqui a umas horas.
+                        Log.w(TAG, "fichas: ${r.describe()}")
+                        client.fichasRefused()
+                        return
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Sem rede ou resposta invalida: tenta outra vez mais tarde.
+                Log.w(TAG, "fichas: ${e.safeMsg()}")
+                return
+            }
+        }
+    }
+
+    /**
+     * Chaves publicas das fichas de cada mes, publicadas FORA do relay (no site, `estado.json`,
+     * servido pela Cloudflare). O nucleo so aceita fichas do emissor e so as gasta numa sala se a
+     * chave for a do site: um relay comprometido nao pode dar uma chave diferente a cada conta
+     * (particao de chaves). Sem rede fica a ultima lista boa; sem lista nenhuma o video pelo relay
+     * fica em pausa (falha fechada) e a voz e o caminho direto continuam.
+     */
+    private fun refreshFichasKeys(client: QtClient) {
+        val body = RelayLink.fetchSmall(BuildConfig.FICHAS_KEYS_URL, FICHAS_KEYS_MAX_BYTES) ?: return
+        try {
+            client.fichasSetPublishedKeys(body)
+        } catch (e: Exception) {
+            Log.w(TAG, "fichas: estado.json invalido (${e.safeMsg()})")
         }
     }
 
@@ -2663,13 +2690,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val cur = u.call
                 if (cur != null && cur.callId == c.callId && cur.phase == CallPhase.ENDED) u.copy(call = null) else u
             }
-            // Recebi e atendi uma chamada deste contacto e a janela de aviso dele ainda nao foi
-            // mostrada: aparece agora, depois de desligar (nunca durante uma chamada).
-            if (c.incoming && c.answeredAt > 0L && needsDirectAsk(c.contactId)) {
-                _ui.update { u ->
-                    if (u.call == null && u.directAsk == null) u.copy(directAsk = DirectAsk(c.contactId, c.name, call = false)) else u
-                }
-            }
         }
     }
 
@@ -2808,11 +2828,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // A tocar: a op "videochamada" pode chegar depois da oferta ("Videochamada de [Nome]").
         val videoCall = c.videoCall || (qt?.let { runCatching { it.callIsVideo(ev.callId) }.getOrNull() } ?: false)
         _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = nv, videoCall = videoCall)) } ?: u }
-        // Recusou ver o meu video: desliga a minha camara (ninguem a ia ver) e avisa.
-        if (ev.peerDeclined && v.camera && !v.peerDeclined) {
-            _ui.update { it.copy(notice = s(R.string.video_declined, c.name)) }
-            setCamera(false)
-        }
+        // Recusou ver o meu video: desliga a minha camara (ninguem a ia ver), em silencio.
+        if (ev.peerDeclined && v.camera && !v.peerDeclined) setCamera(false)
         syncReceiver()
     }
 
@@ -2846,7 +2863,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (stopNetWatch == null) stopNetWatch = VideoNet.watch(app) { kind -> callAudio?.setNetwork(kind) }
     }
 
-    /** Pausa do video, para a mensagem no ecra. */
+    /**
+     * A cada segundo: videochamada para quem nao tem video, e se o video do outro parou (o ecra
+     * mostra entao so a foto ou a inicial dele). Nada no ecra diz porque parou (rede, fichas).
+     */
     private fun refreshVideoParams() {
         val c = _ui.value.call ?: return
         // Videochamada para quem afinal nao tem video (app antiga): a minha camara desliga-se.
@@ -2856,10 +2876,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             setCamera(false)
             return
         }
-        if (!c.video.camera && !c.video.showRemote) return
-        val p = callAudio?.videoParams() ?: return
-        if (p.paused != c.video.paused) {
-            _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = cur.video.copy(paused = p.paused))) } ?: u }
+        val last = videoReceiver?.lastFrameAt ?: 0L
+        val stalled = c.video.showRemote && (last == 0L || SystemClock.elapsedRealtime() - last > REMOTE_STALL_MS)
+        if (stalled != c.video.remoteStalled) {
+            _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = cur.video.copy(remoteStalled = stalled))) } ?: u }
         }
     }
 
@@ -3012,6 +3032,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val PREF_LOCK_PENDING = "lock_pending"
         private const val PREF_PREMIUM_ACTIVE = "premium_active"
         private const val PREMIUM_TIMEOUT_MS = 4_000L
+        /** Fichas do video: primeiro pedido entre 30 s e 10 min depois de abrir; depois 1-2 h. */
+        private const val FICHAS_FIRST_MIN_MS = 30_000L
+        private const val FICHAS_FIRST_MAX_MS = 600_000L
+        private const val FICHAS_AGAIN_MS = 3_600_000L
+        private const val FICHAS_TIMEOUT_MS = 20_000L
+        private const val FICHAS_MAX_BATCHES = 3
+        private const val FICHAS_KEYS_MAX_BYTES = 64 * 1024
         private const val PREF_PREMIUM_UNTIL = "premium_until"
         /** Copia de recuperacao: espera um pouco depois de uma mudanca (junta varias seguidas). */
         private const val BACKUP_DELAY_MS = 3_000L
@@ -3053,6 +3080,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val ENDED_SHOW_MS = 2_000L
         /** Videochamada atendida sem "tenho video" do outro ao fim disto: a camara desliga-se. */
         private const val NO_VIDEO_AFTER_MS = 5_000L
+        /** Sem imagens do outro ha mais disto: mostra a foto ou a inicial dele no lugar do video. */
+        private const val REMOTE_STALL_MS = 2_000L
         fun minCodeLen(): Int = uniffi.qt_ffi.appLockMinCodeLen().toInt()
     }
 }

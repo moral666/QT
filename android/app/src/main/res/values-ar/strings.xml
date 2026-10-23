@@ -41,13 +41,6 @@
     <string name="video_view_and_camera">تشغيل الكاميرا الخاصة بي</string>
     <string name="video_not_now">ليس الآن</string>
     <string name="video_waiting">في انتظار %1$s…</string>
-    <string name="video_declined">لم يرغب %1$s في مشاهدة الفيديو</string>
-    <string name="video_paused_weak">الفيديو متوقف مؤقتًا · الشبكة ضعيفة</string>
-    <string name="video_paused_limit">الفيديو متوقف مؤقتًا · تم بلوغ الحد الشهري</string>
-    <string name="p2p_notice">تبقى محادثتك محمية، تمامًا مثل الرسائل والملفات. لتحسين الجودة، يتصل هاتفك مباشرةً بهاتف %1$s. وبذلك تُشارَك بعض بيانات اتصالك بالإنترنت مع هذا الشخص.</string>
-    <string name="p2p_ok">حسنًا</string>
-    <string name="p2p_not_now">ليس الآن</string>
-    <string name="p2p_option">الاتصال المباشر في المكالمات</string>
     <string name="video_call_button">مكالمة فيديو</string>
     <string name="video_call_from">مكالمة فيديو من %1$s</string>
     <string name="video_call_sealer">مكالمة فيديو عبر SEALER</string>

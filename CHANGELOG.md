@@ -6,6 +6,41 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 23 de outubro de 2026: fichas anónimas do vídeo pelo relay, P2P automático e chamada sem avisos (0006, app Android 0.9.37)
+
+- Quota de vídeo pelo relay por conta e por mês, configurável no servidor, sem o relay saber quem está na sala:
+  fichas Privacy Pass com VOPRF (RFC 9497, ristretto255-SHA512, crate `voprf` 0.5), emitidas em lote
+  e cegas pelo relay das mensagens (só conta quantas deu a cada conta por mês) e gastas na sala
+  anónima por quem envia vídeo pelo relay (1 ficha = 1 minuto). Gasto duplo no Redis por mês
+  (utilizador `qt-fichas`, só `SET` em `fichas:*`), chave nova por mês derivada de uma semente,
+  prova DLEQ verificada na app, fichas guardadas na base cifrada e apagadas quando o mês acaba.
+  Sem fichas: só voz pelo relay; em ligação direta o vídeo continua sem gastar nada. Apps antigas:
+  só voz pelo relay. `docs/protocol-spec.md` secção 24.
+- Chave das fichas de cada mês publicada fora do relay, no site (`https://sealer.pt/estado.json`,
+  Cloudflare; gerada no deploy com `qt-relay chaves-fichas 24`). A app recusa emitir se a chave do
+  emissor for outra e não gasta fichas se a chave da sala for outra (ataque de partição de chaves);
+  sem a chave do site, o vídeo pelo relay fica em pausa (voz e direto normais).
+- O mês dito pelo relay só se segue se for o vizinho do relógio do telemóvel, a menos de 48 h da
+  viragem, e o motor só recebe as chaves publicadas desses meses (partição pelo mês: um relay que
+  dissesse a cada conta um dos 24 meses publicados separava-as em grupos).
+- Relay: `IssueFichas`, `AdminSetFichasQuota` (quota por conta, pelo operador),
+  `RELAY_FICHAS_POR_MES`, `FICHAS_SEED_PATH`; relay das
+  chamadas com `CALL_FICHAS`, `CALL_FICHAS_SEED` e `CALL_REDIS_URL` (`/etc/qt-call-relay/fichas.env`).
+  `setup-ec2.sh` cria a password do `qt-fichas` e mantém os valores entre atualizações.
+- Ligação direta automática entre contactos mútuos e não bloqueados, já na primeira chamada
+  (substitui a regra do 0005): saem a janela de aviso, a opção "Ligação direta nas chamadas" do menu
+  da conversa, `call_direct_choice`, `call_set_direct_choice` e a chave `call:direct:` (apagada). Os
+  endereços continuam a sair só depois de atender e só entre contactos mútuos; bloquear, apagar ou
+  tirar dos contactos volta logo ao relay. Nessas chamadas cada lado vê o IP do outro.
+- Ecrã da chamada sem avisos de estado: saem "Vídeo em pausa · Rede fraca" e "Vídeo em pausa · Limite
+  do mês atingido" (dez línguas). Com o vídeo do outro parado, só a foto ou a inicial dele, sem texto.
+  Sai também "[Nome] não quis ver o vídeo": a câmara de quem enviou desliga-se em silêncio. Fica só
+  "À espera de [Nome]…".
+- Testes: fichas válidas uma vez, repetidas, de outro mês, forjadas e de outra chave recusadas; teto
+  por conta e por mês (também com pedidos ao mesmo tempo); o relay não liga resgate a emissão; sem
+  fichas a voz continua e o vídeo pausa; ligação direta não gasta; relay antigo; ACL do `qt-fichas`;
+  chave diferente da do site na emissão e na sala recusada; sem a chave do site falha fechada.
+
 ### 23 de outubro de 2026: ligação direta entre contactos, videochamada e limpezas
 
 - Ligação direta (P2P) sem verificação, QR nem códigos: liga quando os dois se têm nos contactos e
@@ -239,25 +274,23 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - Android: "A enviar…" e "A receber…" dos ficheiros traduzidos nas 6 línguas; leituras da base de
   dados fora das atualizações do estado do ecrã.
 
-### 22 de outubro de 2026: premium controlado pelo operador (apps 0.9.21, Android e iPhone)
+### 22 de outubro de 2026: acesso por conta controlado pelo operador (apps 0.9.21, Android e iPhone)
 
-- Quem tem premium e se o bloqueio está ligado passa a ser decidido só no relay, pela aba "Premium"
-  da ferramenta do operador: bloqueio para todos, dar, tirar e lista.
-- Com o bloqueio ligado, o relay recusa anexos e ofertas de chamada de contas sem premium
+- O acesso de cada conta às funções reservadas e o bloqueio passam a ser decididos só no relay, pela
+  ferramenta do operador: bloqueio para todos, dar, tirar e lista.
+- Com o bloqueio ligado, o relay recusa anexos e ofertas de chamada de contas sem acesso
   (`AdminPremiumEnforce`, `PREMIUM_REQUIRED`), mesmo de uma app alterada.
-- As apps perguntam ao relay antes de cada ação paga: tirar o premium conta logo. Saíram o
-  interruptor de teste e o "simular premium".
-- Preço: 5 €/ano.
+- As apps perguntam ao relay antes de cada ação reservada: tirar o acesso conta logo. Saíram o
+  interruptor de teste e a simulação do acesso.
 
-### 22 de outubro de 2026: Sealer Premium (apps 0.9.20, Android e iPhone)
+### 22 de outubro de 2026: acesso por conta (apps 0.9.20, Android e iPhone)
 
-- Ecrã "Sealer Premium" (12 €/ano, 5 €/ano desde a 0.9.21): o premium desbloqueia fazer chamadas, criar grupos e enviar
-  fotos, GIFs, voz e ficheiros. Texto grátis para sempre; sem premium recebe-se tudo.
-- Bloqueio com interruptor de teste, até haver pagamentos; com ele ligado, uma ação paga sem
-  premium abre o ecrã Premium.
-- O relay guarda até quando cada conta tem premium (`PremiumStatus`, `AdminGrantPremium`,
-  `AdminListPremium`). O operador dá ou tira premium (testadores, ofertas) pela ferramenta
-  `denuncias`.
+- Fazer chamadas, criar grupos e enviar fotos, GIFs, voz e ficheiros podem ficar reservados a contas
+  com acesso dado pelo relay. Texto sempre aberto; receber tudo também.
+- Bloqueio com interruptor de teste; com ele ligado, uma ação reservada sem acesso abre o ecrã
+  próprio da app.
+- O relay guarda até quando cada conta tem acesso (`PremiumStatus`, `AdminGrantPremium`,
+  `AdminListPremium`). O operador dá ou tira o acesso (testadores) pela ferramenta `denuncias`.
 
 ### 22 de outubro de 2026: chave de recuperação da conta (apps 0.9.19, Android e iPhone)
 

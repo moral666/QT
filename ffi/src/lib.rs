@@ -29,6 +29,8 @@ pub mod call_audio;
 #[cfg(feature = "pq")]
 pub mod client;
 #[cfg(feature = "pq")]
+pub mod fichas;
+#[cfg(feature = "pq")]
 pub(crate) mod prekeys;
 pub mod groups;
 pub mod presence;

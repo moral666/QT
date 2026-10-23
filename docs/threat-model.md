@@ -48,6 +48,9 @@ Cada linha indica o mecanismo e **o teste que o demonstra** (corre com
 | Estado comprometido expõe mensagens futuras | Post-compromise security após um novo passo DH (limites em §4) | `post_compromise_security_cura_apos_novo_passo_dh` |
 | Cópia do ficheiro da base de dados | SQLCipher com chave binária de 32 bytes vinda do Android Keystore; sem cabeçalho SQLite em claro. O histórico de mensagens é guardado **só** dentro da base cifrada (com `secure_delete`), nunca em claro | `storage/tests/storage_extended.rs::texto_das_mensagens_nunca_fica_em_claro_no_ficheiro` |
 | Lixo / entradas malformadas | Todas as entradas de rede e disco devolvem erro (sem `unwrap` em caminhos de rede/cripto); limites de tamanho | `sessao_inexistente_e_lixo_nao_fazem_panic`, `limites_e_validacao_de_entrada`, fuzz do estado em `forward_secrecy.rs` |
+| Relay das chamadas liga o vídeo de uma sala a uma conta (teto do vídeo, 0006) | Fichas cegas (VOPRF, RFC 9497, ristretto255-SHA512, crate `voprf`): o emissor só vê elementos aleatórios; o resgate só leva nonce e saída; o relay das chamadas não acede às contas e só guarda um resumo do nonce | `server/tests/fichas_e2e.rs::ficha_aceite_uma_vez_e_o_relay_nao_liga_resgate_a_emissao`, `core::fichas::tests::o_emissor_so_ve_elementos_aleatorios` |
+| Mais vídeo pelo relay do que o teto da conta | Contagem por conta e por mês na emissão (atómica: nunca passa do teto, nem com pedidos ao mesmo tempo); gasto duplo no Redis; fichas forjadas, repetidas ou de outro mês recusadas | `emissao_nunca_passa_do_teto_por_conta_e_por_mes`, `pedidos_ao_mesmo_tempo_nao_passam_do_teto`, `ficha_forjada_de_outro_mes_ou_de_outra_chave_recusada`, `sem_ficha_so_voz_com_ficha_um_bloco_de_video` |
+| Emissor marca uma conta com uma chave só dela (partição de chaves) | Chave de cada mês publicada fora do relay (`https://sealer.pt/estado.json`, Cloudflare). A app verifica a prova DLEQ, recusa a emissão se a chave não for a do site e só gasta fichas se a chave da sala também for essa; sem a chave do site falha fechada (vídeo pelo relay em pausa, voz e direto normais). O mês dito pelo relay só se segue se for o vizinho, a menos de 48 h da viragem (partição pelo mês, com os 24 meses publicados) | `prova_dleq_obrigatoria`, `fichas_de_outro_mes_ou_de_outra_chave_nao_servem`, `ffi::fichas::tests::chave_diferente_da_publicada_na_emissao_e_recusada`, `ffi::fichas::tests::sem_chave_do_site_nada_se_pede`, `call::fichas::tests::chave_da_sala_diferente_da_publicada_nada_se_gasta`, `call::fichas::tests::sem_chave_do_site_falha_fechada`, `call/tests/fichas_e2e.rs::chave_diferente_da_publicada_ou_sem_site_falha_fechada`, `mes_do_relay_so_o_proprio_ou_o_vizinho_na_viragem`, `ffi::fichas::tests::so_meses_plausiveis_vao_para_o_motor` |
 
 ### 3.1 Segurança pós-quântica: o que exatamente se afirma
 
@@ -92,10 +95,34 @@ e depois alimenta a root key do Double Ratchet.
   a ligação de quem envia é autenticada: um operador mal-intencionado pode associar
   a conta que envia a cada envelope no momento. Também não protege contra análise de
   tráfego/correlação temporal.
-* **Ligação direta nas chamadas** (desde 23/10/2026): entre contactos mútuos que disseram OK
-  na janela de aviso, depois de atender, cada telemóvel fica a saber os endereços IP (público e
-  locais) do outro. Não há verificação de contactos: confia-se que o ID guardado é de quem se
-  pensa. Com "Agora não", ou se um dos lados não tiver o outro nos contactos, tudo passa pelo relay.
+* **Ligação direta nas chamadas** (automática desde o 0006, 23/10/2026): entre contactos mútuos e
+  não bloqueados, já na primeira chamada e sem perguntar nada, **cada lado vê o IP do outro**
+  (público e locais, com a porta), depois de atender. A app não tem janela de aviso nem opção para
+  o evitar (decisão do Nuno). Não há verificação de contactos: confia-se que o ID guardado é de
+  quem se pensa. Se um dos lados não tiver o outro nos contactos, ou o bloqueou, tudo passa pelo
+  relay; bloquear, apagar ou tirar dos contactos a meio volta logo ao relay.
+* **Fichas do vídeo pelo relay (0006):**
+  * O emissor (relay das mensagens) vê quando cada conta pede fichas e quantas; o relay das
+    chamadas vê quando cada sala gasta (uma por minuto de vídeo pelo relay) e o IP. Os dois
+    processos estão na mesma máquina e são do mesmo operador: um operador mal-intencionado pode
+    tentar ligar o pedido das fichas a uma chamada pelo IP e pela hora. Por isso a app pede numa
+    hora aleatória, fora das chamadas; isto não impede a correlação pelo IP (o mesmo telemóvel na
+    mesma rede).
+  * A chave de cada mês vem do site (Cloudflare), não do relay: um relay comprometido sozinho não
+    consegue dar uma chave diferente a cada conta. Fica a confiança no site: quem controlar o
+    repositório do site ou a conta da Cloudflare **e** o relay podia servir a cada telemóvel uma
+    lista diferente (pelo IP). Não há registo público de chaves (transparência) nem comparação
+    entre utilizadores. O ficheiro é publicado à mão pelo operador: se o deploy criar uma semente
+    nova e o site não for atualizado, o vídeo pelo relay fica em pausa para todos (falha fechada).
+  * Cada conta registada recebe o teto do mês: quem criar muitas contas (cada uma com prova de
+    trabalho) junta mais fichas.
+  * A semente das chaves está em texto simples no disco do relay (0600, como a chave Noise): quem
+    a tiver emite fichas à vontade, para todos os meses (as chaves derivam dela).
+  * Sem fichas, os pacotes de vídeo de tamanho mínimo (relatórios de quem só vê) passam na mesma,
+    até 5 por segundo e por lado (~1,5 kB/s): uma app alterada podia usá-los para um vídeo
+    minúsculo.
+  * Redis em baixo ou sem semente: nenhuma ficha é aceite (vídeo pelo relay em pausa; voz e direto
+    normais).
 * **O relay pode censurar, atrasar, descartar ou reordenar** (disponibilidade
   não é garantida). Não há federação.
 * **Spam / abuso:** qualquer conta registada pode enfileirar mensagens para
@@ -159,6 +186,9 @@ e depois alimenta a root key do Double Ratchet.
 | Android Keystore / Secure Enclave do iPhone | Proteger a chave que cifra o storage | Resistir a um dispositivo comprometido |
 | Operador (chave das denúncias e dos banimentos) | Ler as denúncias, banir e emitir medalhas | Ler outras mensagens (não tem como) |
 | Relay + Redis | Entregar o que recebe, quando quiser | Confidencialidade, autenticidade de bundles, ordem, disponibilidade |
+| Emissor das fichas (relay das mensagens) | Contar e emitir fichas do vídeo | Saber que fichas deu (vê-as cegas); escolher a chave do mês (vem do site) |
+| Site (`sealer.pt/estado.json`, Cloudflare) | Publicar a mesma chave das fichas a toda a gente | - |
+| Relay das chamadas + `qt-fichas` no Redis | Recusar fichas gastas ou forjadas | Saber de que conta é uma ficha (não tem como) |
 | Rede | Nada | Tudo |
 | Apps Kotlin e Swift | Mover bytes, UI, ciclo de vida, preparar imagens antes de as cifrar | Qualquer criptografia (proibido) |
 

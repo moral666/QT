@@ -258,7 +258,7 @@ fn nonce(counter: u64) -> [u8; 12] {
     n
 }
 
-fn relay_tag(relay_key: &[u8; 32], data: &[u8]) -> [u8; RELAY_TAG_LEN] {
+pub(crate) fn relay_tag(relay_key: &[u8; 32], data: &[u8]) -> [u8; RELAY_TAG_LEN] {
     let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(relay_key).expect("hmac aceita qualquer chave");
     mac.update(data);
     let full = mac.finalize().into_bytes();

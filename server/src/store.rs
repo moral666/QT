@@ -814,6 +814,71 @@ impl Store {
     }
 }
 
+// ------------------------------------------------------------ fichas do video (0006)
+//
+//   {p}:fichas:emitidas:{conta}:{AAAAMM}  quantas fichas esta conta ja recebeu neste mes;
+//                                         expira ~40 dias depois. E so isto: nunca o pedido
+//                                         nem a resposta (nada que ligue uma ficha a conta).
+//   {p}:fichas:quota:{conta}              fichas por mes desta conta (operador); ausente = do relay
+const FICHAS_ISSUED_TTL_SECONDS: i64 = 40 * 86_400;
+
+impl Store {
+    fn fichas_issued_key(&self, user_id: &str, epoch: u32) -> String {
+        format!("{}:fichas:emitidas:{user_id}:{epoch}", self.key_prefix)
+    }
+
+    /// Fichas por mes desta conta, se o operador lhe deu um valor proprio.
+    pub async fn fichas_quota(&self, user_id: &str) -> Result<Option<u32>, StoreError> {
+        let mut conn = self.connection().await?;
+        let v: Option<String> = conn.get(format!("{}:fichas:quota:{user_id}", self.key_prefix)).await?;
+        Ok(v.and_then(|s| s.parse().ok()))
+    }
+
+    pub async fn set_fichas_quota(&self, user_id: &str, per_month: Option<u32>) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let key = format!("{}:fichas:quota:{user_id}", self.key_prefix);
+        match per_month {
+            Some(n) => conn.set::<_, _, ()>(&key, n.to_string()).await?,
+            None => conn.del::<_, ()>(&key).await?,
+        }
+        Ok(())
+    }
+
+    /// Fichas ja emitidas a esta conta neste mes.
+    pub async fn fichas_issued(&self, user_id: &str, epoch: u32) -> Result<u32, StoreError> {
+        let mut conn = self.connection().await?;
+        let v: Option<String> = conn.get(self.fichas_issued_key(user_id, epoch)).await?;
+        Ok(v.and_then(|s| s.parse().ok()).unwrap_or(0))
+    }
+
+    /// Reserva ate `n` fichas do mes para esta conta, sem nunca passar de `quota` (mesmo com
+    /// pedidos ao mesmo tempo: cada um soma primeiro e devolve o que passou). Devolve
+    /// (quantas pode emitir agora, total emitido a conta neste mes).
+    pub async fn fichas_take(&self, user_id: &str, epoch: u32, n: u32, quota: u32) -> Result<(u32, u32), StoreError> {
+        let mut conn = self.connection().await?;
+        let key = self.fichas_issued_key(user_id, epoch);
+        let (after,): (u64,) = redis::pipe()
+            .atomic()
+            .incr(&key, n as u64)
+            .expire(&key, FICHAS_ISSUED_TTL_SECONDS)
+            .ignore()
+            .query_async(&mut conn)
+            .await?;
+        let excess = after.saturating_sub(quota as u64).min(n as u64);
+        if excess > 0 {
+            conn.decr::<_, _, ()>(&key, excess).await?;
+        }
+        Ok(((n as u64 - excess) as u32, (after - excess).min(u32::MAX as u64) as u32))
+    }
+
+    /// Devolve fichas reservadas que afinal nao foram emitidas (pedido com elementos invalidos).
+    pub async fn fichas_refund(&self, user_id: &str, epoch: u32, n: u32) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        conn.decr::<_, _, ()>(self.fichas_issued_key(user_id, epoch), n as u64).await?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct QueuedMessage {
     pub id: u64,

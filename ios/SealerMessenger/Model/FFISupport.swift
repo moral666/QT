@@ -80,6 +80,8 @@ extension RelayResponse {
         case .backupPart: return "BackupPart"
         case .backupNotFound: return "BackupNotFound"
         case .premium: return "Premium"
+        // Fichas do video (0006): o iPhone ainda nao tem video, nunca as pede.
+        case .fichas: return "Fichas"
         }
     }
 }

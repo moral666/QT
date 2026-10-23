@@ -161,8 +161,30 @@ fn load_operator() -> Option<String> {
     }
 }
 
+/// `qt-relay chaves-fichas [meses]`: escreve no ecra o ficheiro do site com as chaves publicas das
+/// fichas do video (`site/public/estado.json`), do mes atual em diante (24 meses por omissao).
+/// So le a semente (`FICHAS_SEED_PATH`, ou ao lado da chave Noise); nunca a cria.
+fn print_published_keys(args: &[String]) -> ! {
+    let months: u32 = args.get(2).and_then(|v| v.parse().ok()).filter(|m| (1..=120).contains(m)).unwrap_or(24);
+    let noise_key_path = std::env::var("NOISE_KEY_PATH").unwrap_or_else(|_| "relay_noise_key.bin".to_string());
+    let path = std::env::var("FICHAS_SEED_PATH").map(std::path::PathBuf::from).unwrap_or_else(|_| {
+        std::path::Path::new(&noise_key_path)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(|p| p.join("fichas_seed.bin"))
+            .unwrap_or_else(|| std::path::PathBuf::from("fichas_seed.bin"))
+    });
+    let seed = qt_server::fichas::load_seed(&path).unwrap_or_else(|_| fatal("nao foi possivel ler a semente das fichas (FICHAS_SEED_PATH)"));
+    print!("{}", qt_server::fichas::published_keys_json(&seed, qt_core::fichas::current_epoch(), months));
+    std::process::exit(0);
+}
+
 #[tokio::main]
 async fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("chaves-fichas") {
+        print_published_keys(&args);
+    }
     let bind_addr = std::env::var("RELAY_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:9443".to_string());
     let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
     let noise_key_path = std::env::var("NOISE_KEY_PATH").unwrap_or_else(|_| "relay_noise_key.bin".to_string());
@@ -270,8 +292,20 @@ async fn main() {
             .and_then(|v| v.trim().parse().ok())
             .unwrap_or(defaults.max_connections_per_user),
         operator: load_operator(),
+        fichas: load_fichas(&noise_key_path),
+        fichas_per_month: std::env::var("RELAY_FICHAS_POR_MES")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(defaults.fichas_per_month),
         ..defaults
     });
+    if cfg.fichas.is_some() {
+        println!(
+            "Fichas do video: ligadas, {} por conta e por mes ({} min de video pelo relay)",
+            cfg.fichas_per_month,
+            cfg.fichas_per_month as u64 * qt_core::fichas::BLOCK_SECS / 60
+        );
+    }
     println!(
         "Limites: {max_conns} ligacoes, {} por autenticar, {} por conta",
         cfg.max_unauthenticated, cfg.max_connections_per_user
@@ -310,6 +344,30 @@ async fn main() {
             stats.active.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
             drop(permit);
         });
+    }
+}
+
+/// Semente das chaves das fichas do video (0006): `FICHAS_SEED_PATH`, por omissao
+/// `fichas_seed.bin` ao lado da chave Noise (em producao /var/lib/qt). Criada no primeiro
+/// arranque (0600); o relay das chamadas so a le. `RELAY_FICHAS=0` desliga a emissao.
+fn load_fichas(noise_key_path: &str) -> Option<Arc<qt_server::fichas::IssuerKeys>> {
+    if matches!(std::env::var("RELAY_FICHAS").as_deref(), Ok("0") | Ok("false") | Ok("no")) {
+        println!("Fichas do video: desligadas (RELAY_FICHAS=0)");
+        return None;
+    }
+    let path = std::env::var("FICHAS_SEED_PATH").map(std::path::PathBuf::from).unwrap_or_else(|_| {
+        std::path::Path::new(noise_key_path)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(|p| p.join("fichas_seed.bin"))
+            .unwrap_or_else(|| std::path::PathBuf::from("fichas_seed.bin"))
+    });
+    match qt_server::fichas::load_or_create_seed(&path) {
+        Ok(seed) => Some(Arc::new(qt_server::fichas::IssuerKeys::new(*seed))),
+        Err(_) => {
+            eprintln!("AVISO: nao foi possivel ler/criar {}: fichas do video desligadas", path.display());
+            None
+        }
     }
 }
 

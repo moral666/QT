@@ -14,6 +14,7 @@
 
 pub mod blobs;
 pub mod call_relay;
+pub mod fichas;
 pub mod client;
 pub mod connection;
 pub mod latency;

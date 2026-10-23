@@ -511,6 +511,9 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
  * imagem completa ao outro lado.
  */
 class VideoReceiver(private val audio: CallAudio, private val onFrame: (width: Int, height: Int, rotation: Int) -> Unit) {
+    /** Quando chegou a ultima imagem do outro (`SystemClock.elapsedRealtime`); 0 = nenhuma ainda. */
+    @Volatile var lastFrameAt = 0L
+        private set
     @Volatile private var surface: Surface? = null
     @Volatile private var running = false
     private var codec: MediaCodec? = null
@@ -569,6 +572,7 @@ class VideoReceiver(private val audio: CallAudio, private val onFrame: (width: I
         var pts = 0L
         while (running) {
             val f = runCatching { audio.videoPull(50u) }.getOrNull() ?: continue
+            lastFrameAt = SystemClock.elapsedRealtime()
             val s = synchronized(lock) {
                 if (surfaceChanged) {
                     surfaceChanged = false

@@ -57,6 +57,8 @@ pub struct Stats {
     pub not_registered: AtomicU64,
     /// Envios recusados para IDs sem bundle (inexistentes ou expirados).
     pub recipient_unknown: AtomicU64,
+    /// Fichas do video emitidas (so o total; nunca a quem).
+    pub fichas_issued: AtomicU64,
 }
 
 pub static STATS: Stats = Stats {
@@ -95,6 +97,7 @@ pub static STATS: Stats = Stats {
     otpks_served: AtomicU64::new(0),
     not_registered: AtomicU64::new(0),
     recipient_unknown: AtomicU64::new(0),
+    fichas_issued: AtomicU64::new(0),
 };
 
 pub fn inc(c: &AtomicU64) {
@@ -144,6 +147,7 @@ pub fn take_line(s: &Stats) -> Option<String> {
         ("otpks_entregues", t(&s.otpks_served)),
         ("sem_registo", t(&s.not_registered)),
         ("destinatario_desconhecido", t(&s.recipient_unknown)),
+        ("fichas_emitidas", t(&s.fichas_issued)),
     ];
     let active = s.active.load(Relaxed);
     if active == 0 && v.iter().all(|(_, n)| *n == 0) {
