@@ -86,7 +86,7 @@ export default {
   'index.80': 'En camino',
   'index.81': 'En camino',
   'index.82': 'Lo que viene',
-  'index.83': 'Ya hay llamadas de voz cifradas, grupos, archivos de hasta 25&nbsp;MB, clave de recuperación y bloqueo de la app. Lo siguiente: Google Play y App&nbsp;Store. <a href="./funcionalidades">Todo lo que hace la app</a>',
+  'index.83': 'Ya hay llamadas de voz cifradas, grupos, archivos de hasta 25&nbsp;MB, clave de recuperación y bloqueo de la app. Lo siguiente: videollamadas cifradas, Google Play y App&nbsp;Store. <a href="./funcionalidades">Todo lo que hace la app</a>',
   'index.84': 'Esta página no usa cookies ni herramientas para seguir lo que haces en ella. <a href="./politica-de-cookies">Política de cookies</a>',
   'index.85': '<a href="./funcionalidades">Funciones</a> · <a href="./como-funciona">Cómo funciona</a> · <a href="./privacidade">Privacidad</a> · <a href="./termos">Términos</a> · <a href="./apagar-conta">Borrar la cuenta</a>',
   'index.86': '© 2026 SEALER, un proyecto QT.',
