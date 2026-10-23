@@ -951,6 +951,14 @@ para a ligação direta só são trocados depois de atender, dentro do ratchet (
 * Aviso do relay `[1 0x24][8 room_id][1 modo][8 etiqueta]` (18 bytes) a quem envia vídeo, de 5 em 5 s
   ou quando muda: 0 normal, 1 só 240p (travão do mês), 2 sem vídeo pelo relay (teto da conta).
 * Medido (`call/tests/video_e2e.rs`, localhost, codificador sintético): ver `ESTADO-VIDEO.md`.
+* App Android (fase 5b, com a app aberta; `Video.kt`, `CallScreen.kt`): câmara pela Camera2 e H.264 em
+  hardware (MediaCodec, perfil base, débito constante quando o codificador deixa, imagens completas só
+  a pedido, SPS/PPS antes de cada uma). A cada 250 ms aplica `video_params` (débito, resolução,
+  imagens/s, `keyframe_seq`). Rotação da imagem a partir da orientação do telemóvel e do sensor; quem
+  recebe roda a vista. O descodificador recomeça numa imagem completa e pede uma se falhar. FLAG_SECURE
+  no ecrã da chamada; o serviço da chamada é também do tipo câmara com a câmara ligada; a permissão da
+  câmara só é pedida ao carregar no botão. Wi-Fi sem limite de dados conta como Wi-Fi; Wi-Fi com limite
+  (partilha de dados) conta como dados móveis.
 
 **API (`QtClient`).** `call_start`, `call_accept`, `call_hangup` (o motivo sai do estado),
 `call_events` (Incoming, Ringing, Answered, Ended; chamar depois de cada lote recebido e de

@@ -11,6 +11,13 @@
          microfone quando a app sai do ecra), altifalante/auricular e vibracao ao tocar. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Videochamadas (fase 5b): a camara e pedida so quando se carrega no botao da camara
+         (tambem a usa o leitor de QR). O servico da chamada passa a ser tambem do tipo
+         "camera" enquanto a camara esta ligada. Telemoveis sem camara instalam na mesma. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Chamadas com a app fechada ou o telemovel bloqueado (fase 4b): o ecra da chamada
@@ -51,11 +58,12 @@
             android:authorities="${applicationId}.ficheiros"
             android:exported="false"
             android:grantUriPermissions="true" />
-        <!-- Chamada de voz em curso (Calls.kt): mantem o microfone com a app fora do ecra. -->
+        <!-- Chamada em curso (Calls.kt): mantem o microfone (e a camara, com video) com a app
+             fora do ecra. -->
         <service
             android:name=".CallService"
             android:exported="false"
-            android:foregroundServiceType="microphone" />
+            android:foregroundServiceType="microphone|camera" />
         <!-- "Recusar" na notificacao da chamada a chegar (Calls.kt). -->
         <receiver
             android:name=".CallActionReceiver"

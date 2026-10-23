@@ -30,6 +30,8 @@ import uniffi.qt_ffi.AttachmentRef
 import uniffi.qt_ffi.CallAudio
 import uniffi.qt_ffi.CallEndReason
 import uniffi.qt_ffi.CallEvent
+import uniffi.qt_ffi.VideoPause
+import uniffi.qt_ffi.VideoResponse
 import uniffi.qt_ffi.AttachmentState
 import uniffi.qt_ffi.ChatMessage
 import uniffi.qt_ffi.ConversationSummary
@@ -173,7 +175,43 @@ data class CallUi(
     val speaker: Boolean = false,
     /** Porque acabou (no ecra durante uns segundos). */
     val endText: String = "",
+    val video: VideoUi = VideoUi(),
 )
+
+/** Video da chamada (fase 5b). */
+data class VideoUi(
+    /** Os dois lados tem video: o botao da camara aparece. */
+    val supported: Boolean = false,
+    /** A minha camara ligada (o outro so a ve depois de aceitar). */
+    val camera: Boolean = false,
+    val front: Boolean = true,
+    /** Aceitei o video do outro. */
+    val accepted: Boolean = false,
+    /** Recusei o pedido atual do outro ("Agora nao"). */
+    val declined: Boolean = false,
+    val peerCamera: Boolean = false,
+    val peerAccepts: Boolean = false,
+    val peerDeclined: Boolean = false,
+    val paused: VideoPause? = null,
+    /** Pelo servidor (sem ligacao direta): no maximo 360p. */
+    val limitedByRelay: Boolean = false,
+    /** O contacto esta verificado (sem isso nunca ha ligacao direta). */
+    val verified: Boolean = false,
+    /** Imagem do outro: tamanho e rotacao (para a por direita no ecra). */
+    val remoteW: Int = 0,
+    val remoteH: Int = 0,
+    val remoteRotation: Int = 0,
+    /** Pre-visualizacao da minha camara: tamanho (muda com a camara). */
+    val previewW: Int = 0,
+    val previewH: Int = 0,
+) {
+    /** "[Nome] quer mostrar video": a camara dele ligada e eu ainda nao respondi. */
+    val request: Boolean get() = peerCamera && !accepted && !declined
+    /** A minha camara ligada e o outro ainda nao respondeu ("A espera de [Nome]..."). */
+    val waiting: Boolean get() = camera && !peerAccepts && !peerDeclined
+    /** O video do outro esta no ecra. */
+    val showRemote: Boolean get() = accepted && peerCamera
+}
 
 /** O grupo de uma conversa ("g:..."), se for de um grupo. */
 fun UiState.groupOf(conversationId: String): GroupInfo? =
@@ -245,6 +283,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var callIO: CallAudioIO? = null
     /** De segundo a segundo durante uma chamada: eventos, expiracao e a linha tecnica. */
     @Volatile private var callTicker: Job? = null
+    /** Video: camara + codificador, descodificador e o aviso de mudanca de rede. */
+    @Volatile private var videoSender: VideoSender? = null
+    @Volatile private var videoReceiver: VideoReceiver? = null
+    @Volatile private var stopNetWatch: (() -> Unit)? = null
+    @Volatile private var selfPreview: android.graphics.SurfaceTexture? = null
+    @Volatile private var remoteSurface: android.view.Surface? = null
     private val callSounds = CallSounds(app)
     /**
      * O ficheiro dos contactos existe mas nao abriu nesta sessao: nao se grava por cima nem se
@@ -2418,6 +2462,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun stopCallMedia() {
+        stopVideo()
         callSounds.stop()
         // Sem CallAudioIO (ninguem atendeu ou o microfone falhou) nao ha quem devolva o som ao normal.
         callIO?.stop() ?: callSounds.leaveRoute()
@@ -2443,6 +2488,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val client = qt ?: break
                 try {
                     handleCallEvents(client)
+                    refreshVideoParams()
                     callAudio?.stats()?.let { st ->
                         val via = if (st.transport == "udp") "UDP" else if (st.transport == "websocket") "WebSocket" else st.transport
                         val net = if (st.direct) "direto" + (if (st.bothPaths) " + servidor" else "") else via
@@ -2501,6 +2547,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             CallService.start(getApplication())
             _ui.update { it.copy(call = c.copy(phase = CallPhase.ACTIVE, answeredAt = SystemClock.elapsedRealtime())) }
             startCallIO()
+            videoOnAnswered(client, c.callId, c.contactId)
             handleCallEvents(client)
         } catch (e: Exception) {
             endCallLocal(s(R.string.t_a_chamada_ja_nao_esta_disponivel))
@@ -2657,6 +2704,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         callSounds.stop(keepRoute = true)
                         _ui.update { it.copy(call = c.copy(phase = CallPhase.ACTIVE, answeredAt = SystemClock.elapsedRealtime())) }
                         startCallIO()
+                        videoOnAnswered(client, c.callId, c.contactId)
                     }
                 }
                 is CallEvent.Ended -> {
@@ -2665,11 +2713,185 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         endCallLocal(endText(ev.reason, c.phase == CallPhase.INCOMING))
                     }
                 }
-                // Video (fase 5a no nucleo): o ecra do video chega na 5b.
-                is CallEvent.Video -> {}
+                is CallEvent.Video -> onVideoEvent(ev)
             }
         }
         flushOutbox()
+    }
+
+    // ------------------------------------------------------------------ video (fase 5b)
+
+    /** O outro lado: tem video, ligou/desligou a camara, aceitou ou recusou o meu. */
+    private fun onVideoEvent(ev: CallEvent.Video) {
+        val c = _ui.value.call ?: return
+        if (c.callId != ev.callId) return
+        val v = c.video
+        // A camara dele voltou a ligar: e um pedido novo (a minha recusa antiga ja nao vale).
+        val declined = if (ev.peerCamera && !v.peerCamera) false else v.declined
+        val nv = v.copy(
+            supported = ev.supported,
+            peerCamera = ev.peerCamera,
+            peerAccepts = ev.peerAccepts,
+            peerDeclined = ev.peerDeclined,
+            declined = declined,
+        )
+        _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = nv)) } ?: u }
+        // Recusou ver o meu video: desliga a minha camara (ninguem a ia ver) e avisa.
+        if (ev.peerDeclined && v.camera && !v.peerDeclined) {
+            _ui.update { it.copy(notice = s(R.string.video_declined, c.name)) }
+            setCamera(false)
+        }
+        syncReceiver()
+    }
+
+    /** O descodificador so corre com o video do outro aceite e no ecra. */
+    private fun syncReceiver() {
+        val v = _ui.value.call?.video ?: return
+        val a = callAudio ?: return
+        if (v.showRemote) {
+            val r = videoReceiver ?: VideoReceiver(a) { w, h, rot ->
+                _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = cur.video.copy(remoteW = w, remoteH = h, remoteRotation = rot))) } ?: u }
+            }.also {
+                videoReceiver = it
+                it.setSurface(remoteSurface)
+                it.start()
+            }
+            r.setSurface(remoteSurface)
+        } else {
+            videoReceiver?.stop()
+            videoReceiver = null
+        }
+    }
+
+    /** Chamada atendida: o outro lado tem video? E a rede (Wi-Fi ou dados) para o teto. */
+    private fun videoOnAnswered(client: QtClient, callId: String, contactId: String) {
+        val app = getApplication<Application>()
+        val supported = runCatching { client.callVideoSupported(callId) }.getOrDefault(false)
+        val verified = runCatching { client.contactVerified(contactId) }.getOrDefault(false)
+        _ui.update { u ->
+            u.call?.let { cur -> if (cur.callId == callId) u.copy(call = cur.copy(video = cur.video.copy(supported = cur.video.supported || supported, verified = verified))) else u } ?: u
+        }
+        callAudio?.setNetwork(VideoNet.current(app))
+        if (stopNetWatch == null) stopNetWatch = VideoNet.watch(app) { kind -> callAudio?.setNetwork(kind) }
+    }
+
+    /** Pausa e teto do relay, para as mensagens no ecra. */
+    private fun refreshVideoParams() {
+        val c = _ui.value.call ?: return
+        if (!c.video.camera && !c.video.showRemote) return
+        val p = callAudio?.videoParams() ?: return
+        if (p.paused != c.video.paused || p.limitedByRelay != c.video.limitedByRelay) {
+            _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = cur.video.copy(paused = p.paused, limitedByRelay = p.limitedByRelay))) } ?: u }
+        }
+    }
+
+    /** Botao da camara (a permissao ja foi pedida pela Activity). Ligar e um pedido ao outro. */
+    fun toggleCamera() = io {
+        val c = _ui.value.call ?: return@io
+        if (c.phase != CallPhase.ACTIVE || !c.video.supported) return@io
+        if (!c.video.camera && premiumBlocked()) return@io
+        setCamera(!c.video.camera)
+    }
+
+    private fun setCamera(on: Boolean) {
+        val client = qt ?: return
+        val c = _ui.value.call ?: return
+        try {
+            client.callVideoSetCamera(c.callId, on)
+        } catch (e: Exception) {
+            Log.w(TAG, "camara: ${e.safeMsg()}")
+            return
+        }
+        _ui.update { u ->
+            u.call?.let { cur ->
+                val v = cur.video
+                // Ligar a minha camara tambem aceita o video dele.
+                u.copy(call = cur.copy(video = if (on) v.copy(camera = true, accepted = true, declined = false, peerDeclined = false) else v.copy(camera = false)))
+            } ?: u
+        }
+        viewModelScope.launch(Dispatchers.IO) { runCatching { flushOutbox() } }
+        if (on) startSender() else stopSender()
+        syncReceiver()
+        CallService.update(getApplication(), camera = on)
+    }
+
+    /** Resposta ao pedido do outro: ver, ver e ligar a minha camara, ou agora nao. */
+    fun respondVideo(response: VideoResponse) = io {
+        val client = qt ?: return@io
+        val c = _ui.value.call ?: return@io
+        if (response == VideoResponse.VIEW_AND_CAMERA && premiumBlocked()) return@io
+        try {
+            client.callVideoRespond(c.callId, response)
+        } catch (e: Exception) {
+            Log.w(TAG, "video: ${e.safeMsg()}")
+            return@io
+        }
+        _ui.update { u ->
+            u.call?.let { cur ->
+                val v = cur.video
+                val nv = when (response) {
+                    VideoResponse.VIEW -> v.copy(accepted = true, declined = false)
+                    VideoResponse.VIEW_AND_CAMERA -> v.copy(accepted = true, declined = false, camera = true)
+                    VideoResponse.NOT_NOW -> v.copy(accepted = false, declined = true)
+                }
+                u.copy(call = cur.copy(video = nv))
+            } ?: u
+        }
+        flushOutbox()
+        if (response == VideoResponse.VIEW_AND_CAMERA) {
+            startSender()
+            CallService.update(getApplication(), camera = true)
+        }
+        syncReceiver()
+    }
+
+    /** Frontal <-> traseira. */
+    fun switchCamera() {
+        val vs = videoSender ?: return
+        vs.switchCamera()
+        _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = cur.video.copy(front = !cur.video.front))) } ?: u }
+    }
+
+    private fun startSender() {
+        if (videoSender != null) return
+        val a = callAudio ?: return
+        val front = _ui.value.call?.video?.front ?: true
+        videoSender = VideoSender(getApplication(), a).also { vs ->
+            vs.onError = { _ui.update { it.copy(notice = s(R.string.video_camera_failed)) } }
+            vs.onPreview = {
+                val size = vs.previewSize
+                if (size != null) {
+                    _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = cur.video.copy(previewW = size.width, previewH = size.height))) } ?: u }
+                }
+            }
+            vs.setPreview(selfPreview)
+            vs.start(front)
+        }
+    }
+
+    private fun stopSender() {
+        videoSender?.stop()
+        videoSender = null
+    }
+
+    private fun stopVideo() {
+        stopSender()
+        videoReceiver?.stop()
+        videoReceiver = null
+        stopNetWatch?.invoke()
+        stopNetWatch = null
+    }
+
+    /** A vista da minha camara (aparece ou desaparece com o ecra). */
+    fun setSelfPreview(st: android.graphics.SurfaceTexture?) {
+        selfPreview = st
+        videoSender?.setPreview(st)
+    }
+
+    /** A vista do video do outro. */
+    fun setRemoteSurface(surface: android.view.Surface?) {
+        remoteSurface = surface
+        videoReceiver?.setSurface(surface)
     }
 
     // ------------------------------------------------------------------ utilitarios

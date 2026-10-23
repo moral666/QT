@@ -6,6 +6,21 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 23 de outubro de 2026: videochamadas na app Android, com a app aberta (fase 5b)
+
+- Botão "Ligar câmara" na chamada (só se os dois lados tiverem vídeo). Ligar a câmara é um pedido: o
+  outro vê "[Nome] quer mostrar vídeo" com Ver, Ligar a minha câmara e Agora não; quem pediu vê-se a si
+  próprio com "À espera de [Nome]…". Nada do vídeo sai antes de o outro aceitar.
+- Vídeo do outro em ecrã inteiro e a minha câmara num canto; trocar câmara frontal/traseira; desligar
+  a câmara. Mensagens de pausa por rede fraca, de limite do mês pelo servidor e de qualidade limitada
+  (contacto por verificar).
+- Câmara (Camera2) e H.264 em hardware (MediaCodec): débito, resolução, imagens/s e imagens completas
+  seguem o que o núcleo pede; rotação enviada com cada imagem; descodificador que recomeça e pede
+  uma imagem completa se falhar. Rede Wi-Fi ou dados móveis passada ao núcleo (teto da ligação direta).
+- FLAG_SECURE no ecrã da chamada; serviço da chamada também do tipo câmara com a câmara ligada; a
+  permissão da câmara só é pedida ao carregar no botão. Textos em dez línguas.
+- A build Android passa a anunciar vídeo (feature `video`).
+
 ### 23 de outubro de 2026: videochamadas, núcleo e relay (fase 5a)
 
 - Vídeo dentro da chamada de voz, pelo mesmo caminho (direto ou relay, com a mesma duplicação e queda
