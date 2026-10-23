@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -173,7 +175,9 @@ fun LanguageDialog(onPick: (String) -> Unit, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text(s(R.string.lang_menu)) },
         text = {
-            Column {
+            // Com dez linguas a lista nao cabe em ecras mais baixos: desliza (0.9.31; antes o hindi
+            // e o arabe ficavam esmagados um em cima do outro e o arabe sem nome).
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 options.forEach { (tag, label) ->
                     Row(
                         Modifier.fillMaxWidth().clickable { onPick(tag) }.padding(vertical = 4.dp),

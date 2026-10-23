@@ -6,6 +6,13 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 23 de outubro de 2026: recuperar a conta e menu Idioma (app Android 0.9.31)
+
+- Ao voltar à app no ecrã de recuperar a conta (ex.: depois de ir copiar as 12 palavras) aparecia um erro:
+  o refrescamento ao voltar pedia os grupos sem haver identidade. Agora só refresca com identidade.
+- Menu Idioma: a lista desliza. Com dez línguas não cabia em ecrãs mais baixos (hindi e árabe esmagados,
+  o árabe sem nome).
+
 ### 23 de outubro de 2026: altifalante antes de atender (app Android 0.9.30)
 
 - O botão do altifalante passa a funcionar enquanto se chama: o telemóvel entra em modo de chamada logo
