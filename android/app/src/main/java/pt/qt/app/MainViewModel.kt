@@ -492,7 +492,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // O segundo plano pode ter recebido mensagens ou estar a tocar uma chamada.
         io {
             val c = qt ?: return@io
-            if (_ui.value.locked) return@io
+            // Sem identidade (ecra inicial ou a recuperar a conta) nao ha nada para refrescar: os
+            // grupos pedem a identidade e o erro aparecia ao voltar a app (0.9.31; ex.: sair para
+            // copiar as 12 palavras de um gestor de palavras-passe).
+            if (_ui.value.locked || !_ui.value.hasIdentity) return@io
             refreshViews(c)
             adoptRinging(c)
             // O toque do segundo plano ja tinha acabado: bloqueia como devia.
