@@ -55,6 +55,12 @@ pub struct ServerConfig {
     /// Conta do operador (`hex` da chave Ed25519 de `/etc/qt/operator.pub`): so ela faz
     /// pedidos `Admin*` (denuncias e banimentos). `None` = desligados.
     pub operator: Option<String>,
+    /// Emissor das fichas do video (0006): chaves do mes, da semente. `None` = desligado.
+    pub fichas: Option<Arc<crate::fichas::IssuerKeys>>,
+    /// Fichas por conta e por mes (1 ficha = 1 minuto de video pelo relay): quota configuravel.
+    pub fichas_per_month: u32,
+    /// Pedidos de fichas por conta (`IssueFichas`).
+    pub fichas_rate: crate::limits::Rate,
 }
 
 impl Default for ServerConfig {
@@ -75,6 +81,10 @@ impl Default for ServerConfig {
             // Uma copia tem ate 8 partes: chega para refazer a copia algumas vezes por minuto.
             backup_rate: crate::limits::Rate { burst: 40, per_minute: 20 },
             operator: None,
+            fichas: None,
+            fichas_per_month: qt_core::fichas::DEFAULT_PER_MONTH,
+            // Um lote por mes chega; a folga e para quotas maiores (varios lotes) e repeticoes.
+            fichas_rate: crate::limits::Rate { burst: 6, per_minute: 2 },
         }
     }
 }
@@ -685,6 +695,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
         | ClientMessage::AdminBan { .. }
         | ClientMessage::AdminUnban { .. }
         | ClientMessage::AdminListBans
+        | ClientMessage::AdminSetFichasQuota { .. }
             if cfg.operator.as_deref() != Some(me) =>
         {
             err(crate::protocol::NOT_OPERATOR)
@@ -811,6 +822,91 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             Ok(entries) => ServerMessage::PremiumList { entries },
             Err(e) => internal(e),
         },
+        ClientMessage::IssueFichas { epoch, blinded } => issue_fichas(store, me, epoch, &blinded, cfg).await,
+        ClientMessage::AdminSetFichasQuota { user_id, per_month } => {
+            if !is_valid_user_id(&user_id) {
+                return err("user_id invalido");
+            }
+            match store.set_fichas_quota(&user_id, per_month).await {
+                Ok(()) => ServerMessage::Ack,
+                Err(e) => internal(e),
+            }
+        }
+    }
+}
+
+/// Emissao das fichas do video (0006). So conta quantas deu a conta neste mes: nao guarda nem
+/// regista o pedido, a resposta ou a hora (os elementos sao cegos: nao dizem que fichas sao).
+async fn issue_fichas(store: &Store, me: &str, epoch: u32, blinded: &str, cfg: &ServerConfig) -> ServerMessage {
+    use qt_core::fichas::{current_epoch, ELEMENT_LEN, MAX_BATCH};
+    let Some(keys) = cfg.fichas.as_ref() else { return err(crate::protocol::FICHAS_OFF) };
+    // base64 de ate MAX_BATCH elementos.
+    if blinded.len() > (MAX_BATCH * ELEMENT_LEN).div_ceil(3) * 4 {
+        return err("pedido de fichas demasiado grande");
+    }
+    if !crate::limits::allow(crate::limits::Limited::Fichas, me, cfg.fichas_rate) {
+        stats::inc(&STATS.rate_limited);
+        return err(crate::protocol::RATE_LIMITED);
+    }
+    match store.is_registered(me).await {
+        Ok(true) => {}
+        Ok(false) => {
+            stats::inc(&STATS.not_registered);
+            return err(crate::protocol::NOT_REGISTERED);
+        }
+        Err(e) => return internal(e),
+    }
+    let quota = match store.fichas_quota(me).await {
+        Ok(q) => q.unwrap_or(cfg.fichas_per_month),
+        Err(e) => return internal(e),
+    };
+    let now_epoch = current_epoch();
+    let Some(issuer) = keys.for_epoch(now_epoch) else {
+        stats::inc(&STATS.internal_errors);
+        return err("erro interno");
+    };
+    let public_key = b64().encode(issuer.public_key());
+    let reply = |granted: u32, issued: u32, evaluated: &[u8], proof: &[u8]| ServerMessage::Fichas {
+        epoch: now_epoch,
+        public_key: public_key.clone(),
+        evaluated: b64().encode(evaluated),
+        proof: b64().encode(proof),
+        granted,
+        remaining: quota.saturating_sub(issued),
+        per_month: quota,
+    };
+    if epoch != now_epoch {
+        // O telemovel esta noutro mes (relogio): diz qual e, sem dar nada.
+        return match store.fichas_issued(me, now_epoch).await {
+            Ok(issued) => reply(0, issued, &[], &[]),
+            Err(e) => internal(e),
+        };
+    }
+    let Ok(raw) = b64().decode(blinded) else { return err("pedido de fichas invalido") };
+    if raw.is_empty() || !raw.len().is_multiple_of(ELEMENT_LEN) || raw.len() / ELEMENT_LEN > MAX_BATCH {
+        return err("pedido de fichas invalido");
+    }
+    let n = (raw.len() / ELEMENT_LEN) as u32;
+    let (granted, issued) = match store.fichas_take(me, now_epoch, n, quota).await {
+        Ok(x) => x,
+        Err(e) => return internal(e),
+    };
+    if granted == 0 {
+        return reply(0, issued, &[], &[]);
+    }
+    // ~1 ms por ficha num servidor pequeno: fora das threads que tratam as ligacoes.
+    let part = raw[..granted as usize * ELEMENT_LEN].to_vec();
+    let iss = issuer.clone();
+    match tokio::task::spawn_blocking(move || iss.issue(&part)).await {
+        Ok(Ok((evaluated, proof))) => {
+            stats::add(&STATS.fichas_issued, granted as u64);
+            reply(granted, issued, &evaluated, &proof)
+        }
+        _ => {
+            // Elementos invalidos: nada foi dado, a reserva volta.
+            let _ = store.fichas_refund(me, now_epoch, granted).await;
+            err("pedido de fichas invalido")
+        }
     }
 }
 

@@ -10,19 +10,19 @@
 //!   * Cada lado contribui 32 bytes aleatorios (oferta e resposta). As chaves do
 //!     audio, o codigo da sala e a chave do relay saem dai (`qt_core::call`).
 //!   * Tudo fica SO em memoria (nada em disco). Uma chamada de cada vez.
-//!   * O audio comeca SEMPRE pelo relay. LIGACAO DIRETA (P2P, fase 5) so depois de
-//!     atender e so se, DESTE lado, o outro estiver nos contactos (`call_contacts_sync`),
-//!     nao bloqueado, e eu tiver dito OK na janela de aviso desse contacto
-//!     (`call_set_direct_choice`; `p2p_allowed`). Sem verificacao, QR nem codigos (decisao
-//!     do Nuno a 23/10/2026):
+//!   * O audio comeca SEMPRE pelo relay. LIGACAO DIRETA (P2P, fase 5) AUTOMATICA, ja na
+//!     primeira chamada, so depois de atender e so se, DESTE lado, o outro estiver nos
+//!     contactos (`call_contacts_sync`) e nao bloqueado (`p2p_allowed`). Sem janela de aviso,
+//!     opcao, verificacao, QR nem codigos (decisao do Nuno a 23/10/2026, 0006; substitui o OK
+//!     por contacto do 0005). Cada lado ve o IP do outro (protocol-spec, threat model):
 //!       1. cada lado que cumpre a regra envia "posso" (op 5, sem enderecos);
 //!       2. so quem enviou "posso" E recebeu o "posso" do outro envia os seus enderecos
-//!          (op 6). Assim so ha enderecos entre contactos MUTUOS que disseram OK: quem nao
-//!          tem o outro nos contactos (ou disse "Agora nao") nunca envia "posso";
+//!          (op 6). Assim so ha enderecos entre contactos MUTUOS: quem nao tem o outro nos
+//!          contactos (ou o bloqueou) nunca envia "posso";
 //!       3. os enderecos recebidos so vao para o motor de quem enviou "posso" (a regra
 //!          volta a ser verificada nesse momento).
-//!   * Contacto apagado, bloqueado ou "Agora nao" a meio de uma chamada: o audio volta logo
-//!     ao relay e os meus enderecos ja nao saem.
+//!   * Contacto apagado, bloqueado ou tirado dos contactos a meio de uma chamada: o audio
+//!     volta logo ao relay e os meus enderecos ja nao saem.
 //!   * O motor (`qt_call::engine`) tenta o caminho direto e, se falhar, fica no relay sem
 //!     cortar a chamada. Uma versao antiga da app ignora as ops 5 e 6: fica no relay.
 //!   * VIDEO (fase 5a). Depois de atender, quem tem motor de video envia "tenho video" (op
@@ -95,9 +95,9 @@ pub const MAX_P2P_ADDRS: usize = 5;
 const _: () = assert!(17 + 1 + MAX_P2P_ADDRS * ADDR_BYTES <= 128);
 /// Esta nos meus contactos (a lista e da app: `call_contacts_sync`).
 const KV_CONTACT: &str = "call:contact:";
-/// Resposta a janela de aviso da ligacao direta: [1] OK, [0] "Agora nao". Sem chave: nunca
-/// foi perguntado (fica no relay).
-const KV_DIRECT: &str = "call:direct:";
+/// Resposta a antiga janela de aviso da ligacao direta (0005). Ja nao se usa: apagada no
+/// `call_contacts_sync` (o P2P e automatico entre contactos mutuos desde o 0006).
+const KV_DIRECT_OLD: &str = "call:direct:";
 /// O contacto disse que tem video (anuncio ou numa chamada).
 const KV_PEER_VIDEO: &str = "call:video:";
 /// O que ja anunciei a este contacto (o byte das capacidades).
@@ -299,6 +299,17 @@ pub(crate) struct Calls {
 }
 
 impl Calls {
+    /// Ha uma chamada (a tocar ou atendida)?
+    pub(crate) fn in_call(&self) -> bool {
+        self.cur.is_some()
+    }
+
+    /// Ja ha motor para a chamada `id`?
+    #[cfg(feature = "calls")]
+    pub(crate) fn has_engine(&self, id: &[u8; 16]) -> bool {
+        self.cur.as_ref().is_some_and(|k| &k.id == id && k.audio.is_some())
+    }
+
     fn push(&mut self, e: CallEvent) {
         if self.events.len() >= MAX_EVENTS {
             self.events.pop_front();
@@ -372,24 +383,15 @@ fn is_contact(c: &st::rusqlite::Connection, cid: &str) -> Result<bool, QtError> 
     Ok(st::kv_get(c, &format!("{KV_CONTACT}{cid}"))?.is_some())
 }
 
-/// Resposta a janela de aviso deste contacto: `None` = ainda nao foi perguntado.
-fn direct_choice(c: &st::rusqlite::Connection, cid: &str) -> Result<Option<bool>, QtError> {
-    Ok(st::kv_get(c, &format!("{KV_DIRECT}{cid}"))?.map(|v| v.first() == Some(&1)))
-}
-
 /// A REGRA da ligacao direta, deste lado: o outro esta nos meus contactos, nao esta
-/// bloqueado, eu disse OK na janela de aviso dele, e ha motor de audio nesta build. O outro
-/// lado aplica a mesma regra (so envia "posso" se me tiver nos contactos): por isso so ha
-/// ligacao direta entre contactos MUTUOS.
+/// bloqueado, e ha motor de audio nesta build. O outro lado aplica a mesma regra (so envia
+/// "posso" se me tiver nos contactos): por isso so ha ligacao direta entre contactos MUTUOS.
 fn p2p_allowed(c: &st::rusqlite::Connection, cid: &str) -> Result<bool, QtError> {
-    Ok(cfg!(feature = "calls")
-        && is_contact(c, cid)?
-        && direct_choice(c, cid)? == Some(true)
-        && !is_blocked_in(c, cid)?)
+    Ok(cfg!(feature = "calls") && is_contact(c, cid)? && !is_blocked_in(c, cid)?)
 }
 
-/// O contacto deixou de cumprir a regra (apagado, bloqueado, fora da lista ou "Agora nao"):
-/// se houver uma chamada com ele, o audio volta logo ao relay e os meus enderecos ja nao saem.
+/// O contacto deixou de cumprir a regra (apagado, bloqueado ou fora da lista): se houver uma
+/// chamada com ele, o audio volta logo ao relay e os meus enderecos ja nao saem.
 pub(crate) fn p2p_revoke(client: &QtClient, cid: &str) {
     let calls = crate::client::relock(&client.calls);
     if let Some(call) = calls.cur.as_ref().filter(|k| k.contact == cid) {
@@ -404,7 +406,7 @@ pub(crate) fn p2p_revoke(client: &QtClient, cid: &str) {
 
 /// Contacto apagado: esquece tudo o que as chamadas guardam dele.
 pub(crate) fn forget_contact(c: &st::rusqlite::Connection, cid: &str) -> Result<(), QtError> {
-    for k in [KV_CONTACT, KV_DIRECT, KV_PEER_VIDEO, KV_CAPS_SENT] {
+    for k in [KV_CONTACT, KV_DIRECT_OLD, KV_PEER_VIDEO, KV_CAPS_SENT] {
         st::kv_delete(c, &format!("{k}{cid}"))?;
     }
     Ok(())
@@ -758,7 +760,13 @@ use crate::call_audio::CallAudio;
 use std::sync::Arc;
 #[cfg(feature = "calls")]
 /// Arranca o motor para a chamada `id` (chamado por `QtClient::call_audio_start`).
-pub(crate) fn start_for_call(calls: &mut Calls, id: [u8; 16], relay_url: &str, relay_public_key: &[u8]) -> Result<Arc<CallAudio>, QtError> {
+pub(crate) fn start_for_call(
+    calls: &mut Calls,
+    id: [u8; 16],
+    relay_url: &str,
+    relay_public_key: &[u8],
+    wallet: Option<crate::fichas::CallWallet>,
+) -> Result<Arc<CallAudio>, QtError> {
     let call = match calls.cur.as_mut() {
         Some(k) if k.id == id => k,
         _ => return Err(bad("call_id")),
@@ -766,7 +774,9 @@ pub(crate) fn start_for_call(calls: &mut Calls, id: [u8; 16], relay_url: &str, r
     if let Some(a) = &call.audio {
         return Ok(a.clone());
     }
-    let cfg = crate::call_audio::engine_config(relay_url)?;
+    let mut cfg = crate::call_audio::engine_config(relay_url)?;
+    // Fichas deste mes para o video pelo relay (o caminho direto nao as gasta).
+    cfg.fichas = wallet.map(|(w, published)| qt_call::fichas::FichasConfig { wallet: w, relay_public_key: relay_public_key.to_vec(), published });
     let join = qt_call::engine::join_packet(relay_public_key, call.role, &call.room).map_err(|_| bad("relay_public_key"))?;
     let engine = qt_call::engine::CallEngine::start_pending(cfg, call.room.clone(), join).map_err(|_| QtError::Crypto)?;
     let audio = CallAudio::new(engine);
@@ -929,6 +939,8 @@ impl QtClient {
     /// resposta (o aviso "sem resposta" fica na outbox para enviar).
     pub fn call_events(&self) -> Result<Vec<CallEvent>, QtError> {
         let c = self.lock()?;
+        // Fichas do video que o motor ja usou: saem ja da base cifrada.
+        crate::fichas::flush_used_with(self, &c)?;
         let mut calls = crate::client::relock(&self.calls);
         expire(self, &c, &mut calls)?;
         // Os meus enderecos ficam prontos uns instantes depois de atender: envia-os aqui.
@@ -1030,17 +1042,19 @@ impl QtClient {
         Ok(item)
     }
 
-    /// CONTACTOS para as chamadas: a lista guardada na app (so eles podem ligar direto) e o
-    /// anuncio "tenho video" a quem ainda nao o recebeu (uma vez por contacto, se esta build
-    /// tem video). Chamar ao abrir e sempre que a lista mudar (como `presence_configure`).
-    /// Quem sai da lista volta ao relay (tambem a meio de uma chamada) e a resposta a janela
-    /// de aviso dele e esquecida. Devolve quantas mensagens ficaram na outbox.
+    /// CONTACTOS para as chamadas: a lista guardada na app (com eles, se for mutuo, a chamada
+    /// liga direto) e o anuncio "tenho video" a quem ainda nao o recebeu (uma vez por contacto,
+    /// se esta build tem video). Chamar ao abrir e sempre que a lista mudar (como
+    /// `presence_configure`). Quem sai da lista volta ao relay (tambem a meio de uma chamada).
+    /// Devolve quantas mensagens ficaram na outbox.
     pub fn call_contacts_sync(&self, contact_ids: Vec<String>) -> Result<u32, QtError> {
         let wanted: std::collections::HashSet<String> =
             contact_ids.into_iter().filter(|cid| crate::client::contact_to_identity(cid).is_ok()).collect();
         let c = self.lock()?;
         let capable = video_capable(&crate::client::relock(&self.calls));
         let tx = c.unchecked_transaction()?;
+        // Respostas da antiga janela de aviso (0005): ja nao contam para nada.
+        tx.execute("DELETE FROM kv WHERE k LIKE ?1", [format!("{KV_DIRECT_OLD}%")])?;
         let old: Vec<String> = {
             let mut stmt = tx.prepare("SELECT k FROM kv WHERE k LIKE ?1")?;
             let rows = stmt.query_map([format!("{KV_CONTACT}%")], |r| r.get::<_, String>(0))?;
@@ -1050,7 +1064,6 @@ impl QtClient {
         for cid in old {
             if !wanted.contains(&cid) {
                 st::kv_delete(&tx, &format!("{KV_CONTACT}{cid}"))?;
-                st::kv_delete(&tx, &format!("{KV_DIRECT}{cid}"))?;
                 gone.push(cid);
             }
         }
@@ -1078,29 +1091,6 @@ impl QtClient {
             p2p_revoke(self, &cid);
         }
         Ok(n)
-    }
-
-    /// Resposta a janela de aviso da ligacao direta deste contacto: `Some(true)` OK,
-    /// `Some(false)` "Agora nao" (fica pelo relay), `None` ainda nao foi perguntado (fica pelo
-    /// relay; a app mostra a janela antes da primeira chamada, nunca durante uma).
-    pub fn call_direct_choice(&self, contact_id: String) -> Result<Option<bool>, QtError> {
-        let c = self.lock()?;
-        direct_choice(&c, &contact_id)
-    }
-
-    /// Guarda a resposta a janela de aviso (ou a opcao no perfil do contacto). "Agora nao" a
-    /// meio de uma chamada com ele: o audio volta logo ao relay. OK so conta da proxima
-    /// chamada em diante.
-    pub fn call_set_direct_choice(&self, contact_id: String, allowed: bool) -> Result<(), QtError> {
-        let _ = crate::client::contact_to_identity(&contact_id)?;
-        {
-            let c = self.lock()?;
-            st::kv_set(&c, &format!("{KV_DIRECT}{contact_id}"), &[allowed as u8])?;
-        }
-        if !allowed {
-            p2p_revoke(self, &contact_id);
-        }
-        Ok(())
     }
 
     /// Contactos a quem se pode fazer uma videochamada (disseram que tem video). Vazio numa
@@ -1291,13 +1281,9 @@ mod p2p_tests {
             let p = &calls.cur.as_ref().expect("chamada").p2p;
             (p.ready_sent, p.peer_ready, p.addrs_sent, p.peer_addrs.is_some())
         }
-        /// Guarda `other` nos contactos (e anuncia o video, que o outro recebe ja aqui) e
-        /// responde a janela de aviso dele (`None`: ainda nao respondeu).
-        fn add(&self, other: &Peer, choice: Option<bool>) {
+        /// Guarda `other` nos contactos (e anuncia o video, que o outro recebe ja aqui).
+        fn add(&self, other: &Peer) {
             self.c.call_contacts_sync(vec![other.cid()]).unwrap();
-            if let Some(ok) = choice {
-                self.c.call_set_direct_choice(other.cid(), ok).unwrap();
-            }
             deliver(self, other);
         }
         /// Ops de chamada que este telemovel pos na outbox para `other`.
@@ -1313,10 +1299,10 @@ mod p2p_tests {
         crate::client::relock(&SENT_OPS)
     }
 
-    /// Contactos mutuos que disseram OK.
+    /// Contactos mutuos.
     fn friends(a: &Peer, b: &Peer) {
-        a.add(b, Some(true));
-        b.add(a, Some(true));
+        a.add(b);
+        b.add(a);
     }
 
     /// Entrega tudo o que `from` tem na outbox para `to`. Devolve quantas mensagens.
@@ -1391,8 +1377,9 @@ mod p2p_tests {
         false
     }
 
+    /// Contactos mutuos: direto logo na primeira chamada, sem janela nem opcao.
     #[test]
-    fn contactos_mutuos_com_ok_ligam_direto() {
+    fn contactos_mutuos_ligam_direto_logo_na_primeira_chamada() {
         let (a, b) = pair();
         friends(&a, &b);
         let (k, on_accept) = call(&a, &b);
@@ -1402,10 +1389,6 @@ mod p2p_tests {
         assert_eq!(a.state(), (true, true, true, true));
         assert_eq!(b.state(), (true, true, true, true));
         assert_eq!(a.ops_to(&b).iter().filter(|&&op| op == OP_P2P_ADDRS).count(), 1, "uma vez por chamada");
-        // "Agora nao" no perfil a meio: o audio deixa logo o caminho direto.
-        a.c.call_set_direct_choice(b.cid(), false).unwrap();
-        assert_eq!(a.c.call_direct_choice(b.cid()).unwrap(), Some(false));
-        assert!(run(&a, &b, 2, || !k.audio_a.stats().direct));
         a.c.call_hangup(k.id).unwrap();
     }
 
@@ -1414,9 +1397,8 @@ mod p2p_tests {
     #[test]
     fn so_um_lado_tem_o_outro_nos_contactos_nenhum_endereco_sai() {
         let (a, b) = pair();
-        a.add(&b, Some(true));
-        // B ate respondeu OK a janela, mas A nao esta na lista dele.
-        b.c.call_set_direct_choice(a.cid(), true).unwrap();
+        // A tem B nos contactos; A nao esta na lista de B.
+        a.add(&b);
         let (k, on_accept) = call(&a, &b);
         assert_eq!(on_accept, 2, "B so envia a resposta e o \"tenho video\"");
         run(&a, &b, 4, || false);
@@ -1426,24 +1408,6 @@ mod p2p_tests {
         assert!(!b.ops_to(&a).contains(&OP_P2P_READY));
         assert!(!k.audio_a.stats().direct && !k.audio_b.stats().direct);
         assert!(k.audio_b.p2p_local_candidates().is_none(), "B nem recolheu enderecos");
-    }
-
-    /// Contactos mutuos, mas B ainda nao respondeu a janela ou disse "Agora nao": tudo no relay.
-    #[test]
-    fn sem_ok_de_um_lado_fica_tudo_no_relay() {
-        for choice in [None, Some(false)] {
-            let (a, b) = pair();
-            a.add(&b, Some(true));
-            b.add(&a, choice);
-            let (k, on_accept) = call(&a, &b);
-            assert_eq!(on_accept, 2);
-            run(&a, &b, 4, || false);
-            assert_eq!(a.state(), (true, false, false, false), "{choice:?}");
-            assert_eq!(b.state(), (false, true, false, false), "{choice:?}");
-            assert!(!a.ops_to(&b).contains(&OP_P2P_ADDRS) && !b.ops_to(&a).contains(&OP_P2P_ADDRS), "{choice:?}");
-            assert!(!k.audio_a.stats().direct && !k.audio_b.stats().direct);
-            a.c.call_hangup(k.id).unwrap();
-        }
     }
 
     /// Bloquear ou apagar o contacto a meio de uma chamada direta: o audio volta ao relay.
@@ -1464,17 +1428,15 @@ mod p2p_tests {
         }
     }
 
-    /// Sair da lista de contactos (a app passa a lista sem ele) tambem volta ao relay, e a
-    /// resposta a janela e esquecida (se voltar a ser contacto, pergunta-se outra vez).
+    /// Sair da lista de contactos (a app passa a lista sem ele) tambem volta ao relay.
     #[test]
-    fn sair_da_lista_volta_ao_relay_e_esquece_a_resposta() {
+    fn sair_da_lista_volta_ao_relay() {
         let (a, b) = pair();
         friends(&a, &b);
         let (k, _) = call(&a, &b);
         assert!(run(&a, &b, 10, || k.audio_a.stats().direct && k.audio_b.stats().direct));
         a.c.call_contacts_sync(vec![]).unwrap();
         assert!(run(&a, &b, 2, || !k.audio_a.stats().direct));
-        assert_eq!(a.c.call_direct_choice(b.cid()).unwrap(), None);
         assert!(!a.allowed(&b));
     }
 
@@ -1482,20 +1444,49 @@ mod p2p_tests {
     fn regra_da_ligacao_direta() {
         let (a, b) = pair();
         assert!(!a.allowed(&b), "fora dos contactos");
-        assert_eq!(a.c.call_direct_choice(b.cid()).unwrap(), None);
         a.c.call_contacts_sync(vec![b.cid()]).unwrap();
-        assert!(!a.allowed(&b), "contacto, ainda sem resposta a janela");
-        a.c.call_set_direct_choice(b.cid(), false).unwrap();
-        assert!(!a.allowed(&b), "Agora nao");
-        a.c.call_set_direct_choice(b.cid(), true).unwrap();
-        assert!(a.allowed(&b));
+        assert!(a.allowed(&b), "contacto: logo, sem perguntar nada");
         a.c.block_contact(b.cid()).unwrap();
         assert!(!a.allowed(&b), "bloqueado");
         a.c.unblock_contact(b.cid()).unwrap();
         assert!(a.allowed(&b));
         a.c.delete_contact(b.cid()).unwrap();
         assert!(!a.allowed(&b), "apagado");
-        assert_eq!(a.c.call_direct_choice(b.cid()).unwrap(), None, "apagado: a resposta vai com ele");
+    }
+
+    /// Fichas do video (0006): nunca se pedem com uma chamada a decorrer (o relay das mensagens
+    /// podia juntar a hora do pedido a hora da chamada).
+    #[test]
+    fn nunca_pede_fichas_durante_uma_chamada() {
+        let (a, b) = pair();
+        friends(&a, &b);
+        let site = format!(r#"{{"versao":1,"fichas":{{"{:06}":"{}"}}}}"#, qt_core::fichas::epoch_of_unix(qt_core::fichas::unix_now()), "11".repeat(32));
+        a.c.fichas_set_published_keys(site.clone().into_bytes()).unwrap();
+        b.c.fichas_set_published_keys(site.into_bytes()).unwrap();
+        assert!(a.c.fichas_status().unwrap().due);
+        let id = a.c.call_start(b.cid()).unwrap().call_id;
+        assert!(!a.c.fichas_status().unwrap().due);
+        assert!(a.c.relay_request_fichas().unwrap().is_none());
+        deliver(&a, &b);
+        assert!(b.c.relay_request_fichas().unwrap().is_none(), "a tocar tambem nao");
+        a.c.call_hangup(id).unwrap();
+        a.c.call_events().unwrap();
+        assert!(a.c.fichas_status().unwrap().due, "depois de desligar a app escolhe uma hora qualquer");
+    }
+
+    /// A resposta guardada pela antiga janela de aviso (0005) e apagada e nao conta: um "Agora
+    /// nao" antigo ja nao tira a ligacao direta, nem um OK antigo a da a quem nao e contacto.
+    #[test]
+    fn resposta_antiga_da_janela_e_apagada() {
+        let (a, b) = pair();
+        {
+            let c = a.c.lock().unwrap();
+            st::kv_set(&c, &format!("{KV_DIRECT_OLD}{}", b.cid()), &[0]).unwrap();
+        }
+        a.c.call_contacts_sync(vec![b.cid()]).unwrap();
+        assert!(a.allowed(&b));
+        let c = a.c.lock().unwrap();
+        assert_eq!(st::kv_get(&c, &format!("{KV_DIRECT_OLD}{}", b.cid())).unwrap(), None);
     }
 
     // ------------------------------------------------------------------ video
@@ -1722,8 +1713,8 @@ mod p2p_tests {
     #[test]
     fn sem_video_numa_chamada_longa_o_botao_desaparece() {
         let (a, b) = pair();
-        a.add(&b, None);
-        b.add(&a, None);
+        a.add(&b);
+        b.add(&a);
         assert_eq!(a.c.call_video_contacts().unwrap(), vec![b.cid()]);
         crate::client::relock(&b.c.calls).no_video_caps = true;
         let (k, _) = call(&a, &b);

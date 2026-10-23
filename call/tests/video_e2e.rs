@@ -25,7 +25,9 @@ async fn relay_with(limits: CallLimits) -> Relay {
     let keys = qt_transport::generate_static_keypair().unwrap();
     let udp = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let target = RelayTarget { udp: udp.local_addr().unwrap().to_string(), ws_url: None };
-    serve(udp, None, &keys.private, limits);
+    // Estes testes sao do video em si: relay sem fichas (como antes do 0006). As fichas tem
+    // os testes delas em fichas_e2e.rs.
+    serve(udp, None, &keys.private, CallLimits { fichas: false, ..limits }, Default::default());
     Relay { target, public: keys.public }
 }
 

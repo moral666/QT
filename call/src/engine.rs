@@ -46,6 +46,12 @@
 //! tocar chega ao momento em que foi captada, pede uma imagem completa quando perde uma, e
 //! manda um relatorio a cada 250 ms (perdas, atraso de fila, perdas no AUDIO, rede).
 //!
+//! FICHAS (patch 0006, `crate::fichas`). O video que sai PELO RELAY gasta fichas anonimas (um
+//! bloco de 1 minuto cada), entregues ao relay pela propria sala; o caminho direto nao gasta
+//! nada. Sem credito, o video nao vai para o relay (nem se cifra: o contador nao avanca) e,
+//! sem fichas que sirvam, fica em pausa pelo relay (`Pause::RelayLimit`); a voz continua. Os
+//! relatorios de quem so ve continuam a passar (o relay deixa poucos sem fichas).
+//!
 //! As chaves nunca saem daqui: a app entrega a `MediaSession` (fase 1) e o pedido de
 //! entrada ja feito (`QtClient::call_join_packet`).
 
@@ -55,7 +61,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use qt_core::call::{join_payload, parse_join_ok, MediaSession, Role, RoomKeys, VideoSession, JOIN_KIND, JOIN_OK_KIND, JOIN_OK_LEN, JOIN_PROLOGUE};
+use qt_core::call::{join_payload, parse_join_ok, MediaSession, RelayVideo, Role, RoomKeys, VideoSession, JOIN_KIND, JOIN_OK_KIND, JOIN_OK_LEN, JOIN_PROLOGUE};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::codec::{Decoder, Encoder, EncoderConfig, FRAME_SAMPLES, MAX_OPUS_BYTES};
@@ -107,6 +113,9 @@ pub struct EngineConfig {
     pub simulated_direct_loss_percent: u32,
     /// So para testes: com caminho direto, envia sempre tambem pelo relay.
     pub test_both_paths: bool,
+    /// Fichas do video pelo relay (0006). `None`: sem fichas (video pelo relay so com um relay
+    /// que nao as peca; o caminho direto nao muda).
+    pub fichas: Option<crate::fichas::FichasConfig>,
 }
 
 impl EngineConfig {
@@ -119,6 +128,7 @@ impl EngineConfig {
             p2p_allow_loopback: false,
             simulated_direct_loss_percent: 0,
             test_both_paths: false,
+            fichas: None,
         }
     }
 }
@@ -184,6 +194,9 @@ pub struct VideoStats {
     /// Relatorios recebidos e, desses, os que diziam "nada esta a chegar".
     pub feedbacks: u64,
     pub stalls: u64,
+    /// Fichas gastas nesta chamada (blocos de video pelo relay) e credito que resta (s).
+    pub fichas_spent: u64,
+    pub relay_credit_secs: u32,
 }
 
 struct VideoState {
@@ -889,6 +902,16 @@ mod net {
         }
     }
 
+    /// Por onde sai o VIDEO, com as fichas: sem credito no relay, so pelo direto (`Both` passa
+    /// a `Direct`) ou fica a espera (`None`: nem se cifra).
+    fn video_route(route: Route, relay_ok: bool) -> Option<Route> {
+        match (route, relay_ok) {
+            (Route::Direct, _) | (Route::Both, false) => Some(Route::Direct),
+            (r, true) => Some(r),
+            (Route::Relay, false) => None,
+        }
+    }
+
     /// Envia um pacote pelo caminho `route`. Sem estar na sala, o relay deitava fora: nem se envia.
     #[cfg_attr(not(feature = "ws"), allow(unused_variables))]
     async fn send_out(udp: &Option<Arc<Udp>>, ws: &mut WsOpt, st: &State, d: &Direct, route: Route, packet: Vec<u8>) {
@@ -950,6 +973,7 @@ mod net {
         let mut rng = Rng(0x9E37_79B9_7F4A_7C15 ^ seed | 1);
         let mut tick = tokio::time::interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut fx = crate::fichas::Fichas::new(cfg.fichas.clone(), shared.room.clone());
 
         loop {
             tokio::select! {
@@ -971,6 +995,16 @@ mod net {
                             continue;
                         }
                     };
+                    // Fichas: a chave do mes ou a resposta a uma ficha.
+                    if crate::fichas::Fichas::is_fichas_packet(&data) {
+                        if let Some(crate::fichas::Effect::Mode(m)) = fx.on_packet(&data, Instant::now()) {
+                            if let Ok(mut v) = shared.video.lock() {
+                                v.stats.relay_mode = m as u8;
+                                v.ctl.set_relay_mode(m);
+                            }
+                        }
+                        continue;
+                    }
                     // Resposta "o teu endereco e ..." (so pelo UDP).
                     if !via_ws && data.len() == ADDR_OK_LEN && data[0] == ADDR_OK_KIND {
                         if let (Some(g), Some((txid, addr))) = (d.gather.as_mut(), parse_addr_ok(&shared.room, &data)) {
@@ -980,7 +1014,14 @@ mod net {
                         }
                         continue;
                     }
+                    let was_joined = st.joined_udp || st.joined_ws;
                     on_packet(&shared, &cfg, &mut st, &mut rng, &data, via_ws);
+                    // Acabou de entrar na sala: pergunta ja a chave das fichas deste mes.
+                    if !was_joined && (st.joined_udp || st.joined_ws) {
+                        if let Some(p) = fx.on_joined(Instant::now()) {
+                            send_out(&udp, &mut ws, &st, &d, Route::Relay, p).await;
+                        }
+                    }
                 }
                 Some(packet) = outbox.recv() => {
                     // Audio: sai logo, nunca espera pelo video.
@@ -989,11 +1030,11 @@ mod net {
                 }
                 _ = pace.tick() => {
                     let now = Instant::now();
-                    let out = pacer.take(&shared, now);
-                    if !out.is_empty() {
-                        let route = route_now(&udp, &cfg, &mut d, now);
-                        for p in out {
-                            send_out(&udp, &mut ws, &st, &d, route, p).await;
+                    let route = route_now(&udp, &cfg, &mut d, now);
+                    // Sem credito de fichas no relay: o video espera (nem se cifra).
+                    if let Some(vroute) = video_route(route, fx.relay_ok(now)) {
+                        for p in pacer.take(&shared, now) {
+                            send_out(&udp, &mut ws, &st, &d, vroute, p).await;
                         }
                     }
                 }
@@ -1028,12 +1069,37 @@ mod net {
                     p2p_tick(&shared, &cfg, udp.as_deref(), &st, &mut d, &mut rng).await;
                     let now = Instant::now();
                     let route = route_now(&udp, &cfg, &mut d, now);
-                    for p in video_tick(&shared, route == Route::Direct, &mut audio_ref, now) {
+                    let joined = st.joined_udp || st.joined_ws;
+                    if let Some(p) = fichas_tick(&shared, &mut fx, &d, route, joined, now) {
+                        send_out(&udp, &mut ws, &st, &d, Route::Relay, p).await;
+                    }
+                    let direct_video = video_route(route, fx.relay_ok(now)) == Some(Route::Direct);
+                    // Relatorios e pedidos de imagem: pelo caminho do audio (no relay passam sem fichas).
+                    for p in video_tick(&shared, direct_video, &mut audio_ref, now) {
                         send_out(&udp, &mut ws, &st, &d, route, p).await;
                     }
                 }
             }
         }
+    }
+
+    /// A cada 100 ms: fichas do video pelo relay. Devolve um pacote para o relay, se houver.
+    fn fichas_tick(shared: &Shared, fx: &mut crate::fichas::Fichas, d: &Direct, route: Route, joined: bool, now: Instant) -> Option<Vec<u8>> {
+        let sending = shared.video.lock().map(|v| v.sending).unwrap_or(false);
+        let want = sending && route == Route::Relay;
+        let searching = d.enabled && d.path.is_none() && d.discovery_until.is_none_or(|t| now < t);
+        let role = shared.media.lock().ok().and_then(|m| m.as_ref().map(|m| m.role()));
+        let out = fx.tick(now, joined, want, searching, role);
+        if let Ok(mut v) = shared.video.lock() {
+            v.stats.fichas_spent = fx.spent;
+            v.stats.relay_credit_secs = fx.credit_secs(now);
+            // Sem fichas que sirvam: pausa pelo relay (a voz continua; o direto continua com video).
+            if want && fx.exhausted(now) && v.stats.relay_mode != RelayVideo::Denied as u8 {
+                v.stats.relay_mode = RelayVideo::Denied as u8;
+                v.ctl.set_relay_mode(RelayVideo::Denied);
+            }
+        }
+        out
     }
 
     /// A cada 100 ms: o que o nucleo decidiu, recolha dos meus enderecos e sondas.

@@ -2,9 +2,11 @@
 # HAProxy em wss://<nome>/call). Instalado pelo deploy/aws/setup-ec2.sh.
 #
 # Processo a parte do relay das mensagens: precisa de receber UDP da Internet (o
-# qt-relay so fala com localhost), mas nao tem acesso ao Redis nem as contas: nao le
-# /etc/qt/relay.env (onde esta a password do Redis). So le a chave Noise do relay, a
-# do pin, para abrir os pedidos de entrada nas salas. Sem registos com IPs.
+# qt-relay so fala com localhost), mas nao tem acesso as contas: nao le /etc/qt/relay.env
+# (onde esta a password do Redis das contas). Le a chave Noise do relay (a do pin, para abrir
+# os pedidos de entrada nas salas) e a semente das fichas do video (0006, para as verificar),
+# e regista as fichas gastas no Redis com o utilizador qt-fichas (so SET em fichas:*; password
+# em /etc/qt-call-relay/fichas.env). Sem registos com IPs.
 
 [Unit]
 Description=QT relay das chamadas, voz e video (UDP 443, salas anonimas)
@@ -22,11 +24,15 @@ Environment=CALL_WS_BIND=127.0.0.1:9445
 # /var/lib/qt-call-relay (dono qt) e nunca o apaga ao atualizar ou reiniciar.
 StateDirectory=qt-call-relay
 Environment=CALL_STATE_FILE=/var/lib/qt-call-relay/mes
+# Fichas do video (0006): semente do qt-relay (so leitura) e o Redis do registo das gastas.
+Environment=CALL_FICHAS_SEED=/var/lib/qt/fichas_seed.bin
+EnvironmentFile=-/etc/qt-call-relay/fichas.env
 # Limites e video: no drop-in qt-call-relay.service.d/limites.conf, gerado pelo
 # setup-ec2.sh. Para mudar, passa o valor ao script uma vez (ex.: sudo
 # CALL_MONTHLY_EGRESS_GB=120 bash setup-ec2.sh); as atualizacoes seguintes mantem-no.
 #   CALL_MAX_ROOMS (2000), CALL_ROOMS_PER_IP (20), CALL_PACKETS_PER_SEC (100)
 #   CALL_VIDEO_BYTES_PER_SEC (150000), CALL_MONTHLY_EGRESS_GB (80), CALL_RELAY_VIDEO (1)
+#   CALL_FICHAS (1: video pelo relay so com fichas; 0: para todos, como antes)
 ExecStart=/usr/local/bin/qt-call-relay
 Restart=on-failure
 RestartSec=2

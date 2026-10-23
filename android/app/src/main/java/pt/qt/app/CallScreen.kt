@@ -58,7 +58,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
-import uniffi.qt_ffi.VideoPause
 import uniffi.qt_ffi.VideoResponse
 
 private val GREEN = Color(0xFF2E9E5B)
@@ -134,7 +133,11 @@ fun CallScreen(
             .background(if (videoOn) Brush.verticalGradient(listOf(Color.Black, Color.Black)) else Brush.verticalGradient(colors.topBarGradient)),
     ) {
         // Camadas do video (por baixo de tudo, ate as bordas do ecra).
-        if (showRemote) RemoteVideo(v, onRemoteSurface, Modifier.fillMaxSize())
+        if (showRemote) {
+            RemoteVideo(v, onRemoteSurface, Modifier.fillMaxSize())
+            // O video dele parou (pausa, rede, sem fichas): so a foto ou a inicial, sem texto.
+            if (v.remoteStalled) RemotePaused(call, colors.topBarGradient)
+        }
         if (showSelf) {
             val pip = Modifier
                 .align(Alignment.TopEnd)
@@ -219,16 +222,21 @@ fun CallScreen(
     }
 }
 
-/** A mensagem do video no topo, se houver (pausa, a espera, qualidade limitada). */
+/**
+ * A mensagem do video no topo, se houver: so "A espera de [Nome]..." (o pedido da camara).
+ * Nunca nada sobre rede, limites ou o caminho da chamada.
+ */
 @Composable
 private fun videoMessage(call: CallUi): String? {
     val v = call.video
-    if (!v.camera && !v.showRemote) return null
-    return when {
-        v.paused == VideoPause.WEAK_NETWORK -> s(R.string.video_paused_weak)
-        v.paused == VideoPause.RELAY_LIMIT -> s(R.string.video_paused_limit)
-        v.waiting -> s(R.string.video_waiting, call.name)
-        else -> null
+    return if (v.waiting) s(R.string.video_waiting, call.name) else null
+}
+
+/** O video do outro parou: tapa a ultima imagem com a foto ou a inicial dele, sem texto. */
+@Composable
+private fun RemotePaused(call: CallUi, gradient: List<Color>) {
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(gradient)), contentAlignment = Alignment.Center) {
+        Avatar(call.name, call.contactId, sizeDp = 112)
     }
 }
 

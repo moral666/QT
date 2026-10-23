@@ -127,7 +127,16 @@ if [ -f "$ENV_FILE" ] && grep -q '^REDIS_URL=redis://qt-relay:' "$ENV_FILE"; the
   REDIS_PASS=$(sed -n 's|^REDIS_URL=redis://qt-relay:\([0-9a-f]*\)@.*|\1|p' "$ENV_FILE")
 fi
 REDIS_PASS="${REDIS_PASS:-$(openssl rand -hex 32)}"
-sed "s/SUBSTITUI_POR_PASSWORD_FORTE/$REDIS_PASS/" "$SRC/deploy/redis/qt-redis.conf" > /etc/redis/qt-redis.conf
+# Fichas do video (0006): o relay das chamadas regista as fichas gastas com um utilizador
+# proprio do Redis (qt-fichas: so SET em fichas:*), com a password em /etc/qt-call-relay
+# (o qt-call-relay nao le /etc/qt). Mantida entre atualizacoes.
+FICHAS_ENV=/etc/qt-call-relay/fichas.env
+if [ -f "$FICHAS_ENV" ] && grep -q '^CALL_REDIS_URL=redis://qt-fichas:' "$FICHAS_ENV"; then
+  FICHAS_PASS=$(sed -n 's|^CALL_REDIS_URL=redis://qt-fichas:\([0-9a-f]*\)@.*|\1|p' "$FICHAS_ENV")
+fi
+FICHAS_PASS="${FICHAS_PASS:-$(openssl rand -hex 32)}"
+sed -e "s/SUBSTITUI_POR_PASSWORD_FORTE/$REDIS_PASS/" -e "s/SUBSTITUI_POR_PASSWORD_FICHAS/$FICHAS_PASS/" \
+  "$SRC/deploy/redis/qt-redis.conf" > /etc/redis/qt-redis.conf
 chown redis:redis /etc/redis/qt-redis.conf
 chmod 640 /etc/redis/qt-redis.conf
 grep -q '^include /etc/redis/qt-redis.conf' /etc/redis/redis.conf || echo 'include /etc/redis/qt-redis.conf' >> /etc/redis/redis.conf
@@ -136,6 +145,13 @@ systemctl restart redis-server
 
 # ---------- 6. Relay (systemd) ----------
 log "A configurar o servico do relay"
+# Fichas do video por conta e por mes (1 ficha = 1 minuto de video pelo relay): quota configuravel.
+# Para mudar: sudo RELAY_FICHAS_POR_MES=600 bash setup-ec2.sh (as atualizacoes seguintes mantem-no).
+PREV_FICHAS=""
+[ -f "$ENV_FILE" ] && PREV_FICHAS=$(sed -n 's/^RELAY_FICHAS_POR_MES=//p' "$ENV_FILE" | tail -n 1)
+case "$PREV_FICHAS" in ''|*[!0-9]*) PREV_FICHAS=300 ;; esac
+V_FICHAS="${RELAY_FICHAS_POR_MES:-$PREV_FICHAS}"
+case "$V_FICHAS" in ''|*[!0-9]*) echo "Aviso: RELAY_FICHAS_POR_MES='$V_FICHAS' nao e um numero; fica $PREV_FICHAS" >&2; V_FICHAS="$PREV_FICHAS" ;; esac
 umask 027
 cat > "$ENV_FILE" <<EOF
 RELAY_BIND_ADDR=127.0.0.1:9443
@@ -152,6 +168,10 @@ RELAY_BLOB_MIN_FREE_MB=${RELAY_BLOB_MIN_FREE_MB:-1024}
 # casa). Travao em 10 000 ate ao teste de 25 000 a partir da AWS.
 # Para mudar: sudo RELAY_MAX_CONNECTIONS=20000 bash setup-ec2.sh
 RELAY_MAX_CONNECTIONS=${RELAY_MAX_CONNECTIONS:-10000}
+# Fichas do video pelo relay (0006): a semente das chaves de cada mes (criada no primeiro
+# arranque; o qt-call-relay so a le) e quantas fichas cada conta recebe por mes.
+FICHAS_SEED_PATH=/var/lib/qt/fichas_seed.bin
+RELAY_FICHAS_POR_MES=$V_FICHAS
 EOF
 umask 022
 # Notificacoes com a app fechada: Android (FCM) so se existir /etc/qt/fcm.json (a chave da
@@ -210,9 +230,16 @@ systemctl daemon-reload
 systemctl enable qt-relay >/dev/null 2>&1
 systemctl restart qt-relay
 
-# Relay das chamadas de voz: processo a parte (UDP publico, sem Redis). Usa a chave Noise
-# que o qt-relay criou no primeiro arranque; espera por ela.
-for _ in $(seq 1 15); do [ -s /var/lib/qt/relay_noise_key.bin ] && break; sleep 1; done
+# Relay das chamadas: processo a parte (UDP publico, sem acesso as contas). Usa a chave Noise
+# e a semente das fichas que o qt-relay criou no primeiro arranque; espera por elas.
+for _ in $(seq 1 15); do [ -s /var/lib/qt/relay_noise_key.bin ] && [ -s /var/lib/qt/fichas_seed.bin ] && break; sleep 1; done
+# Registo das fichas gastas: so o utilizador qt-fichas do Redis (password so aqui, root, 0600;
+# o systemd le o ficheiro antes de passar ao utilizador qt).
+install -d -o root -g root -m 700 /etc/qt-call-relay
+umask 077
+printf 'CALL_REDIS_URL=redis://qt-fichas:%s@127.0.0.1:6379\n' "$FICHAS_PASS" > "$FICHAS_ENV"
+umask 022
+chmod 600 "$FICHAS_ENV"
 cp "$SRC/deploy/systemd/qt-call-relay.service" /etc/systemd/system/qt-call-relay.service
 # Limites e video das chamadas. NAO vao para o $ENV_FILE: o qt-call-relay nao le /etc/qt (tem
 # a password do Redis). Ficam no drop-in limites.conf. Para mudar um valor, passa-o ao
@@ -221,6 +248,8 @@ cp "$SRC/deploy/systemd/qt-call-relay.service" /etc/systemd/system/qt-call-relay
 #   CALL_MONTHLY_EGRESS_GB   travao do mes: passado isto (GB enviados), video so a 240p (80)
 #   CALL_VIDEO_BYTES_PER_SEC video por lado (150000 = ~1,2 Mbit/s, 360p com folga)
 #   CALL_RELAY_VIDEO         0 = so voz pelo relay; em ligacao direta o video continua (1)
+#   CALL_FICHAS              1 = video pelo relay so com fichas (teto da conta, 0006);
+#                            0 = video pelo relay para todos, como antes (1)
 #   CALL_MAX_ROOMS (2000), CALL_ROOMS_PER_IP (20), CALL_PACKETS_PER_SEC (100)
 # A conta do mes fica em /var/lib/qt-call-relay/mes (StateDirectory do servico): o
 # systemd nao a apaga ao atualizar nem ao reiniciar, e este script tambem nao.
@@ -247,6 +276,7 @@ V_PACKETS_PER_SEC=$(call_val CALL_PACKETS_PER_SEC 100)
 V_VIDEO_BPS=$(call_val CALL_VIDEO_BYTES_PER_SEC 150000)
 V_EGRESS_GB=$(call_val CALL_MONTHLY_EGRESS_GB 80)
 V_RELAY_VIDEO=$(call_val CALL_RELAY_VIDEO 1)
+V_CALL_FICHAS=$(call_val CALL_FICHAS 1)
 mkdir -p "$CALL_DROPIN"
 cat > "$CALL_CONF.novo" <<EOF_CALL
 # Gerado pelo setup-ec2.sh. Para mudar, passa o valor ao script uma vez (ex.:
@@ -258,10 +288,11 @@ Environment=CALL_PACKETS_PER_SEC=$V_PACKETS_PER_SEC
 Environment=CALL_VIDEO_BYTES_PER_SEC=$V_VIDEO_BPS
 Environment=CALL_MONTHLY_EGRESS_GB=$V_EGRESS_GB
 Environment=CALL_RELAY_VIDEO=$V_RELAY_VIDEO
+Environment=CALL_FICHAS=$V_CALL_FICHAS
 Environment=CALL_STATE_FILE=/var/lib/qt-call-relay/mes
 EOF_CALL
 mv "$CALL_CONF.novo" "$CALL_CONF"
-log "Chamadas: travao do video aos ${V_EGRESS_GB} GB/mes, video ${V_VIDEO_BPS} B/s por lado, video pelo relay $([ "$V_RELAY_VIDEO" = 0 ] && echo desligado || echo ligado)"
+log "Chamadas: travao do video aos ${V_EGRESS_GB} GB/mes, video ${V_VIDEO_BPS} B/s por lado, video pelo relay $([ "$V_RELAY_VIDEO" = 0 ] && echo desligado || echo ligado), $([ "$V_CALL_FICHAS" = 0 ] && echo "sem fichas (para todos)" || echo "com fichas: ${V_FICHAS} por conta e por mes")"
 systemctl daemon-reload
 systemctl enable qt-call-relay >/dev/null 2>&1
 systemctl restart qt-call-relay
@@ -428,6 +459,41 @@ systemctl is-active --quiet qt-relay     && echo "  Relay: ativo"   || { echo " 
 systemctl is-active --quiet haproxy      && echo "  HAProxy: ativo" || { echo "  HAProxy: FALHOU (journalctl -u haproxy)"; exit 1; }
 systemctl is-active --quiet qt-estado    && echo "  Estado: ativo"  || echo "  Estado: FALHOU (journalctl -u qt-estado); o resto funciona"
 systemctl is-active --quiet qt-call-relay && echo "  Chamadas: ativo" || echo "  Chamadas: FALHOU (journalctl -u qt-call-relay); as mensagens funcionam"
+if [ "$V_CALL_FICHAS" != 0 ]; then
+  if journalctl -u qt-call-relay -n 30 --no-pager -o cat | grep -q 'AVISO'; then
+    echo "  Fichas do video: ver os avisos em journalctl -u qt-call-relay (video pelo relay em pausa)"
+  else
+    echo "  Fichas do video: ativas (${V_FICHAS} por conta e por mes)"
+  fi
+fi
+
+# Chaves publicas das fichas (0006), para o site (https://sealer.pt/estado.json, Cloudflare): as
+# apps so emitem e gastam fichas com a chave do mes que la estiver, e nao com a que o relay diz.
+# So chaves publicas (a semente nunca sai daqui). Vale 24 meses; volta a correr este script antes.
+FICHAS_SITE_FILE="${FICHAS_SITE_FILE:-/home/ubuntu/sealer-estado.json}"
+[ -d "$(dirname "$FICHAS_SITE_FILE")" ] || FICHAS_SITE_FILE=/root/sealer-estado.json
+FICHAS_SITE_URL="${FICHAS_SITE_URL:-https://sealer.pt/estado.json}"
+FICHAS_SITE=""
+if FICHAS_SEED_PATH=/var/lib/qt/fichas_seed.bin /usr/local/bin/qt-relay chaves-fichas 24 > "$FICHAS_SITE_FILE.tmp" 2>/dev/null; then
+  mv "$FICHAS_SITE_FILE.tmp" "$FICHAS_SITE_FILE"
+  chmod 644 "$FICHAS_SITE_FILE"
+  [ -d /home/ubuntu ] && [ "$(dirname "$FICHAS_SITE_FILE")" = /home/ubuntu ] && chown ubuntu:ubuntu "$FICHAS_SITE_FILE"
+  # O site tem de ter a chave deste mes e a de daqui a 12 meses (senao, publicar ja).
+  SITE_JSON=$(curl -s --max-time 10 "$FICHAS_SITE_URL" || true)
+  FICHAS_SITE="igual a do site (nada a fazer)"
+  for MES in "$(date -u +%Y%m)" "$(date -u -d '+12 months' +%Y%m)"; do
+    NOVA=$(grep -o "\"$MES\": *\"[0-9a-f]*\"" "$FICHAS_SITE_FILE" | sed 's/.*"\([0-9a-f]*\)"$/\1/' || true)
+    NO_SITE=$(printf '%s' "$SITE_JSON" | grep -o "\"$MES\": *\"[0-9a-f]*\"" | sed 's/.*"\([0-9a-f]*\)"$/\1/' || true)
+    if [ -z "$NOVA" ] || [ "$NOVA" != "$NO_SITE" ]; then
+      FICHAS_SITE="PUBLICAR: o site nao tem a chave de $MES (sem a do mes o video pelo relay fica em pausa)"
+      break
+    fi
+  done
+  echo "  Chaves das fichas para o site: $FICHAS_SITE_FILE ($FICHAS_SITE)"
+else
+  rm -f "$FICHAS_SITE_FILE.tmp"
+  echo "  Chaves das fichas para o site: FALHOU (sem semente? ls -l /var/lib/qt/fichas_seed.bin)"
+fi
 
 echo "  Portas abertas para fora (so devem aparecer 22, 80 e 443):"
 ss -tlnH | awk '{print $4}' | grep -v -E '^(127\.0\.0\.1|\[::1\]):' | sed 's/^/    /'
@@ -469,5 +535,11 @@ cat <<EOF
  Para a build release, em android/gradle.properties:
    qtRelayUrl=wss://$DOMAIN
    qtRelayPin=${PIN:-<chave acima>}
+
+ Chaves das fichas do video: ${FICHAS_SITE:-ver acima}
+   No teu computador, na pasta do repositorio:
+     scp ubuntu@$DOMAIN:$FICHAS_SITE_FILE site/public/estado.json
+     git add site/public/estado.json && git commit -m "Chaves das fichas" && git push
+   (a Cloudflare publica-o em $FICHAS_SITE_URL)
 =====================================================================
 EOF

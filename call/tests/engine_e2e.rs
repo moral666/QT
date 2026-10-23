@@ -42,7 +42,7 @@ async fn relay() -> Relay {
         udp: udp.local_addr().unwrap().to_string(),
         ws_url: Some(format!("ws://{}/call", ws.local_addr().unwrap())),
     };
-    serve(udp, Some(ws), &keys.private, CallLimits::default());
+    serve(udp, Some(ws), &keys.private, CallLimits::default(), Default::default());
     Relay { target, public: keys.public }
 }
 

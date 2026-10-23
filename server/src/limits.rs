@@ -172,6 +172,8 @@ pub enum Limited {
     FetchBundle,
     /// `BackupPut` e `BackupGet` (copia de recuperacao, partes ate 40 KB).
     Backup,
+    /// `IssueFichas` (cada pedido sao ate 400 operacoes no grupo e uma prova).
+    Fichas,
 }
 
 /// `burst = 0` desliga o limite.

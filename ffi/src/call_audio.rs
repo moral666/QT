@@ -90,7 +90,7 @@ pub struct CallAudioStats {
     /// Ida e volta ate ao relay das chamadas, em ms.
     pub relay_rtt_ms: Option<u32>,
     /// O audio que envio vai direto ao outro telemovel (ligacao direta, so entre contactos
-    /// mutuos que disseram OK na janela de aviso). `false`: pelo relay.
+    /// mutuos). `false`: pelo relay. So para diagnostico: a app nao mostra nada disto.
     pub direct: bool,
     /// ... e tambem pelo servidor: o caminho direto falhou respostas ha pouco (ainda a decidir).
     pub both_paths: bool,
@@ -295,8 +295,12 @@ impl QtClient {
         if relay_public_key.len() != 32 {
             return Err(bad("relay_public_key"));
         }
+        // As fichas do mes (base cifrada) para o motor, antes de fechar as chamadas (a base e
+        // sempre aberta antes das chamadas, nunca o contrario). So para um motor novo.
+        let started = crate::client::relock(&self.calls).has_engine(&id);
+        let wallet = if started { None } else { Some(crate::fichas::wallet_for_call(self)?) };
         let mut calls = crate::client::relock(&self.calls);
-        crate::call::start_for_call(&mut calls, id, &relay_url, &relay_public_key)
+        crate::call::start_for_call(&mut calls, id, &relay_url, &relay_public_key, wallet)
     }
 }
 

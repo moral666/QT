@@ -45,10 +45,11 @@ formato que já mudou outra vez.
 5. [Armazenamento local](#5-armazenamento-local-no-cliente-implementado-e-testado): SQLCipher
 6. [Bindings FFI](#6-bindings-ffi-androidiospython-implementado-e-testado): Kotlin/Swift/Python
 7. [Sealed sender](#7-sealed-sender-implementado-e-testado): esconder o remetente do servidor
-8. a 18. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v3,
+8. a 24. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v3,
    envelope v2, protocolo do relay, mensagem dentro do ratchet, sessões cruzadas e
    eliminação, anexos (imagens, GIFs, voz e ficheiros), grupos, presença, notificações,
-   chamadas de voz, foto de perfil
+   chamadas de voz, foto de perfil, badges, denúncias, recuperação, acesso por conta e fichas do
+   vídeo pelo relay
 
 *(Se preferires uma explicação sem jargão técnico, começa antes por
 o [`README.md`](../README.md). Este
@@ -505,6 +506,9 @@ Um pedido ↔ uma resposta, sequenciais.
    `BlobInfo{blob_id}` → `BlobStatus` (para retomar); `BlobGet{blob_id, offset}` →
    `BlobData{offset, size, data}` (só ficheiros completos); `BlobDelete{blob_id}` → `Ack`.
    Ficheiro inexistente ou expirado → `BlobNotFound`.
+8. **Fichas do vídeo pelo relay** (desde o 0006, secção 24): `IssueFichas{epoch, blinded}` →
+   `Fichas{epoch, public_key, evaluated, proof, granted, remaining, per_month}`; do operador,
+   `AdminSetFichasQuota{user_id, per_month}` → `Ack`.
 
 Respostas: `Ack`, `PreKeyBundle`, `PreKeyBundleNotFound`, `Messages`, `Error{reason}`
 (`reason` genérico, nunca detalhes internos), e as dos anexos acima.
@@ -767,8 +771,9 @@ o bloqueio da app, toca até 45 s e o código é pedido ao abrir a app.
 
 Desenho aprovado a 19/10/2026: só Android primeiro, sem ligação direta entre telemóveis (o áudio
 passa sempre pelo relay, o contacto nunca vê o IP). Desde a fase 5 (23/10/2026) há ligação direta,
-mas só depois de atender e só entre contactos mútuos que disseram OK na janela de aviso (ver "Ligação
-direta" abaixo). Fase 1 no núcleo (`core/src/call.rs`,
+só depois de atender; desde o 0006 é automática entre contactos mútuos e não bloqueados, já na
+primeira chamada, sem janela nem opção: **nessas chamadas cada lado vê o IP do outro** (ver
+"Ligação direta" abaixo). Fase 1 no núcleo (`core/src/call.rs`,
 `ffi/src/call.rs`, testes em `ffi/tests/calls.rs`); fase 2 no relay das chamadas
 (`server/src/call_relay.rs`, `server/src/bin/call_relay.rs`, testes em
 `server/tests/call_relay_e2e.rs`); fase 3 no motor de áudio (`call/`, crate `qt_call`, testes em
@@ -873,24 +878,23 @@ CMake), com o DRED e o PLC neural (os modelos vêm no pacote).
 **Ligação direta (P2P, fase 5, 23/10/2026).** A chamada começa sempre pelo relay. Os endereços
 para a ligação direta só são trocados depois de atender, dentro do ratchet (ops 5 e 6).
 
-* REGRA, de cada lado (`p2p_allowed`, desde 23/10/2026 sem verificação, QR nem códigos): o outro
-  está nos meus contactos (a lista é da app e passa ao núcleo em `call_contacts_sync`, guardada em
-  `call:contact:<contact_id>`), não está bloqueado, e eu disse OK na janela de aviso desse contacto
-  (`call:direct:<contact_id>`: 1 OK, 0 "Agora não"; sem chave, ainda não foi perguntado).
+* REGRA, de cada lado (`p2p_allowed`, sem verificação, QR nem códigos; desde o 0006 sem janela de
+  aviso nem opção): o outro está nos meus contactos (a lista é da app e passa ao núcleo em
+  `call_contacts_sync`, guardada em `call:contact:<contact_id>`) e não está bloqueado. Liga direto
+  logo na primeira chamada. As respostas da antiga janela (`call:direct:<contact_id>`, 0005) são
+  apagadas no `call_contacts_sync` e não contam para nada.
+* **Cada lado vê o IP do outro** (público e locais, com a porta) nas chamadas entre contactos
+  mútuos: é o preço da ligação direta, sem pergunta nem forma de o evitar na app (decisão do Nuno,
+  23/10/2026). Quem não é contacto mútuo, ou está bloqueado, nunca vê o IP.
 * Quem cumpre a regra envia "posso" (op 5, sem endereços) ao atender. Só quem enviou "posso" E
   recebeu o "posso" do outro envia os seus endereços (op 6). Os endereços recebidos só vão para o
   motor de quem enviou "posso" (a regra volta a ser vista nesse momento). Como o outro lado aplica a
-  mesma regra, só há endereços entre contactos MÚTUOS que disseram OK: nenhum endereço sai antes de
-  atender, para quem não me tem nos contactos, nem para quem disse "Agora não".
-* Contacto apagado (`delete_contact`), bloqueado, retirado da lista ou "Agora não" no menu da
-  conversa a meio de uma chamada: o áudio volta logo ao relay (`p2p_disable`, até ao fim da chamada)
-  e os meus endereços já não saem. Apagar o contacto esquece também a resposta à janela.
-* Janela de aviso (app): uma vez por contacto, antes da primeira chamada que pode ser direta e nunca
-  durante uma chamada. Quem liga vê-a ao carregar em ligar; quem recebe, depois de desligar a
-  primeira chamada atendida desse contacto (até lá essa chamada fica no relay). [OK] ou [Agora não];
-  no menu da conversa, "Ligação direta nas chamadas" muda a resposta (OK só conta da chamada
-  seguinte em diante).
+  mesma regra, só há endereços entre contactos MÚTUOS: nenhum endereço sai antes de atender nem
+  para quem não me tem nos contactos (ou me bloqueou).
+* Contacto apagado (`delete_contact`), bloqueado ou retirado da lista a meio de uma chamada: o áudio
+  volta logo ao relay (`p2p_disable`, até ao fim da chamada) e os meus endereços já não saem.
 * Compatibilidade: uma app antiga ignora as ops 5 e 6 e nunca envia "posso" (fica tudo no relay).
+  Uma app 0.9.36 (0005) continua a pedir o OK do lado dela: sem esse OK, a chamada fica no relay.
   Um relay antigo não responde ao pedido de endereço (0x22): a recolha acaba ao fim de 1,5 s só com
   os endereços locais. Uma app antiga com um relay novo não muda nada.
 * Endereço (19 bytes): `[1 família 4|6][16 IP, o IPv4 nos 4 primeiros e zeros][2 porta BE]`.
@@ -969,15 +973,17 @@ para a ligação direta só são trocados depois de atender, dentro do ratchet (
   chegou) com perdas acima de 10 %, fila acima de 100 ms ou perdas no áudio de 3 % ou mais, 30 % se
   nada está a chegar (pacotes enviados há mais de 800 ms acima do maior contador do relatório); um
   relatório vazio não sobe nem desce. Nunca abaixo de 150 kbit/s: com a congestão a continuar aí
-  2 s, o vídeo pausa (com a mensagem de rede fraca) e volta, com imagem completa, depois de 4 s com
-  o áudio limpo. Sem relatórios nenhuns em 4 s (relay antigo, que não deixa passar vídeo): pausa.
+  2 s, o vídeo pausa e volta, com imagem completa, depois de 4 s com o áudio limpo. Sem relatórios
+  nenhuns em 4 s (relay antigo, que não deixa passar vídeo): pausa. Desde o 0006 nenhuma pausa tem
+  texto no ecrã (ver "App Android" abaixo).
 * Resolução: 240p (15 imagens/s, a partir de 150 kbit/s), 360p (350 k), 480p (700 k), 720p (1,2 M),
   1080p (2,2 M); desce logo, sobe só depois de 2 s com 15 % de folga. Tetos: pelo relay 360p a 800
-  kbit/s (240p a 300 kbit/s com o travão do mês; pausa com o teto da conta); em ligação direta 1080p a
+  kbit/s (240p a 300 kbit/s com o travão do mês; pausa sem fichas, secção 24); em ligação direta 1080p a
   4 Mbit/s com Wi-Fi sem limite de dados dos dois lados, 720p a 2,5 Mbit/s nos outros casos. Ao sair
   da ligação direta desce logo ao teto do relay; ao entrar, salta para 1,2 Mbit/s.
 * Aviso do relay `[1 0x24][8 room_id][1 modo][8 etiqueta]` (18 bytes) a quem envia vídeo, de 5 em 5 s
-  ou quando muda: 0 normal, 1 só 240p (travão do mês), 2 sem vídeo pelo relay (teto da conta).
+  ou quando muda: 0 normal, 1 só 240p (travão do mês), 2 sem vídeo pelo relay (sem fichas, secção 24,
+  ou sala/relay sem vídeo).
 * Medido (`call/tests/video_e2e.rs`, localhost, codificador sintético): ver `ESTADO-VIDEO.md`.
 * App Android (fase 5b, com a app aberta; `Video.kt`, `CallScreen.kt`): câmara pela Camera2 e H.264 em
   hardware (MediaCodec, perfil base, débito constante quando o codificador deixa, imagens completas só
@@ -992,6 +998,12 @@ para a ligação direta só são trocados depois de atender, dentro do ratchet (
   vídeo do outro lado ao fim de 5 s desliga a câmara. Sem a faixa "Qualidade limitada · Verifica o
   contacto"; mensagens de pausa "Vídeo em pausa · Rede fraca" e "Vídeo em pausa · Limite do mês
   atingido". Sem a opção "Chamadas sempre pelo servidor" nas Definições.
+* App Android 0.9.37 (`0006`): **nenhum aviso de estado no ecrã da chamada**. Saem as mensagens de
+  pausa (rede fraca, limite do mês), em todas as línguas; nada sobre rede, limite, direto ou relay
+  aparece na app (os números da rede só vão para o registo, `adb logcat`). Quando o vídeo do outro
+  para (pausa, rede, sem fichas) ao fim de 2 s sem imagens, o ecrã mostra só a foto ou a inicial
+  dele, sem texto. Só fica "À espera de [Nome]…" (o pedido da câmara). Sai também a janela de aviso
+  da ligação direta e a opção "Ligação direta nas chamadas" do menu da conversa.
 
 **API (`QtClient`).** `call_start`, `call_accept`, `call_hangup` (o motivo sai do estado),
 `call_events` (Incoming, Ringing, Answered, Ended; chamar depois de cada lote recebido e de
@@ -1001,9 +1013,9 @@ do relay), `call_join_ok`, `call_seal` e `call_open`. Com a feature `calls` (app
 já na sala, mesmo antes de atender) com `push_capture` e `pull_playback` (20 ms de PCM 16 bits,
 48 kHz, mono, 1920 bytes little-endian), `stats`, `active` e `stop`; ao atender, as chaves do
 áudio passam para o motor, e ao terminar a chamada ele para sozinho. As chaves nunca atravessam
-a FFI. Ligação direta: `call_contacts_sync` (lista de contactos e anúncio do vídeo),
-`call_direct_choice` / `call_set_direct_choice` (janela de aviso; "Agora não" a meio de uma chamada
-volta logo ao relay); `CallAudioStats.direct` e `both_paths`. Vídeo: `call_start_video`,
+a FFI. Ligação direta: `call_contacts_sync` (lista de contactos e anúncio do vídeo; quem sai da
+lista volta logo ao relay); `CallAudioStats.direct` e `both_paths` (só para o registo). Saem no 0006
+`call_direct_choice` e `call_set_direct_choice`. Fichas do vídeo: secção 24. Vídeo: `call_start_video`,
 `call_is_video`, `call_video_contacts`, `call_video_supported`, `call_video_set_camera` (devolve
 `None` ao desligar a câmara de uma videochamada para quem não tem vídeo), `call_video_respond`
 (`View`, `ViewAndCamera`, `NotNow`) e o evento `CallEvent::Video`; no `CallAudio`: `video_params` (enviar, débito, resolução, imagens/s,
@@ -1142,32 +1154,156 @@ vão na cópia.
 Testes: `core/src/recovery.rs`, `ffi/src/recovery.rs`, `server/tests/relay_backup.rs` e
 `server/tests/redis_acl.rs`.
 
-## 23. Premium (desde a app 0.9.20; bloqueio no relay desde a 0.9.21)
+## 23. Acesso por conta (desde a app 0.9.20; bloqueio no relay desde a 0.9.21)
 
-Grátis: mensagens de texto (também em grupos onde a pessoa foi adicionada), reações, foto de
-perfil, e **receber** tudo (fotos, voz, ficheiros, atender chamadas). Pago: fazer chamadas, criar
-grupos e enviar fotos, GIFs, voz e ficheiros. Assim quem paga continua a falar com quem não paga.
+Sempre abertos: mensagens de texto (também em grupos onde a pessoa foi adicionada), reações, foto
+de perfil, e **receber** tudo (fotos, voz, ficheiros, atender chamadas). Podem ficar reservados a
+contas com acesso: fazer chamadas, criar grupos e enviar fotos, GIFs, voz e ficheiros. Os nomes
+das mensagens do protocolo mantêm o prefixo histórico `Premium`.
 
 - **Relay:** `{p}:premium:{conta}` = até quando (ms). `PremiumStatus` (a própria conta, resposta
-  `Premium { until_ms, enforced, active }`, 0 = sem premium; `active` desde a 0.9.23: ativo agora
+  `Premium { until_ms, enforced, active }`, 0 = sem acesso; `active` desde a 0.9.23: ativo agora
   pelo relógio do relay, para as apps não dependerem do relógio do telemóvel; ausente num relay
-  antigo). Operador: `AdminGrantPremium { user_id, until_ms }`
-  (0 tira) e `AdminListPremium` (resposta `PremiumList`). Apagar a conta tira o premium. O relay
-  sabe que a conta tem premium, não quem é a pessoa.
+  antigo). Operador: `AdminGrantPremium { user_id, until_ms }` (0 tira) e `AdminListPremium`
+  (resposta `PremiumList`). Apagar a conta tira o acesso. O relay sabe que a conta tem acesso,
+  não quem é a pessoa.
 - **Bloqueio (desde a 0.9.21):** `{p}:premium_enforce` = "1". Só o operador o liga ou desliga
   (`AdminPremiumEnforce { on }`, `on: null` só pergunta; resposta `PremiumEnforce { on }`).
-  Desligado (o normal até haver pagamentos), está tudo aberto. Ligado, o relay recusa com
-  `Error "precisa de premium"` o `BlobCreate` (fotos, GIFs, voz, ficheiros) e o `SendMessage` com
-  `wake: Call` (oferta de chamada) de contas sem premium dentro do prazo. Texto, fim de chamada,
-  atender e receber continuam grátis. Criar grupos não passa pelo relay: só a app o fecha.
+  Desligado (o normal), está tudo aberto. Ligado, o relay recusa com `Error "precisa de premium"`
+  o `BlobCreate` (fotos, GIFs, voz, ficheiros) e o `SendMessage` com `wake: Call` (oferta de
+  chamada) de contas sem acesso dentro do prazo. Texto, fim de chamada, atender e receber
+  continuam abertos. Criar grupos não passa pelo relay: só a app o fecha.
 - **Operador:** `--example denuncias -- premium-dar --user qt1:... (--dias N | --sempre)`,
   `premium-tirar` (`qt1:` ou id do relay), `premium-lista`, `premium-bloqueio [--ligar|--desligar]`.
-- **App:** pergunta ao relay ao ligar-se, ao abrir o ecrã Premium e antes de cada ação paga
-  (premium dado ou tirado conta logo); sem rede, fica o último estado conhecido. Sem premium e com
-  o bloqueio ligado, uma ação paga abre o ecrã "Sealer Premium" (5 €/ano). Se o relay recusar um
-  anexo ou uma chamada, a app abre o mesmo ecrã e a oferta da chamada sai da fila. Desde a 0.9.21
-  não há interruptores de teste nem "simular premium": decide só o relay.
-- **Por fazer:** Play Billing (o relay confirma a compra e escreve a mesma data).
+- **App:** pergunta ao relay ao ligar-se, ao abrir o ecrã do acesso e antes de cada ação reservada
+  (acesso dado ou tirado conta logo); sem rede, fica o último estado conhecido. Sem acesso e com o
+  bloqueio ligado, uma ação reservada abre esse ecrã. Se o relay recusar um anexo ou uma chamada, a
+  app abre o mesmo ecrã e a oferta da chamada sai da fila. Desde a 0.9.21 não há interruptores de
+  teste: decide só o relay.
+
+## 24. Fichas anónimas do vídeo pelo relay (desde o 0006, app Android 0.9.37)
+
+Cada conta tem uma quota de vídeo **pelo relay** por mês, configurável no servidor. O relay das
+chamadas faz cumprir isto **sem saber quem está na sala** (as salas continuam anónimas). Chamadas pelo
+caminho direto não gastam nada e continuam com vídeo. Sem fichas: só voz pelo relay, e o vídeo
+fica em pausa em silêncio (a app não mostra texto nenhum; quem recebe vê a foto ou a inicial).
+
+**Criptografia.** Privacy Pass com VOPRF (RFC 9497, `ristretto255-SHA512`, modo verificável),
+emissão em lote no estilo do RFC 9578. Tudo pela crate `voprf` 0.5 (a da Facebook, a mesma do
+OPAQUE): nada desta criptografia é feito à mão (`core/src/fichas.rs` só tem formatos e tamanhos).
+
+* Ficha: `nonce` (32 bytes aleatórios escolhidos pela app) e `saida = VOPRF(chave do mês,
+  "QT-FICHA-v1" ‖ época ‖ nonce)` (64 bytes). Na app fica `[4 época][32 nonce][64 saída][32 chave
+  pública]` na base cifrada (SQLCipher, tabela `fichas`), apagada quando se usa e quando o mês acaba.
+* Chave do mês (época `AAAAMM`, UTC): `DeriveKeyPair(semente, "QT-FICHAS-v1 chave do mes " ‖
+  AAAAMM)` do RFC 9497. A semente (32 bytes, `/var/lib/qt/fichas_seed.bin`, 0600) é criada pelo
+  relay das mensagens no primeiro arranque; o relay das chamadas só a lê. Rotação: uma chave por
+  mês, sem trocar ficheiros. Fichas de outro mês não valem (o relay só aceita as do mês atual).
+* **Tamanho do bloco: 1 ficha = 1 minuto de vídeo pelo relay.** Porque: com blocos de 1 min
+  perde-se em média meio minuto por vez que o vídeo passa ao relay (blocos de 5 min perdiam 2,5
+  min); um resgate por minuto custa ao relay uma operação X25519, uma avaliação VOPRF e um `SET`
+  no Redis (nada, ao lado do vídeo); cada ficha ocupa 132 bytes na app e um pedido leva até 400
+  (cerca de 17 KB); e o relay já sabe, pela própria sala, quanto tempo de vídeo passa, por isso o
+  bloco de 1 min não revela nada a mais.
+
+**Emissão (relay das mensagens, conta autenticada).** `IssueFichas{epoch, blinded}`: até 400
+elementos cegos de 32 bytes, em base64. O relay:
+
+1. só aceita contas registadas (com bundle) e no máximo 6 pedidos seguidos e 2 por minuto;
+2. reserva as fichas no teto da conta, atomicamente (`INCRBY` e devolve o excesso com `DECRBY`;
+   nunca passa do teto, nem com pedidos ao mesmo tempo): `default:fichas:emitidas:<conta>:<AAAAMM>`,
+   apagado ao fim de 40 dias. **É a única coisa guardada**: nunca o pedido, a resposta nem a hora;
+3. avalia as primeiras `granted` e prova tudo de uma vez (DLEQ em lote) e responde
+   `Fichas{epoch, public_key, evaluated, proof, granted, remaining, per_month}`.
+
+Época diferente da do relay (relógio do telemóvel): `granted = 0` com a época do relay, e a app
+pede outra vez para essa **só se for plausível**: o mês vizinho do relógio do telemóvel, a menos de
+48 h da viragem (`qt_core::fichas::epoch_plausible`). Qualquer outra é ignorada, e o motor da
+chamada também só recebe as chaves publicadas de meses plausíveis: um relay que dissesse a cada
+conta um mês diferente dos 24 publicados (para as separar em grupos pelas fichas que gastam) não
+passa daqui. Quota por conta: `RELAY_FICHAS_POR_MES` no relay e, por conta, um valor do
+operador (`AdminSetFichasQuota{user_id, per_month}`, `None` volta ao do relay;
+`default:fichas:quota:<conta>`). Um relay antigo responde `Error`; um relay sem semente
+`Error{"fichas desligadas neste relay"}`. O pedido não é repetido automaticamente pela app
+(contaria duas vezes no teto).
+
+A app verifica a prova DLEQ com a chave pública da resposta e tira a cegueira; sem prova válida
+não guarda nenhuma. **Quando pede:** numa hora aleatória entre 30 s e 10 min depois de abrir a app
+e depois de 1 a 2 h, enquanto faltarem fichas do mês, e **nunca** com uma chamada a decorrer ou ao
+começar uma (`relay_request_fichas` devolve `None`): o relay não junta a hora do pedido à de uma
+chamada. Depois de um `Error`, só volta a pedir 6 h mais tarde.
+
+**Resgate (relay das chamadas, sala anónima).** Só quem ENVIA vídeo pelo relay gasta fichas: uma
+quando o vídeo começa a ir pelo relay e outra 15 s antes de acabar o bloco.
+
+* Chave do mês na sala, perguntada logo ao entrar: `[1 0x27][8 room_id][47 zeros][8 etiqueta
+  relay_key]` (64 bytes) → `[1 0x28][8 room_id][4 época][1 estado][32 chave pública][8 etiqueta]`
+  (54 bytes). Estado 0 = pede fichas, 1 = relay sem fichas (vídeo livre, `CALL_FICHAS=0`), 2 = pede
+  mas agora não as consegue verificar. **A app só gasta fichas emitidas com essa chave, e só se for
+  a publicada no site para esse mês** (ver "Chaves publicadas fora do relay", abaixo). Chave da
+  sala diferente da do site, ou app sem a lista do site: não gasta nada e o vídeo pelo relay fica em
+  pausa (falha fechada; voz e direto normais). Sem resposta a 4 pedidos (relay antigo): vídeo como
+  antes.
+* Ficha: `[1 0x25][Noise_N para a chave estática do relay, prólogo "QT-CALL-FICHA-v1"]` com
+  `[1 versão=1][1 papel][8 room_id][32 relay_key][4 época][32 nonce][64 saída]` (192 bytes ao todo;
+  cifrado: quem está na rede não vê a ficha). Resposta `[1 0x26][8 room_id][1 papel][4 id][1
+  estado][1 modo][2 segundos de crédito BE][8 etiqueta]` (26 bytes, menos do que recebeu), com
+  `id = SHA-256("QT-FICHA-resposta-v1" ‖ nonce)[0..4]`. Estados: 0 aceite, 1 a mesma outra vez
+  nesta sala (resposta perdida: não conta duas vezes), 2 já gasta, 3 inválida (forjada, de outro mês
+  ou de outra chave), 4 não foi possível verificar (a ficha não foi gasta). Modo: o do aviso 0x24.
+* O relay: abre o Noise_N (conta para o limite de pedidos por IP), confirma a sala, a `relay_key`
+  e o lado; calcula a saída com a chave do mês e compara (tempo constante); regista o resumo
+  `SHA-256("QT-FICHA-gasta-v1" ‖ nonce)[0..16]` com `SET fichas:gastas:<AAAAMM>:<resumo> 1 NX EX
+  <até ao fim do mês + 1 dia>` (utilizador `qt-fichas` do Redis: só `SET` em `fichas:*`, nem lê);
+  só então dá a esse lado mais 60 s de crédito (no máximo 120 s guardados) e responde. Redis em
+  baixo ou sem semente: estado 4 e nenhum crédito (vídeo pelo relay em pausa; voz normal).
+* Sem crédito, o vídeo desse lado não passa e ele recebe o aviso 0x24 com "sem vídeo" (2). Os
+  pacotes de vídeo de tamanho mínimo (297 bytes: relatórios e pedidos de imagem de quem só VÊ)
+  passam sem fichas, até 5 por segundo e por lado, sem aviso.
+* Motor (`call/src/fichas.rs`): sem crédito o vídeo para o relay nem se cifra (o contador não
+  avança, nada de perdas falsas); durante a duplicação (direto + relay) vai só pelo direto; com a
+  ligação direta ainda a procurar caminho espera até 4 s antes da primeira ficha. Sem fichas que
+  sirvam (acabaram, ou de outro mês ou de outra chave) o vídeo pelo relay fica em pausa
+  (`Pause::RelayLimit`, que a app não mostra); em ligação direta continua.
+* App: a carteira da chamada (`wallet_for_call`) leva as fichas do mês para o motor; as usadas
+  saem da base logo a seguir (`call_events`). Se a app morrer antes de as apagar, o relay recusa-as
+  como já gastas e o motor passa à seguinte.
+
+**Chaves publicadas fora do relay (ataque de partição de chaves).** Um relay comprometido podia
+dar a cada conta uma chave diferente (na emissão e na sala) e reconhecer a conta no resgate pela
+chave. Por isso a chave pública de cada mês é publicada **fora do relay**, no site:
+`https://sealer.pt/estado.json` (ficheiro estático na Cloudflare, `site/public/estado.json`),
+`{"versao":1,"fichas":{"AAAAMM":"<64 hex>",...}}`, 24 meses a partir do mês do deploy. Gera-o o
+`setup-ec2.sh` (`qt-relay chaves-fichas 24`, só chaves públicas: a semente nunca sai do relay); o
+operador publica-o no site. A app:
+
+1. vai buscar o ficheiro por HTTPS, sem cookies nem dados da conta (igual para toda a gente), antes
+   de cada pedido de fichas (`fichas_set_published_keys`; até 64 KB e 120 meses; um ficheiro
+   inválido é recusado e não apaga a última lista boa, guardada na base cifrada);
+2. **na emissão** recusa a resposta se a chave do emissor não for a do site para esse mês (nada é
+   guardado; `fichas_accept` dá erro); sem lista do site nem pede fichas (`due` falso);
+3. **na sala** só leva para o motor fichas cuja chave seja a do site, e o motor só as gasta se a
+   chave da sala (0x28) também for essa. Diferente: nenhuma ficha é gasta e o vídeo pelo relay fica
+   em pausa (`Pause::RelayLimit`).
+
+Sem a chave do site (nunca a conseguiu obter, ou o mês não está na lista) a app falha fechada:
+vídeo pelo relay em pausa, voz e ligação direta normais.
+
+**O relay não liga resgate a emissão.** O emissor só vê elementos aleatórios do grupo (cada um
+com uma cegueira nova); o resgate só leva nonce e saída, que o emissor nunca viu; o relay das
+chamadas não tem acesso às contas (não lê `/etc/qt`; só `SET` em `fichas:*`) e só guarda o resumo
+do nonce. Teste: `server/tests/fichas_e2e.rs::ficha_aceite_uma_vez_e_o_relay_nao_liga_resgate_a_emissao`
+(o conteúdo do resgate não tem bytes da conta nem da emissão; o emissor só guardou a contagem;
+o relay das chamadas só guardou resumos). Limites desta garantia: `docs/threat-model.md`.
+
+**Compatibilidade.** App antiga (sem fichas): só voz pelo relay; o vídeo pausa com a mensagem
+que essas versões já tinham; o direto não muda. App nova com um relay antigo: vídeo como antes.
+`CALL_FICHAS=0` no relay das chamadas: vídeo para todos, como antes do 0006.
+
+**API (`QtClient`).** `fichas_set_published_keys(estado.json)` (devolve quantos meses), `fichas_status` (`epoch`, `left`, `due`, `published`), `relay_request_fichas` (pedido
+`IssueFichas` ou `None`), `fichas_accept(FichasIssued)` (de `RelayResponse::Fichas`; devolve
+quantas ficaram), `fichas_refused` (o relay não emitiu). O resto é automático (`call_audio_start`
+dá a carteira ao motor).
 
 ## Documentos relacionados
 
