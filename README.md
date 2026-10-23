@@ -29,7 +29,7 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 ## O que a app faz
 
 - **Conversas a dois e em grupo** (até 10 pessoas, 3 administradores), entre Android e iPhone, com *Enviado / Entregue / Visto*.
-- **Chamadas de voz cifradas** no Android e no iPhone, também entre os dois. No Android tocam com a app fechada ou o telemóvel bloqueado, com toque próprio.
+- **Chamadas de voz cifradas** no Android e no iPhone, também entre os dois, e **videochamadas** no Android. No Android tocam com a app fechada ou o telemóvel bloqueado, com toque próprio.
 - **Fotos, GIFs, mensagens de voz e ficheiros até 25 MB.** Cada ficheiro tem uma chave própria e sai do servidor quando é descarregado (ou ao fim de 24 horas).
 - **Notificações com a app fechada**, sempre genéricas ("Tens mensagens novas"): sem nome nem texto.
 - **Foto de perfil** só para os teus contactos, cifrada (o servidor nem sabe que é uma foto). Pode mudar-se de 72 em 72 horas.
@@ -48,7 +48,7 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 - **Mensagens do mesmo tamanho:** o texto leva enchimento até 4 tamanhos fixos, por isso o servidor não distingue uma mensagem curta de um recibo.
 - **Ligação protegida:** Noise Protocol por cima de TLS (`wss://`), com a chave do servidor fixada nas apps.
 - **Tudo cifrado no telemóvel:** histórico em SQLCipher, com a chave guardada no Keystore do Android ou no Secure Enclave do iPhone (só neste aparelho, fora das cópias na nuvem). A miniatura nas apps recentes não mostra as conversas.
-- **Chamadas sempre pelo servidor**, nunca diretas: quem te liga não fica a saber o teu IP. Os pacotes de áudio têm todos o mesmo tamanho e o mesmo ritmo, e o servidor das chamadas não sabe que contas estão a falar.
+- **Chamadas diretas só entre contactos mútuos:** quando os dois se têm nos contactos, a chamada liga-se de telemóvel para telemóvel depois de atender, e nesse caso cada um vê o IP do outro. Nos outros casos (ou se um bloquear ou apagar o outro), passa pelo servidor das chamadas e o IP não é partilhado. Sempre cifradas ponta a ponta; pelo servidor, os pacotes de áudio têm todos o mesmo tamanho e o mesmo ritmo, e o servidor das chamadas não sabe que contas estão a falar.
 - **Defesas no servidor:** prova de trabalho para criar conta, limites por conta e por IP, e só contas registadas podem enviar.
 
 O que isto protege e o que não protege está em [`docs/threat-model.md`](docs/threat-model.md) e [`docs/known-limitations.md`](docs/known-limitations.md).

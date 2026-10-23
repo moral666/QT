@@ -29,7 +29,7 @@ It is also a working example of "data protection by design", as the GDPR asks: e
 ## What the app does
 
 - **One-to-one and group chats** (up to 10 people, 3 admins), between Android and iPhone, with *Sent / Delivered / Read*.
-- **Encrypted voice calls** on Android and iPhone, also between the two. On Android they ring with the app closed or the phone locked, with their own ringtone.
+- **Encrypted voice calls** on Android and iPhone, also between the two, and **video calls** on Android. On Android they ring with the app closed or the phone locked, with their own ringtone.
 - **Photos, GIFs, voice messages and files up to 25 MB.** Each file has its own key and leaves the server once downloaded (or after 24 hours).
 - **Notifications with the app closed**, always generic ("You have new messages"): no name, no text.
 - **Profile photo** only for your contacts, encrypted (the server does not even know it is a photo). It can be changed every 72 hours.
@@ -48,7 +48,7 @@ It is also a working example of "data protection by design", as the GDPR asks: e
 - **Same-size messages:** text is padded to 4 fixed sizes, so the server cannot tell a short message from a receipt.
 - **Protected connection:** Noise Protocol on top of TLS (`wss://`), with the server key pinned in the apps.
 - **Everything encrypted on the phone:** history in SQLCipher, with the key kept in the Android Keystore or the iPhone Secure Enclave (this device only, outside cloud backups). The recent-apps thumbnail does not show your chats.
-- **Calls always go through the server**, never directly: whoever calls you never learns your IP. Audio packets all have the same size and rhythm, and the call server does not know which accounts are talking.
+- **Direct calls only between mutual contacts:** when both have each other in their contacts, the call connects phone to phone after it is answered, and in that case each one sees the other's IP. Otherwise (or if one blocks or deletes the other), it goes through the call server and the IP is not shared. Always end-to-end encrypted; through the server, audio packets all have the same size and rhythm, and the call server does not know which accounts are talking.
 - **Server defences:** proof of work to create an account, limits per account and per IP, and only registered accounts can send.
 
 What this does and does not protect against is in [`docs/threat-model.md`](docs/threat-model.md) and [`docs/known-limitations.md`](docs/known-limitations.md) (in Portuguese).
