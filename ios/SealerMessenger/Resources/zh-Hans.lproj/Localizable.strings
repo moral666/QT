@@ -98,7 +98,7 @@
 "recovery_warning" = "任何拿到这些单词的人都能获得你的账户。Sealer绝不会向你索要这些单词。";
 "recovery_words_count" = "%1$@/12个单词";
 "recovery_working" = "请稍候…";
-"recovery_write_down" = "请按顺序把这些单词写在纸上。不要截屏，也不要保存在手机上。";
+"recovery_write_down" = "请按顺序把这些单词写在纸上。";
 "recovery_written" = "我已写下";
 "report" = "举报";
 "report_confirm" = "举报并屏蔽";

@@ -6,6 +6,11 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 23 de outubro de 2026: texto das 12 palavras (apps Android 0.9.32 e iPhone 0.9.30)
+
+- Ecrã das 12 palavras: saiu "Não tires captura de ecrã nem as guardes no telemóvel" (dez línguas), que
+  contradizia o botão "Copiar as palavras". Fica "Escreve estas palavras em papel, por esta ordem."
+
 ### 23 de outubro de 2026: recuperar a conta e menu Idioma (app Android 0.9.31)
 
 - Ao voltar à app no ecrã de recuperar a conta (ex.: depois de ir copiar as 12 palavras) aparecia um erro:

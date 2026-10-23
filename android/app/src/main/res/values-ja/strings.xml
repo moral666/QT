@@ -335,7 +335,7 @@
     <string name="recovery_privacy">連絡先は暗号化されたコピーとしてサーバーに保存され、これらの単語がないと開けません。サーバーもSealerチームも読むことはできません。</string>
     <string name="recovery_enable">12個の単語を作成</string>
     <string name="recovery_working">お待ちください…</string>
-    <string name="recovery_write_down">これらの単語を、この順番どおりに紙に書き留めてください。スクリーンショットを撮ったり、スマートフォンに保存したりしないでください。</string>
+    <string name="recovery_write_down">これらの単語を、この順番どおりに紙に書き留めてください。</string>
     <string name="recovery_warning">これらの単語を知っている人は、誰でもあなたのアカウントを使えてしまいます。Sealerがこの単語を尋ねることは絶対にありません。</string>
     <string name="recovery_written">書き留めました</string>
     <string name="recovery_done">完了</string>

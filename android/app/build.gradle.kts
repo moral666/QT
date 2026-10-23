@@ -63,8 +63,8 @@ android {
         minSdk = 24            // igual ao `-P 24` do cargo-ndk
         // Android 16. Exigido pela Play Store para apps novas e atualizacoes.
         targetSdk = 36
-        versionCode = 38
-        versionName = "0.9.31"
+        versionCode = 39
+        versionName = "0.9.32"
         // So as 6 linguas da app (0.9.12): sem isto iam tambem as ~80 traducoes das bibliotecas
         // (AndroidX, Firebase, ZXing), que a app nunca mostra. A base (values/) e o portugues.
         @Suppress("DEPRECATION")

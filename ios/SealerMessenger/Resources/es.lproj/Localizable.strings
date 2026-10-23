@@ -98,7 +98,7 @@
 "recovery_warning" = "Quien tenga estas palabras se queda con tu cuenta. Sealer nunca te las pedirá.";
 "recovery_words_count" = "%1$@ de 12 palabras";
 "recovery_working" = "Un momento…";
-"recovery_write_down" = "Escribe estas palabras en papel, en este orden. No hagas captura de pantalla ni las guardes en el móvil.";
+"recovery_write_down" = "Escribe estas palabras en papel, en este orden.";
 "recovery_written" = "Ya las escribí";
 "report" = "Denunciar";
 "report_confirm" = "Denunciar y bloquear";

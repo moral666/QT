@@ -98,7 +98,7 @@
 "recovery_warning" = "Quiconque a ces mots prend ton compte. Sealer ne te les demandera jamais.";
 "recovery_words_count" = "%1$@ sur 12 mots";
 "recovery_working" = "Un instant…";
-"recovery_write_down" = "Écris ces mots sur papier, dans cet ordre. Ne fais pas de capture d'écran et ne les garde pas sur le téléphone.";
+"recovery_write_down" = "Écris ces mots sur papier, dans cet ordre.";
 "recovery_written" = "Je les ai notés";
 "report" = "Signaler";
 "report_confirm" = "Signaler et bloquer";

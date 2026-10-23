@@ -337,7 +337,7 @@
     <string name="recovery_privacy">I contatti restano in una copia cifrata sul server, che si apre solo con le parole. Né il server né il team di Sealer possono leggerla.</string>
     <string name="recovery_enable">Crea le 12 parole</string>
     <string name="recovery_working">Un momento…</string>
-    <string name="recovery_write_down">Scrivi queste parole su carta, in quest\'ordine. Non fare screenshot e non salvarle sul telefono.</string>
+    <string name="recovery_write_down">Scrivi queste parole su carta, in quest\'ordine.</string>
     <string name="recovery_warning">Chi ha queste parole prende il tuo account. Sealer non te le chiederà mai.</string>
     <string name="recovery_written">Le ho scritte</string>
     <string name="recovery_done">Fatto</string>
