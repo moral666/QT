@@ -6,6 +6,17 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 24 de outubro de 2026: política de privacidade, site e alarme de orçamento (0008)
+
+- Política de privacidade (dez línguas): secção nova "Chamadas e videochamadas" (ligação direta entre
+  contactos mútuos, e nesse caso cada um vê o IP do outro; nos outros casos pelo servidor, sem partilhar
+  o IP; vídeo só para quem aceita), recuperação com as 12 palavras (contactos sim, mensagens antigas e
+  grupos não) e idade mínima de 16 anos. Saem os itens das funções pagas (guardados em
+  `docs/privacidade-fichas-rascunho.md`, que não entra no site).
+- Site (dez línguas): chamadas de voz e videochamadas, ligação direta entre contactos; sai "chamadas
+  sempre pelo servidor" (também do README).
+- `docs/aws-orcamento.md`: guia do orçamento mensal no AWS Budgets e do alarme do tráfego de saída da EC2.
+
 ### 24 de outubro de 2026: novo ecrã da videochamada (0007, app Android 0.9.38)
 
 - Só Android, só a interface da chamada (núcleo, relay e fichas sem mudanças). O esboço serviu de
