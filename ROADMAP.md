@@ -36,7 +36,7 @@ seguir.
   motor de áudio (Opus 1.6 com DRED e PLC neural, jitter buffer adaptativo), com a app
   aberta (0.9.4) e a tocar com a app fechada (0.9.6), com toque próprio (0.9.8).
 - **Foto de perfil** só para contactos, cifrada (0.9.9), e **app em seis línguas**
-  (PT, EN, FR, ES, DE, IT, 0.9.10); japonês, chinês simplificado e hindi a 22/10/2026.
+  (PT, EN, FR, ES, DE, IT, 0.9.10); japonês, chinês simplificado e hindi a 22/10/2026; árabe (da direita para a esquerda) a 23/10/2026.
 - **Novo design** (0.9.11): cabeçalho com o fundo curvo, ecrã de Definições e ecrã Novo
   contacto; foto de perfil com pré-visualização e "Aplicar".
 - **Desempenho** (0.9.12): lista de conversas que não fica mais lenta com o histórico,

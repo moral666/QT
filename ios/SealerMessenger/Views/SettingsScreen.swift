@@ -33,7 +33,7 @@ struct ProfileSettingsScreen: View {
                     HStack(alignment: .top) {
                         HStack(spacing: 2) {
                             Button(action: onBack) {
-                                Image(systemName: "chevron.left").font(.system(size: 20, weight: .semibold)).frame(width: 44, height: 44)
+                                Image(systemName: "chevron.backward").font(.system(size: 20, weight: .semibold)).frame(width: 44, height: 44)
                             }
                             .accessibilityLabel(s("t_voltar"))
                             Text(s("t_definicoes")).font(Jakarta.font(24, .heavy))

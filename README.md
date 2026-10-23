@@ -4,7 +4,7 @@
 
 **SEALER** é um mensageiro privado: sem número de telefone, sem email, com cifra ponta a ponta e proteção pós-quântica. **QT** é o nome do protocolo e deste repositório.
 
-**Estado:** versão de testes, em testes fechados. App Android **0.9.22**, app iPhone **0.9.22**, servidor em produção.
+**Estado:** versão de testes, em testes fechados. App Android **0.9.25**, app iPhone **0.9.25**, servidor em produção.
 
 [Read this in English →](README.en.md)
 
@@ -38,7 +38,7 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 - **Denunciar um contacto:** o motivo e até 20 mensagens seguem cifrados para a equipa da SEALER; o servidor guarda a denúncia sem a ler e sem saber quem a fez, e o contacto fica bloqueado.
 - **Bloqueio da app** com código próprio, impressão digital ou rosto (Face ID no iPhone). Depois de 5 códigos errados a espera vai até 15 minutos, e mudar a hora do telemóvel não a salta.
 - **Chave de recuperação:** 12 palavras recuperam o ID, os contactos, os bloqueados e a medalha num telemóvel novo. A cópia fica cifrada no servidor; o histórico e os grupos não vão nela.
-- **Nove línguas:** português, inglês, francês, espanhol, alemão, italiano, japonês, chinês simplificado e hindi.
+- **Dez línguas:** português, inglês, francês, espanhol, alemão, italiano, japonês, chinês simplificado, hindi e árabe (da direita para a esquerda).
 - **Apagar a conta** do telemóvel e do servidor com um toque.
 
 ## Como protege a privacidade
@@ -65,6 +65,8 @@ O que isto protege e o que não protege está em [`docs/threat-model.md`](docs/t
 - Teste de campo com cinco aparelhos em três plataformas e envios contínuos: nenhuma mensagem perdida ([`docs/field-tests.md`](docs/field-tests.md)).
 
 **A seguir:**
+
+- Revisão das traduções em árabe por falantes nativos (japonês, chinês e hindi já revistos a 23/10/2026).
 
 - No Android, a integração com o sistema de chamadas (Bluetooth, carro).
 - Distribuição pela Google Play e pela App Store (hoje a app é instalada à mão pelos testadores). Já preparado: [`docs/google-play.md`](docs/google-play.md).

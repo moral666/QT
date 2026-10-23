@@ -203,7 +203,7 @@
 "t_daqui_a_menos_de_1_h" = "1時間以内";
 "t_de_pessoas" = "%2$@人中%1$@人";
 "t_definicoes" = "設定";
-"t_deixar_de_ser_administrador" = "管理者を辞退";
+"t_deixar_de_ser_administrador" = "管理者をやめる";
 "t_deixas_de_receber_as_mensagens_do" = "このグループのメッセージは届かなくなります。すでに受信したメッセージは、グループを削除するまでこのスマートフォンに残ります。";
 "t_demasiadas_tentativas_tenta_de_novo_daqui" = "試行回数が多すぎます。%1$@秒後にもう一度お試しください。";
 "t_desativar" = "オフにする";

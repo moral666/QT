@@ -1,4 +1,4 @@
-# SEALER para iPhone (0.9.22)
+# SEALER para iPhone (0.9.25)
 
 **Testada a 0.9.15** (20/10/2026) com a app Android 0.9.16, sem erros: contactos, QR, partilha do
 ID, menus, mensagens de texto e voz, GIFs, ficheiros, bloquear, apagar conversas e chamadas
@@ -130,7 +130,7 @@ Para um relay no próprio Mac (simulador): "Opções de teste" → `ws://127.0.0
 
 ## Idiomas
 
-PT, EN, FR, ES, DE, IT, JA, ZH (chinês simplificado, `zh-Hans.lproj`) e HI, **os mesmos textos da app Android**: `python3 scripts/strings-ios.py` gera
+PT, EN, FR, ES, DE, IT, JA, ZH (chinês simplificado, `zh-Hans.lproj`), HI e AR (da direita para a esquerda: usar `leading`/`trailing`, nunca esquerda/direita fixas; `.offset(x:)` não se vira sozinho), **os mesmos textos da app Android**: `python3 scripts/strings-ios.py` gera
 `Resources/<língua>.lproj/Localizable.strings` e `InfoPlist.strings` a partir de
 `android/app/src/main/res/values*/strings.xml` (mais os poucos textos só do iPhone, no próprio
 script). Correr sempre que mudar um texto no Android. A língua segue a do iPhone; a escolha manual

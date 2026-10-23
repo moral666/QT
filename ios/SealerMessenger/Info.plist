@@ -38,6 +38,7 @@
 		<string>ja</string>
 		<string>zh-Hans</string>
 		<string>hi</string>
+		<string>ar</string>
 	</array>
 	<!-- Chamadas de voz: tocar com a app fechada (PushKit + CallKit) e continuar em segundo plano. -->
 	<key>UIBackgroundModes</key>

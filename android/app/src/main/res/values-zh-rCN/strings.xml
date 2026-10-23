@@ -185,8 +185,8 @@
     <string name="t_tentar_de_novo">重试</string>
     <string name="t_apagar_so_aqui">只从此手机删除</string>
     <string name="t_as_mensagens_sao_cifradas_ponta_a">消息经过端到端加密。连服务器也无法读取。</string>
-    <string name="t_reagir">回应</string>
-    <string name="t_retirar_a_minha">取消我的回应</string>
+    <string name="t_reagir">表情回应</string>
+    <string name="t_retirar_a_minha">取消我的表情回应</string>
     <string name="t_hoje">今天</string>
     <string name="t_ontem">昨天</string>
     <string name="t_esta_bloqueado">%1$s已锁定</string>
@@ -253,7 +253,7 @@
     <string name="t_mensagem_vazia_ou_maior_que_bytes">消息为空或超过%1$s字节</string>
     <string name="t_nao_foi_possivel_enviar_2">发送失败：%1$s</string>
     <string name="t_nao_foi_possivel_enviar_a_mensagem">无法发送语音消息：%1$s</string>
-    <string name="t_nao_foi_possivel_reagir">无法回应：%1$s</string>
+    <string name="t_nao_foi_possivel_reagir">无法添加表情回应：%1$s</string>
     <string name="t_nao_foi_possivel_criar_o_grupo">无法创建群组：%1$s</string>
     <string name="t_nao_foi_possivel_mudar_o_grupo">无法修改群组：%1$s</string>
     <string name="t_nao_foi_possivel_sair_do_grupo">无法退出群组：%1$s</string>

@@ -28,7 +28,7 @@ struct PremiumScreen: View {
                         if ui.premiumUntil > Int64(Date().timeIntervalSince1970 * 1000) {
                             Text(ui.premiumUntil >= Self.foreverMs ? s("premium_until_forever")
                                  : s("premium_until", Date(timeIntervalSince1970: Double(ui.premiumUntil) / 1000)
-                                        .formatted(date: .abbreviated, time: .omitted)))
+                                        .formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(Lang.numbersLocale))))
                                 .font(.sLabelLarge)
                         }
                     }

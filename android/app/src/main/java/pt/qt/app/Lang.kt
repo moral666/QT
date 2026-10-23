@@ -29,7 +29,8 @@ import java.util.Locale
 
 /**
  * Idiomas da app: PT (base, `values/`), EN, FR, ES, DE, IT, JA, ZH (chines simplificado,
- * `values-zh-rCN/`) e HI (`values-xx/`).
+ * `values-zh-rCN/`), HI e AR (`values-xx/`). O arabe escreve-se da direita para a esquerda:
+ * `android:supportsRtl` no manifesto e, no Compose, `start`/`end` em vez de esquerda/direita.
  * Por omissao segue a lingua do telemovel (PT se nao for nenhuma destas); no menu
  * "Idioma" pode escolher-se uma a mao. No Android 13+ a escolha fica no sistema
  * (tambem aparece nas definicoes da app); antes disso aplica-se aqui.
@@ -46,6 +47,7 @@ object Lang {
         "ja" to "日本語",
         "zh-CN" to "简体中文",
         "hi" to "हिन्दी",
+        "ar" to "العربية",
     )
     /** Para onde vao os avisos de erros de traducao (Definicoes > Reportar erro de traducao). */
     const val REPORT_EMAIL = "privacidade@sealer.pt"
@@ -88,7 +90,11 @@ object Lang {
     }
 
     /** A lingua em que a app esta a mostrar os textos (para datas e numeros). */
-    fun locale(): Locale = (res ?: app.resources).configuration.locales[0]
+    fun locale(): Locale {
+        val l = (res ?: app.resources).configuration.locales[0]
+        // Arabe: algarismos ocidentais 0-9 nas datas e tamanhos (decisao do Nuno, 22/10/2026).
+        return if (l.language == "ar") Locale.Builder().setLocale(l).setUnicodeLocaleKeyword("nu", "latn").build() else l
+    }
 
     /**
      * Abre a app de email com um aviso de erro de traducao para [REPORT_EMAIL]. Vai so a lingua
@@ -110,13 +116,23 @@ object Lang {
      * A palavra escrita para confirmar "Destruir perfil e dados" (APAGAR, 削除, हटाएं...) esta
      * certa? Aceita tambem as outras grafias de `confirm_word_alt` (separadas por virgulas: em
      * japones sem converter, em hindi as grafias comuns e DELETE de quem so tem teclado latino).
-     * Ignora maiusculas, espacos nas pontas e as duas formas do nasal em hindi (ँ e ं).
+     * Ignora maiusculas, espacos nas pontas, as duas formas do nasal em hindi (ँ e ं) e, em arabe,
+     * o tatweel, os sinais de vogal e as marcas de direcao que alguns teclados acrescentam.
      */
     fun confirmWordOk(typed: String): Boolean {
         fun norm(t: String) = Normalizer.normalize(t.trim(), Normalizer.Form.NFC).replace('\u0901', '\u0902')
+            .replace(Regex("[\u0640\u064B-\u0652\u200E\u200F]"), "")
         val words = listOf(str(R.string.confirm_word)) + str(R.string.confirm_word_alt).split(',').filter { it.isNotBlank() }
         return words.any { norm(typed).equals(norm(it), ignoreCase = true) }
     }
+
+    /**
+     * Codigo de acesso: so algarismos e sempre 0-9. Teclados em arabe ou hindi enviam ٠-٩ ou
+     * ०-९; o mesmo codigo tem de funcionar seja qual for o teclado (senao a pessoa fica fechada
+     * fora e so pode apagar tudo).
+     */
+    fun asciiDigits(v: String, max: Int = 32): String =
+        v.mapNotNull { c -> Character.digit(c, 10).takeIf { it >= 0 }?.let { '0' + it } }.joinToString("").take(max)
 
     fun str(@StringRes id: Int, vararg args: Any?): String {
         val r = res ?: app.resources
@@ -148,7 +164,7 @@ class SealerApp : Application() {
     }
 }
 
-/** Menu "Idioma": a lingua do telemovel ou uma das nove. */
+/** Menu "Idioma": a lingua do telemovel ou uma das dez. */
 @Composable
 fun LanguageDialog(onPick: (String) -> Unit, onDismiss: () -> Unit) {
     val current = Lang.chosen()

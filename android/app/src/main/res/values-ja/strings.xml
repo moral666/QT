@@ -75,7 +75,7 @@
     <string name="t_sair_do_grupo">グループを退出</string>
     <string name="t_apagar_grupo_deste_telemovel">このスマートフォンからグループを削除</string>
     <string name="t_guardar_nos_contactos">連絡先に保存</string>
-    <string name="t_deixar_de_ser_administrador">管理者を辞退</string>
+    <string name="t_deixar_de_ser_administrador">管理者をやめる</string>
     <string name="t_tornar_administrador">管理者にする</string>
     <string name="t_ja_ha_administradores">管理者はすでに%1$s人います</string>
     <string name="t_retirar_do_grupo">グループから外す</string>

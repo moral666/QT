@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Textos da app iPhone a partir dos da app Android (as mesmas chaves, nas nove linguas).
+"""Textos da app iPhone a partir dos da app Android (as mesmas chaves, nas dez linguas).
 
     python3 scripts/strings-ios.py
 
@@ -19,7 +19,7 @@ OUT = os.path.join(ROOT, "ios", "SealerMessenger", "Resources")
 
 # Lingua do Android -> pasta .lproj do iPhone (PT e a base, como no Android).
 LANGS = {"": "pt-PT", "-en": "en", "-fr": "fr", "-es": "es", "-de": "de", "-it": "it",
-         "-ja": "ja", "-zh-rCN": "zh-Hans", "-hi": "hi"}
+         "-ja": "ja", "-zh-rCN": "zh-Hans", "-hi": "hi", "-ar": "ar"}
 
 # Textos so do iPhone (nao existem no Android). Ordem: pt, en, fr, es, de, it (ja, zh-Hans e hi
 # mais abaixo, em EXTRA_JA_ZH_HI).
@@ -159,9 +159,36 @@ for _k, _v in EXTRA_JA_ZH_HI.items():
     EXTRA[_k] = EXTRA[_k] + _v
 for _k, _v in PLIST_JA_ZH_HI.items():
     PLIST[_k] = PLIST[_k] + _v
-assert all(len(v) == 9 for v in EXTRA.values()) and all(len(v) == 9 for v in PLIST.values())
+# Arabe (22/10/2026): neutro sempre que possivel (يُرجى + nome, «يمكنك»), algarismos 0-9.
+EXTRA_AR = {
+    "push_new": "لديك رسائل جديدة",
+    "ios_open_settings": "فتح الإعدادات",
+    "ios_paste_image": "لصق صورة أو GIF",
+    "ios_no_image_to_paste": "لا توجد صورة منسوخة.",
+    "ios_no_image_to_paste_hint": "في لوحة مفاتيح GIF، يمكنك النقر على صورة GIF لنسخها، ثم اختيار «لصق صورة أو GIF».",
+    "ios_record_voice": "تسجيل رسالة صوتية",
+    "ios_quick_unlock": "بصمة الوجه أو بصمة الإصبع أو رمز دخول iPhone",
+    "ios_quick_unlock_hint": "لفتح القفل دون كتابة رمز مرور التطبيق.",
+    "ios_bio_unavailable": "غير متاح: لم يُعيَّن رمز دخول على جهاز iPhone هذا.",
+    "ios_mic_denied_call": "لا يمكن إجراء المكالمات دون إذن الوصول إلى الميكروفون. يمكنك تفعيله من إعدادات iPhone.",
+    "ios_bio_confirm": "يُرجى التأكيد برمز مرور التطبيق. بعد ذلك، سيطلب iPhone بصمة الوجه أو بصمة الإصبع أو رمز الدخول.",
+    "ios_bio_changed": "تغيّرت بصمة الوجه أو بصمة الإصبع أو رمز دخول iPhone. يُرجى استخدام رمز مرور التطبيق ثم إعادة تفعيل فتح القفل السريع.",
+    "ios_use_face_id": "استخدام بصمة الوجه",
+    "ios_use_touch_id": "استخدام بصمة الإصبع",
+    "ios_use_passcode": "استخدام رمز دخول iPhone",
+}
+PLIST_AR = {
+    "NSCameraUsageDescription": "لمسح رمز QR الخاص بشخص آخر وإضافته إلى جهات الاتصال.",
+    "NSMicrophoneUsageDescription": "للمكالمات الصوتية والرسائل الصوتية.",
+    "NSFaceIDUsageDescription": "لفتح قفل تطبيق SEALER دون كتابة رمز المرور.",
+}
+for _k, _v in EXTRA_AR.items():
+    EXTRA[_k] = EXTRA[_k] + (_v,)
+for _k, _v in PLIST_AR.items():
+    PLIST[_k] = PLIST[_k] + (_v,)
+assert all(len(v) == 10 for v in EXTRA.values()) and all(len(v) == 10 for v in PLIST.values())
 
-ORDER = ["pt-PT", "en", "fr", "es", "de", "it", "ja", "zh-Hans", "hi"]
+ORDER = ["pt-PT", "en", "fr", "es", "de", "it", "ja", "zh-Hans", "hi", "ar"]
 
 
 def android_text(raw: str) -> str:

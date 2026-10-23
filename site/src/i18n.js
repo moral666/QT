@@ -1,8 +1,10 @@
 /**
- * Línguas do site: as mesmas nove da app. Português (o texto das páginas), inglês,
- * francês, espanhol, alemão, italiano, japonês, chinês simplificado e hindi.
+ * Línguas do site: as mesmas dez da app. Português (o texto das páginas), inglês,
+ * francês, espanhol, alemão, italiano, japonês, chinês simplificado, hindi e árabe.
+ * O árabe escreve-se da direita para a esquerda: <html dir="rtl"> e, no CSS, propriedades
+ * lógicas (margin-inline-start…) em vez de esquerda/direita.
  *
- * Escolha: `?lang=pt|en|fr|es|de|it|ja|zh|hi` no endereço (o menu de línguas põe-no); sem
+ * Escolha: `?lang=pt|en|fr|es|de|it|ja|zh|hi|ar` no endereço (o menu de línguas põe-no); sem
  * isso, a língua do navegador (uma destas; outra qualquer: inglês; chinês tradicional, de
  * Taiwan, Hong Kong ou Macau, também inglês, porque o site só tem o simplificado). Nada é guardado no
  * navegador (a política de cookies diz que o site não usa armazenamento): a escolha
@@ -11,16 +13,18 @@
  * As páginas marcam os textos com data-i18n="chave" (e data-i18n-alt, -aria-label,
  * -title, -content para atributos). Nas outras línguas os textos vêm de
  * i18n/<língua>.js, carregado só nesse caso. Os textos criados por JavaScript usam
- * L({ pt, en, fr, es, de, it, ja, zh, hi }) (uma língua que falte fica em inglês).
+ * L({ pt, en, fr, es, de, it, ja, zh, hi, ar }) (uma língua que falte fica em inglês).
  *
  * Nas línguas traduzidas, o rodapé ganha uma linha para avisar de erros de tradução
  * (email para privacidade@sealer.pt, com a língua e a página no assunto).
  */
 
-const SUPPORTED = ['pt', 'en', 'fr', 'es', 'de', 'it', 'ja', 'zh', 'hi'];
-const HTML_LANG = { pt: 'pt-PT', en: 'en', fr: 'fr', es: 'es', de: 'de', it: 'it', ja: 'ja', zh: 'zh-Hans', hi: 'hi' };
+const SUPPORTED = ['pt', 'en', 'fr', 'es', 'de', 'it', 'ja', 'zh', 'hi', 'ar'];
+const HTML_LANG = { pt: 'pt-PT', en: 'en', fr: 'fr', es: 'es', de: 'de', it: 'it', ja: 'ja', zh: 'zh-Hans', hi: 'hi', ar: 'ar' };
+/** Línguas escritas da direita para a esquerda. */
+const RTL = new Set(['ar']);
 /** Nome de cada língua na própria língua (menu de línguas). */
-const NAMES = { pt: 'Português', en: 'English', fr: 'Français', es: 'Español', de: 'Deutsch', it: 'Italiano', ja: '日本語', zh: '简体中文', hi: 'हिन्दी' };
+const NAMES = { pt: 'Português', en: 'English', fr: 'Français', es: 'Español', de: 'Deutsch', it: 'Italiano', ja: '日本語', zh: '简体中文', hi: 'हिन्दी', ar: 'العربية' };
 
 function fromUrl() {
   try {
@@ -49,8 +53,8 @@ export const lang = chosen ?? fromBrowser();
 /** Texto na língua da página: L({ pt: '...', en: '...', ..., ja: '...', zh: '...', hi: '...' }). */
 export const L = (o) => o[lang] ?? o.en ?? o.pt;
 
-/** Formato de números na língua da página. */
-export const locale = HTML_LANG[lang];
+/** Formato de números na língua da página (em árabe com algarismos 0-9, decisão do Nuno). */
+export const locale = lang === 'ar' ? 'ar-u-nu-latn' : HTML_LANG[lang];
 
 const loaders = {
   en: () => import('./i18n/en.js'),
@@ -61,6 +65,7 @@ const loaders = {
   ja: () => import('./i18n/ja.js'),
   zh: () => import('./i18n/zh.js'),
   hi: () => import('./i18n/hi.js'),
+  ar: () => import('./i18n/ar.js'),
 };
 
 /**
@@ -76,6 +81,7 @@ const REPORT = {
   ja: '翻訳の誤りを見つけた場合は、<a href="%s">お知らせください</a>。',
   zh: '发现翻译错误？<a href="%s">请告诉我们</a>。',
   hi: 'अनुवाद में कोई गलती दिखी? <a href="%s">हमें बताएं</a>।',
+  ar: 'هل وجدت خطأ في الترجمة؟ <a href="%s">يُرجى إبلاغنا</a>.',
 };
 
 function addReportLine() {
@@ -162,6 +168,7 @@ export function translatePage() {
 
 async function run() {
   document.documentElement.lang = HTML_LANG[lang];
+  document.documentElement.dir = RTL.has(lang) ? 'rtl' : 'ltr';
   markSwitcher();
   closeLangMenuOutside();
   keepLangInLinks();

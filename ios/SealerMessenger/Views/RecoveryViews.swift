@@ -11,7 +11,7 @@ private struct WordGrid: View {
             ForEach(0..<2, id: \.self) { col in
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach((col * 6)..<min(col * 6 + 6, words.count), id: \.self) { i in
-                        Text("\(i + 1). \(words[i])").font(.system(.body, design: .monospaced).weight(.semibold))
+                        Text(verbatim: "\(i + 1). \(words[i])").font(.system(.body, design: .monospaced).weight(.semibold))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
