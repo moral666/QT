@@ -47,9 +47,16 @@
     <string name="video_not_now">Agora não</string>
     <string name="video_waiting">À espera de %1$s…</string>
     <string name="video_declined">%1$s não quis ver o vídeo</string>
-    <string name="video_paused_weak">Vídeo em pausa — rede fraca</string>
-    <string name="video_paused_limit">Vídeo em pausa — limite do mês pelo servidor</string>
-    <string name="video_limited_verify">Qualidade limitada · Verifica o contacto para melhor imagem</string>
+    <string name="video_paused_weak">Vídeo em pausa · Rede fraca</string>
+    <string name="video_paused_limit">Vídeo em pausa · Limite do mês atingido</string>
+    <string name="p2p_notice">A tua conversa continua protegida, tal como as mensagens e os ficheiros. Para melhorar a qualidade, o teu telefone liga-se diretamente ao telefone de %1$s. Isso partilha com essa pessoa alguns dados da tua ligação à internet.</string>
+    <string name="p2p_ok">OK</string>
+    <string name="p2p_not_now">Agora não</string>
+    <string name="p2p_option">Ligação direta nas chamadas</string>
+    <string name="video_call_button">Videochamada</string>
+    <string name="video_call_from">Videochamada de %1$s</string>
+    <string name="video_call_sealer">Videochamada SEALER</string>
+    <string name="recovery_restore_what">Vais recuperar os teus contactos. As mensagens antigas e os grupos não são recuperados.</string>
     <string name="video_camera_denied">Sem acesso à câmara não é possível ligar o vídeo. Podes ativá-la nas definições do Android.</string>
     <string name="video_camera_failed">Não foi possível usar a câmara.</string>
     <string name="t_videochamada_em_curso">Videochamada em curso</string>
@@ -135,7 +142,6 @@
     <string name="t_foto_de_perfil">Foto de perfil</string>
     <string name="t_notificacoes">Notificações</string>
     <string name="t_confirmacoes_de_leitura">Confirmações de leitura</string>
-    <string name="t_chamadas_sempre_pelo_servidor">Chamadas sempre pelo servidor</string>
     <string name="t_mostrar_quando_estou_online">Mostrar quando estou online</string>
     <string name="t_bloqueio_da_app">Bloqueio da app</string>
     <string name="t_bloquear_agora">Bloquear agora</string>

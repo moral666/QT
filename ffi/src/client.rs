@@ -938,6 +938,7 @@ impl QtClient {
             // palavras): a minha foto e o meu badge voltam a seguir no proximo sync.
             crate::profile::forget_sent(&tx, contact_id)?;
             crate::badges::forget_sent(&tx, contact_id)?;
+            crate::call::forget_sent(&tx, contact_id)?;
         }
         // Ganchos do chamador (ex.: guardar a mensagem no historico) na MESMA transacao.
         after(&tx, contact_id, &env_id, &plaintext)?;

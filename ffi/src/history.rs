@@ -459,6 +459,9 @@ impl QtClient {
         st::kv_delete(&tx, &format!("{KV_PENDING_DELIVERED}{contact_id}"))?;
         tx.execute("DELETE FROM outbox WHERE contact_id = ?1", [&contact_id])?;
         tx.commit()?;
+        drop(c);
+        // Chamada a meio com ele: volta logo ao relay.
+        crate::call::p2p_revoke(self, &contact_id);
         Ok(())
     }
 
@@ -876,8 +879,12 @@ impl QtClient {
         st::kv_delete(&tx, &format!("{KV_SEND_INTRO}{contact_id}"))?;
         crate::profile::forget_contact(&tx, &contact_id)?;
         crate::badges::forget_contact(&tx, &contact_id)?;
+        crate::call::forget_contact(&tx, &contact_id)?;
         st::delete_session(&tx, &contact_id)?;
         tx.commit()?;
+        drop(c);
+        // Chamada a meio com ele: volta logo ao relay.
+        crate::call::p2p_revoke(self, &contact_id);
         Ok(())
     }
 }

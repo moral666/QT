@@ -42,9 +42,16 @@
     <string name="video_not_now">今はしない</string>
     <string name="video_waiting">%1$sさんを待っています…</string>
     <string name="video_declined">%1$sさんはビデオを見ませんでした</string>
-    <string name="video_paused_weak">ビデオ一時停止 — ネットワークが弱い</string>
-    <string name="video_paused_limit">ビデオ一時停止 — サーバーの月間上限</string>
-    <string name="video_limited_verify">画質制限中 · 連絡先を確認すると画質が良くなります</string>
+    <string name="video_paused_weak">ビデオ一時停止 · ネットワークが弱い</string>
+    <string name="video_paused_limit">ビデオ一時停止 · 今月の上限に達しました</string>
+    <string name="p2p_notice">メッセージやファイルと同じく、会話は引き続き保護されます。品質を上げるため、あなたのスマートフォンは%1$sさんのスマートフォンと直接つながります。その際、インターネット接続に関する一部の情報が相手と共有されます。</string>
+    <string name="p2p_ok">OK</string>
+    <string name="p2p_not_now">今はしない</string>
+    <string name="p2p_option">通話の直接接続</string>
+    <string name="video_call_button">ビデオ通話</string>
+    <string name="video_call_from">%1$sさんからのビデオ通話</string>
+    <string name="video_call_sealer">SEALERビデオ通話</string>
+    <string name="recovery_restore_what">連絡先は復元されます。以前のメッセージとグループは復元されません。</string>
     <string name="video_camera_denied">カメラへのアクセスがないとビデオをオンにできません。Androidの設定で許可できます。</string>
     <string name="video_camera_failed">カメラを使用できませんでした。</string>
     <string name="t_videochamada_em_curso">ビデオ通話中</string>
@@ -130,7 +137,6 @@
     <string name="t_foto_de_perfil">プロフィール写真</string>
     <string name="t_notificacoes">通知</string>
     <string name="t_confirmacoes_de_leitura">既読通知</string>
-    <string name="t_chamadas_sempre_pelo_servidor">通話を常にサーバー経由にする</string>
     <string name="t_mostrar_quando_estou_online">オンライン状態を表示</string>
     <string name="t_bloqueio_da_app">アプリのロック</string>
     <string name="t_bloquear_agora">今すぐロック</string>

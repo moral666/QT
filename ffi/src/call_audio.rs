@@ -89,8 +89,8 @@ pub struct CallAudioStats {
     pub peer_present: bool,
     /// Ida e volta ate ao relay das chamadas, em ms.
     pub relay_rtt_ms: Option<u32>,
-    /// O audio que envio vai direto ao outro telemovel (ligacao direta, so com contactos
-    /// verificados). `false`: pelo relay.
+    /// O audio que envio vai direto ao outro telemovel (ligacao direta, so entre contactos
+    /// mutuos que disseram OK na janela de aviso). `false`: pelo relay.
     pub direct: bool,
     /// ... e tambem pelo servidor: o caminho direto falhou respostas ha pouco (ainda a decidir).
     pub both_paths: bool,

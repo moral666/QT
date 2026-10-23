@@ -37,7 +37,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
@@ -339,7 +338,6 @@ fun ProfileSettingsScreen(
     onUnblock: (String) -> Unit,
     onPresence: (Boolean) -> Unit,
     onReadReceipts: (Boolean) -> Unit,
-    onCallsRelayOnly: (Boolean) -> Unit,
     onPush: (Boolean) -> Unit,
     onLanguage: () -> Unit,
     onRelay: () -> Unit,
@@ -384,8 +382,7 @@ fun ProfileSettingsScreen(
 
             SectionLabel(s(R.string.t_sec_privacidade))
             SettingsSwitch(Icons.Filled.Person, s(R.string.t_mostrar_quando_estou_online), ui.presenceOn, onPresence)
-            SettingsSwitch(Icons.Filled.Done, s(R.string.t_confirmacoes_de_leitura), ui.readReceipts, onReadReceipts)
-            SettingsSwitch(Icons.Filled.Call, s(R.string.t_chamadas_sempre_pelo_servidor), ui.callsRelayOnly, onCallsRelayOnly, divider = false)
+            SettingsSwitch(Icons.Filled.Done, s(R.string.t_confirmacoes_de_leitura), ui.readReceipts, onReadReceipts, divider = false)
 
             SectionLabel(s(R.string.t_sec_app))
             if (Push.available) SettingsSwitch(Icons.Filled.Notifications, s(R.string.t_notificacoes), ui.pushOn, onPush)

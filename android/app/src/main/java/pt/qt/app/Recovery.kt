@@ -281,6 +281,8 @@ fun RestoreScreen(ui: UiState, onBack: () -> Unit, onRestore: (List<String>) -> 
             if (unknown.isNotEmpty()) {
                 Text(s(R.string.recovery_unknown_words, unknown.joinToString(", ")), color = MaterialTheme.colorScheme.error)
             }
+            // O que volta e o que nao volta, antes de recuperar.
+            Text(s(R.string.recovery_restore_what), style = MaterialTheme.typography.bodyMedium)
             Text(s(R.string.recovery_restore_warning), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (ui.recoveryBusy) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

@@ -42,9 +42,16 @@
     <string name="video_not_now">Jetzt nicht</string>
     <string name="video_waiting">Warte auf %1$s…</string>
     <string name="video_declined">%1$s wollte das Video nicht sehen</string>
-    <string name="video_paused_weak">Video pausiert — schwaches Netz</string>
-    <string name="video_paused_limit">Video pausiert — Monatslimit des Servers</string>
-    <string name="video_limited_verify">Eingeschränkte Qualität · Verifiziere den Kontakt für ein besseres Bild</string>
+    <string name="video_paused_weak">Video pausiert · Schwaches Netz</string>
+    <string name="video_paused_limit">Video pausiert · Monatslimit erreicht</string>
+    <string name="p2p_notice">Dein Gespräch bleibt geschützt, genau wie Nachrichten und Dateien. Für eine bessere Qualität verbindet sich dein Handy direkt mit dem Handy von %1$s. Dabei teilst du mit dieser Person einige Daten deiner Internetverbindung.</string>
+    <string name="p2p_ok">OK</string>
+    <string name="p2p_not_now">Jetzt nicht</string>
+    <string name="p2p_option">Direktverbindung bei Anrufen</string>
+    <string name="video_call_button">Videoanruf</string>
+    <string name="video_call_from">Videoanruf von %1$s</string>
+    <string name="video_call_sealer">SEALER-Videoanruf</string>
+    <string name="recovery_restore_what">Du bekommst deine Kontakte zurück. Alte Nachrichten und Gruppen werden nicht wiederhergestellt.</string>
     <string name="video_camera_denied">Ohne Zugriff auf die Kamera kann kein Video eingeschaltet werden. Du kannst ihn in den Android-Einstellungen erlauben.</string>
     <string name="video_camera_failed">Die Kamera konnte nicht verwendet werden.</string>
     <string name="t_videochamada_em_curso">Videoanruf läuft</string>
@@ -130,7 +137,6 @@
     <string name="t_foto_de_perfil">Profilfoto</string>
     <string name="t_notificacoes">Benachrichtigungen</string>
     <string name="t_confirmacoes_de_leitura">Lesebestätigungen</string>
-    <string name="t_chamadas_sempre_pelo_servidor">Anrufe immer über den Server</string>
     <string name="t_mostrar_quando_estou_online">Zeigen, wenn ich online bin</string>
     <string name="t_bloqueio_da_app">App-Sperre</string>
     <string name="t_bloquear_agora">Jetzt sperren</string>

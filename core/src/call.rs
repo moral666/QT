@@ -29,7 +29,7 @@
 //! `[1 0x21][8 room_id][1 o outro ja esta na sala][8 etiqueta]` (`join_ok`), mais
 //! pequeno que o pedido (nao serve para amplificar ataques).
 //!
-//! LIGACAO DIRETA (P2P, fase 5, so com contactos verificados; a regra esta em
+//! LIGACAO DIRETA (P2P, fase 5, so entre contactos mutuos; a regra esta em
 //! `qt_ffi::call`). Os pacotes de audio sao os mesmos; so muda o destino.
 //!   * ENDERECO VISTO PELO RELAY: `[1 0x22][8 room_id][8 txid][23 zeros][8 etiqueta]`
 //!     (48 bytes, etiqueta com a `relay_key`). O relay so responde se a sala existir:

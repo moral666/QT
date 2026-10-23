@@ -27,6 +27,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.materialIcon
+import androidx.compose.material.icons.materialPath
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -64,10 +66,36 @@ private val RED = Color(0xFFD64545)
 private val SCRIM = Color(0x99000000)
 
 /**
+ * Icone da videochamada (camara de video, o do Material "Videocam", Apache 2.0). A app so
+ * tem os icones base do Material, por isso fica desenhado aqui.
+ */
+val VideoCallIcon: ImageVector by lazy {
+    materialIcon(name = "Filled.Videocam") {
+        materialPath {
+            moveTo(17.0f, 10.5f)
+            verticalLineTo(7.0f)
+            curveToRelative(0.0f, -0.55f, -0.45f, -1.0f, -1.0f, -1.0f)
+            horizontalLineTo(4.0f)
+            curveToRelative(-0.55f, 0.0f, -1.0f, 0.45f, -1.0f, 1.0f)
+            verticalLineToRelative(10.0f)
+            curveToRelative(0.0f, 0.55f, 0.45f, 1.0f, 1.0f, 1.0f)
+            horizontalLineToRelative(12.0f)
+            curveToRelative(0.55f, 0.0f, 1.0f, -0.45f, 1.0f, -1.0f)
+            verticalLineToRelative(-3.5f)
+            lineToRelative(4.0f, 4.0f)
+            verticalLineToRelative(-11.0f)
+            lineToRelative(-4.0f, 4.0f)
+            close()
+        }
+    }
+}
+
+/**
  * Ecra de chamada (a chamar, a tocar, a chegar, atendida, terminada). Com video (fase 5b): o
  * video do outro enche o ecra e a minha camara fica num canto; enquanto o outro nao aceita,
- * a minha camara enche o ecra com "A espera de [Nome]...". FLAG_SECURE: nada deste ecra sai
- * em capturas, gravacoes do ecra nem na lista de apps recentes.
+ * a minha camara enche o ecra com "A espera de [Nome]...". Numa videochamada minha, a camara
+ * ja aparece enquanto chama. FLAG_SECURE: nada deste ecra sai em capturas, gravacoes do ecra
+ * nem na lista de apps recentes.
  */
 @Composable
 fun CallScreen(
@@ -96,7 +124,9 @@ fun CallScreen(
     val active = call.phase == CallPhase.ACTIVE
     val videoAllowed = onCamera != null && active
     val showRemote = videoAllowed && v.showRemote
-    val showSelf = videoAllowed && v.camera
+    // Videochamada minha a chamar ou a tocar: a minha camara ja esta no ecra (nada sai ainda).
+    val calling = call.phase == CallPhase.CALLING || call.phase == CallPhase.RINGING_OUT
+    val showSelf = onCamera != null && v.camera && (active || calling)
     val videoOn = showRemote || showSelf
     Box(
         Modifier
@@ -198,7 +228,6 @@ private fun videoMessage(call: CallUi): String? {
         v.paused == VideoPause.WEAK_NETWORK -> s(R.string.video_paused_weak)
         v.paused == VideoPause.RELAY_LIMIT -> s(R.string.video_paused_limit)
         v.waiting -> s(R.string.video_waiting, call.name)
-        v.limitedByRelay && !v.verified -> s(R.string.video_limited_verify)
         else -> null
     }
 }
@@ -287,7 +316,7 @@ private fun callStatusText(call: CallUi): String {
     return when (call.phase) {
         CallPhase.CALLING -> s(R.string.t_a_chamar)
         CallPhase.RINGING_OUT -> s(R.string.t_a_tocar)
-        CallPhase.INCOMING -> s(R.string.t_chamada_de_voz)
+        CallPhase.INCOMING -> if (call.videoCall) s(R.string.video_call_from, call.name) else s(R.string.t_chamada_de_voz)
         CallPhase.ACTIVE -> {
             val s = ((now - call.answeredAt).coerceAtLeast(0L) / 1000L)
             String.format(java.util.Locale.ROOT, "%d:%02d", s / 60, s % 60)

@@ -767,7 +767,8 @@ o bloqueio da app, toca até 45 s e o código é pedido ao abrir a app.
 
 Desenho aprovado a 19/10/2026: só Android primeiro, sem ligação direta entre telemóveis (o áudio
 passa sempre pelo relay, o contacto nunca vê o IP). Desde a fase 5 (23/10/2026) há ligação direta,
-mas só depois de atender e só com contactos verificados dos dois lados (ver "Ligação direta" abaixo). Fase 1 no núcleo (`core/src/call.rs`,
+mas só depois de atender e só entre contactos mútuos que disseram OK na janela de aviso (ver "Ligação
+direta" abaixo). Fase 1 no núcleo (`core/src/call.rs`,
 `ffi/src/call.rs`, testes em `ffi/tests/calls.rs`); fase 2 no relay das chamadas
 (`server/src/call_relay.rs`, `server/src/bin/call_relay.rs`, testes em
 `server/tests/call_relay_e2e.rs`); fase 3 no motor de áudio (`call/`, crate `qt_call`, testes em
@@ -787,6 +788,8 @@ para uma versão antiga mostrar "atualiza a app" uma só vez por chamada. Corpo 
 | 3 | desligar | `[1 motivo]`: 1 desligou, 2 recusou, 3 ocupado, 4 sem resposta, 5 cancelou | só "cancelou" e "sem resposta" de quem liga, marcada `CallEnd` (desde a 0.9.6) |
 | 5 | posso ligar direto | vazio (só depois de atender) | não |
 | 6 | endereços | `[1 n, 1 a 5][n × 19 endereço]` | não |
+| 7 | capacidades | `[1 bit0 vídeo, bit1 videochamada]` (ver "Vídeo") | não |
+| 8 | estado do vídeo | `[2 seq BE][1 câmara, aceito, recusei]` (ver "Vídeo") | não |
 
 * Uma chamada de cada vez. Uma oferta que chegue com mais de 45 s (`sent_at`, limitado à hora
   local) não toca: fica "chegou tarde" (chamada perdida). Sem resposta em 45 s, quem liga envia
@@ -870,13 +873,23 @@ CMake), com o DRED e o PLC neural (os modelos vêm no pacote).
 **Ligação direta (P2P, fase 5, 23/10/2026).** A chamada começa sempre pelo relay. Os endereços
 para a ligação direta só são trocados depois de atender, dentro do ratchet (ops 5 e 6).
 
-* REGRA, de cada lado (`p2p_allowed`): contacto verificado com a chave de identidade que a sessão
-  tem agora (`verified:<contact_id>` guarda a chave verificada; se a chave mudar, deixa de valer),
-  não bloqueado, e a opção "chamadas sempre pelo servidor" desligada (`calls_relay_only`).
+* REGRA, de cada lado (`p2p_allowed`, desde 23/10/2026 sem verificação, QR nem códigos): o outro
+  está nos meus contactos (a lista é da app e passa ao núcleo em `call_contacts_sync`, guardada em
+  `call:contact:<contact_id>`), não está bloqueado, e eu disse OK na janela de aviso desse contacto
+  (`call:direct:<contact_id>`: 1 OK, 0 "Agora não"; sem chave, ainda não foi perguntado).
 * Quem cumpre a regra envia "posso" (op 5, sem endereços) ao atender. Só quem enviou "posso" E
   recebeu o "posso" do outro envia os seus endereços (op 6). Os endereços recebidos só vão para o
-  motor de quem enviou "posso" (a regra volta a ser vista nesse momento). Assim nenhum endereço sai
-  antes de atender, para quem não verificou, nem para quem tem "sempre pelo servidor".
+  motor de quem enviou "posso" (a regra volta a ser vista nesse momento). Como o outro lado aplica a
+  mesma regra, só há endereços entre contactos MÚTUOS que disseram OK: nenhum endereço sai antes de
+  atender, para quem não me tem nos contactos, nem para quem disse "Agora não".
+* Contacto apagado (`delete_contact`), bloqueado, retirado da lista ou "Agora não" no menu da
+  conversa a meio de uma chamada: o áudio volta logo ao relay (`p2p_disable`, até ao fim da chamada)
+  e os meus endereços já não saem. Apagar o contacto esquece também a resposta à janela.
+* Janela de aviso (app): uma vez por contacto, antes da primeira chamada que pode ser direta e nunca
+  durante uma chamada. Quem liga vê-a ao carregar em ligar; quem recebe, depois de desligar a
+  primeira chamada atendida desse contacto (até lá essa chamada fica no relay). [OK] ou [Agora não];
+  no menu da conversa, "Ligação direta nas chamadas" muda a resposta (OK só conta da chamada
+  seguinte em diante).
 * Compatibilidade: uma app antiga ignora as ops 5 e 6 e nunca envia "posso" (fica tudo no relay).
   Um relay antigo não responde ao pedido de endereço (0x22): a recolha acaba ao fim de 1,5 s só com
   os endereços locais. Uma app antiga com um relay novo não muda nada.
@@ -910,11 +923,26 @@ para a ligação direta só são trocados depois de atender, dentro do ratchet (
 **Vídeo (fase 5a, 23/10/2026).** Um fluxo a mais dentro da chamada de voz, pelo mesmo caminho do
 áudio (direto, relay, ou os dois durante a duplicação). A chamada começa sempre só com voz.
 
-* Sinalização (tipo 11, depois de atender): op 7 "tenho vídeo" `[1 bit0 = vídeo]` e op 8 estado do
-  vídeo `[2 seq BE][1 bit0 câmara ligada, bit1 aceito o teu vídeo, bit2 recusei]`. Só a build com a
-  feature `video` (a do Android, desde a fase 5b) envia a op 7; o botão da câmara só aparece se os dois
-  lados a enviaram.
+* Sinalização (tipo 11, depois de atender): op 7 "tenho vídeo" `[1 bit0 = vídeo, bit1 = videochamada]`
+  e op 8 estado do vídeo `[2 seq BE][1 bit0 câmara ligada, bit1 aceito o teu vídeo, bit2 recusei]`. Só
+  a build com a feature `video` (a do Android, desde a fase 5b) envia a op 7; o botão da câmara só
+  aparece se os dois lados a enviaram.
   Uma app antiga, ou o iPhone por agora, ignora as ops 7 e 8: chamada só de voz, sem erro.
+* Videochamada (desde 23/10/2026, botão da conversa, `call_start_video`): logo a seguir à oferta
+  (mesma transação, `silent`) vai a op 7 com os bits 0 e 1. Quem recebe, ainda a tocar, marca a
+  chamada como videochamada (`call_is_video`: "Videochamada de [Nome]", também no aviso de ecrã
+  inteiro) e recebe um `CallEvent::Video`. A câmara de quem liga começa ligada (e aceita o vídeo do
+  outro); nada sai antes de o outro aceitar. Quando chega a op 7 de quem atendeu, o pedido da câmara
+  (op 8) segue sozinho e quem atendeu escolhe Ver, Ligar a minha câmara ou Agora não, como num pedido
+  normal. Uma app antiga ignora a op 7 antes de atender (só olha para ela com a chamada atendida).
+* Anúncio "tenho vídeo" fora de uma chamada: op 7 com o `call_id` fixo `"QT-CAPS-v1"` + 6 zeros,
+  uma vez por contacto e por capacidade (`call:caps:sent:<contact_id>`), enviado por
+  `call_contacts_sync` a contactos com sessão e não bloqueados. Volta a seguir com uma sessão nova
+  (o contacto reinstalou). Quem recebe guarda `call:video:<contact_id>`; também a op 7 de uma
+  chamada o guarda. Uma chamada atendida de 10 s ou mais sem a op 7 do outro apaga-o (passou para
+  um telemóvel sem vídeo). O botão da videochamada só aparece para estes contactos
+  (`call_video_contacts`, vazio numa build sem vídeo). Uma app com chamadas ignora o anúncio (não
+  é a chamada atual).
 * Consentimento: o vídeo de A só sai quando B aceitou ver ("[Nome] quer mostrar vídeo": Ver, Ligar a
   minha câmara, Agora não). Quem recebe nem lê pacotes de vídeo que não aceitou. Ligar a própria câmara
   aceita o vídeo do outro. Uma câmara que volta a ligar é um pedido novo.
@@ -959,6 +987,11 @@ para a ligação direta só são trocados depois de atender, dentro do ratchet (
   no ecrã da chamada; o serviço da chamada é também do tipo câmara com a câmara ligada; a permissão da
   câmara só é pedida ao carregar no botão. Wi-Fi sem limite de dados conta como Wi-Fi; Wi-Fi com limite
   (partilha de dados) conta como dados móveis.
+* App Android (23/10/2026, `0005`): botão da videochamada ao lado do de ligar, só para contactos em
+  `call_video_contacts`; a minha câmara aparece logo enquanto chama. Uma videochamada atendida sem
+  vídeo do outro lado ao fim de 5 s desliga a câmara. Sem a faixa "Qualidade limitada · Verifica o
+  contacto"; mensagens de pausa "Vídeo em pausa · Rede fraca" e "Vídeo em pausa · Limite do mês
+  atingido". Sem a opção "Chamadas sempre pelo servidor" nas Definições.
 
 **API (`QtClient`).** `call_start`, `call_accept`, `call_hangup` (o motivo sai do estado),
 `call_events` (Incoming, Ringing, Answered, Ended; chamar depois de cada lote recebido e de
@@ -968,10 +1001,12 @@ do relay), `call_join_ok`, `call_seal` e `call_open`. Com a feature `calls` (app
 já na sala, mesmo antes de atender) com `push_capture` e `pull_playback` (20 ms de PCM 16 bits,
 48 kHz, mono, 1920 bytes little-endian), `stats`, `active` e `stop`; ao atender, as chaves do
 áudio passam para o motor, e ao terminar a chamada ele para sozinho. As chaves nunca atravessam
-a FFI. Ligação direta: `calls_relay_only` / `set_calls_relay_only` (ligada a meio de uma chamada,
-o áudio volta logo ao relay); `CallAudioStats.direct` e `both_paths`. Vídeo: `call_video_supported`,
-`call_video_set_camera`, `call_video_respond` (`View`, `ViewAndCamera`, `NotNow`), `contact_verified`
-e o evento `CallEvent::Video`; no `CallAudio`: `video_params` (enviar, débito, resolução, imagens/s,
+a FFI. Ligação direta: `call_contacts_sync` (lista de contactos e anúncio do vídeo),
+`call_direct_choice` / `call_set_direct_choice` (janela de aviso; "Agora não" a meio de uma chamada
+volta logo ao relay); `CallAudioStats.direct` e `both_paths`. Vídeo: `call_start_video`,
+`call_is_video`, `call_video_contacts`, `call_video_supported`, `call_video_set_camera` (devolve
+`None` ao desligar a câmara de uma videochamada para quem não tem vídeo), `call_video_respond`
+(`View`, `ViewAndCamera`, `NotNow`) e o evento `CallEvent::Video`; no `CallAudio`: `video_params` (enviar, débito, resolução, imagens/s,
 pausa, limitado pelo relay, `keyframe_seq`), `video_push` (imagem H.264, rotação, idade),
 `video_pull` (a próxima imagem do outro lado, já na hora certa), `video_request_keyframe` e
 `set_network` (Wi-Fi ou dados móveis).

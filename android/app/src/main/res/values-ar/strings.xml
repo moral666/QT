@@ -42,9 +42,16 @@
     <string name="video_not_now">ليس الآن</string>
     <string name="video_waiting">في انتظار %1$s…</string>
     <string name="video_declined">لم يرغب %1$s في مشاهدة الفيديو</string>
-    <string name="video_paused_weak">الفيديو متوقف مؤقتًا — الشبكة ضعيفة</string>
-    <string name="video_paused_limit">الفيديو متوقف مؤقتًا — الحد الشهري للخادم</string>
-    <string name="video_limited_verify">جودة محدودة · تحقّق من جهة الاتصال للحصول على صورة أفضل</string>
+    <string name="video_paused_weak">الفيديو متوقف مؤقتًا · الشبكة ضعيفة</string>
+    <string name="video_paused_limit">الفيديو متوقف مؤقتًا · تم بلوغ الحد الشهري</string>
+    <string name="p2p_notice">تبقى محادثتك محمية، تمامًا مثل الرسائل والملفات. لتحسين الجودة، يتصل هاتفك مباشرةً بهاتف %1$s. وبذلك تُشارَك بعض بيانات اتصالك بالإنترنت مع هذا الشخص.</string>
+    <string name="p2p_ok">حسنًا</string>
+    <string name="p2p_not_now">ليس الآن</string>
+    <string name="p2p_option">الاتصال المباشر في المكالمات</string>
+    <string name="video_call_button">مكالمة فيديو</string>
+    <string name="video_call_from">مكالمة فيديو من %1$s</string>
+    <string name="video_call_sealer">مكالمة فيديو عبر SEALER</string>
+    <string name="recovery_restore_what">ستستعيد جهات اتصالك. لا تُستعاد الرسائل القديمة ولا المجموعات.</string>
     <string name="video_camera_denied">بدون الوصول إلى الكاميرا لا يمكن تشغيل الفيديو. يمكنك السماح بذلك في إعدادات Android.</string>
     <string name="video_camera_failed">تعذّر استخدام الكاميرا.</string>
     <string name="t_videochamada_em_curso">مكالمة فيديو جارية</string>
@@ -130,7 +137,6 @@
     <string name="t_foto_de_perfil">صورة الملف الشخصي</string>
     <string name="t_notificacoes">الإشعارات</string>
     <string name="t_confirmacoes_de_leitura">إيصالات القراءة</string>
-    <string name="t_chamadas_sempre_pelo_servidor">المكالمات دائمًا عبر الخادم</string>
     <string name="t_mostrar_quando_estou_online">إظهار حالة الاتصال</string>
     <string name="t_bloqueio_da_app">قفل التطبيق</string>
     <string name="t_bloquear_agora">القفل الآن</string>

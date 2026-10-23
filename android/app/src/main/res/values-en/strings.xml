@@ -42,9 +42,16 @@
     <string name="video_not_now">Not now</string>
     <string name="video_waiting">Waiting for %1$s…</string>
     <string name="video_declined">%1$s didn\'t want to see the video</string>
-    <string name="video_paused_weak">Video paused — weak network</string>
-    <string name="video_paused_limit">Video paused — monthly server limit reached</string>
-    <string name="video_limited_verify">Limited quality · Verify the contact for a better picture</string>
+    <string name="video_paused_weak">Video paused · Weak network</string>
+    <string name="video_paused_limit">Video paused · Monthly limit reached</string>
+    <string name="p2p_notice">Your conversation stays protected, just like your messages and files. To improve quality, your phone connects directly to %1$s\'s phone. This shares some details of your internet connection with them.</string>
+    <string name="p2p_ok">OK</string>
+    <string name="p2p_not_now">Not now</string>
+    <string name="p2p_option">Direct connection in calls</string>
+    <string name="video_call_button">Video call</string>
+    <string name="video_call_from">Video call from %1$s</string>
+    <string name="video_call_sealer">SEALER video call</string>
+    <string name="recovery_restore_what">You\'ll recover your contacts. Old messages and groups aren\'t recovered.</string>
     <string name="video_camera_denied">Without access to the camera, video can\'t be turned on. You can allow it in Android settings.</string>
     <string name="video_camera_failed">Couldn\'t use the camera.</string>
     <string name="t_videochamada_em_curso">Video call in progress</string>
@@ -130,7 +137,6 @@
     <string name="t_foto_de_perfil">Profile photo</string>
     <string name="t_notificacoes">Notifications</string>
     <string name="t_confirmacoes_de_leitura">Read receipts</string>
-    <string name="t_chamadas_sempre_pelo_servidor">Always route calls through the server</string>
     <string name="t_mostrar_quando_estou_online">Show when I\'m online</string>
     <string name="t_bloqueio_da_app">App lock</string>
     <string name="t_bloquear_agora">Lock now</string>

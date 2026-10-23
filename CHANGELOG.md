@@ -6,6 +6,30 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 23 de outubro de 2026: ligação direta entre contactos, videochamada e limpezas
+
+- Ligação direta (P2P) sem verificação, QR nem códigos: liga quando os dois se têm nos contactos e
+  disseram OK na janela de aviso desse contacto. Se um dos lados não tiver o outro nos contactos, ou
+  disse "Agora não", a chamada vai sempre pelo relay. Apagar, bloquear ou tirar o contacto da lista a
+  meio de uma chamada volta logo ao relay. Os endereços continuam a sair só depois de atender, dentro
+  do ratchet (ops 5 e 6, sem mudanças no formato).
+- Núcleo: `call_contacts_sync` (lista de contactos da app e anúncio "tenho vídeo" uma vez por
+  contacto, op 7 fora de uma chamada), `call_direct_choice` / `call_set_direct_choice`,
+  `call_video_contacts`, `call_start_video` e `call_is_video`. Saem `calls_relay_only`,
+  `set_calls_relay_only` e `contact_verified` (e a chave `verified:`).
+- Janela de aviso, uma vez por contacto e nunca durante uma chamada: quem liga vê-a ao carregar em
+  ligar; quem recebe, depois de desligar a primeira chamada atendida. [OK] [Agora não]. No menu da
+  conversa, "Ligação direta nas chamadas" muda a resposta. Textos em dez línguas.
+- Botão de videochamada na conversa, ao lado do de ligar, só para contactos com vídeo. Começa com a
+  minha câmara ligada; quem recebe vê "Videochamada de [Nome]" e, ao atender, escolhe se vê o vídeo.
+- Limpezas: sai "Chamadas sempre pelo servidor" das Definições e a faixa "Qualidade limitada ·
+  Verifica o contacto"; pausas do vídeo com "·" ("Vídeo em pausa · Rede fraca", "Vídeo em pausa ·
+  Limite do mês atingido"); na recuperação de conta aparece antes de recuperar "Vais recuperar os teus
+  contactos. As mensagens antigas e os grupos não são recuperados."
+- Testes: nenhum endereço sai antes de atender nem para quem não é contacto mútuo com OK (só um lado
+  com o outro nos contactos, sem resposta à janela, "Agora não"); bloquear, apagar e sair da lista a
+  meio voltam ao relay; videochamada; anúncio do vídeo.
+
 ### 23 de outubro de 2026: videochamadas na app Android, com a app aberta (fase 5b)
 
 - Botão "Ligar câmara" na chamada (só se os dois lados tiverem vídeo). Ligar a câmara é um pedido: o
