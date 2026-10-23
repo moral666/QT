@@ -7,3 +7,4 @@
 pub mod codec;
 pub mod jitter;
 pub mod engine;
+pub mod video;

@@ -10,11 +10,23 @@
 //! As chaves do audio nunca atravessam a FFI: quando a chamada e atendida (`call_accept`
 //! ou a resposta do outro lado), o nucleo entrega-as ao motor. Quando a chamada acaba,
 //! o motor para sozinho.
+//!
+//! VIDEO (fase 5b): o mesmo objeto. A app so trata da camara e do MediaCodec:
+//!   * `video_params` (a cada ~250 ms): enviar ou nao, debito, resolucao, imagens/s e
+//!     `keyframe_seq` (mudou: pedir ja uma imagem completa ao codificador);
+//!   * `video_push`: cada imagem H.264 que sai do codificador (SPS/PPS antes das completas);
+//!   * `video_pull` (thread propria): a proxima imagem do outro lado para o descodificador,
+//!     ja na hora certa (sincronizada com o audio);
+//!   * `video_request_keyframe`: o descodificador falhou;
+//!   * `set_network`: Wi-Fi ou dados moveis (teto da ligacao direta: 1080p ou 720p).
+//!
+//! O que pode sair e entrar decide o nucleo (`call_video_set_camera` / `call_video_respond`):
+//! sem o outro aceitar, `video_push` devolve `false` e nada sai.
 
 use std::sync::{Arc, Mutex};
 
 use qt_call::codec::FRAME_SAMPLES;
-use qt_call::engine::{CallEngine, EngineConfig, RelayTarget, Transport};
+use qt_call::engine::{CallEngine, EngineConfig, Net, Pause, RelayTarget, Transport};
 
 use crate::client::{bad, QtClient, QtError};
 
@@ -24,6 +36,48 @@ pub const CALL_FRAME_BYTES: u32 = (FRAME_SAMPLES * 2) as u32;
 #[derive(uniffi::Object)]
 pub struct CallAudio {
     engine: Mutex<Option<Arc<CallEngine>>>,
+}
+
+/// Rede do telemovel, para o teto do video em ligacao direta.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum NetworkKind {
+    Unknown,
+    Wifi,
+    Mobile,
+}
+
+/// Porque o video esta em pausa (a voz continua).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum VideoPause {
+    /// "Video em pausa: rede fraca."
+    WeakNetwork,
+    /// Pelo servidor ja nao ha video este mes (teto da conta); em ligacao direta continua.
+    RelayLimit,
+}
+
+/// O que o codificador deve fazer agora.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct VideoEncoderParams {
+    /// Enviar imagens agora (o outro aceitou e nao ha pausa).
+    pub send: bool,
+    pub bitrate_bps: u32,
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    pub paused: Option<VideoPause>,
+    /// A qualidade esta limitada por ir pelo servidor (ligacao direta daria mais).
+    pub limited_by_relay: bool,
+    /// Mudou desde a ultima vez: pedir ja uma imagem completa ao codificador.
+    pub keyframe_seq: u32,
+}
+
+/// Uma imagem do outro lado, pronta para o descodificador (H.264, Annex B).
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct VideoFrameIn {
+    pub data: Vec<u8>,
+    pub keyframe: bool,
+    /// Rodar tanto (0, 90, 180 ou 270 graus, sentido dos ponteiros) para a mostrar direita.
+    pub rotation_degrees: u32,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -51,6 +105,10 @@ pub struct CallAudioStats {
     /// Variacao das chegadas e atraso atual do jitter buffer, em ms.
     pub jitter_ms: u32,
     pub buffer_ms: u32,
+    /// Video: imagens recebidas e perdidas, e o que saiu deste telemovel (kB).
+    pub video_frames_in: u64,
+    pub video_lost_frames: u64,
+    pub video_sent_kb: u64,
 }
 
 impl CallAudio {
@@ -70,6 +128,15 @@ impl CallAudio {
     }
 
     /// Ligacao direta: so `crate::call` chama isto, com a regra cumprida (ver la).
+    /// O nucleo: o que pode sair (camara ligada E o outro aceitou) e entrar (aceitei E a
+    /// camara dele esta ligada).
+    pub(crate) fn video_authorize(&self, send: bool, receive: bool) {
+        if let Some(e) = self.engine() {
+            e.video_set_sending(send);
+            e.video_set_receiving(receive);
+        }
+    }
+
     pub(crate) fn p2p_enable(&self) {
         if let Some(e) = self.engine() {
             e.p2p_enable();
@@ -114,8 +181,72 @@ impl CallAudio {
         out.iter().flat_map(|s| s.to_le_bytes()).collect()
     }
 
+    /// O que o codificador deve fazer agora (perguntar a cada ~250 ms).
+    pub fn video_params(&self) -> VideoEncoderParams {
+        let p = self.engine().map(|e| e.video_params());
+        match p {
+            Some(p) => VideoEncoderParams {
+                send: p.send,
+                bitrate_bps: p.bitrate_bps,
+                width: p.width as u32,
+                height: p.height as u32,
+                fps: p.fps as u32,
+                paused: p.paused.map(|r| match r {
+                    Pause::WeakNetwork => VideoPause::WeakNetwork,
+                    Pause::RelayLimit => VideoPause::RelayLimit,
+                }),
+                limited_by_relay: p.limited_by_relay,
+                keyframe_seq: p.keyframe_seq,
+            },
+            None => VideoEncoderParams {
+                send: false,
+                bitrate_bps: 0,
+                width: 0,
+                height: 0,
+                fps: 0,
+                paused: None,
+                limited_by_relay: true,
+                keyframe_seq: 0,
+            },
+        }
+    }
+
+    /// Uma imagem H.264 do codificador. `rotation_degrees`: quanto rodar (sentido dos
+    /// ponteiros) para a ver direita; `age_ms`: ha quanto tempo foi captada. `false`: nao
+    /// saiu (o outro ainda nao aceitou, pausa, ou rede sem espaco: pedir imagem completa).
+    pub fn video_push(&self, frame: Vec<u8>, keyframe: bool, rotation_degrees: u32, age_ms: u32) -> bool {
+        let quarter = ((rotation_degrees % 360) / 90) as u8;
+        self.engine().is_some_and(|e| e.video_push(&frame, keyframe, quarter, age_ms))
+    }
+
+    /// A proxima imagem do outro lado, quando for a hora dela. Espera ate `timeout_ms`.
+    pub fn video_pull(&self, timeout_ms: u32) -> Option<VideoFrameIn> {
+        let e = self.engine()?;
+        e.video_pull(std::time::Duration::from_millis(timeout_ms.min(1_000) as u64))
+            .map(|f| VideoFrameIn { data: f.data, keyframe: f.keyframe, rotation_degrees: f.rotation as u32 * 90 })
+    }
+
+    /// O descodificador falhou: pede ao outro lado uma imagem completa.
+    pub fn video_request_keyframe(&self) {
+        if let Some(e) = self.engine() {
+            e.video_request_keyframe();
+        }
+    }
+
+    /// Rede do telemovel (Wi-Fi ou dados moveis).
+    pub fn set_network(&self, kind: NetworkKind) {
+        if let Some(e) = self.engine() {
+            e.set_network(match kind {
+                NetworkKind::Unknown => Net::Unknown,
+                NetworkKind::Wifi => Net::Wifi,
+                NetworkKind::Mobile => Net::Mobile,
+            });
+        }
+    }
+
     pub fn stats(&self) -> CallAudioStats {
         let s = self.engine().map(|e| e.stats()).unwrap_or_default();
+        let v = self.engine().map(|e| e.video_stats()).unwrap_or_default();
         CallAudioStats {
             transport: match s.transport {
                 Transport::Udp => "udp",
@@ -135,6 +266,9 @@ impl CallAudio {
             plc_frames: s.plc_frames,
             jitter_ms: s.jitter.jitter_ms,
             buffer_ms: s.jitter.depth_ms,
+            video_frames_in: v.recv.frames,
+            video_lost_frames: v.recv.lost_frames,
+            video_sent_kb: v.sent_bytes / 1000,
         }
     }
 

@@ -35,19 +35,33 @@
 //!   * Audio vindo de fora do relay so e aceite de enderecos que ja mandaram uma sonda
 //!     valida (nada de decifrar pacotes de qualquer um).
 //!
+//! VIDEO (fase 5a, `crate::video`). Um fluxo a mais pelo MESMO caminho do audio (direto,
+//! relay ou os dois na duplicacao). O nucleo diz quando se pode enviar (camara ligada E o
+//! outro aceitou: `video_set_sending`) e quando se aceita receber (`video_set_receiving`);
+//! sem isso nada sai nem se processa. As imagens ja codificadas (H.264, da app) sao
+//! partidas em pacotes de ate 1225 bytes e passam por um ritmador (5 ms) ao debito que o
+//! controlo de debito decide; o audio nunca espera por ele. Fora da ligacao direta, o
+//! debito desce logo ao teto do relay. Quem recebe remonta as imagens, espera pelos
+//! pedacos atrasados (a copia pelo relay), mostra cada imagem quando o audio que esta a
+//! tocar chega ao momento em que foi captada, pede uma imagem completa quando perde uma, e
+//! manda um relatorio a cada 250 ms (perdas, atraso de fila, perdas no AUDIO, rede).
+//!
 //! As chaves nunca saem daqui: a app entrega a `MediaSession` (fase 1) e o pedido de
 //! entrada ja feito (`QtClient::call_join_packet`).
 
+use std::collections::VecDeque;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use qt_core::call::{join_payload, parse_join_ok, MediaSession, Role, RoomKeys, JOIN_KIND, JOIN_OK_KIND, JOIN_OK_LEN, JOIN_PROLOGUE};
+use qt_core::call::{join_payload, parse_join_ok, MediaSession, Role, RoomKeys, VideoSession, JOIN_KIND, JOIN_OK_KIND, JOIN_OK_LEN, JOIN_PROLOGUE};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::codec::{Decoder, Encoder, EncoderConfig, FRAME_SAMPLES, MAX_OPUS_BYTES};
 use crate::jitter::{JitterBuffer, JitterStats, Slot};
+use crate::video::{fragment, RateController, VideoReceiver, VideoRecvStats, MAX_FRAME_BYTES};
+pub use crate::video::{Net, Pause, ReceivedFrame, VideoParams};
 
 /// Se o UDP nao der resposta em tanto tempo, tenta a reserva por WebSocket.
 const UDP_GIVE_UP: Duration = Duration::from_secs(2);
@@ -149,6 +163,87 @@ pub struct EngineStats {
     pub jitter: JitterStats,
 }
 
+/// Video desta chamada: contas de quem envia e de quem recebe.
+#[derive(Debug, Clone, Default)]
+pub struct VideoStats {
+    pub sent_frames: u64,
+    pub sent_packets: u64,
+    pub sent_bytes: u64,
+    /// Imagens deitadas fora antes de sair (fila acima de ~0,4 s: a rede nao da).
+    pub dropped_frames: u64,
+    pub queued_bytes: u64,
+    pub recv: VideoRecvStats,
+    /// Copias repetidas descartadas (o mesmo pacote pelos dois caminhos).
+    pub duplicates: u64,
+    pub invalid: u64,
+    pub keyframe_requests_received: u64,
+    /// Ultimo aviso do relay: 0 normal, 1 so 240p, 2 sem video pelo relay.
+    pub relay_mode: u8,
+    /// Perda do meu video medida pelo outro lado (ultimo relatorio, em milesimas).
+    pub peer_loss_permille: u32,
+    /// Relatorios recebidos e, desses, os que diziam "nada esta a chegar".
+    pub feedbacks: u64,
+    pub stalls: u64,
+}
+
+struct VideoState {
+    session: Option<VideoSession>,
+    /// Camara ligada E o outro aceitou (decidido pelo nucleo).
+    sending: bool,
+    /// Aceitei o video do outro E ele tem a camara ligada.
+    receiving: bool,
+    next_frame_id: u32,
+    /// Conteudos a espera do ritmador, AINDA POR CIFRAR: o contador so avanca com pacotes
+    /// que saem (um pacote deitado fora da fila nao pode parecer perdido ao outro lado).
+    queue: VecDeque<Vec<u8>>,
+    /// Bytes que esses conteudos vao ocupar ja cifrados.
+    queued_bytes: usize,
+    /// Contadores dos pacotes enviados no ultimo ~2 s (para saber se nada esta a chegar).
+    sent_log: VecDeque<(u64, Instant)>,
+    rx: VideoReceiver,
+    ctl: RateController,
+    net: Net,
+    /// O descodificador falhou: pedir ao outro lado uma imagem completa.
+    want_remote_keyframe: bool,
+    stats: VideoStats,
+}
+
+/// Um pacote enviado ha mais disto ja devia aparecer no relatorio (intervalo de 250 ms e
+/// ida e volta ate ~550 ms).
+const STALL_AGE: Duration = Duration::from_millis(800);
+
+impl VideoState {
+    /// Nada esta a chegar: ha pacotes enviados ha mais de `STALL_AGE` acima do maior
+    /// contador que o outro lado diz ter recebido.
+    fn stalled(&self, highest: Option<u64>, now: Instant) -> bool {
+        self.sent_log
+            .iter()
+            .any(|(c, t)| now.saturating_duration_since(*t) > STALL_AGE && highest.is_none_or(|h| *c > h))
+    }
+
+    /// Cifra um conteudo e regista o contador (so para pacotes que vao sair ja).
+    fn seal_now(&mut self, body: &[u8], now: Instant) -> Option<Vec<u8>> {
+        let p = self.session.as_mut()?.seal(body).ok()?;
+        let counter = u64::from_be_bytes(p.get(9..17)?.try_into().ok()?);
+        self.sent_log.push_back((counter, now));
+        while self.sent_log.front().is_some_and(|(_, t)| now.saturating_duration_since(*t) > Duration::from_secs(2)) {
+            self.sent_log.pop_front();
+        }
+        self.stats.sent_packets += 1;
+        self.stats.sent_bytes += p.len() as u64;
+        Some(p)
+    }
+}
+
+/// Linhas de tempo do audio, para sincronizar o video.
+#[derive(Default)]
+struct AvClock {
+    /// Ultimo pacote de audio enviado: (quando, contador).
+    send: Option<(Instant, u64)>,
+    /// Contador do audio do outro lado que esta a tocar agora.
+    play: Option<u64>,
+}
+
 struct Playback {
     jitter: JitterBuffer,
     decoder: Decoder,
@@ -174,6 +269,11 @@ struct Shared {
     stats: Mutex<EngineStats>,
     opus_bytes: Mutex<u64>,
     p2p: Mutex<P2pCtl>,
+    video: Mutex<VideoState>,
+    /// Acorda quem espera por uma imagem (`video_pull`).
+    video_cv: Condvar,
+    clock: Mutex<AvClock>,
+    epoch: Instant,
     /// So para testes: deita fora tudo o que chega pelo direto (sondas incluidas), sem deixar
     /// de enviar: o caminho falha so num sentido.
     test_drop_direct_rx: std::sync::atomic::AtomicBool,
@@ -216,6 +316,23 @@ impl CallEngine {
             stats: Mutex::new(EngineStats::default()),
             opus_bytes: Mutex::new(0),
             p2p: Mutex::new(P2pCtl::default()),
+            video: Mutex::new(VideoState {
+                session: None,
+                sending: false,
+                receiving: false,
+                next_frame_id: 0,
+                queue: VecDeque::new(),
+                queued_bytes: 0,
+                sent_log: VecDeque::new(),
+                rx: VideoReceiver::new(Instant::now()),
+                ctl: RateController::new(),
+                net: Net::Unknown,
+                want_remote_keyframe: false,
+                stats: VideoStats::default(),
+            }),
+            video_cv: Condvar::new(),
+            clock: Mutex::new(AvClock::default()),
+            epoch: Instant::now(),
             test_drop_direct_rx: std::sync::atomic::AtomicBool::new(false),
             room,
         });
@@ -234,6 +351,9 @@ impl CallEngine {
 
     /// As chaves do audio (a chamada foi atendida).
     pub fn attach_media(&self, media: MediaSession) {
+        if let Ok(mut v) = self.shared.video.lock() {
+            v.session = Some(media.video());
+        }
         if let Ok(mut m) = self.shared.media.lock() {
             *m = Some(media);
         }
@@ -295,6 +415,10 @@ impl CallEngine {
             Some(m) => m.seal(&buf[..n]).map_err(|_| EngineError::Seal)?,
             None => return Ok(()),
         };
+        // Linha de tempo do audio (o video e marcado nela).
+        if let (Ok(mut c), Some(counter)) = (self.shared.clock.lock(), packet.get(9..17).and_then(|b| b.try_into().ok())) {
+            c.send = Some((Instant::now(), u64::from_be_bytes(counter)));
+        }
         // Fila cheia (rede parada): o frame perde-se, como na rede.
         let _ = self.outbox.try_send(packet);
         if let (Ok(mut st), Ok(mut bytes)) = (self.shared.stats.lock(), self.shared.opus_bytes.lock()) {
@@ -343,6 +467,10 @@ impl CallEngine {
             }
         }
         let jitter = pb.jitter.stats();
+        let playing = pb.jitter.playing();
+        if let Ok(mut c) = self.shared.clock.lock() {
+            c.play = playing;
+        }
         if let Ok(mut st) = self.shared.stats.lock() {
             st.dred_frames += dred;
             st.plc_frames += plc;
@@ -353,6 +481,131 @@ impl CallEngine {
 
     pub fn stats(&self) -> EngineStats {
         self.shared.stats.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    // ------------------------------------------------------------------ video
+
+    /// O nucleo: camara ligada E o outro aceitou ver (ou deixou de ser assim). So com isto
+    /// sai video deste telemovel.
+    pub fn video_set_sending(&self, on: bool) {
+        let now = Instant::now();
+        if let Ok(mut v) = self.shared.video.lock() {
+            let on = on && v.session.is_some();
+            v.sending = on;
+            v.ctl.set_sending(on, now);
+            if !on {
+                v.queue.clear();
+                v.queued_bytes = 0;
+            }
+        }
+    }
+
+    /// O nucleo: aceitei o video do outro E ele tem a camara ligada. Sem isto o video que
+    /// chegue e deitado fora sem ser lido.
+    pub fn video_set_receiving(&self, on: bool) {
+        if let Ok(mut v) = self.shared.video.lock() {
+            if on && !v.receiving {
+                v.rx.reset(Instant::now());
+            }
+            v.receiving = on;
+        }
+        self.shared.video_cv.notify_all();
+    }
+
+    /// Rede deste telemovel (Wi-Fi ou dados moveis): muda o teto da ligacao direta.
+    pub fn set_network(&self, n: Net) {
+        if let Ok(mut v) = self.shared.video.lock() {
+            v.net = n;
+            v.ctl.set_local_net(n);
+        }
+    }
+
+    /// O que o codificador deve fazer agora (a app pergunta a cada ~250 ms).
+    pub fn video_params(&self) -> VideoParams {
+        self.shared.video.lock().map(|v| v.ctl.params()).unwrap_or_else(|_| RateController::new().params())
+    }
+
+    /// O descodificador falhou: pede ao outro lado uma imagem completa.
+    pub fn video_request_keyframe(&self) {
+        if let Ok(mut v) = self.shared.video.lock() {
+            v.want_remote_keyframe = true;
+        }
+    }
+
+    /// Uma imagem H.264 ja codificada (com SPS/PPS antes das imagens completas). `rotation`:
+    /// quartos de volta para a mostrar direita; `age_ms`: ha quanto tempo foi captada.
+    /// `false`: nao saiu (sem autorizacao, em pausa, demasiado grande ou fila cheia).
+    pub fn video_push(&self, frame: &[u8], keyframe: bool, rotation: u8, age_ms: u32) -> bool {
+        let now = Instant::now();
+        if frame.is_empty() || frame.len() > MAX_FRAME_BYTES {
+            return false;
+        }
+        let captured = now.checked_sub(Duration::from_millis(age_ms.min(1_000) as u64)).unwrap_or(now);
+        let ts = match self.shared.clock.lock().ok().and_then(|c| c.send) {
+            Some((t, counter)) => counter as i64 * 20 + (captured.duration_since(t).as_millis() as i64 - t.duration_since(captured).as_millis() as i64),
+            None => captured.duration_since(self.shared.epoch).as_millis() as i64,
+        }
+        .clamp(0, u32::MAX as i64) as u32;
+        let Ok(mut v) = self.shared.video.lock() else { return false };
+        let p = v.ctl.params();
+        if !p.send || !v.sending || v.session.is_none() {
+            return false;
+        }
+        // Fila acima de ~0,4 s ao debito atual: a rede nao da. Deita fora o que esta na fila
+        // e, se esta imagem nao for completa, tambem esta (o outro lado ia precisar de uma
+        // completa de qualquer forma): pede-se uma ao codificador.
+        let max_backlog = ((p.bitrate_bps as usize / 8) * 2 / 5).max(64 * 1024);
+        if v.queued_bytes > max_backlog {
+            v.queue.clear();
+            v.queued_bytes = 0;
+            v.stats.dropped_frames += 1;
+            if !keyframe {
+                v.ctl.request_keyframe();
+                return false;
+            }
+        }
+        let id = v.next_frame_id;
+        v.next_frame_id = v.next_frame_id.wrapping_add(1);
+        for body in fragment(id, keyframe, rotation, ts, frame) {
+            v.queued_bytes += qt_core::call::video_packet_len(body.len());
+            v.queue.push_back(body);
+        }
+        v.stats.sent_frames += 1;
+        true
+    }
+
+    /// A proxima imagem do outro lado para descodificar, quando for a hora dela (sincronizada
+    /// com o audio). Espera ate `timeout`. A app chama isto numa thread propria.
+    pub fn video_pull(&self, timeout: Duration) -> Option<ReceivedFrame> {
+        let deadline = Instant::now() + timeout;
+        let mut v = self.shared.video.lock().ok()?;
+        loop {
+            let now = Instant::now();
+            if v.receiving {
+                let audio_ts = self.shared.clock.lock().ok().and_then(|c| c.play).map(|c| (c * 20).min(u32::MAX as u64) as u32);
+                if let Some(f) = v.rx.pop(now, audio_ts) {
+                    return Some(f);
+                }
+            }
+            if now >= deadline {
+                return None;
+            }
+            let wait = (deadline - now).min(Duration::from_millis(10));
+            v = self.shared.video_cv.wait_timeout(v, wait).ok()?.0;
+        }
+    }
+
+    pub fn video_stats(&self) -> VideoStats {
+        self.shared
+            .video
+            .lock()
+            .map(|v| {
+                let mut s = v.stats.clone();
+                s.recv = v.rx.stats.clone();
+                s.queued_bytes = v.queued_bytes as u64;
+                s
+            })
+            .unwrap_or_default()
     }
 
     /// Desliga: para a rede e espera pela thread.
@@ -382,7 +635,19 @@ mod net {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use tokio::net::UdpSocket;
 
-    use qt_core::call::{addr_request, is_probe, parse_addr_ok, CallError, PathKeys, Probe, ADDR_OK_KIND, ADDR_OK_LEN};
+    use qt_core::call::{
+        addr_request, is_probe, is_video, parse_addr_ok, parse_relay_video_notice, CallError, PathKeys, Probe,
+        ADDR_OK_KIND, ADDR_OK_LEN, RELAY_VIDEO_KIND, RELAY_VIDEO_LEN,
+    };
+    use crate::video::{encode_feedback, encode_keyframe_request, parse_body, Body};
+
+    #[cfg(feature = "ws")]
+    type WsOpt = Option<ws::Sink>;
+    #[cfg(not(feature = "ws"))]
+    type WsOpt = ();
+
+    /// Ritmador do video: de 5 em 5 ms.
+    const PACE_EVERY: Duration = Duration::from_millis(5);
 
     /// Recolha dos meus enderecos: ate tanto tempo pelo IP publico visto pelo relay.
     const GATHER_TIMEOUT: Duration = Duration::from_millis(1500);
@@ -615,6 +880,33 @@ mod net {
         }
     }
 
+    /// Por onde sai um pacote (audio ou video): direto, relay ou os dois.
+    fn route_now(udp: &Option<Arc<Udp>>, cfg: &EngineConfig, d: &mut Direct, now: Instant) -> Route {
+        match (udp.is_some(), d.route(now)) {
+            (false, _) => Route::Relay,
+            (true, Route::Direct) if cfg.test_both_paths => Route::Both,
+            (true, r) => r,
+        }
+    }
+
+    /// Envia um pacote pelo caminho `route`. Sem estar na sala, o relay deitava fora: nem se envia.
+    #[cfg_attr(not(feature = "ws"), allow(unused_variables))]
+    async fn send_out(udp: &Option<Arc<Udp>>, ws: &mut WsOpt, st: &State, d: &Direct, route: Route, packet: Vec<u8>) {
+        if let (Some(u), Some(p), Route::Direct | Route::Both) = (udp, d.path, route) {
+            u.send(&packet, p).await;
+        }
+        if route != Route::Direct {
+            if let (Some(u), true) = (udp, st.joined_udp) {
+                u.send(&packet, u.relay).await;
+            } else if st.joined_ws {
+                #[cfg(feature = "ws")]
+                if let Some(w) = ws.as_mut() {
+                    let _ = w.send(packet).await;
+                }
+            }
+        }
+    }
+
     pub(super) async fn run(
         shared: Arc<Shared>,
         cfg: EngineConfig,
@@ -644,7 +936,13 @@ mod net {
             });
         }
         #[cfg(feature = "ws")]
-        let mut ws: Option<ws::Sink> = None;
+        let mut ws: WsOpt = None;
+        #[cfg(not(feature = "ws"))]
+        let mut ws: WsOpt = ();
+        let mut pace = tokio::time::interval(PACE_EVERY);
+        pace.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut pacer = Pacer { tokens: 0.0, at: Instant::now() };
+        let mut audio_ref = (0u64, 0u64);
         let first_ws = if udp.is_none() { Instant::now() } else { Instant::now() + UDP_GIVE_UP };
         let mut st = State { joined_udp: false, joined_ws: false, last_join: None, ws_next_try: first_ws };
         let mut d = Direct::default();
@@ -685,22 +983,17 @@ mod net {
                     on_packet(&shared, &cfg, &mut st, &mut rng, &data, via_ws);
                 }
                 Some(packet) = outbox.recv() => {
-                    let route = match (udp.is_some(), d.route(Instant::now())) {
-                        (false, _) => Route::Relay,
-                        (true, Route::Direct) if cfg.test_both_paths => Route::Both,
-                        (true, r) => r,
-                    };
-                    if let (Some(u), Some(p), Route::Direct | Route::Both) = (&udp, d.path, route) {
-                        u.send(&packet, p).await;
-                    }
-                    // Pelo relay (so ou em duplicado). Sem estar na sala, o relay deitava fora:
-                    // nem se envia.
-                    if route != Route::Direct {
-                        if let (Some(u), true) = (&udp, st.joined_udp) {
-                            u.send(&packet, u.relay).await;
-                        } else if st.joined_ws {
-                            #[cfg(feature = "ws")]
-                            if let Some(w) = ws.as_mut() { let _ = w.send(packet).await; }
+                    // Audio: sai logo, nunca espera pelo video.
+                    let route = route_now(&udp, &cfg, &mut d, Instant::now());
+                    send_out(&udp, &mut ws, &st, &d, route, packet).await;
+                }
+                _ = pace.tick() => {
+                    let now = Instant::now();
+                    let out = pacer.take(&shared, now);
+                    if !out.is_empty() {
+                        let route = route_now(&udp, &cfg, &mut d, now);
+                        for p in out {
+                            send_out(&udp, &mut ws, &st, &d, route, p).await;
                         }
                     }
                 }
@@ -733,6 +1026,11 @@ mod net {
                     #[cfg(not(feature = "ws"))]
                     let _ = (st.ws_next_try, WS_RETRY);
                     p2p_tick(&shared, &cfg, udp.as_deref(), &st, &mut d, &mut rng).await;
+                    let now = Instant::now();
+                    let route = route_now(&udp, &cfg, &mut d, now);
+                    for p in video_tick(&shared, route == Route::Direct, &mut audio_ref, now) {
+                        send_out(&udp, &mut ws, &st, &d, route, p).await;
+                    }
                 }
             }
         }
@@ -925,10 +1223,134 @@ mod net {
                 set_stats(shared, |s| s.simulated_drops += 1);
                 return;
             }
+            if is_video(data) {
+                on_video(shared, data, now);
+                return;
+            }
             if on_media(shared, cfg, rng, data) {
                 d.last_rx = Some(now);
                 set_stats(shared, |s| s.received_direct += 1);
             }
+        }
+    }
+
+    /// Ritmador do video: deixa sair os pacotes ao debito pedido (com 30% de folga), para
+    /// as imagens grandes nao sairem de rajada e atropelarem o audio.
+    struct Pacer {
+        tokens: f64,
+        at: Instant,
+    }
+
+    impl Pacer {
+        fn take(&mut self, shared: &Shared, now: Instant) -> Vec<Vec<u8>> {
+            let Ok(mut v) = shared.video.lock() else { return Vec::new() };
+            let dt = now.duration_since(self.at).as_secs_f64().min(0.1);
+            self.at = now;
+            // Em pausa (ou sem autorizacao): o que estava na fila ja nao serve.
+            if !v.queue.is_empty() && !(v.sending && v.ctl.params().send) {
+                v.queue.clear();
+                v.queued_bytes = 0;
+            }
+            if v.queue.is_empty() {
+                self.tokens = 0.0;
+                return Vec::new();
+            }
+            let rate = v.ctl.bitrate() as f64 * 1.3 / 8.0 + 4_000.0;
+            let cap = (rate * 0.03).max(2.0 * qt_core::call::VIDEO_MAX_PACKET as f64);
+            self.tokens = (self.tokens + rate * dt).min(cap);
+            let mut out = Vec::new();
+            while let Some(len) = v.queue.front().map(|b| qt_core::call::video_packet_len(b.len())) {
+                if (len as f64) > self.tokens {
+                    break;
+                }
+                self.tokens -= len as f64;
+                let body = v.queue.pop_front().expect("acabado de ver");
+                v.queued_bytes -= len;
+                // Cifrado so agora: o contador avanca so com o que sai.
+                if let Some(p) = v.seal_now(&body, now) {
+                    out.push(p);
+                }
+            }
+            out
+        }
+    }
+
+    /// A cada 100 ms: controlo de debito, relatorio para quem envia e pedidos de imagem
+    /// completa. Devolve os pacotes a enviar.
+    fn video_tick(shared: &Shared, direct: bool, audio_ref: &mut (u64, u64), now: Instant) -> Vec<Vec<u8>> {
+        // Perdas do audio desde o ultimo relatorio (o audio tem sempre prioridade).
+        let (lost, received) = shared
+            .playback
+            .lock()
+            .map(|p| {
+                let s = p.jitter.stats();
+                (s.lost + s.gave_up, s.received)
+            })
+            .unwrap_or_default();
+        let Ok(mut v) = shared.video.lock() else { return Vec::new() };
+        v.ctl.set_path(direct);
+        v.ctl.tick(now);
+        let mut bodies = Vec::new();
+        if v.receiving {
+            let (dl, dr) = (lost.saturating_sub(audio_ref.0), received.saturating_sub(audio_ref.1));
+            let pct = (dl * 100).checked_div(dl + dr).map_or(0, |p| p.min(100) as u8);
+            let net = v.net;
+            if let Some(fb) = v.rx.feedback(now, pct, net) {
+                *audio_ref = (lost, received);
+                bodies.push(encode_feedback(&fb));
+            }
+            let want = std::mem::take(&mut v.want_remote_keyframe);
+            if v.rx.take_keyframe_request(now) || want {
+                bodies.push(encode_keyframe_request());
+            }
+        } else {
+            *audio_ref = (lost, received);
+        }
+        bodies.iter().filter_map(|b| v.seal_now(b, now)).collect()
+    }
+
+    /// Pacote de video do outro lado (pelo relay ou direto).
+    fn on_video(shared: &Shared, data: &[u8], now: Instant) {
+        let Ok(mut v) = shared.video.lock() else { return };
+        let Some(session) = v.session.as_mut() else { return };
+        let (counter, body) = match session.open(data) {
+            Ok(x) => x,
+            Err(CallError::Replay) => {
+                v.stats.duplicates += 1;
+                return;
+            }
+            Err(_) => {
+                v.stats.invalid += 1;
+                return;
+            }
+        };
+        // Todos os pacotes contam para as perdas (o contador e um so para todos os tipos).
+        if v.receiving {
+            v.rx.on_packet(counter, data.len());
+        }
+        match parse_body(&body) {
+            Some(Body::Frag(f)) => {
+                // Sem ter aceitado: nem se le (consentimento de quem recebe).
+                if v.receiving {
+                    v.rx.on_fragment(f, now);
+                    drop(v);
+                    shared.video_cv.notify_all();
+                }
+            }
+            Some(Body::Feedback(fb)) => {
+                let stalled = v.stalled(fb.highest, now);
+                v.stats.feedbacks += 1;
+                v.stats.stalls += stalled as u64;
+                if fb.expected > 0 {
+                    v.stats.peer_loss_permille = 1000 - (fb.received as u64 * 1000 / fb.expected as u64) as u32;
+                }
+                v.ctl.on_feedback(&fb, stalled, now);
+            }
+            Some(Body::Keyframe) => {
+                v.stats.keyframe_requests_received += 1;
+                v.ctl.request_keyframe();
+            }
+            None => v.stats.invalid += 1,
         }
     }
 
@@ -971,6 +1393,17 @@ mod net {
                     }
                 });
             }
+            return;
+        }
+        if data.len() == RELAY_VIDEO_LEN && data[0] == RELAY_VIDEO_KIND {
+            if let (Some(m), Ok(mut v)) = (parse_relay_video_notice(&shared.room, data), shared.video.lock()) {
+                v.stats.relay_mode = m as u8;
+                v.ctl.set_relay_mode(m);
+            }
+            return;
+        }
+        if is_video(data) {
+            on_video(shared, data, Instant::now());
             return;
         }
         on_media(shared, cfg, rng, data);

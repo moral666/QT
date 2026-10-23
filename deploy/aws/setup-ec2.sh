@@ -2,7 +2,7 @@
 # =============================================================================
 # Instala o relay QT numa EC2 nova (Ubuntu 24.04, x86_64 ou ARM), de uma vez:
 #   Redis (so localhost, ACL)  ->  relay (systemd, so localhost)  ->  HAProxy (TLS, wss://)
-#   Relay das chamadas de voz (UDP 443 publico; reserva em wss://<nome>/call pelo HAProxy)
+#   Relay das chamadas, voz e video (UDP 443 publico; reserva em wss://<nome>/call pelo HAProxy)
 #   Certificado: Let's Encrypt pelo certbot (renovacao automatica).
 #
 # Uso, na EC2:
@@ -214,6 +214,54 @@ systemctl restart qt-relay
 # que o qt-relay criou no primeiro arranque; espera por ela.
 for _ in $(seq 1 15); do [ -s /var/lib/qt/relay_noise_key.bin ] && break; sleep 1; done
 cp "$SRC/deploy/systemd/qt-call-relay.service" /etc/systemd/system/qt-call-relay.service
+# Limites e video das chamadas. NAO vao para o $ENV_FILE: o qt-call-relay nao le /etc/qt (tem
+# a password do Redis). Ficam no drop-in limites.conf. Para mudar um valor, passa-o ao
+# script UMA vez (ex.: sudo CALL_MONTHLY_EGRESS_GB=120 bash setup-ec2.sh): as atualizacoes
+# seguintes mantem o que ja esta no ficheiro. A omissao so vale quando ainda nao ha valor.
+#   CALL_MONTHLY_EGRESS_GB   travao do mes: passado isto (GB enviados), video so a 240p (80)
+#   CALL_VIDEO_BYTES_PER_SEC video por lado (150000 = ~1,2 Mbit/s, 360p com folga)
+#   CALL_RELAY_VIDEO         0 = so voz pelo relay; em ligacao direta o video continua (1)
+#   CALL_MAX_ROOMS (2000), CALL_ROOMS_PER_IP (20), CALL_PACKETS_PER_SEC (100)
+# A conta do mes fica em /var/lib/qt-call-relay/mes (StateDirectory do servico): o
+# systemd nao a apaga ao atualizar nem ao reiniciar, e este script tambem nao.
+CALL_DROPIN=/etc/systemd/system/qt-call-relay.service.d
+CALL_CONF="$CALL_DROPIN/limites.conf"
+# Valor de NOME: o passado ao script; senao o que ja esta no limites.conf; senao a omissao.
+# So numeros (um valor estranho e ignorado, com aviso).
+call_val() {
+  local name="$1" def="$2" v prev=""
+  if [ -f "$CALL_CONF" ]; then
+    prev=$(sed -n "s/^Environment=$name=//p" "$CALL_CONF" | tail -n 1)
+  fi
+  case "$prev" in ''|*[!0-9]*) prev="$def" ;; esac
+  v="${!name:-}"
+  case "$v" in
+    '') v="$prev" ;;
+    *[!0-9]*) echo "Aviso: $name='$v' nao e um numero; fica $prev" >&2; v="$prev" ;;
+  esac
+  printf '%s' "$v"
+}
+V_MAX_ROOMS=$(call_val CALL_MAX_ROOMS 2000)
+V_ROOMS_PER_IP=$(call_val CALL_ROOMS_PER_IP 20)
+V_PACKETS_PER_SEC=$(call_val CALL_PACKETS_PER_SEC 100)
+V_VIDEO_BPS=$(call_val CALL_VIDEO_BYTES_PER_SEC 150000)
+V_EGRESS_GB=$(call_val CALL_MONTHLY_EGRESS_GB 80)
+V_RELAY_VIDEO=$(call_val CALL_RELAY_VIDEO 1)
+mkdir -p "$CALL_DROPIN"
+cat > "$CALL_CONF.novo" <<EOF_CALL
+# Gerado pelo setup-ec2.sh. Para mudar, passa o valor ao script uma vez (ex.:
+# sudo CALL_MONTHLY_EGRESS_GB=120 bash setup-ec2.sh); as atualizacoes seguintes mantem-no.
+[Service]
+Environment=CALL_MAX_ROOMS=$V_MAX_ROOMS
+Environment=CALL_ROOMS_PER_IP=$V_ROOMS_PER_IP
+Environment=CALL_PACKETS_PER_SEC=$V_PACKETS_PER_SEC
+Environment=CALL_VIDEO_BYTES_PER_SEC=$V_VIDEO_BPS
+Environment=CALL_MONTHLY_EGRESS_GB=$V_EGRESS_GB
+Environment=CALL_RELAY_VIDEO=$V_RELAY_VIDEO
+Environment=CALL_STATE_FILE=/var/lib/qt-call-relay/mes
+EOF_CALL
+mv "$CALL_CONF.novo" "$CALL_CONF"
+log "Chamadas: travao do video aos ${V_EGRESS_GB} GB/mes, video ${V_VIDEO_BPS} B/s por lado, video pelo relay $([ "$V_RELAY_VIDEO" = 0 ] && echo desligado || echo ligado)"
 systemctl daemon-reload
 systemctl enable qt-call-relay >/dev/null 2>&1
 systemctl restart qt-call-relay

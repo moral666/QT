@@ -286,6 +286,15 @@ impl JitterBuffer {
         Slot::Conceal
     }
 
+    /// Contador do frame que esta a tocar (para sincronizar o video com o audio). `None`
+    /// antes de comecar a tocar.
+    pub fn playing(&self) -> Option<u64> {
+        if self.start_at.is_some() {
+            return None;
+        }
+        self.next.and_then(|n| n.checked_sub(1))
+    }
+
     pub fn stats(&self) -> JitterStats {
         JitterStats {
             target_ms: self.target * FRAME_MS as u32,

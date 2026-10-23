@@ -10,6 +10,10 @@
 //!   CALL_UDP_BIND    UDP publico (por omissao 0.0.0.0:443)
 //!   CALL_WS_BIND     reserva por WebSocket, atras do HAProxy (por omissao 127.0.0.1:9445)
 //!   CALL_MAX_ROOMS, CALL_ROOMS_PER_IP, CALL_PACKETS_PER_SEC  limites
+//!   CALL_VIDEO_BYTES_PER_SEC  video por lado (150000 = ~1,2 Mbit/s)
+//!   CALL_MONTHLY_EGRESS_GB    travao do mes: passado isto, video so a 240p (80)
+//!   CALL_RELAY_VIDEO          0 = nenhuma sala passa video, so voz (1)
+//!   CALL_STATE_FILE           conta do mes (/var/lib/qt-call-relay/mes)
 
 use qt_server::call_relay::{serve, take_line, CallLimits};
 use std::time::Duration;
@@ -49,6 +53,10 @@ async fn main() {
         max_rooms: env_num("CALL_MAX_ROOMS", defaults.max_rooms),
         rooms_per_ip: env_num("CALL_ROOMS_PER_IP", defaults.rooms_per_ip),
         packets_per_sec: env_num("CALL_PACKETS_PER_SEC", defaults.packets_per_sec),
+        video_bytes_per_sec: env_num("CALL_VIDEO_BYTES_PER_SEC", defaults.video_bytes_per_sec),
+        monthly_egress_bytes: env_num("CALL_MONTHLY_EGRESS_GB", defaults.monthly_egress_bytes / 1_000_000_000).saturating_mul(1_000_000_000),
+        relay_video: env_num("CALL_RELAY_VIDEO", 1u8) != 0,
+        state_file: Some(std::path::PathBuf::from(env_or("CALL_STATE_FILE", "/var/lib/qt-call-relay/mes"))),
         ..defaults
     };
 
@@ -64,6 +72,12 @@ async fn main() {
     println!(
         "Limites: {} salas, {} por IP, {} pacotes/s por lado",
         limits.max_rooms, limits.rooms_per_ip, limits.packets_per_sec
+    );
+    println!(
+        "Video: {}, {} bytes/s por lado, travao do mes aos {} GB (depois so 240p)",
+        if limits.relay_video { "ligado" } else { "desligado (so voz)" },
+        limits.video_bytes_per_sec,
+        limits.monthly_egress_bytes / 1_000_000_000
     );
 
     let stats = serve(udp, Some(ws), &private, limits);

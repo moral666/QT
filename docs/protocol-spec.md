@@ -836,6 +836,11 @@ redes que bloqueiam UDP: `wss://<relay>/call` (WebSocket sem conta, pelo HAProxy
 * Limites: 2 lados por sala; a sala fecha se o segundo não entrar em 60 s ou ao fim de 30 s sem
   nada; 2 000 salas no total e 20 por IP (redes móveis com CGNAT); 60 pedidos de entrada por IP a
   cada 10 s; 100 pacotes/s por lado. Sem registos com IPs: uma linha por minuto só com contagens.
+* Vídeo (desde 23/10/2026): ver "Vídeo" abaixo. Débito de vídeo por lado (balde de bytes, 150 kB/s
+  por omissão), travão do mês (80 GB enviados no mês, UTC: vídeo só a 240p para todos até ao fim do
+  mês) e a porta para o teto da conta (sala sem vídeo). Configuração no drop-in
+  `qt-call-relay.service.d/limites.conf`, gerado pelo `deploy/aws/setup-ec2.sh` (um valor passado ao
+  script uma vez fica nas atualizações seguintes); a conta do mês em `/var/lib/qt-call-relay/mes`.
 
 **Áudio (fase 3, `qt_call`).** libopus 1.6.1 (crate `opusic-sys` 0.7.5, licença BSD, compilado com
 CMake), com o DRED e o PLC neural (os modelos vêm no pacote).
@@ -902,10 +907,50 @@ para a ligação direta só são trocados depois de atender, dentro do ratchet (
   sentidos perdem-se ~7 pacotes e ~0,2 s são inventados pelo PLC/DRED; só num sentido, ~13 pacotes
   e ~0,45 s. Com sondas a 200 ms e limite de 0,5 s eram ~0,75 s.
 
-**Vídeo (planeado, fases 5a a 5c).** Regra decidida a 23/10/2026: pelo relay, até 360p, a descer
-até 240p se a rede piorar; abaixo disso o vídeo pausa e a voz continua, com uma mensagem a explicar
-porquê. Em ligação direta: até 1080p em Wi-Fi e 720p em dados móveis, adaptativo. O áudio tem sempre
-prioridade. O motor já diz se o caminho é direto (`CallAudioStats.direct`).
+**Vídeo (fase 5a, 23/10/2026).** Um fluxo a mais dentro da chamada de voz, pelo mesmo caminho do
+áudio (direto, relay, ou os dois durante a duplicação). A chamada começa sempre só com voz.
+
+* Sinalização (tipo 11, depois de atender): op 7 "tenho vídeo" `[1 bit0 = vídeo]` e op 8 estado do
+  vídeo `[2 seq BE][1 bit0 câmara ligada, bit1 aceito o teu vídeo, bit2 recusei]`. Só a build com a
+  feature `video` (a do Android, desde a fase 5b) envia a op 7; o botão da câmara só aparece se os dois
+  lados a enviaram.
+  Uma app antiga, ou o iPhone por agora, ignora as ops 7 e 8: chamada só de voz, sem erro.
+* Consentimento: o vídeo de A só sai quando B aceitou ver ("[Nome] quer mostrar vídeo": Ver, Ligar a
+  minha câmara, Agora não). Quem recebe nem lê pacotes de vídeo que não aceitou. Ligar a própria câmara
+  aceita o vídeo do outro. Uma câmara que volta a ligar é um pedido novo.
+* Chaves: `HKDF(call_id, offer_secret ‖ answer_secret)` com `"QT-CALL-v1 video caller->callee"` e
+  `"... callee->caller"`: contador e janela anti-repetição próprios.
+* Pacote: `[1 0x40|papel][8 room_id][8 contador BE][ChaCha20-Poly1305([2 tamanho][conteúdo][zeros]) +
+  16][8 etiqueta relay_key]`. O texto cifrado cresce de 256 em 256 bytes até 1184 (pacote de 1225
+  bytes, cabe nos 1232 do MTU mínimo do IPv6): o tamanho só revela cada imagem arredondada a 256.
+* Conteúdo (`call/src/video.rs`): pedaço de imagem `[1 0][4 imagem][2 pedaço][2 pedaços][1 opções:
+  bit0 imagem completa, bits 1-2 quartos de volta para a mostrar direita][4 ts][dados]`; relatório de
+  quem recebe a cada 250 ms `[1 1][2 ms][4 recebidos][4 esperados][2 atraso de fila][1 % perdido no
+  áudio][1 rede][4 bit/s][8 maior contador + 1]`; pedido de imagem completa `[1 2]`. Recebidos e
+  esperados contam todos os pacotes de vídeo (o contador é um só para os três tipos).
+* `ts` = momento da captura na linha de tempo do áudio de quem envia (contador do áudio x 20 ms):
+  quem recebe mostra cada imagem quando o áudio que está a tocar chega lá (menos 30 ms; no máximo
+  400 ms de espera).
+* Remontagem: um pedaço em falta espera 150 ms (a cópia pelo relay chega 50 a 150 ms depois);
+  perdida a imagem, só uma imagem completa recomeça, e pede-se uma (250 ms, depois cada vez mais
+  espaçado, até 2 s).
+* Envio: as imagens H.264 da app são partidas e cifradas só quando saem do ritmador (5 ms, ao débito
+  pedido com 30 % de folga): o contador só avança com pacotes enviados. O áudio nunca espera pelo
+  vídeo. Fila acima de ~0,4 s ao débito atual: deita-se fora e pede-se uma imagem completa.
+* Débito: sobe 20 %/s até ao primeiro sinal de congestão e 8 %/s depois; desce 15 % (a partir do que
+  chegou) com perdas acima de 10 %, fila acima de 100 ms ou perdas no áudio de 3 % ou mais, 30 % se
+  nada está a chegar (pacotes enviados há mais de 800 ms acima do maior contador do relatório); um
+  relatório vazio não sobe nem desce. Nunca abaixo de 150 kbit/s: com a congestão a continuar aí
+  2 s, o vídeo pausa (com a mensagem de rede fraca) e volta, com imagem completa, depois de 4 s com
+  o áudio limpo. Sem relatórios nenhuns em 4 s (relay antigo, que não deixa passar vídeo): pausa.
+* Resolução: 240p (15 imagens/s, a partir de 150 kbit/s), 360p (350 k), 480p (700 k), 720p (1,2 M),
+  1080p (2,2 M); desce logo, sobe só depois de 2 s com 15 % de folga. Tetos: pelo relay 360p a 800
+  kbit/s (240p a 300 kbit/s com o travão do mês; pausa com o teto da conta); em ligação direta 1080p a
+  4 Mbit/s com Wi-Fi sem limite de dados dos dois lados, 720p a 2,5 Mbit/s nos outros casos. Ao sair
+  da ligação direta desce logo ao teto do relay; ao entrar, salta para 1,2 Mbit/s.
+* Aviso do relay `[1 0x24][8 room_id][1 modo][8 etiqueta]` (18 bytes) a quem envia vídeo, de 5 em 5 s
+  ou quando muda: 0 normal, 1 só 240p (travão do mês), 2 sem vídeo pelo relay (teto da conta).
+* Medido (`call/tests/video_e2e.rs`, localhost, codificador sintético): ver `ESTADO-VIDEO.md`.
 
 **API (`QtClient`).** `call_start`, `call_accept`, `call_hangup` (o motivo sai do estado),
 `call_events` (Incoming, Ringing, Answered, Ended; chamar depois de cada lote recebido e de
@@ -916,7 +961,12 @@ já na sala, mesmo antes de atender) com `push_capture` e `pull_playback` (20 ms
 48 kHz, mono, 1920 bytes little-endian), `stats`, `active` e `stop`; ao atender, as chaves do
 áudio passam para o motor, e ao terminar a chamada ele para sozinho. As chaves nunca atravessam
 a FFI. Ligação direta: `calls_relay_only` / `set_calls_relay_only` (ligada a meio de uma chamada,
-o áudio volta logo ao relay); `CallAudioStats.direct` e `both_paths`.
+o áudio volta logo ao relay); `CallAudioStats.direct` e `both_paths`. Vídeo: `call_video_supported`,
+`call_video_set_camera`, `call_video_respond` (`View`, `ViewAndCamera`, `NotNow`), `contact_verified`
+e o evento `CallEvent::Video`; no `CallAudio`: `video_params` (enviar, débito, resolução, imagens/s,
+pausa, limitado pelo relay, `keyframe_seq`), `video_push` (imagem H.264, rotação, idade),
+`video_pull` (a próxima imagem do outro lado, já na hora certa), `video_request_keyframe` e
+`set_network` (Wi-Fi ou dados móveis).
 
 ## 19. Foto de perfil (desde a app 0.9.9)
 

@@ -6,6 +6,26 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 23 de outubro de 2026: videochamadas, núcleo e relay (fase 5a)
+
+- Vídeo dentro da chamada de voz, pelo mesmo caminho (direto ou relay, com a mesma duplicação e queda
+  para o relay). A chamada começa sempre só com voz; o botão da câmara só aparece se os dois lados
+  tiverem vídeo (ops 7 e 8 no ratchet). O vídeo de quem liga a câmara só sai quando o outro aceita ver.
+- Chaves próprias (separação de domínio), pacotes até 1225 bytes com o tamanho arredondado a 256,
+  remontagem com espera pela cópia do relay, pedidos de imagem completa, sincronização com o áudio e
+  controlo de débito no Rust: até 360p pelo relay (240p com o travão do mês), até 1080p em Wi-Fi e 720p
+  em dados móveis na ligação direta. O áudio tem sempre prioridade. Abaixo dos 240p o vídeo pausa e
+  volta sozinho.
+- Relay: aceita vídeo com débito limitado por lado (150 kB/s), travão do mês (80 GB, depois 240p para
+  todos, contador em `/var/lib/qt-call-relay/mes`) e a porta para o teto por conta (fichas anónimas
+  numa sessão própria). Variáveis no drop-in `limites.conf` do `setup-ec2.sh`, que mantém os valores
+  já postos.
+- Só uma build com o ecrã do vídeo anuncia vídeo (feature `video`, ligada na build Android pela 5b); o
+  iPhone continua só com voz (`case .video`).
+- Testes e2e: vídeo pelo relay e pelo direto, nos dois sentidos com 150 ms de atraso, queda do direto a
+  meio, perda real de 10 %, pausa e volta, teto do relay, travão do mês, relay antigo, rede estreita
+  e consentimento; FFI: pedido, "Agora não", ligar a minha câmara, app antiga.
+
 ### 23 de outubro de 2026: jitter buffer espera pelos atrasados até ao alvo
 
 - Os pacotes que chegam tarde demais passam a contar para o atraso alvo, e um frame em falta com outro
