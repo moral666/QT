@@ -98,7 +98,7 @@
 "recovery_warning" = "これらの単語を知っている人は、誰でもあなたのアカウントを使えてしまいます。Sealerがこの単語を尋ねることは絶対にありません。";
 "recovery_words_count" = "12個中%1$@個の単語";
 "recovery_working" = "お待ちください…";
-"recovery_write_down" = "これらの単語を、この順番どおりに紙に書き留めてください。スクリーンショットを撮ったり、スマートフォンに保存したりしないでください。";
+"recovery_write_down" = "これらの単語を、この順番どおりに紙に書き留めてください。";
 "recovery_written" = "書き留めました";
 "report" = "通報";
 "report_confirm" = "通報してブロック";

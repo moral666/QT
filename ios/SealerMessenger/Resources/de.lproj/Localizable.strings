@@ -98,7 +98,7 @@
 "recovery_warning" = "Wer diese Wörter hat, bekommt dein Konto. Sealer fragt dich nie danach.";
 "recovery_words_count" = "%1$@ von 12 Wörtern";
 "recovery_working" = "Einen Moment…";
-"recovery_write_down" = "Schreib diese Wörter in dieser Reihenfolge auf Papier. Mach keinen Screenshot und speichere sie nicht auf dem Handy.";
+"recovery_write_down" = "Schreib diese Wörter in dieser Reihenfolge auf Papier.";
 "recovery_written" = "Ich habe sie notiert";
 "report" = "Melden";
 "report_confirm" = "Melden und blockieren";

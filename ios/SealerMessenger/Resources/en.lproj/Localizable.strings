@@ -98,7 +98,7 @@
 "recovery_warning" = "Anyone with these words gets your account. Sealer will never ask you for them.";
 "recovery_words_count" = "%1$@ of 12 words";
 "recovery_working" = "One moment…";
-"recovery_write_down" = "Write these words on paper, in this order. Do not take a screenshot or store them on your phone.";
+"recovery_write_down" = "Write these words on paper, in this order.";
 "recovery_written" = "I wrote them down";
 "report" = "Report";
 "report_confirm" = "Report and block";

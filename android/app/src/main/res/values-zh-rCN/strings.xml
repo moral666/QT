@@ -335,7 +335,7 @@
     <string name="recovery_privacy">联系人会以加密副本的形式保存在服务器上，只有这些单词才能打开。服务器和Sealer团队都无法读取。</string>
     <string name="recovery_enable">创建12个单词</string>
     <string name="recovery_working">请稍候…</string>
-    <string name="recovery_write_down">请按顺序把这些单词写在纸上。不要截屏，也不要保存在手机上。</string>
+    <string name="recovery_write_down">请按顺序把这些单词写在纸上。</string>
     <string name="recovery_warning">任何拿到这些单词的人都能获得你的账户。Sealer绝不会向你索要这些单词。</string>
     <string name="recovery_written">我已写下</string>
     <string name="recovery_done">完成</string>
