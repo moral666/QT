@@ -145,7 +145,7 @@ fun GroupChatScreen(
                     item(key = m.seq) {
                         MessageBubble(
                             m, ui.transfers[m.messageId], loadAttachment, onOpen = { viewing = m },
-                            onLongPress = { if (group.active) reactingTo = m },
+                            onLongPress = { if (group.active || m.attachment == null) reactingTo = m },
                             senderName = if (m.outgoing) null else ui.memberName(m.sender),
                         )
                     }
@@ -191,6 +191,8 @@ fun GroupChatScreen(
             current = m.reactions.firstOrNull { it.mine }?.emoji,
             onPick = { e -> onReact(m.messageId, e); reactingTo = null },
             onDismiss = { reactingTo = null },
+            text = if (m.attachment == null) coreText(m.text) else null,
+            canReact = group.active,
         )
     }
 }

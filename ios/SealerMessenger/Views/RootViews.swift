@@ -17,12 +17,19 @@ struct AppRoot: View {
     @State private var showGroupInfo = false
     @State private var showPhoto = false
     @State private var micDenied = false
+    /// Chamada minimizada (0.9.29): o resto da app fica usavel e a barra no topo volta a chamada.
+    @State private var callMinimized = false
     @Environment(\.openURL) private var openURL
 
     var body: some View {
         let ui = model.ui
         ZStack(alignment: .bottom) {
-            screen(ui)
+            VStack(spacing: 0) {
+                if let call = ui.call, showCallBar(ui) {
+                    CallBar(call: call, onTap: { callMinimized = false })
+                }
+                screen(ui)
+            }
             if let n = ui.notice {
                 NoticeBanner(text: n)
                     .task {
@@ -35,6 +42,8 @@ struct AppRoot: View {
         .environment(\.badges, ui.badges)
         .animation(.easeOut(duration: 0.2), value: ui.openChatId)
         .onChange(of: ui.openChatId) { _, _ in showGroupInfo = false }
+        // Cada chamada nova comeca em ecra inteiro.
+        .onChange(of: ui.call?.callId) { _, _ in callMinimized = false }
         .onChange(of: ready(ui)) { _, ok in
             // Notificacoes: pede a permissao uma vez, quando a app ja esta pronta a usar.
             if ok && ui.pushOn && !ui.pushAsked {
@@ -69,6 +78,13 @@ struct AppRoot: View {
         }
     }
 
+    /// A chamada a chegar nunca fica escondida; minimizar so a chamar, a tocar ou atendida.
+    private func canMinimize(_ call: CallUi) -> Bool { call.phase != .incoming && call.phase != .ended }
+    private func showCallBar(_ ui: UiState) -> Bool {
+        guard let call = ui.call else { return false }
+        return callMinimized && call.phase != .incoming && !ui.locked && !ui.loading
+    }
+
     private func ready(_ ui: UiState) -> Bool { !ui.loading && ui.hasIdentity && !ui.locked && ui.termsAccepted }
 
     /// Chamadas: o microfone e pedido so ao ligar (uma vez).
@@ -88,9 +104,10 @@ struct AppRoot: View {
         let openGroup = ui.openChatId.flatMap { ui.groupOf($0) }
         if ui.loading {
             LoadingScreen()
-        } else if let call = ui.call, !ui.locked {
+        } else if let call = ui.call, !ui.locked, !showCallBar(ui) {
             CallScreen(call: call, onAccept: { withMic { model.acceptCall() } }, onHangup: model.hangupCall,
-                       onMute: model.toggleMute, onSpeaker: model.toggleSpeaker, diag: model.callDiag)
+                       onMute: model.toggleMute, onSpeaker: model.toggleSpeaker, diag: model.callDiag,
+                       onMinimize: canMinimize(call) ? { callMinimized = true } : nil)
         } else if ui.locked {
             LockScreen(ui: ui, onCode: model.unlockWithCode, onBio: model.requestBioUnlock, onWipe: model.wipeLockedData)
         } else if !ui.termsAccepted {

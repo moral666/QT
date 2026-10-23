@@ -57,6 +57,44 @@ private fun SecureWhileShown() {
     }
 }
 
+/**
+ * Area de transferencia para coisas sensiveis (0.9.29: as 12 palavras). Marcada como sensivel
+ * (o Android 13+ nao mostra o texto na pre-visualizacao nem o sugere no teclado) e limpa ao fim
+ * de [CLEAR_MS], se ainda for a nossa (quando o Android nao deixa ver, limpa na mesma).
+ */
+object SensitiveClip {
+    private const val LABEL = "SEALER"
+    const val CLEAR_MS = 60_000L
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pending: Runnable? = null
+
+    fun copy(ctx: android.content.Context, text: String) {
+        val cm = ctx.getSystemService(android.content.ClipboardManager::class.java) ?: return
+        val clip = android.content.ClipData.newPlainText(LABEL, text)
+        clip.description.extras = android.os.PersistableBundle().apply {
+            // ClipDescription.EXTRA_IS_SENSITIVE (Android 13); antes, a mesma chave e respeitada
+            // por alguns teclados.
+            putBoolean("android.content.extra.IS_SENSITIVE", true)
+        }
+        runCatching { cm.setPrimaryClip(clip) }
+        pending?.let { main.removeCallbacks(it) }
+        val app = ctx.applicationContext
+        val r = Runnable {
+            pending = null
+            val m = app.getSystemService(android.content.ClipboardManager::class.java) ?: return@Runnable
+            val label = runCatching { m.primaryClipDescription?.label?.toString() }.getOrNull()
+            if (label == null || label == LABEL) {
+                runCatching {
+                    if (android.os.Build.VERSION.SDK_INT >= 28) m.clearPrimaryClip()
+                    else m.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
+                }
+            }
+        }
+        pending = r
+        main.postDelayed(r, CLEAR_MS)
+    }
+}
+
 /** As 12 palavras numeradas, em duas colunas. */
 @Composable
 private fun WordGrid(words: List<String>) {
@@ -120,6 +158,14 @@ fun RecoveryScreen(
                     SecureWhileShown()
                     Text(s(R.string.recovery_write_down), style = MaterialTheme.typography.bodyMedium)
                     WordGrid(words)
+                    // Copiar as 12 palavras com um toque (0.9.29, pedido dos testers).
+                    val ctx = LocalContext.current
+                    var copied by remember(words) { mutableStateOf(false) }
+                    OutlinedButton(
+                        onClick = { SensitiveClip.copy(ctx, words.joinToString(" ")); copied = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(s(R.string.recovery_copy)) }
+                    if (copied) Text(s(R.string.recovery_copied), style = MaterialTheme.typography.bodySmall)
                     Text(s(R.string.recovery_warning), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     Button(
                         onClick = { if (justCreated) checking = true else onHide() },

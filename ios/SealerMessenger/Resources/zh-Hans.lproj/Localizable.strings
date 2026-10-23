@@ -6,7 +6,9 @@
 "badge_dev" = "Dev";
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
+"call_banner_back" = "点击返回通话";
 "call_mic_lost" = "麦克风已停止工作（可能有其他应用正在使用）。对方已听不到你的声音。";
+"call_minimize" = "最小化";
 "confirm_word" = "删除";
 "confirm_word_alt" = "";
 "contacts_unreadable_new" = "新建列表";
@@ -39,6 +41,11 @@
 "lang_report_body" = "出错的界面：\n当前文字：\n正确写法：\n";
 "lang_report_no_app" = "没有邮件应用。请发送邮件至%1$@。";
 "lang_system" = "跟随系统";
+"link_open_title" = "打开这个链接？";
+"link_open_warn" = "你将离开 SEALER 并打开这个网站。请核对网站名称：虚假链接会模仿知名网站的名称。";
+"msg_copied" = "已复制";
+"msg_copy" = "复制消息";
+"msg_copy_link" = "复制链接";
 "photo_invalid" = "该图片不能用作头像。";
 "photo_preview_note" = "确定后，72小时内无法再次更换头像。";
 "photo_updated" = "头像已更新";
@@ -65,6 +72,8 @@
 "recovery_check" = "第%1$@个单词";
 "recovery_check_intro" = "请确认你已写下：";
 "recovery_check_wrong" = "不对。请再看一遍这些单词。";
+"recovery_copied" = "单词已复制。只粘贴到密码管理器中，不要粘贴到笔记或消息里。剪贴板将在 1 分钟后清空。";
+"recovery_copy" = "复制单词";
 "recovery_disable" = "关闭";
 "recovery_disable_confirm" = "副本将从服务器删除，这些单词将失效。";
 "recovery_done" = "完成";

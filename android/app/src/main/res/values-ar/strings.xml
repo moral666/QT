@@ -393,4 +393,13 @@
     <string name="lang_report_body">الشاشة التي فيها الخطأ:\nالنص الحالي:\nالنص الصحيح:\n</string>
     <string name="lang_report_no_app">لا يوجد تطبيق بريد إلكتروني. يمكنك الكتابة إلى %1$s.</string>
     <string name="confirm_word_alt">حدف,DELETE</string>
+    <string name="call_minimize">تصغير</string>
+    <string name="call_banner_back">النقر للعودة إلى المكالمة</string>
+    <string name="recovery_copy">نسخ الكلمات</string>
+    <string name="recovery_copied">تم نسخ الكلمات. يُرجى لصقها في مدير كلمات المرور فقط، وليس في الملاحظات أو الرسائل. ستُمسح الحافظة بعد دقيقة واحدة.</string>
+    <string name="msg_copy">نسخ الرسالة</string>
+    <string name="msg_copy_link">نسخ الرابط</string>
+    <string name="msg_copied">تم النسخ</string>
+    <string name="link_open_title">فتح هذا الرابط؟</string>
+    <string name="link_open_warn">سيتم الخروج من SEALER إلى هذا الموقع. يُرجى التحقق من اسم الموقع: الروابط المزيفة تقلّد أسماء معروفة.</string>
 </resources>

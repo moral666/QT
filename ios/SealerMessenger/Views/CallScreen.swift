@@ -11,6 +11,8 @@ struct CallScreen: View {
     let onSpeaker: () -> Void
     /// So na build de testes: o registo da chamada (para descobrir porque nao ha som).
     var diag: [String] = []
+    /// Minimizar (volta-se pela barra no topo da app); `nil` = sem botao (a chegar, terminada).
+    var onMinimize: (() -> Void)? = nil
     @Environment(\.chat) private var c
 
     private static let green = Color(hex: 0x2E9E5B)
@@ -61,20 +63,21 @@ struct CallScreen: View {
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .overlay(alignment: .topLeading) {
+            if let onMinimize {
+                Button(action: onMinimize) {
+                    Image(systemName: "chevron.down").font(.system(size: 22, weight: .semibold)).foregroundStyle(c.onTopBar)
+                        .frame(width: 48, height: 48)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(s("call_minimize"))
+                .padding(8)
+            }
+        }
         .background(LinearGradient(colors: c.topBarGradient, startPoint: .top, endPoint: .bottom).ignoresSafeArea())
     }
 
-    private var status: String {
-        switch call.phase {
-        case .calling: return s("t_a_chamar")
-        case .ringingOut: return s("t_a_tocar")
-        case .incoming: return s("t_chamada_de_voz")
-        case .active:
-            let sec = max(0, Int(monotonicSeconds() - call.answeredAt))
-            return "\(sec / 60):" + String(format: "%02d", sec % 60)
-        case .ended: return call.endText
-        }
-    }
+    private var status: String { callStatusText(call) }
 
     private func toggle(_ title: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -83,6 +86,45 @@ struct CallScreen: View {
                 .overlay(Capsule().stroke(c.onTopBar.opacity(0.6)))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// "A chamar", "A tocar", o tempo da chamada ou como acabou (igual no ecra e na barra).
+func callStatusText(_ call: CallUi) -> String {
+    switch call.phase {
+    case .calling: return s("t_a_chamar")
+    case .ringingOut: return s("t_a_tocar")
+    case .incoming: return s("t_chamada_de_voz")
+    case .active:
+        let sec = max(0, Int(monotonicSeconds() - call.answeredAt))
+        return "\(sec / 60):" + String(format: "%02d", sec % 60)
+    case .ended: return call.endText
+    }
+}
+
+/// Barra verde no topo da app com a chamada minimizada (0.9.29): nome, estado/tempo e
+/// "toca para voltar". Igual ao Android (`CallBar`).
+struct CallBar: View {
+    let call: CallUi
+    let onTap: () -> Void
+    var body: some View {
+        Button(action: onTap) {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                HStack(spacing: 10) {
+                    Image(systemName: "phone.fill").font(.system(size: 15)).foregroundStyle(.white)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(call.name) · \(callStatusText(call))").font(.sLabelLarge).foregroundStyle(.white)
+                            .lineLimit(1).monospacedDigit()
+                        Text(s("call_banner_back")).font(.sLabelSmall).foregroundStyle(.white.opacity(0.85)).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .buttonStyle(.plain)
+        .background(Color(hex: 0x2E9E5B).ignoresSafeArea(edges: .top))
     }
 }
 

@@ -439,6 +439,59 @@ mod tests {
     }
 
     #[test]
+    fn depois_de_recuperar_os_contactos_voltam_a_mandar_o_badge_e_a_foto() {
+        use qt_core::badge::{issue, issuer_public, BADGE_TESTER};
+        const SEED: [u8; 32] = [0x5e; 32];
+        crate::badges::set_test_issuer(issuer_public(&SEED));
+        let alice = client("alice3", 0x17, true);
+        let bob = client("bob3", 0x27, true);
+        let alice_pid = alice.export_public_identity().unwrap().public_id;
+        let bob_pid = bob.export_public_identity().unwrap().public_id;
+        let bundle = peer_bundle_from_relay_bytes(bob.publishable_bundle().unwrap()).unwrap();
+        alice.start_session(bob_pid.clone(), bundle).unwrap();
+        alice.send_text(cid(&bob), "ola".into()).unwrap();
+        deliver(&alice, &bob);
+        bob.send_text(cid(&alice), "ola alice".into()).unwrap();
+        deliver(&bob, &alice);
+
+        // O Bob tem badge e foto e ja os mandou a Alice.
+        let nuno = client("emissor3", 0x37, true);
+        let bundle = peer_bundle_from_relay_bytes(bob.publishable_bundle().unwrap()).unwrap();
+        nuno.start_session(bob_pid.clone(), bundle).unwrap();
+        let bob_id: [u8; 32] = bob.export_public_identity().unwrap().identity_public.try_into().unwrap();
+        nuno.badge_deliver(cid(&bob), issue(&SEED, &bob_id, BADGE_TESTER, 1_000)).unwrap();
+        deliver(&nuno, &bob);
+        let mut foto = b"RIFF\0\0\0\0WEBP".to_vec();
+        foto.extend_from_slice(&[7u8; 64]);
+        bob.profile_photo_set(foto.clone(), vec![cid(&alice)]).unwrap();
+        assert_eq!(bob.badge_sync(vec![cid(&alice)]).unwrap(), 1);
+        deliver(&bob, &alice);
+        assert_eq!(alice.badge_of(cid(&bob)).unwrap(), BADGE_TESTER);
+        assert_eq!(alice.profile_photo_of(cid(&bob)).unwrap(), Some(foto.clone()));
+
+        // A Alice reinstala e recupera a conta com as 12 palavras.
+        let words = alice.recovery_enable().unwrap();
+        let contacts = vec![BackupContact { nickname: "Bob".into(), public_id: bob_pid.clone() }];
+        let parts = parts_of(&alice.recovery_backup(contacts, false).unwrap());
+        let novo = client("novo3", 0x47, false);
+        novo.recovery_prepare(words).unwrap();
+        assert_eq!(novo.recovery_restore(parts).unwrap().public_id, alice_pid);
+        assert_eq!(novo.badge_of(cid(&bob)).unwrap(), 0);
+        let bundle = peer_bundle_from_relay_bytes(bob.publishable_bundle().unwrap()).unwrap();
+        novo.start_session(bob_pid, bundle).unwrap();
+        deliver(&novo, &bob);
+
+        // O Bob ve a sessao nova e volta a mandar o badge e a foto (antes da 0.9.29: nada).
+        assert_eq!(bob.badge_sync(vec![cid(&novo)]).unwrap(), 1);
+        assert_eq!(bob.profile_photo_sync(vec![cid(&novo)]).unwrap(), 1);
+        deliver(&bob, &novo);
+        assert_eq!(novo.badge_of(cid(&bob)).unwrap(), BADGE_TESTER);
+        assert_eq!(novo.profile_photo_of(cid(&bob)).unwrap(), Some(foto));
+        // So uma vez.
+        assert_eq!(bob.badge_sync(vec![cid(&novo)]).unwrap(), 0);
+    }
+
+    #[test]
     fn copia_errada_ou_com_identidade_ja_criada_e_recusada() {
         let alice = client("a2", 0x44, true);
         let words = alice.recovery_enable().unwrap();

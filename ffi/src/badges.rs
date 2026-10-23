@@ -162,6 +162,14 @@ pub(crate) fn on_badge(
     })
 }
 
+/// Sessao nova com `cid` (ele reinstalou e recuperou a conta, ou reiniciou a sessao): ja nao
+/// tem o meu badge. Esquece o que lhe enviei para o proximo `badge_sync` o mandar outra vez
+/// (0.9.29; antes so voltava a seguir com um badge novo).
+pub(crate) fn forget_sent(c: &st::rusqlite::Connection, cid: &str) -> Result<(), QtError> {
+    st::kv_delete(c, &format!("{KV_SENT}{cid}"))?;
+    Ok(())
+}
+
 /// Ao apagar um contacto: esquece o badge dele e o que lhe enviei.
 pub(crate) fn forget_contact(c: &st::rusqlite::Connection, cid: &str) -> Result<(), QtError> {
     st::kv_delete(c, &format!("{KV_OF}{cid}"))?;

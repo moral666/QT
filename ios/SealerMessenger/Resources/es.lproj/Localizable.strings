@@ -6,7 +6,9 @@
 "badge_dev" = "Dev";
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
+"call_banner_back" = "Toca para volver a la llamada";
 "call_mic_lost" = "El micrófono dejó de funcionar (otra app puede estar usándolo). La otra persona ya no te oye.";
+"call_minimize" = "Minimizar";
 "confirm_word" = "BORRAR";
 "confirm_word_alt" = "";
 "contacts_unreadable_new" = "Empezar lista nueva";
@@ -39,6 +41,11 @@
 "lang_report_body" = "Pantalla con el error:\nTexto actual:\nCómo debería decir:\n";
 "lang_report_no_app" = "No hay ninguna app de correo. Escribe a %1$@.";
 "lang_system" = "Idioma del móvil";
+"link_open_title" = "¿Abrir este enlace?";
+"link_open_warn" = "Vas a salir de SEALER hacia este sitio. Comprueba el nombre del sitio: los enlaces falsos imitan nombres conocidos.";
+"msg_copied" = "Copiado";
+"msg_copy" = "Copiar mensaje";
+"msg_copy_link" = "Copiar enlace";
 "photo_invalid" = "Esa imagen no sirve como foto de perfil.";
 "photo_preview_note" = "Después de aplicarla, solo podrás volver a cambiar la foto dentro de 72 horas.";
 "photo_updated" = "Foto actualizada";
@@ -65,6 +72,8 @@
 "recovery_check" = "Palabra n.º %1$@";
 "recovery_check_intro" = "Confirma que las escribiste:";
 "recovery_check_wrong" = "No es esa. Vuelve a ver las palabras.";
+"recovery_copied" = "Palabras copiadas. Pégalas solo en un gestor de contraseñas, nunca en notas ni en mensajes. El portapapeles se borra dentro de 1 minuto.";
+"recovery_copy" = "Copiar las palabras";
 "recovery_disable" = "Desactivar";
 "recovery_disable_confirm" = "La copia se borra del servidor y las palabras dejan de servir.";
 "recovery_done" = "Hecho";

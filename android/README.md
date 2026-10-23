@@ -1,6 +1,6 @@
 # SEALER para Android (Kotlin / Jetpack Compose)
 
-**Versão de testes (0.9.25).** A 0.9.16 foi testada a 20/10/2026 com a app iPhone 0.9.15, sem erros (ver `docs/field-tests.md`); a 0.9.22 foi testada a 22/10/2026 (bloqueio da app, apps recentes e recuperação da conta).
+**Versão de testes (0.9.29).** A 0.9.16 foi testada a 20/10/2026 com a app iPhone 0.9.15, sem erros (ver `docs/field-tests.md`); a 0.9.22 foi testada a 22/10/2026 (bloqueio da app, apps recentes e recuperação da conta).
 Toda a criptografia está no Rust (`libqt_ffi.so`); o Kotlin só move bytes e desenha ecrãs.
 No telemóvel a app chama-se **SEALER**. O identificador na Play Store é `sealer.app` (desde a 0.9.0; antes `pt.qt.app`); o código Kotlin continua no pacote `pt.qt.app`.
 

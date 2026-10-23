@@ -395,4 +395,13 @@
     <string name="lang_report_body">Schermata con l\'errore:\nTesto attuale:\nCome dovrebbe essere:\n</string>
     <string name="lang_report_no_app">Nessuna app di email. Scrivi a %1$s.</string>
     <string name="confirm_word_alt"></string>
+    <string name="call_minimize">Riduci a icona</string>
+    <string name="call_banner_back">Tocca per tornare alla chiamata</string>
+    <string name="recovery_copy">Copia le parole</string>
+    <string name="recovery_copied">Parole copiate. Incollale solo in un gestore di password, mai in note o messaggi. Gli appunti vengono svuotati tra 1 minuto.</string>
+    <string name="msg_copy">Copia messaggio</string>
+    <string name="msg_copy_link">Copia link</string>
+    <string name="msg_copied">Copiato</string>
+    <string name="link_open_title">Aprire questo link?</string>
+    <string name="link_open_warn">Stai per lasciare SEALER per questo sito. Controlla il nome del sito: i link falsi imitano nomi noti.</string>
 </resources>

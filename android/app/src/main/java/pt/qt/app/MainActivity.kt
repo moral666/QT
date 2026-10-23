@@ -55,6 +55,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -417,6 +419,7 @@ internal fun FollowNewest(listState: LazyListState, newestKey: Long?, newestIsMi
 
 // ============================================================================ raiz
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppRoot(
     vm: MainViewModel,
@@ -494,17 +497,31 @@ fun AppRoot(
     val call = ui.call
     var showPhoto by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
-    CompositionLocalProvider(LocalPhotos provides ui.photos, LocalBadges provides ui.badges) { when {
+    // Chamada minimizada (0.9.29): o resto da app fica usavel e a barra no topo volta a chamada.
+    // Cada chamada nova comeca em ecra inteiro; a chamada a chegar nunca fica escondida.
+    var callMinimized by remember { mutableStateOf(false) }
+    LaunchedEffect(call?.callId) { callMinimized = false }
+    val canMinimize = call != null && call.phase != CallPhase.INCOMING && call.phase != CallPhase.ENDED
+    val showCallBar = call != null && callMinimized && call.phase != CallPhase.INCOMING &&
+        !overLock && !ui.locked && !ui.loading
+    CompositionLocalProvider(LocalPhotos provides ui.photos, LocalBadges provides ui.badges) {
+    Column(Modifier.fillMaxSize()) {
+    if (showCallBar && call != null) CallBar(call, onClick = { callMinimized = false })
+    // A barra ja ocupa a barra de estado: os ecras por baixo nao a reservam outra vez.
+    Box(Modifier.weight(1f).then(if (showCallBar) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier)) {
+    when {
         overLock -> CallOverLock(ui, vm, withMic, keyguardLocked, onLeaveLock, onDone)
         ui.loading -> LoadingScreen()
-        call != null && !ui.locked -> {
-            BackHandler { }   // a chamada nao se fecha com o "voltar": desliga-se no botao
+        call != null && !ui.locked && !showCallBar -> {
+            // O "voltar" minimiza (antes nao fazia nada); desligar so no botao.
+            BackHandler { if (canMinimize) callMinimized = true }
             CallScreen(
                 call,
                 onAccept = { withMic { vm.acceptCall() } },
                 onHangup = vm::hangupCall,
                 onMute = vm::toggleMute,
                 onSpeaker = vm::toggleSpeaker,
+                onMinimize = if (canMinimize) ({ callMinimized = true }) else null,
             )
         }
         ui.locked -> LockScreen(ui, onCode = vm::unlockWithCode, onBio = vm::requestBioUnlock, onWipe = vm::wipeLockedData)
@@ -625,7 +642,7 @@ fun AppRoot(
             onDeleteConversation = vm::deleteConversation, onDeleteContact = vm::deleteContact,
             onDeleteGroup = vm::deleteGroup,
         )
-    } }
+    } } } }
     // Por cima do bloqueio do telemovel: nenhum dialogo (so a chamada).
     if (overLock) return
     if (showMyId && !ui.locked) MyIdDialog(ui.publicId, onDismiss = { showMyId = false })
@@ -1404,7 +1421,7 @@ fun ChatScreen(
                     item(key = m.seq) {
                         MessageBubble(
                             m, ui.transfers[m.messageId], loadAttachment, onOpen = { viewing = m },
-                            onLongPress = { if (!blocked) reactingTo = m },
+                            onLongPress = { if (!blocked || m.attachment == null) reactingTo = m },
                         )
                     }
                     val older = msgs.getOrNull(i + 1)
@@ -1477,6 +1494,8 @@ fun ChatScreen(
             current = m.reactions.firstOrNull { it.mine }?.emoji,
             onPick = { e -> onReact(contactId, m.messageId, e); reactingTo = null },
             onDismiss = { reactingTo = null },
+            text = if (m.attachment == null) coreText(m.text) else null,
+            canReact = !blocked,
         )
     }
     if (confirmBlock) {
@@ -1884,7 +1903,7 @@ fun MessageBubble(
             if (att != null) {
                 AttachmentContent(m, att, progress, loadAttachment, onOpen, onLongPress)
             } else {
-                Text(coreText(m.text), style = MaterialTheme.typography.bodyLarge, color = c.bubbleText)
+                LinkedText(coreText(m.text), style = MaterialTheme.typography.bodyLarge, color = c.bubbleText)
             }
             Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
                 Text(timeOf(m.localAtMs), fontSize = 11.sp, color = c.bubbleMeta)
@@ -1914,26 +1933,58 @@ fun MessageBubble(
 /** Emojis do seletor de reacoes. */
 private val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "🙏")
 
-/** Escolher a reacao a uma mensagem (ou retirar a minha). */
+/**
+ * Toque longo numa mensagem: reagir (ou retirar a minha) e, nas mensagens de texto, copiar a
+ * mensagem ou um link dela (0.9.29). `text` = null nos anexos; `canReact` = false com o contacto
+ * bloqueado ou fora do grupo (antes o toque longo nao fazia nada nesses casos).
+ */
 @Composable
-fun ReactionPicker(current: String?, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+fun ReactionPicker(
+    current: String?,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit,
+    text: String? = null,
+    canReact: Boolean = true,
+) {
+    val clipboard = LocalClipboardManager.current
+    val ctx = LocalContext.current
+    val links = remember(text) { text?.let { Links.urls(it) }.orEmpty().take(3) }
+    fun copy(t: String) {
+        clipboard.setText(AnnotatedString(t))
+        // O Android 13+ ja mostra o aviso de "copiado"; antes, mostra-se aqui.
+        if (Build.VERSION.SDK_INT < 33) android.widget.Toast.makeText(ctx, s(R.string.msg_copied), android.widget.Toast.LENGTH_SHORT).show()
+        onDismiss()
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(s(R.string.t_reagir)) },
+        title = if (canReact) ({ Text(s(R.string.t_reagir)) }) else null,
         text = {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                for (e in QUICK_REACTIONS) {
-                    Box(
-                        Modifier.size(44.dp).clip(CircleShape)
-                            .background(if (e == current) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
-                            .clickable { onPick(e) },
-                        contentAlignment = Alignment.Center,
-                    ) { Text(e, fontSize = 24.sp) }
+            Column {
+                if (canReact) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        for (e in QUICK_REACTIONS) {
+                            Box(
+                                Modifier.size(44.dp).clip(CircleShape)
+                                    .background(if (e == current) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                                    .clickable { onPick(e) },
+                                contentAlignment = Alignment.Center,
+                            ) { Text(e, fontSize = 24.sp) }
+                        }
+                    }
+                }
+                if (text != null) {
+                    if (canReact) Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = { copy(text) }) { Text(s(R.string.msg_copy)) }
+                    for (l in links) {
+                        TextButton(onClick = { copy(l) }) {
+                            Text("${s(R.string.msg_copy_link)}: ${Links.host(Links.open(l) ?: l)}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
                 }
             }
         },
         confirmButton = {
-            if (current != null) TextButton(onClick = { onPick("") }) { Text(s(R.string.t_retirar_a_minha)) }
+            if (canReact && current != null) TextButton(onClick = { onPick("") }) { Text(s(R.string.t_retirar_a_minha)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_cancelar)) } },
     )

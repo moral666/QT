@@ -400,4 +400,13 @@
     <string name="lang_report_body">Ecrã onde está o erro:\nTexto atual:\nComo devia ficar:\n</string>
     <string name="lang_report_no_app">Não há nenhuma app de email. Escreve para %1$s.</string>
     <string name="confirm_word_alt"></string>
+    <string name="call_minimize">Minimizar</string>
+    <string name="call_banner_back">Toca para voltar à chamada</string>
+    <string name="recovery_copy">Copiar as palavras</string>
+    <string name="recovery_copied">Palavras copiadas. Cola-as só num gestor de palavras-passe, nunca em notas nem em mensagens. Daqui a 1 minuto a área de transferência é limpa.</string>
+    <string name="msg_copy">Copiar mensagem</string>
+    <string name="msg_copy_link">Copiar link</string>
+    <string name="msg_copied">Copiado</string>
+    <string name="link_open_title">Abrir este link?</string>
+    <string name="link_open_warn">Vais sair da SEALER para este site. Confirma o nome do site: os links falsos imitam nomes conhecidos.</string>
 </resources>

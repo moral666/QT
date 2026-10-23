@@ -904,7 +904,12 @@ final class AppModel: ObservableObject {
             return Raw(theirs: m, mine: Int(try client.badgeMine()))
         }) else { return }
         if raw.theirs != ui.badges { ui.badges = raw.theirs }
-        if raw.mine != ui.myBadge { ui.myBadge = raw.mine }
+        if raw.mine != ui.myBadge {
+            ui.myBadge = raw.mine
+            // O meu badge mudou (ou chegou): a copia de recuperacao passa a leva-lo (0.9.29;
+            // antes so se refazia quando mudavam os contactos e o badge podia ficar de fora).
+            scheduleBackup()
+        }
     }
 
     private func refreshPhotos(_ client: QtClient) async {

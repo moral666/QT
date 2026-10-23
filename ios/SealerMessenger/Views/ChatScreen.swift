@@ -94,7 +94,9 @@ struct ChatScreen: View {
             }
         }
         .sheet(item: $reactingTo) { m in
-            ReactionPicker(current: m.reactions.first(where: \.mine)?.emoji) { e in
+            ReactionPicker(current: m.reactions.first(where: \.mine)?.emoji,
+                           text: m.attachment == nil ? coreText(m.text) : nil,
+                           canReact: group?.active ?? !blocked) { e in
                 model.react(conversationId, m.messageId, e)
                 reactingTo = nil
             }
@@ -202,7 +204,7 @@ struct ChatScreen: View {
                 m: m, progress: ui.transfers[m.messageId], load: model.attachmentBytes,
                 senderName: group != nil && !m.outgoing ? ui.memberName(m.sender) : nil,
                 onOpen: { viewing = m },
-                onLongPress: { if canReact { reactingTo = m } }
+                onLongPress: { if canReact || m.attachment == nil { reactingTo = m } }
             )
             .onAppear { if ui.chatHasMore, m.seq <= loadTriggerSeq { model.loadOlder() } }
         case .day(_, let ms):
@@ -421,7 +423,7 @@ struct MessageBubble: View {
                 AttachmentContent(m: m, att: att, progress: progress, load: load, onOpen: onOpen)
             }
         } else {
-            Text(coreText(m.text)).font(.sBodyLarge).foregroundStyle(c.bubbleText)
+            LinkedText(text: coreText(m.text), color: c.bubbleText).font(.sBodyLarge).foregroundStyle(c.bubbleText)
                 .multilineTextAlignment(.leading)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -434,35 +436,65 @@ struct MessageBubble: View {
 private let quickReactions = ["👍", "❤️", "😂", "😮", "😢", "🙏"]
 
 /// Escolher a reacao a uma mensagem (ou retirar a minha).
+/// Toque longo numa mensagem: reagir (ou retirar a minha) e, nas de texto, copiar a mensagem ou
+/// um link dela (0.9.29, igual ao Android). `text` = nil nos anexos; `canReact` = false com o
+/// contacto bloqueado ou fora do grupo.
 struct ReactionPicker: View {
     let current: String?
+    var text: String? = nil
+    var canReact: Bool = true
     let onPick: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.chat) private var c
 
+    private var links: [String] { text.map { Array(Links.urls($0).prefix(3)) } ?? [] }
+
     var body: some View {
         VStack(spacing: 16) {
-            Text(s("t_reagir")).font(Jakarta.font(20, .bold))
-            HStack {
-                ForEach(quickReactions, id: \.self) { e in
-                    Button { onPick(e) } label: {
-                        Text(e).font(.system(size: 28)).frame(width: 48, height: 48)
-                            .background(Circle().fill(e == current ? c.secondaryContainer : .clear))
+            if canReact {
+                Text(s("t_reagir")).font(Jakarta.font(20, .bold))
+                HStack {
+                    ForEach(quickReactions, id: \.self) { e in
+                        Button { onPick(e) } label: {
+                            Text(e).font(.system(size: 28)).frame(width: 48, height: 48)
+                                .background(Circle().fill(e == current ? c.secondaryContainer : .clear))
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity)
                 }
             }
+            if let text {
+                VStack(alignment: .leading, spacing: 10) {
+                    Button(s("msg_copy")) { copy(text) }
+                    ForEach(links, id: \.self) { l in
+                        Button("\(s("msg_copy_link")): \(Links.open(l).map(Links.host) ?? l)") { copy(l) }.lineLimit(1)
+                    }
+                }
+                .font(Jakarta.font(15, .semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
             HStack {
-                if current != nil { Button(s("t_retirar_a_minha")) { onPick("") } }
+                if canReact && current != nil { Button(s("t_retirar_a_minha")) { onPick("") } }
                 Spacer()
                 Button(s("t_cancelar")) { dismiss() }
             }
             .font(Jakarta.font(15, .semibold))
         }
         .padding(24)
-        .presentationDetents([.height(220)])
+        .presentationDetents([.height(height)])
         .presentationBackground(c.surface)
+    }
+}
+
+extension ReactionPicker {
+    private var height: CGFloat {
+        (canReact ? 160 : 70) + (text == nil ? 0 : 40 + CGFloat(links.count) * 34)
+    }
+
+    private func copy(_ t: String) {
+        UIPasteboard.general.string = t
+        dismiss()
     }
 }
 

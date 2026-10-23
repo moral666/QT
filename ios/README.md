@@ -1,4 +1,4 @@
-# SEALER para iPhone (0.9.25)
+# SEALER para iPhone (0.9.29)
 
 **Testada a 0.9.15** (20/10/2026) com a app Android 0.9.16, sem erros: contactos, QR, partilha do
 ID, menus, mensagens de texto e voz, GIFs, ficheiros, bloquear, apagar conversas e chamadas
