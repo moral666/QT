@@ -18,6 +18,18 @@
 //!     porta de onde veio o pedido, em menos bytes. Sem sala ou sem etiqueta valida, nada.
 //!     O relay ja via esse IP: nao fica a saber mais nada.
 //!
+//!   * VIDEO (fase 5a): pacotes `0x40|papel` (297 a 1225 bytes), pelos mesmos lados da
+//!     sala, so do endereco atual de cada lado (a mudanca de IP e pelo audio). Debito
+//!     limitado por lado (balde de bytes, 150 kB/s por omissao, ~1,2 Mbit/s: 360p mais
+//!     folga). De 5 em 5 s, quem envia video recebe um aviso (`relay_video_notice`): normal,
+//!     so 240p, ou sem video.
+//!   * TRAVAO DO MES: se o que o relay enviou no mes (UTC) passar de um valor (80 GB por
+//!     omissao), o video desce a 240p para todos ate ao fim do mes (aviso + balde de
+//!     50 kB/s). A conta do mes fica num ficheiro (`state_file`), gravado de 10 em 10 s.
+//!   * TETO DA CONTA (horas de video por mes): ainda nao ha fichas anonimas (sessao propria).
+//!     Fica a porta: uma sala com `video_allowed = false` so passa voz e quem envia video
+//!     recebe "sem video pelo relay" (`CallLimits::relay_video = false` fecha-a para todas).
+//!
 //! LIMITES (para nao servir de tunel gratis): 2 lados por sala; a sala fecha se o
 //! segundo nao entrar em 60 s ou ao fim de 30 s sem pacotes; salas por IP e no total;
 //! pedidos de entrada por IP; pacotes por segundo por lado; tamanhos validos. O
@@ -32,15 +44,20 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use qt_core::call::{
-    addr_ok, addr_request_room, join_ok, parse_header, parse_join_payload, relay_tag_valid, Role, ADDR_KIND,
-    ADDR_LEN, JOIN_KIND, JOIN_PAYLOAD_LEN, JOIN_PROLOGUE, MAX_PAD, MEDIA_OVERHEAD, ROOM_ID_LEN,
+    addr_ok, addr_request_room, join_ok, parse_header, parse_join_payload, parse_video_header, relay_tag_valid,
+    relay_video_notice, RelayVideo, Role, ADDR_KIND, ADDR_LEN, JOIN_KIND, JOIN_PAYLOAD_LEN, JOIN_PROLOGUE, MAX_PAD,
+    MEDIA_OVERHEAD, ROOM_ID_LEN, VIDEO_KIND, VIDEO_MAX_PACKET,
 };
 use zeroize::Zeroizing;
 
 /// Tamanho exato de um pedido de entrada.
 pub const JOIN_LEN: usize = 1 + qt_transport::NOISE_N_OVERHEAD + JOIN_PAYLOAD_LEN;
-/// Maior pacote aceite (audio com o maior `pad`).
-pub const MAX_PACKET: usize = MEDIA_OVERHEAD + MAX_PAD;
+/// Maior pacote de audio aceite (com o maior `pad`).
+pub const MAX_AUDIO_PACKET: usize = MEDIA_OVERHEAD + MAX_PAD;
+/// Maior pacote aceite (o de video e o maior).
+pub const MAX_PACKET: usize = if VIDEO_MAX_PACKET > MAX_AUDIO_PACKET { VIDEO_MAX_PACKET } else { MAX_AUDIO_PACKET };
+/// Aviso sobre o video a quem o envia, no maximo de tanto em tanto tempo.
+const VIDEO_NOTICE_EVERY: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Endpoint {
@@ -60,6 +77,16 @@ pub struct CallLimits {
     pub packets_per_sec: u32,
     pub join_timeout: Duration,
     pub idle_timeout: Duration,
+    /// Video por lado, em bytes/s (balde com 1 s de reserva). 150 000 = ~1,2 Mbit/s.
+    pub video_bytes_per_sec: u32,
+    /// O mesmo com o travao do mes (240p).
+    pub video_cap240_bytes_per_sec: u32,
+    /// Travao do mes: passado isto (bytes enviados pelo relay no mes, UTC), video so a 240p.
+    pub monthly_egress_bytes: u64,
+    /// `false`: nenhuma sala passa video (so voz). As fichas da conta vao decidir por sala.
+    pub relay_video: bool,
+    /// Onde guardar a conta do mes (sobrevive a reinicios). `None`: so em memoria.
+    pub state_file: Option<std::path::PathBuf>,
 }
 
 impl Default for CallLimits {
@@ -71,6 +98,11 @@ impl Default for CallLimits {
             packets_per_sec: 100,
             join_timeout: Duration::from_secs(60),
             idle_timeout: Duration::from_secs(30),
+            video_bytes_per_sec: 150_000,
+            video_cap240_bytes_per_sec: 50_000,
+            monthly_egress_bytes: 80_000_000_000,
+            relay_video: true,
+            state_file: None,
         }
     }
 }
@@ -86,6 +118,9 @@ pub struct CallStats {
     pub roamed: AtomicU64,
     /// Respostas "que endereco ves?" (ligacao direta).
     pub addr_answered: AtomicU64,
+    pub video_forwarded: AtomicU64,
+    /// Video deitado fora: acima do debito do lado, ou sala sem video.
+    pub video_dropped: AtomicU64,
 }
 
 struct Slot {
@@ -93,6 +128,42 @@ struct Slot {
     last_counter: Option<u64>,
     tokens: f64,
     refill_at: Instant,
+    video_tokens: f64,
+    video_refill_at: Instant,
+    /// Ultimo aviso sobre o video a este lado (quando e qual).
+    video_notice: Option<(Instant, RelayVideo)>,
+}
+
+impl Slot {
+    fn new(ep: Endpoint, pps: u32, video_bps: u32, now: Instant) -> Self {
+        Slot { ep, last_counter: None, tokens: pps as f64, refill_at: now, video_tokens: video_bps as f64, video_refill_at: now, video_notice: None }
+    }
+}
+
+/// Bytes enviados pelo relay no mes (UTC), para o travao.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Egress {
+    /// AAAAMM.
+    pub month: u32,
+    pub bytes: u64,
+}
+
+/// AAAAMM (UTC) de um instante em segundos desde 1970.
+pub fn month_of_unix(secs: u64) -> u32 {
+    // Data civil a partir dos dias (algoritmo de Howard Hinnant).
+    let z = (secs / 86_400) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    (y * 100 + m) as u32
+}
+
+fn current_month() -> u32 {
+    month_of_unix(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0))
 }
 
 struct Room {
@@ -101,6 +172,8 @@ struct Room {
     created: Instant,
     last_activity: Instant,
     creator_ip: IpAddr,
+    /// Teto da conta (fichas anonimas, sessao propria): `false` = so voz nesta sala.
+    video_allowed: bool,
 }
 
 pub struct CallRelay {
@@ -109,6 +182,7 @@ pub struct CallRelay {
     rooms: HashMap<[u8; ROOM_ID_LEN], Room>,
     rooms_by_ip: HashMap<IpAddr, u32>,
     join_rate: HashMap<IpAddr, (Instant, u32)>,
+    egress: Egress,
     pub stats: Arc<CallStats>,
 }
 
@@ -128,7 +202,36 @@ impl CallRelay {
             rooms: HashMap::new(),
             rooms_by_ip: HashMap::new(),
             join_rate: HashMap::new(),
+            egress: Egress { month: current_month(), bytes: 0 },
             stats: Arc::new(CallStats::default()),
+        }
+    }
+
+    /// Bytes enviados no mes (para gravar e para a linha por minuto).
+    pub fn egress(&self) -> Egress {
+        self.egress
+    }
+
+    /// Repoe a conta do mes (lida do ficheiro ao arrancar). De outro mes: comeca do zero.
+    pub fn set_egress(&mut self, e: Egress) {
+        self.egress = if e.month == self.egress.month { e } else { Egress { month: self.egress.month, bytes: 0 } };
+    }
+
+    /// Muda de mes (chamar de vez em quando; `sweep` faz isso).
+    pub fn roll_month(&mut self, month: u32) {
+        if month != self.egress.month {
+            self.egress = Egress { month, bytes: 0 };
+        }
+    }
+
+    /// O que passa de video nesta sala agora.
+    fn video_mode(&self, room_video_allowed: bool) -> RelayVideo {
+        if !self.limits.relay_video || !room_video_allowed {
+            RelayVideo::Denied
+        } else if self.egress.bytes >= self.limits.monthly_egress_bytes {
+            RelayVideo::Cap240
+        } else {
+            RelayVideo::Full
         }
     }
 
@@ -141,12 +244,14 @@ impl CallRelay {
         let out = match data.first() {
             Some(&JOIN_KIND) if data.len() == JOIN_LEN => self.on_join(data, from, ip, now),
             Some(&ADDR_KIND) if data.len() == ADDR_LEN => self.on_addr(data, from, ip, now),
-            Some(_) if data.len() <= MAX_PACKET => self.on_media(data, from, now),
+            Some(k) if k & !1 == VIDEO_KIND && data.len() <= VIDEO_MAX_PACKET => self.on_video(data, from, now),
+            Some(_) if data.len() <= MAX_AUDIO_PACKET => self.on_media(data, from, now),
             _ => Vec::new(),
         };
         if out.is_empty() {
             self.stats.dropped.fetch_add(1, Relaxed);
         }
+        self.egress.bytes += out.iter().map(|(_, d)| d.len() as u64).sum::<u64>();
         out
     }
 
@@ -181,7 +286,14 @@ impl CallRelay {
             }
             self.rooms.insert(
                 keys.room_id,
-                Room { relay_key: Zeroizing::new(keys.relay_key), slots: [None, None], created: now, last_activity: now, creator_ip: ip },
+                Room {
+                    relay_key: Zeroizing::new(keys.relay_key),
+                    slots: [None, None],
+                    created: now,
+                    last_activity: now,
+                    creator_ip: ip,
+                    video_allowed: true,
+                },
             );
             *self.rooms_by_ip.entry(ip).or_insert(0) += 1;
             self.stats.rooms_opened.fetch_add(1, Relaxed);
@@ -198,9 +310,7 @@ impl CallRelay {
         match room.slots[me].as_mut() {
             // Voltar a pedir (de outro endereco tambem: socket novo): o lado passa para la.
             Some(s) => s.ep = from,
-            None => {
-                room.slots[me] = Some(Slot { ep: from, last_counter: None, tokens: self.limits.packets_per_sec as f64, refill_at: now })
-            }
+            None => room.slots[me] = Some(Slot::new(from, self.limits.packets_per_sec, self.limits.video_bytes_per_sec, now)),
         }
         let other = room.slots[1 - me].as_ref().map(|s| s.ep);
         let mut out = vec![(from, join_ok(&keys, other.is_some()).to_vec())];
@@ -226,6 +336,55 @@ impl CallRelay {
                 vec![(from, ok.to_vec())]
             }
             None => Vec::new(),
+        }
+    }
+
+    /// Video: so do endereco atual do lado (a mudanca de IP e pelo audio), dentro do debito
+    /// do lado e do que a sala deixa. Quem envia recebe o aviso do modo de 5 em 5 s.
+    fn on_video(&mut self, data: &[u8], from: Endpoint, now: Instant) -> Vec<(Endpoint, Vec<u8>)> {
+        let Some(h) = parse_video_header(data) else { return Vec::new() };
+        let Some(allowed) = self.rooms.get(&h.room_id).map(|r| r.video_allowed) else { return Vec::new() };
+        let mode = self.video_mode(allowed);
+        let rate = match mode {
+            RelayVideo::Full => self.limits.video_bytes_per_sec,
+            RelayVideo::Cap240 => self.limits.video_cap240_bytes_per_sec,
+            RelayVideo::Denied => 0,
+        } as f64;
+        let room = self.rooms.get_mut(&h.room_id).expect("sala acabada de ver");
+        if !relay_tag_valid(&room.relay_key, data) {
+            return Vec::new();
+        }
+        let (me, other) = (idx(h.role), 1 - idx(h.role));
+        let Some(slot) = room.slots[me].as_mut() else { return Vec::new() };
+        if slot.ep != from {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        let tell = slot.video_notice.is_none_or(|(t, m)| m != mode || now.duration_since(t) >= VIDEO_NOTICE_EVERY);
+        if tell {
+            slot.video_notice = Some((now, mode));
+            out.push((from, relay_video_notice(&h.room_id, &room.relay_key, mode).to_vec()));
+        }
+        let elapsed = now.duration_since(slot.video_refill_at).as_secs_f64();
+        slot.video_tokens = (slot.video_tokens + elapsed * rate).min(rate);
+        slot.video_refill_at = now;
+        if mode == RelayVideo::Denied || slot.video_tokens < data.len() as f64 {
+            self.stats.video_dropped.fetch_add(1, Relaxed);
+            return out;
+        }
+        slot.video_tokens -= data.len() as f64;
+        room.last_activity = now;
+        if let Some(peer) = room.slots[other].as_ref() {
+            self.stats.video_forwarded.fetch_add(1, Relaxed);
+            out.push((peer.ep, data.to_vec()));
+        }
+        out
+    }
+
+    /// Teto da conta (fichas anonimas, sessao propria): deixar ou nao passar video nesta sala.
+    pub fn set_room_video(&mut self, room_id: &[u8; ROOM_ID_LEN], allowed: bool) {
+        if let Some(r) = self.rooms.get_mut(room_id) {
+            r.video_allowed = allowed;
         }
     }
 
@@ -264,8 +423,9 @@ impl CallRelay {
         }
     }
 
-    /// Fecha salas abandonadas. Chamar a cada poucos segundos.
+    /// Fecha salas abandonadas (e muda de mes). Chamar a cada poucos segundos.
     pub fn sweep(&mut self, now: Instant) -> usize {
+        self.roll_month(current_month());
         let l = &self.limits;
         let mut closed = Vec::new();
         self.rooms.retain(|_, r| {
@@ -434,7 +594,11 @@ pub fn serve(
     limits: CallLimits,
 ) -> Arc<CallStats> {
     let max_ws = limits.max_rooms * 2;
-    let relay = CallRelay::new(static_private, limits);
+    let state_file = limits.state_file.clone();
+    let mut relay = CallRelay::new(static_private, limits);
+    if let Some(e) = state_file.as_deref().and_then(load_egress) {
+        relay.set_egress(e);
+    }
     let stats = relay.stats.clone();
     let shared = Arc::new(Shared { relay: Mutex::new(relay), udp: Arc::new(udp), ws: Mutex::new(HashMap::new()), next_ws: AtomicU64::new(1) });
     tokio::spawn(udp_loop(shared.clone()));
@@ -444,14 +608,41 @@ pub fn serve(
     let s = shared.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(5));
+        let mut n = 0u32;
         loop {
             tick.tick().await;
-            if let Ok(mut r) = s.relay.lock() {
-                r.sweep(Instant::now());
+            let egress = match s.relay.lock() {
+                Ok(mut r) => {
+                    r.sweep(Instant::now());
+                    r.egress()
+                }
+                Err(_) => continue,
+            };
+            n += 1;
+            // A conta do mes, de 10 em 10 s (num reinicio perde-se no maximo isso).
+            if n.is_multiple_of(2) {
+                if let Some(p) = state_file.as_deref() {
+                    save_egress(p, egress);
+                }
             }
         }
     });
     stats
+}
+
+/// Conta do mes gravada: "AAAAMM bytes".
+pub fn load_egress(path: &std::path::Path) -> Option<Egress> {
+    let s = std::fs::read_to_string(path).ok()?;
+    let mut it = s.split_whitespace();
+    Some(Egress { month: it.next()?.parse().ok()?, bytes: it.next()?.parse().ok()? })
+}
+
+/// Grava a conta do mes (ficheiro novo e troca, para nunca ficar a meio).
+pub fn save_egress(path: &std::path::Path, e: Egress) {
+    let tmp = path.with_extension("tmp");
+    if std::fs::write(&tmp, format!("{} {}\n", e.month, e.bytes)).is_ok() {
+        let _ = std::fs::rename(&tmp, path);
+    }
 }
 
 /// Salas abertas agora (para a linha por minuto). `None` se o estado estiver bloqueado.
@@ -464,11 +655,13 @@ pub fn take_line(stats: &CallStats) -> Option<String> {
         stats.dropped.swap(0, Relaxed),
         stats.roamed.swap(0, Relaxed),
         stats.addr_answered.swap(0, Relaxed),
+        stats.video_forwarded.swap(0, Relaxed),
+        stats.video_dropped.swap(0, Relaxed),
     ];
     (v.iter().any(|x| *x > 0)).then(|| {
         format!(
-            "chamadas: entradas={} recusadas={} salas_novas={} pacotes={} descartados={} mudancas_de_ip={} enderecos={}",
-            v[0], v[1], v[2], v[3], v[4], v[5], v[6]
+            "chamadas: entradas={} recusadas={} salas_novas={} pacotes={} descartados={} mudancas_de_ip={} enderecos={} video={} video_descartado={}",
+            v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]
         )
     })
 }
@@ -675,6 +868,83 @@ mod tests {
         assert!(r.handle(&req, Endpoint::Ws(1), ip(), t).is_empty());
         // Nao muda o endereco do lado na sala (nao e audio).
         assert_eq!(r.rooms[&a.room.room_id].slots[0].as_ref().map(|s| s.ep), Some(ep(1)));
+    }
+
+    #[test]
+    fn video_passa_dentro_do_debito_e_com_aviso() {
+        let limits = CallLimits { video_bytes_per_sec: 10_000, ..Default::default() };
+        let (mut r, pk) = setup(limits);
+        let (a, b) = sides(1);
+        let t = Instant::now();
+        r.handle(&join(&pk, &a), ep(1), ip(), t);
+        r.handle(&join(&pk, &b), ep(2), ip(), t);
+        let mut va = a.media.video();
+        let p = va.seal(&[7u8; 1000]).unwrap();
+        assert_eq!(p.len(), 1065);
+        // O primeiro leva o aviso "normal" para quem envia, e segue para o outro.
+        let out = r.handle(&p, ep(1), ip(), t);
+        assert_eq!(out.len(), 2);
+        assert_eq!((out[0].0, qt_core::call::parse_relay_video_notice(&a.room, &out[0].1)), (ep(1), Some(RelayVideo::Full)));
+        assert_eq!(out[1], (ep(2), p.clone()));
+        // Debito: 10 000 bytes/s chegam para 9 pacotes deste tamanho.
+        let passed = 1 + (0..20).filter(|_| r.handle(&va.seal(&[7u8; 1000]).unwrap(), ep(1), ip(), t).iter().any(|(e, _)| *e == ep(2))).count();
+        assert_eq!(passed, 9);
+        // Video de outro endereco (sem mudar de IP pelo audio): nada.
+        assert!(r.handle(&va.seal(b"x").unwrap(), ep(9), ip(), t + Duration::from_secs(2)).is_empty());
+        // O audio continua a passar com o video esgotado.
+        let (mut a2, _) = sides(1);
+        assert_eq!(r.handle(&a2.media.seal(b"voz").unwrap(), ep(1), ip(), t).len(), 1);
+        // Pacotes de video com tamanho invalido: nada.
+        assert!(r.handle(&p[..p.len() - 3], ep(1), ip(), t).is_empty());
+    }
+
+    #[test]
+    fn travao_do_mes_e_teto_da_sala() {
+        let limits = CallLimits { monthly_egress_bytes: 5_000, video_cap240_bytes_per_sec: 2_000, ..Default::default() };
+        let (mut r, pk) = setup(limits);
+        let (a, b) = sides(1);
+        let t = Instant::now();
+        r.handle(&join(&pk, &a), ep(1), ip(), t);
+        r.handle(&join(&pk, &b), ep(2), ip(), t);
+        let mut va = a.media.video();
+        for _ in 0..5 {
+            r.handle(&va.seal(&[1u8; 1000]).unwrap(), ep(1), ip(), t);
+        }
+        assert!(r.egress().bytes >= 5_000);
+        // Passou do mes: aviso "240p" (logo, porque mudou) e balde mais pequeno.
+        let out = r.handle(&va.seal(&[1u8; 1000]).unwrap(), ep(1), ip(), t);
+        assert_eq!(qt_core::call::parse_relay_video_notice(&a.room, &out[0].1), Some(RelayVideo::Cap240));
+        // Mes novo: volta ao normal.
+        r.roll_month(299912);
+        let out = r.handle(&va.seal(&[1u8; 100]).unwrap(), ep(1), ip(), t + Duration::from_secs(1));
+        assert_eq!(qt_core::call::parse_relay_video_notice(&a.room, &out[0].1), Some(RelayVideo::Full));
+        // Teto da conta (sala sem video): so o aviso, nada segue; o audio continua.
+        r.set_room_video(&a.room.room_id, false);
+        let out = r.handle(&va.seal(&[1u8; 100]).unwrap(), ep(1), ip(), t + Duration::from_secs(2));
+        assert_eq!(out.len(), 1);
+        assert_eq!(qt_core::call::parse_relay_video_notice(&a.room, &out[0].1), Some(RelayVideo::Denied));
+        let (mut a2, _) = sides(1);
+        let _ = a2.media.seal(b"0");
+        assert_eq!(r.handle(&a2.media.seal(b"voz").unwrap(), ep(1), ip(), t).len(), 1);
+    }
+
+    #[test]
+    fn mes_em_utc_e_conta_gravada() {
+        assert_eq!(month_of_unix(1_792_713_600), 202610, "2026-10-23");
+        assert_eq!(month_of_unix(1_709_164_800), 202402, "2024-02-29");
+        assert_eq!(month_of_unix(1_798_761_599), 202612, "2026-12-31 23:59:59");
+        assert_eq!(month_of_unix(1_798_761_600), 202701, "2027-01-01");
+        assert_eq!(month_of_unix(0), 197001);
+        let p = std::env::temp_dir().join(format!("qt_egress_{}", std::process::id()));
+        save_egress(&p, Egress { month: 202610, bytes: 123 });
+        assert_eq!(load_egress(&p), Some(Egress { month: 202610, bytes: 123 }));
+        let _ = std::fs::remove_file(&p);
+        let (mut r, _) = setup(CallLimits::default());
+        let m = r.egress().month;
+        r.set_egress(Egress { month: m, bytes: 77 });
+        assert_eq!(r.egress().bytes, 77);
+        r.set_egress(Egress { month: 190001, bytes: 99 });
+        assert_eq!(r.egress().bytes, 0, "de outro mes: comeca do zero");
     }
 
     #[test]

@@ -39,6 +39,17 @@
 //!     resposta `[1 0x32|papel]...` com o mesmo txid. A etiqueta usa a `p2p_key`, que
 //!     sai da oferta E da resposta (o relay nao a tem: nao consegue forjar sondas).
 //!   * ENDERECO (19 bytes): `[1 familia 4|6][16 IP, o IPv4 nos 4 primeiros e zeros][2 porta BE]`.
+//!
+//! VIDEO (fase 5a). Um fluxo a mais dentro da chamada, pelo mesmo caminho do audio (direto
+//! ou relay). Chaves proprias, da oferta E da resposta, com outra etiqueta
+//! (`"QT-CALL-v1 video caller->callee"` / `"... callee->caller"`): o contador e a janela
+//! anti-repeticao sao outros, e um pacote de audio nunca passa por video nem o contrario.
+//!   * PACOTE: `[1 0x40|papel][8 room_id][8 contador BE][AEAD([2 tamanho][conteudo][zeros]) + 16][8 etiqueta]`.
+//!     O texto cifrado tem um multiplo de 256 bytes, no maximo 1184 (pacote de 1225 bytes,
+//!     cabe no MTU minimo do IPv6). O conteudo (pedacos de imagens, relatorios, pedidos de
+//!     imagem completa) e do motor (`qt_call::video`); aqui so se cifra.
+//!   * AVISO DO RELAY: `[1 0x24][8 room_id][1 modo][8 etiqueta relay_key]` (18 bytes): 0 video
+//!     normal, 1 so ate 240p (travao do mes), 2 sem video pelo relay (teto da conta).
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
@@ -80,6 +91,19 @@ pub const ADDR_BYTES: usize = 1 + 16 + 2;
 /// O pedido e maior que a resposta: o relay nunca amplifica.
 pub const ADDR_LEN: usize = 48;
 pub const ADDR_OK_LEN: usize = 1 + ROOM_ID_LEN + 8 + ADDR_BYTES + RELAY_TAG_LEN;
+/// Pacote de video; o bit 0 e o papel de quem envia.
+pub const VIDEO_KIND: u8 = 0x40;
+/// O texto cifrado de um pacote de video cresce de 256 em 256 bytes...
+pub const VIDEO_PAD_STEP: usize = 256;
+/// ... ate este maximo (pacote de 1225 bytes: cabe nos 1232 do MTU minimo do IPv6).
+pub const VIDEO_MAX_PLAIN: usize = 1184;
+/// Maior conteudo de um pacote de video (o texto cifrado leva 2 bytes de tamanho).
+pub const VIDEO_MAX_BODY: usize = VIDEO_MAX_PLAIN - 2;
+pub const VIDEO_MIN_PACKET: usize = HEADER_LEN + VIDEO_PAD_STEP + AEAD_TAG_LEN + RELAY_TAG_LEN;
+pub const VIDEO_MAX_PACKET: usize = HEADER_LEN + VIDEO_MAX_PLAIN + AEAD_TAG_LEN + RELAY_TAG_LEN;
+/// Aviso do relay sobre o video da sala (ver `RelayVideo`).
+pub const RELAY_VIDEO_KIND: u8 = 0x24;
+pub const RELAY_VIDEO_LEN: usize = 1 + ROOM_ID_LEN + 1 + RELAY_TAG_LEN;
 /// Sonda do caminho direto e a resposta (o bit 0 e o papel de quem envia).
 pub const PROBE_KIND: u8 = 0x30;
 pub const PROBE_ACK_KIND: u8 = 0x32;
@@ -164,6 +188,9 @@ pub struct CallKeys {
     /// Etiquetas das sondas do caminho direto. Sai da oferta E da resposta: o relay
     /// (que so conhece a oferta atraves da `relay_key`) nao a consegue calcular.
     p2p_key: [u8; 32],
+    /// Video: uma chave por sentido, separadas das do audio.
+    video_send_key: [u8; 32],
+    video_recv_key: [u8; 32],
     #[zeroize(skip)]
     role: Role,
 }
@@ -187,13 +214,23 @@ impl CallKeys {
         hk.expand(b"QT-CALL-v1 callee->caller", &mut to_caller).expect("hkdf recv");
         let mut p2p_key = [0u8; 32];
         hk.expand(b"QT-CALL-v1 p2p", &mut p2p_key).expect("hkdf p2p");
+        let mut v_to_callee = [0u8; 32];
+        let mut v_to_caller = [0u8; 32];
+        hk.expand(b"QT-CALL-v1 video caller->callee", &mut v_to_callee).expect("hkdf video");
+        hk.expand(b"QT-CALL-v1 video callee->caller", &mut v_to_caller).expect("hkdf video");
+        let (video_send_key, video_recv_key) = match role {
+            Role::Caller => (v_to_callee, v_to_caller),
+            Role::Callee => (v_to_caller, v_to_callee),
+        };
+        v_to_callee.zeroize();
+        v_to_caller.zeroize();
         let (send_key, recv_key) = match role {
             Role::Caller => (to_callee, to_caller),
             Role::Callee => (to_caller, to_callee),
         };
         to_callee.zeroize();
         to_caller.zeroize();
-        CallKeys { room_id, relay_key, send_key, recv_key, p2p_key, role }
+        CallKeys { room_id, relay_key, send_key, recv_key, p2p_key, video_send_key, video_recv_key, role }
     }
 
     pub fn room_id(&self) -> [u8; ROOM_ID_LEN] {
@@ -236,6 +273,27 @@ pub struct MediaHeader {
     pub role: Role,
     pub room_id: [u8; ROOM_ID_LEN],
     pub counter: u64,
+}
+
+/// Le o cabecalho de um pacote de VIDEO (para o relay encaminhar). Nao verifica nada criptografico.
+pub fn parse_video_header(packet: &[u8]) -> Option<MediaHeader> {
+    if !(VIDEO_MIN_PACKET..=VIDEO_MAX_PACKET).contains(&packet.len()) || !(packet.len() - VIDEO_MIN_PACKET).is_multiple_of(VIDEO_PAD_STEP) && packet.len() != VIDEO_MAX_PACKET {
+        return None;
+    }
+    let role = match packet[0] {
+        k if k == VIDEO_KIND => Role::Caller,
+        k if k == VIDEO_KIND | 1 => Role::Callee,
+        _ => return None,
+    };
+    let mut room_id = [0u8; ROOM_ID_LEN];
+    room_id.copy_from_slice(&packet[1..1 + ROOM_ID_LEN]);
+    let counter = u64::from_be_bytes(packet[1 + ROOM_ID_LEN..HEADER_LEN].try_into().ok()?);
+    Some(MediaHeader { role, room_id, counter })
+}
+
+/// E um pacote de video (de qualquer lado)? Barato, sem chaves.
+pub fn is_video(p: &[u8]) -> bool {
+    p.first().is_some_and(|k| k & !1 == VIDEO_KIND)
 }
 
 /// Le o cabecalho (para o relay encaminhar). Nao verifica nada criptografico.
@@ -309,6 +367,44 @@ pub fn parse_join_ok(room: &RoomKeys, p: &[u8]) -> Option<bool> {
         return None;
     }
     Some(p[1 + ROOM_ID_LEN] == 1)
+}
+
+/// O que o relay deixa passar de video nesta sala.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RelayVideo {
+    /// Normal (ate 360p).
+    Full = 0,
+    /// Travao do mes (o relay ja enviou demasiado): so ate 240p, para todos.
+    Cap240 = 1,
+    /// Sem video pelo relay (teto da conta): so voz. Em ligacao direta continua.
+    Denied = 2,
+}
+
+/// Aviso do relay sobre o video desta sala (mais pequeno do que qualquer pacote de video).
+pub fn relay_video_notice(room_id: &[u8; ROOM_ID_LEN], relay_key: &[u8; 32], mode: RelayVideo) -> [u8; RELAY_VIDEO_LEN] {
+    let mut p = [0u8; RELAY_VIDEO_LEN];
+    p[0] = RELAY_VIDEO_KIND;
+    p[1..1 + ROOM_ID_LEN].copy_from_slice(room_id);
+    p[1 + ROOM_ID_LEN] = mode as u8;
+    let tag = relay_tag(relay_key, &p[..RELAY_VIDEO_LEN - RELAY_TAG_LEN]);
+    p[RELAY_VIDEO_LEN - RELAY_TAG_LEN..].copy_from_slice(&tag);
+    p
+}
+
+/// O telemovel le o aviso do relay.
+pub fn parse_relay_video_notice(room: &RoomKeys, p: &[u8]) -> Option<RelayVideo> {
+    if p.len() != RELAY_VIDEO_LEN || p[0] != RELAY_VIDEO_KIND || p[1..1 + ROOM_ID_LEN] != room.room_id {
+        return None;
+    }
+    if !relay_tag_valid(&room.relay_key, p) {
+        return None;
+    }
+    match p[1 + ROOM_ID_LEN] {
+        0 => Some(RelayVideo::Full),
+        1 => Some(RelayVideo::Cap240),
+        2 => Some(RelayVideo::Denied),
+        _ => None,
+    }
 }
 
 /// Codifica um endereco em 19 bytes (um IPv4 dentro de IPv6, `::ffff:a.b.c.d`, vai como IPv4).
@@ -523,6 +619,19 @@ impl MediaSession {
         self.keys.relay_key
     }
 
+    /// Cifra e decifra o VIDEO desta chamada (chaves e contadores proprios).
+    pub fn video(&self) -> VideoSession {
+        VideoSession {
+            room_id: self.keys.room_id,
+            relay_key: self.keys.relay_key,
+            send_key: self.keys.video_send_key,
+            recv_key: self.keys.video_recv_key,
+            role: self.keys.role,
+            send_counter: 0,
+            replay: ReplayWindow::new(),
+        }
+    }
+
     /// Chaves das sondas do caminho direto (para o motor; nunca saem do Rust).
     pub fn path_keys(&self) -> PathKeys {
         PathKeys { room_id: self.keys.room_id, p2p_key: self.keys.p2p_key, role: self.keys.role }
@@ -599,6 +708,92 @@ impl MediaSession {
         let frame = plain[2..2 + len].to_vec();
         plain.zeroize();
         Ok((h.counter, frame))
+    }
+}
+
+/// Tamanho do texto cifrado de um pacote de video com `body` bytes de conteudo.
+pub fn video_plain_len(body: usize) -> usize {
+    (2 + body).div_ceil(VIDEO_PAD_STEP).saturating_mul(VIDEO_PAD_STEP).min(VIDEO_MAX_PLAIN)
+}
+
+/// Tamanho do pacote de video com `body` bytes de conteudo.
+pub fn video_packet_len(body: usize) -> usize {
+    HEADER_LEN + video_plain_len(body) + AEAD_TAG_LEN + RELAY_TAG_LEN
+}
+
+/// Cifra e decifra os pacotes de VIDEO de uma chamada.
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct VideoSession {
+    room_id: [u8; ROOM_ID_LEN],
+    relay_key: [u8; 32],
+    send_key: [u8; 32],
+    recv_key: [u8; 32],
+    #[zeroize(skip)]
+    role: Role,
+    send_counter: u64,
+    #[zeroize(skip)]
+    replay: ReplayWindow,
+}
+
+impl VideoSession {
+    /// Cifra um conteudo (ate `VIDEO_MAX_BODY` bytes). O tamanho do pacote so revela o
+    /// conteudo arredondado a 256 bytes.
+    pub fn seal(&mut self, body: &[u8]) -> Result<Vec<u8>, CallError> {
+        if body.len() > VIDEO_MAX_BODY {
+            return Err(CallError::FrameTooLarge);
+        }
+        if self.send_counter >= MAX_COUNTER {
+            return Err(CallError::Exhausted);
+        }
+        let counter = self.send_counter;
+        self.send_counter += 1;
+        let plain_len = video_plain_len(body.len());
+        let mut out = Vec::with_capacity(HEADER_LEN + plain_len + AEAD_TAG_LEN + RELAY_TAG_LEN);
+        out.push(VIDEO_KIND | self.role.bit());
+        out.extend_from_slice(&self.room_id);
+        out.extend_from_slice(&counter.to_be_bytes());
+        let mut plain = vec![0u8; plain_len];
+        plain[..2].copy_from_slice(&(body.len() as u16).to_be_bytes());
+        plain[2..2 + body.len()].copy_from_slice(body);
+        let cipher = ChaCha20Poly1305::new(Key::from_slice(&self.send_key));
+        let ct = cipher
+            .encrypt(Nonce::from_slice(&nonce(counter)), Payload { msg: &plain, aad: &out })
+            .map_err(|_| CallError::Decrypt)?;
+        plain.zeroize();
+        out.extend_from_slice(&ct);
+        let tag = relay_tag(&self.relay_key, &out);
+        out.extend_from_slice(&tag);
+        Ok(out)
+    }
+
+    /// Decifra um pacote de video do outro lado: (contador, conteudo). `Replay` = copia
+    /// repetida (ex.: o mesmo pacote pelos dois caminhos).
+    pub fn open(&mut self, packet: &[u8]) -> Result<(u64, Vec<u8>), CallError> {
+        let h = parse_video_header(packet).ok_or(CallError::Malformed)?;
+        if h.role != self.role.other() || h.room_id != self.room_id {
+            return Err(CallError::WrongRoom);
+        }
+        if h.counter >= MAX_COUNTER {
+            return Err(CallError::Malformed);
+        }
+        if !self.replay.check(h.counter) {
+            return Err(CallError::Replay);
+        }
+        let aad = &packet[..HEADER_LEN];
+        let ct = &packet[HEADER_LEN..packet.len() - RELAY_TAG_LEN];
+        let cipher = ChaCha20Poly1305::new(Key::from_slice(&self.recv_key));
+        let mut plain = cipher
+            .decrypt(Nonce::from_slice(&nonce(h.counter)), Payload { msg: ct, aad })
+            .map_err(|_| CallError::Decrypt)?;
+        self.replay.update(h.counter);
+        let len = u16::from_be_bytes([plain[0], plain[1]]) as usize;
+        if len > plain.len() - 2 {
+            plain.zeroize();
+            return Err(CallError::Malformed);
+        }
+        let body = plain[2..2 + len].to_vec();
+        plain.zeroize();
+        Ok((h.counter, body))
     }
 }
 
@@ -814,6 +1009,66 @@ mod tests {
         // Nao se confundem com audio.
         assert!(parse_header(&ping).is_none());
         let _ = c.seal(b"x");
+    }
+
+    #[test]
+    fn video_ida_e_volta_com_enchimento_a_256() {
+        let (a, b) = pair(64);
+        let (mut va, mut vb) = (a.video(), b.video());
+        for (n, plain) in [(0usize, 256usize), (10, 256), (254, 256), (255, 512), (700, 768), (1000, 1024), (VIDEO_MAX_BODY, VIDEO_MAX_PLAIN)] {
+            let body = vec![n as u8; n];
+            let p = va.seal(&body).unwrap();
+            assert_eq!(p.len(), HEADER_LEN + plain + 16 + RELAY_TAG_LEN, "conteudo de {n}");
+            assert!(p.len() <= 1232, "cabe no MTU minimo do IPv6");
+            assert_eq!(parse_video_header(&p).map(|h| h.role), Some(Role::Caller));
+            assert!(is_video(&p) && parse_header(&p).is_none(), "nao e audio");
+            assert_eq!(vb.open(&p).unwrap().1, body);
+            assert!(relay_tag_valid(&b.relay_key(), &p));
+        }
+        assert_eq!(va.seal(&vec![0; VIDEO_MAX_BODY + 1]), Err(CallError::FrameTooLarge));
+        let r = vb.seal(b"resposta").unwrap();
+        assert_eq!(va.open(&r).unwrap(), (0, b"resposta".to_vec()));
+    }
+
+    #[test]
+    fn video_e_audio_nao_se_misturam() {
+        let (mut a, mut b) = pair(128);
+        let (mut va, mut vb) = (a.video(), b.video());
+        let v = va.seal(b"imagem").unwrap();
+        let au = a.seal(b"voz").unwrap();
+        // Chaves e formatos diferentes: um nunca abre como o outro.
+        assert!(b.open(&v).is_err());
+        assert!(vb.open(&au).is_err());
+        // Contadores separados: o video comeca no 0 mesmo depois de audio.
+        assert_eq!(vb.open(&v).unwrap().0, 0);
+        assert_eq!(b.open(&au).unwrap().0, 0);
+        // Repetido, refletido e adulterado: recusados.
+        assert_eq!(vb.open(&v), Err(CallError::Replay));
+        assert_eq!(va.open(&v), Err(CallError::WrongRoom));
+        let mut t = va.seal(b"x").unwrap();
+        t[30] ^= 1;
+        assert!(vb.open(&t).is_err());
+        // Tamanhos que nao sao degraus de 256 nao passam no relay.
+        let ok = va.seal(b"y").unwrap();
+        assert!(parse_video_header(&ok[..ok.len() - 1]).is_none());
+        // Outra resposta (outra chamada na mesma sala): outra chave de video.
+        let c = MediaSession::new(CallKeys::derive(&[1; 32], &[9; 32], &[3; 16], Role::Callee), 64).unwrap();
+        assert_eq!(c.video().open(&ok), Err(CallError::Decrypt));
+    }
+
+    #[test]
+    fn aviso_do_relay_sobre_o_video() {
+        let r = RoomKeys::derive(&[1; 32], &[3; 16]);
+        for m in [RelayVideo::Full, RelayVideo::Cap240, RelayVideo::Denied] {
+            let p = relay_video_notice(&r.room_id, &r.relay_key, m);
+            assert_eq!(parse_relay_video_notice(&r, &p), Some(m));
+            assert!(p.len() < VIDEO_MIN_PACKET, "menor do que qualquer pacote de video");
+        }
+        let mut p = relay_video_notice(&r.room_id, &r.relay_key, RelayVideo::Denied);
+        p[9] = 1;
+        assert_eq!(parse_relay_video_notice(&r, &p), None, "adulterado");
+        let other = RoomKeys::derive(&[2; 32], &[3; 16]);
+        assert_eq!(parse_relay_video_notice(&other, &relay_video_notice(&r.room_id, &r.relay_key, RelayVideo::Full)), None);
     }
 
     #[test]

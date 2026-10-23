@@ -2564,6 +2564,10 @@ final class AppModel: ObservableObject {
                     // Acabou antes de chegar ao ecra (so existia o toque do PushKit): para de tocar.
                     endPendingRing(reason: callKitReason(reason, incoming: true))
                 }
+            case .video:
+                // Video (fase 5): so no Android por agora. Esta build nao anuncia video, por
+                // isso o outro lado nunca mostra o botao da camara; nada a fazer aqui.
+                break
             }
         }
         await flushOutbox()

@@ -2665,6 +2665,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         endCallLocal(endText(ev.reason, c.phase == CallPhase.INCOMING))
                     }
                 }
+                // Video (fase 5a no nucleo): o ecra do video chega na 5b.
+                is CallEvent.Video -> {}
             }
         }
         flushOutbox()

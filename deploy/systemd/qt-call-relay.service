@@ -1,4 +1,4 @@
-# Relay das CHAMADAS DE VOZ (UDP 443 + reserva WebSocket em 127.0.0.1:9445, atras do
+# Relay das CHAMADAS (voz e video; UDP 443 + reserva WebSocket em 127.0.0.1:9445, atras do
 # HAProxy em wss://<nome>/call). Instalado pelo deploy/aws/setup-ec2.sh.
 #
 # Processo a parte do relay das mensagens: precisa de receber UDP da Internet (o
@@ -7,7 +7,7 @@
 # do pin, para abrir os pedidos de entrada nas salas. Sem registos com IPs.
 
 [Unit]
-Description=QT relay das chamadas de voz (UDP 443, salas anonimas)
+Description=QT relay das chamadas, voz e video (UDP 443, salas anonimas)
 After=network-online.target
 Wants=network-online.target
 
@@ -18,8 +18,15 @@ Group=qt
 Environment=NOISE_KEY_PATH=/var/lib/qt/relay_noise_key.bin
 Environment=CALL_UDP_BIND=0.0.0.0:443
 Environment=CALL_WS_BIND=127.0.0.1:9445
-# Limites (para mudar, um drop-in em /etc/systemd/system/qt-call-relay.service.d/):
+# Conta do que o relay enviou no mes (travao do video), gravada de 10 em 10 s. O systemd cria
+# /var/lib/qt-call-relay (dono qt) e nunca o apaga ao atualizar ou reiniciar.
+StateDirectory=qt-call-relay
+Environment=CALL_STATE_FILE=/var/lib/qt-call-relay/mes
+# Limites e video: no drop-in qt-call-relay.service.d/limites.conf, gerado pelo
+# setup-ec2.sh. Para mudar, passa o valor ao script uma vez (ex.: sudo
+# CALL_MONTHLY_EGRESS_GB=120 bash setup-ec2.sh); as atualizacoes seguintes mantem-no.
 #   CALL_MAX_ROOMS (2000), CALL_ROOMS_PER_IP (20), CALL_PACKETS_PER_SEC (100)
+#   CALL_VIDEO_BYTES_PER_SEC (150000), CALL_MONTHLY_EGRESS_GB (80), CALL_RELAY_VIDEO (1)
 ExecStart=/usr/local/bin/qt-call-relay
 Restart=on-failure
 RestartSec=2
