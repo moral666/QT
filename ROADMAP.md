@@ -52,6 +52,10 @@ seguir.
   e a medalha num telemóvel novo (sem histórico nem grupos).
 - **Revisão das apps** (0.9.22): espera depois de códigos errados que não se salta mudando a
   hora, apps recentes tapadas no Android 7 a 12 e medalha logo depois de recuperar a conta.
+- **Pedidos dos testadores** (0.9.29 a 0.9.31): toque de quem liga desde o início, altifalante
+  antes de atender, chamada minimizada com a app usável, copiar as 12 palavras, links que só abrem
+  depois de confirmar o site (sem pré-visualização, por privacidade), medalhas e fotos que voltam
+  a quem recuperou a conta, menu Idioma que desliza.
 
 ## A seguir: tornar isto usável no dia a dia
 

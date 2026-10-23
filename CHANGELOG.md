@@ -31,7 +31,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - Chave de recuperação: botão "Copiar as palavras". A cópia vai marcada como sensível e a área de
   transferência é limpa ao fim de 1 minuto (iPhone: só neste aparelho, sem a área partilhada com o Mac).
 - Links nas mensagens: clicáveis, com confirmação que mostra o nome do site antes de sair da app. Só
-  `http(s)://` e `www.`. Sem pré-visualização (fica para depois). O toque longo numa mensagem de texto tem
+  `http(s)://` e `www.`. Sem pré-visualização (decisão do Nuno: fica assim, por privacidade). O toque longo numa mensagem de texto tem
   "Copiar mensagem" e "Copiar link", também com o contacto bloqueado ou fora do grupo (aí sem reações).
 - Badges e fotos depois de recuperar a conta: quem recebe uma sessão nova de um contacto esquece o que lhe
   tinha enviado (`badge:sent:`, `profile:sent:`), e a foto e o badge voltam a seguir (antes o contacto que
@@ -40,7 +40,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - Cópia de recuperação refeita quando o meu badge chega ou muda (antes só com mudanças nos contactos ou
   bloqueados, e o badge podia ficar fora da cópia).
 
-### 23 de outubro de 2026: árabe e correções dos revisores nativos (apps 0.9.25 e site)
+### 23 de outubro de 2026: árabe e correções das traduções (apps 0.9.25 e site)
 
 - Apps e site em árabe (`values-ar`, `ar.lproj`, `site/src/i18n/ar.js`): árabe padrão, neutro sempre que
   possível (masculino genérico só onde não dá), algarismos 0-9 (Android `Lang.locale()` com `nu=latn`,
@@ -53,7 +53,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - Código de acesso: algarismos de qualquer teclado (٠-٩, ०-९) passam a 0-9, para o mesmo código funcionar
   com qualquer teclado.
 - Palavra de confirmação: ignora tatweel, sinais de vogal e marcas de direção.
-- Correções dos revisores nativos (japonês, chinês, hindi): 管理者をやめる, 表情回应, 对方/接收者 no site,
+- Correções das traduções (japonês, chinês, hindi): 管理者をやめる, 表情回应, 对方/接收者 no site,
   एक पल रुकें…, न विज्ञापन, न एनालिटिक्स.
 - Revisão independente do árabe (tradução e RTL) aplicada antes do patch.
 
@@ -71,7 +71,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   rodapé das traduções para avisar de erros. O chinês tradicional do navegador fica em inglês.
 - Nomes do exemplo "Como funciona": アナ/ルイ, 安娜/鲁伊 e, em hindi, अनु/रवि (em hindi "आना" quer dizer
   "vir" e "रुई" quer dizer "algodão").
-- As traduções devem ser revistas por nativos (folha de revisão entregue ao Nuno).
+- As traduções devem ser revistas (folha de revisão entregue ao Nuno).
 
 ### 22 de outubro de 2026: tempo de entrega só com o destinatário ligado (relay)
 

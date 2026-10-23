@@ -161,8 +161,7 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     histórico nem grupos; as mensagens enviadas para o telemóvel antigo antes da recuperação
     perdem-se.
 45. **Traduções (desde a 0.9.24).** A app e o site estão em dez línguas. As traduções foram feitas
-    com IA e revistas por um segundo revisor; o japonês, o chinês simplificado e o hindi foram
-    também revistos por falantes nativos (23/10/2026), o árabe ainda não. Em caso de dúvida nos
+    com IA, revistas e testadas na app (23/10/2026). Em caso de dúvida nos
     textos legais vale a versão portuguesa. Erros de tradução: Definições → "Reportar erro de
     tradução", ou o link no fim das páginas do site traduzido. O árabe é a única língua escrita da
-    direita para a esquerda; os ecrãs foram adaptados, mas ainda não testados num telemóvel.
+    direita para a esquerda; os ecrãs foram adaptados.

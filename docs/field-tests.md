@@ -10,6 +10,26 @@ uso real**. A resistência a um atacante está descrita à parte, em
 
 ---
 
+## 23 de outubro de 2026: Android 0.9.29 a 0.9.31 (pedidos dos testadores)
+
+Testado pelo Nuno nos telemóveis de teste (Samsung), com a app *release*. **Sem erros na 0.9.31.**
+
+- **Chamadas:** o "tuu... tuu" de quem liga ouve-se logo (antes só depois do aviso "a tocar", que
+  não chegava com o bloqueio da app ligado); o altifalante funciona antes de atender e mantém-se
+  depois; a chamada pode ser minimizada e a app continua usável (barra no topo para voltar).
+- **Chave de recuperação:** copiar as 12 palavras com um toque; ao sair para as ir buscar e voltar
+  ao ecrã de recuperar já não aparece erro (corrigido na 0.9.31).
+- **Links:** abrem só depois de confirmar o site; o toque longo copia a mensagem ou o link.
+- **Medalhas depois de recuperar a conta:** o telemóvel que reinstalou volta a ver as medalhas e
+  as fotos dos contactos (os contactos voltam a enviá-las ao receber a sessão nova).
+- **Línguas:** as dez revistas, árabe incluído; o menu Idioma desliza (antes o hindi e o árabe
+  ficavam esmagados, corrigido na 0.9.31).
+
+Problemas encontrados durante o teste e corrigidos: altifalante antes de atender (0.9.30), erro
+ao voltar à app no ecrã de recuperar e menu Idioma (0.9.31).
+
+---
+
 ## 20 de outubro de 2026: Android 0.9.16 e iPhone 0.9.15
 
 **Resultado:** tudo funcional, **sem erros**, entre clientes Android e iPhone.
