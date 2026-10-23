@@ -6,6 +6,23 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 24 de outubro de 2026: novo ecrã da videochamada (0007, app Android 0.9.38)
+
+- Só Android, só a interface da chamada (núcleo, relay e fichas sem mudanças). O esboço serviu de
+  referência de layout; o logótipo e as cores são os da app (tema 0.9.11, claro e escuro), com
+  "Sealer" em Manrope Bold, parado.
+- Vídeo do outro em ecrã inteiro e a minha câmara num canto, com cantos arredondados.
+- Topo com o logótipo e "Sealer" à esquerda e o tempo da chamada à direita.
+- Barra de controlos flutuante com 4 botões redondos: microfone (silenciar), altifalante (ouvido ou
+  altifalante), câmara (ligar ou desligar) e trocar câmara; por baixo, o desligar vermelho com o
+  auscultador.
+- Com vídeo, o topo e os controlos desaparecem ao fim de 3,5 s sem toques e voltam com um toque
+  (o Android pode pedir mais tempo nas definições de acessibilidade; com o TalkBack ficam sempre).
+  Só de voz: sempre visíveis.
+- Sem avisos de estado: só "À espera de [Nome]…"; vídeo do outro parado mostra a foto ou a inicial.
+- Acessibilidade: cada botão com descrição nas dez línguas (string nova `call_camera`); os de
+  ligar/desligar são anunciados como interruptores. Ícones desenhados no código (sem bibliotecas novas).
+
 ### 23 de outubro de 2026: fichas anónimas do vídeo pelo relay, P2P automático e chamada sem avisos (0006, app Android 0.9.37)
 
 - Quota de vídeo pelo relay por conta e por mês, configurável no servidor, sem o relay saber quem está na sala:

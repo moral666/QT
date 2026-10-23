@@ -36,6 +36,7 @@
     <string name="video_camera_on">カメラをオン</string>
     <string name="video_camera_off">カメラをオフ</string>
     <string name="video_switch">カメラを切り替え</string>
+    <string name="call_camera">カメラ</string>
     <string name="video_request_title">%1$sさんがビデオを見せたいと言っています</string>
     <string name="video_view">見る</string>
     <string name="video_view_and_camera">自分のカメラもオン</string>

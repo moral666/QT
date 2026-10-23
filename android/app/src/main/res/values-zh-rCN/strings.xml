@@ -36,6 +36,7 @@
     <string name="video_camera_on">打开摄像头</string>
     <string name="video_camera_off">关闭摄像头</string>
     <string name="video_switch">切换摄像头</string>
+    <string name="call_camera">摄像头</string>
     <string name="video_request_title">%1$s 想展示视频</string>
     <string name="video_view">观看</string>
     <string name="video_view_and_camera">打开我的摄像头</string>

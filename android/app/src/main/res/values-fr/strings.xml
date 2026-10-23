@@ -36,6 +36,7 @@
     <string name="video_camera_on">Activer la caméra</string>
     <string name="video_camera_off">Désactiver la caméra</string>
     <string name="video_switch">Changer de caméra</string>
+    <string name="call_camera">Caméra</string>
     <string name="video_request_title">%1$s veut montrer sa vidéo</string>
     <string name="video_view">Voir</string>
     <string name="video_view_and_camera">Activer ma caméra</string>

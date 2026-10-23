@@ -36,6 +36,7 @@
     <string name="video_camera_on">कैमरा चालू करें</string>
     <string name="video_camera_off">कैमरा बंद करें</string>
     <string name="video_switch">कैमरा बदलें</string>
+    <string name="call_camera">कैमरा</string>
     <string name="video_request_title">%1$s वीडियो दिखाना चाहते हैं</string>
     <string name="video_view">देखें</string>
     <string name="video_view_and_camera">मेरा कैमरा चालू करें</string>

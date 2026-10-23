@@ -41,6 +41,7 @@
     <string name="video_camera_on">Ligar câmara</string>
     <string name="video_camera_off">Desligar câmara</string>
     <string name="video_switch">Trocar câmara</string>
+    <string name="call_camera">Câmara</string>
     <string name="video_request_title">%1$s quer mostrar vídeo</string>
     <string name="video_view">Ver</string>
     <string name="video_view_and_camera">Ligar a minha câmara</string>

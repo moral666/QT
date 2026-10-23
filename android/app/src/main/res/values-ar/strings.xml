@@ -36,6 +36,7 @@
     <string name="video_camera_on">تشغيل الكاميرا</string>
     <string name="video_camera_off">إيقاف الكاميرا</string>
     <string name="video_switch">تبديل الكاميرا</string>
+    <string name="call_camera">الكاميرا</string>
     <string name="video_request_title">يريد %1$s عرض الفيديو</string>
     <string name="video_view">مشاهدة</string>
     <string name="video_view_and_camera">تشغيل الكاميرا الخاصة بي</string>
