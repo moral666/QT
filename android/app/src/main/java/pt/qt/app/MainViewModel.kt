@@ -2393,16 +2393,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 it.onMicLost = { _ui.update { u -> u.copy(notice = s(R.string.call_mic_lost)) } }
                 it.start()
                 it.muted = _ui.value.call?.muted == true
+                // O altifalante escolhido antes de atender continua (0.9.30; antes perdia-se).
+                if (_ui.value.call?.speaker == true) it.setSpeaker(true)
             }
         } catch (e: Exception) {
             callIO = null
+            callSounds.leaveRoute()
             error(s(R.string.t_nao_foi_possivel_usar_o_microfone_2, e.safeMsg()))
         }
     }
 
     private fun stopCallMedia() {
         callSounds.stop()
-        callIO?.stop()
+        // Sem CallAudioIO (ninguem atendeu ou o microfone falhou) nao ha quem devolva o som ao normal.
+        callIO?.stop() ?: callSounds.leaveRoute()
         callIO = null
         callAudio?.stop()
         callAudio?.destroy()
@@ -2511,7 +2515,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleSpeaker() {
         val c = _ui.value.call ?: return
         val on = !c.speaker
-        runCatching { callIO?.setSpeaker(on) }
+        // Antes de atender ainda nao ha microfone/altifalante da chamada: muda a saida do toque
+        // (0.9.30; antes o botao so mudava o texto).
+        val io = callIO
+        if (io != null) runCatching { io.setSpeaker(on) } else callSounds.setSpeaker(on)
         _ui.update { it.copy(call = c.copy(speaker = on)) }
     }
 
@@ -2631,7 +2638,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 is CallEvent.Answered -> {
                     val c = _ui.value.call
                     if (c != null && c.callId == ev.callId && c.phase != CallPhase.ACTIVE && c.phase != CallPhase.INCOMING) {
-                        callSounds.stop()
+                        // O modo de chamada e a saida escolhida passam para o CallAudioIO.
+                        callSounds.stop(keepRoute = true)
                         _ui.update { it.copy(call = c.copy(phase = CallPhase.ACTIVE, answeredAt = SystemClock.elapsedRealtime())) }
                         startCallIO()
                     }
