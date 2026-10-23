@@ -131,7 +131,7 @@ code {
 
 .legal ul,
 .legal ol {
-  padding-left: 1.25rem;
+  padding-inline-start: 1.25rem;
 }
 
 .legal li {
@@ -197,7 +197,7 @@ code {
   content: "";
   width: 0.4em;
   height: 0.4em;
-  margin-left: 0.1em;
+  margin-inline-start: 0.1em;
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: translateY(-0.12em) rotate(45deg);
@@ -228,14 +228,14 @@ code {
   position: absolute;
   z-index: 40;
   bottom: calc(100% + 6px);
-  left: 0;
+  inset-inline-start: 0;
   max-height: min(70svh, 26rem);
   overflow-y: auto;
   min-width: 11rem;
   margin: 0;
   padding: 0.35rem;
   list-style: none;
-  text-align: left;
+  text-align: start;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -291,12 +291,23 @@ html:lang(hi) {
   --font-display: "Unbounded", "Noto Sans Devanagari", "Nirmala UI", "Kohinoor Devanagari", "Devanagari Sangam MN", Mangal, system-ui, sans-serif;
 }
 
-/* O espaçamento entre letras separa as letras do hindi (parte a linha de cima) e
-   fica estranho no japonês e no chinês. */
+html:lang(ar) {
+  --font-text: "Manrope", "Noto Sans Arabic", "Noto Naskh Arabic", "Segoe UI", "Geeza Pro", Tahoma, system-ui, sans-serif;
+  --font-display: "Unbounded", "Noto Sans Arabic", "Noto Naskh Arabic", "Segoe UI", "Geeza Pro", Tahoma, system-ui, sans-serif;
+}
+
+/* O espaçamento entre letras separa as letras do hindi (parte a linha de cima) e do
+   árabe (as letras deixam de se ligar), e fica estranho no japonês e no chinês. */
 html:lang(ja) *,
 html:lang(zh-Hans) *,
-html:lang(hi) * {
+html:lang(hi) *,
+html:lang(ar) * {
   letter-spacing: normal !important;
+}
+
+/* Árabe: letra um pouco maior e mais altura de linha (os pontos e sinais por cima e por baixo). */
+html:lang(ar) body {
+  line-height: 1.8;
 }
 
 /* Japonês e chinês: sem espaços entre palavras, quebra de linha pelas regras da língua. */

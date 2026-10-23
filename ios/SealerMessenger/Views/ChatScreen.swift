@@ -39,6 +39,7 @@ struct ChatScreen: View {
     @State private var confirmBlock = false
     @State private var showReport = false
     @Environment(\.chat) private var c
+    @Environment(\.layoutDirection) private var layoutDirection
 
     private var contact: Contact? { group == nil ? ui.contact(conversationId) : nil }
     private var blocked: Bool { group == nil && ui.blocked.contains(conversationId) }
@@ -76,9 +77,13 @@ struct ChatScreen: View {
             bottom(name)
         }
         .background(c.chatBackground.ignoresSafeArea(edges: .bottom))
-        .gesture(   // deslizar a partir da margem esquerda = voltar (gesto normal no iPhone)
+        .gesture(   // deslizar a partir da margem esquerda = voltar (gesto normal no iPhone; em arabe, da direita)
             DragGesture(minimumDistance: 20).onEnded { g in
-                if g.startLocation.x < 30 && g.translation.width > 80 && abs(g.translation.height) < 60 { model.closeChat() }
+                let rtl = layoutDirection == .rightToLeft
+                let w = UIScreen.main.bounds.width
+                let fromEdge = rtl ? g.startLocation.x > w - 30 : g.startLocation.x < 30
+                let dx = rtl ? -g.translation.width : g.translation.width
+                if fromEdge && dx > 80 && abs(g.translation.height) < 60 { model.closeChat() }
             }
         )
         .fullScreenCover(item: $viewing) { m in

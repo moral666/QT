@@ -64,7 +64,7 @@ fun CallScreen(
         CallPhase.INCOMING -> s(R.string.t_chamada_de_voz)
         CallPhase.ACTIVE -> {
             val s = ((now - call.answeredAt).coerceAtLeast(0L) / 1000L)
-            "%d:%02d".format(s / 60, s % 60)
+            String.format(java.util.Locale.ROOT, "%d:%02d", s / 60, s % 60)
         }
         CallPhase.ENDED -> call.endText
     }

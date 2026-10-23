@@ -214,8 +214,8 @@ object FileTypes {
     }
 }
 
-/** "350 KB", "2,4 MB". */
-fun formatSize(bytes: Long): String = when {
+/** "350 KB", "2,4 MB". Comeca com LRM: num texto em arabe fica "2,4 MB" e nao "MB 2,4". */
+fun formatSize(bytes: Long): String = "\u200E" + when {
     bytes < 1024 -> "$bytes B"
     bytes < 1024 * 1024 -> "${(bytes + 512) / 1024} KB"
     else -> String.format(Lang.locale(), "%.1f MB", bytes / (1024.0 * 1024.0))

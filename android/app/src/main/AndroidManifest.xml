@@ -23,6 +23,7 @@
     <application
         android:name=".SealerApp"
         android:localeConfig="@xml/locales_config"
+        android:supportsRtl="true"
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules"

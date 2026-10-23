@@ -1136,7 +1136,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val client = qt ?: return@io
         try {
             val n = client.safetyNumber(contact.publicId)
-            _ui.update { it.copy(safetyNumber = "${contact.nickname}\n\n$n") }
+            _ui.update { it.copy(safetyNumber = "${contact.nickname}\n\n\u200E$n") }  // LRM: em arabe os grupos nao trocam de ordem
         } catch (e: Exception) {
             error(s(R.string.t_nao_foi_possivel_calcular_o_safety, e.safeMsg()))
         }

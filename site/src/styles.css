@@ -211,8 +211,9 @@ p {
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
-  margin-left: -0.4rem;
-  padding: 0.3rem 0.6rem 0.3rem 0.3rem;
+  margin-inline-start: -0.4rem;
+  padding-block: 0.3rem;
+  padding-inline: 0.3rem 0.6rem;
   border: 0;
   border-radius: 999px;
   background: none;
@@ -988,8 +989,9 @@ p {
   column-gap: 0.5rem;
   row-gap: 0.3rem;
   margin: 0;
-  padding: 0.15rem 0 0.15rem var(--space-s);
-  border-left: 1px solid var(--line-strong);
+  padding-block: 0.15rem;
+  padding-inline: var(--space-s) 0;
+  border-inline-start: 1px solid var(--line-strong);
   color: var(--ice);
   white-space: nowrap;
 }
@@ -1046,7 +1048,7 @@ p {
 .status-pill__ms {
   grid-row: 1;
   grid-column: 3;
-  margin-left: 0.15rem;
+  margin-inline-start: 0.15rem;
   color: var(--ice);
   font: 600 0.75rem / 1 var(--font-text);
   font-variant-numeric: tabular-nums;
@@ -1089,7 +1091,7 @@ p {
 
   .status-pill {
     position: absolute;
-    left: 2.5rem;
+    inset-inline-start: 2.5rem;
     top: 50%;
     margin-top: 0.1rem;
     column-gap: 0.4rem;
@@ -1113,7 +1115,7 @@ p {
   }
 
   .status-pill__ms {
-    margin-left: -0.15rem;
+    margin-inline-start: -0.15rem;
     font-size: 0.6875rem;
   }
 
@@ -1260,7 +1262,7 @@ p {
   content: "";
   width: 0.4em;
   height: 0.4em;
-  margin-left: 0.1em;
+  margin-inline-start: 0.1em;
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: translateY(-0.12em) rotate(45deg);
@@ -1300,7 +1302,7 @@ p {
   margin: 0;
   padding: 0.35rem;
   list-style: none;
-  text-align: left;
+  text-align: start;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -1356,12 +1358,23 @@ html:lang(hi) {
   --font-display: "Unbounded", "Noto Sans Devanagari", "Nirmala UI", "Kohinoor Devanagari", "Devanagari Sangam MN", Mangal, system-ui, sans-serif;
 }
 
-/* O espaçamento entre letras separa as letras do hindi (parte a linha de cima) e
-   fica estranho no japonês e no chinês. */
+html:lang(ar) {
+  --font-text: "Manrope", "Noto Sans Arabic", "Noto Naskh Arabic", "Segoe UI", "Geeza Pro", Tahoma, system-ui, sans-serif;
+  --font-display: "Unbounded", "Noto Sans Arabic", "Noto Naskh Arabic", "Segoe UI", "Geeza Pro", Tahoma, system-ui, sans-serif;
+}
+
+/* O espaçamento entre letras separa as letras do hindi (parte a linha de cima) e do
+   árabe (as letras deixam de se ligar), e fica estranho no japonês e no chinês. */
 html:lang(ja) *,
 html:lang(zh-Hans) *,
-html:lang(hi) * {
+html:lang(hi) *,
+html:lang(ar) * {
   letter-spacing: normal !important;
+}
+
+/* Árabe: letra um pouco maior e mais altura de linha (os pontos e sinais por cima e por baixo). */
+html:lang(ar) body {
+  line-height: 1.8;
 }
 
 /* Japonês e chinês: sem espaços entre palavras, quebra de linha pelas regras da língua. */

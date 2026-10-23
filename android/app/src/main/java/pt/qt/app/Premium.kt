@@ -67,7 +67,7 @@ fun PremiumScreen(ui: UiState, onBack: () -> Unit) {
                         val forever = ui.premiumUntil >= FOREVER_MS
                         Text(
                             if (forever) s(R.string.premium_until_forever)
-                            else s(R.string.premium_until, java.text.DateFormat.getDateInstance().format(java.util.Date(ui.premiumUntil))),
+                            else s(R.string.premium_until, java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM, Lang.locale()).format(java.util.Date(ui.premiumUntil))),
                             style = MaterialTheme.typography.labelLarge,
                         )
                     }

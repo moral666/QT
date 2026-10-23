@@ -221,7 +221,7 @@ struct ConversationRow: View {
                                     .padding(.horizontal, 7).padding(.vertical, 2)
                                     .background(Capsule().fill(c.primary))
                             } else {
-                                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(c.onSurfaceVariant)
+                                Image(systemName: "chevron.forward").font(.system(size: 13, weight: .semibold)).foregroundStyle(c.onSurfaceVariant)
                             }
                         }
                     }

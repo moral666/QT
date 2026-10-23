@@ -476,7 +476,7 @@
 .cf-dots {
   display: flex;
   gap: 0.5rem;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .cf-dot {
@@ -500,7 +500,7 @@
 
   .cf-dots {
     width: 100%;
-    margin-left: 0;
+    margin-inline-start: 0;
     justify-content: center;
   }
 }
@@ -563,10 +563,10 @@
   scroll-snap-type: x mandatory;
 }
 .cf-ecras__lista > :first-child {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 .cf-ecras__lista > :last-child {
-  margin-right: auto;
+  margin-inline-end: auto;
 }
 .cf-ecras figure {
   flex: 0 0 min(220px, 62vw);
@@ -638,4 +638,11 @@ html:lang(ja) .bubble-text {
 
 html:lang(ja) .cf-stage .env-text {
   font-size: 15px;
+}
+
+/* Árabe (direita para a esquerda): o desenho mantém as posições (a Ana à esquerda, o Rui à
+   direita); só o texto árabe dentro de cada etiqueta corre da direita para a esquerda (os
+   textos com pontuação vêm isolados com U+2067…U+2069 em ar.js e como-funciona.js). */
+html[dir="rtl"] .cf-stage svg {
+  direction: ltr;
 }

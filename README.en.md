@@ -4,7 +4,7 @@
 
 **SEALER** is a private messenger: no phone number, no email, end-to-end encryption and post-quantum protection. **QT** is the name of the protocol and of this repository.
 
-**Status:** test version, in closed testing. Android app **0.9.22**, iPhone app **0.9.22**, server in production.
+**Status:** test version, in closed testing. Android app **0.9.25**, iPhone app **0.9.25**, server in production.
 
 [Ler em português →](README.md)
 
@@ -38,7 +38,7 @@ It is also a working example of "data protection by design", as the GDPR asks: e
 - **Report a contact:** the reason and up to 20 messages go encrypted to the SEALER team; the server stores the report without reading it or knowing who made it, and the contact is blocked.
 - **App lock** with its own code, fingerprint or face (Face ID on iPhone). After 5 wrong codes the wait goes up to 15 minutes, and changing the phone's clock does not skip it.
 - **Recovery key:** 12 words bring back the ID, contacts, block list and badge on a new phone. The copy is stored encrypted on the server; history and groups are not in it.
-- **Nine languages:** Portuguese, English, French, Spanish, German, Italian, Japanese, Simplified Chinese and Hindi.
+- **Ten languages:** Portuguese, English, French, Spanish, German, Italian, Japanese, Simplified Chinese, Hindi and Arabic (right to left).
 - **Delete your account** from the phone and the server with one tap.
 
 ## How it protects privacy
@@ -65,6 +65,8 @@ What this does and does not protect against is in [`docs/threat-model.md`](docs/
 - Field test with five devices on three platforms and continuous sending: no message lost ([`docs/field-tests.md`](docs/field-tests.md)).
 
 **Next:**
+
+- Native-speaker review of the Arabic translation (Japanese, Chinese and Hindi reviewed on 23/10/2026).
 
 - On Android, integration with the system call service (Bluetooth, car).
 - Distribution through Google Play and the App Store (today testers install the app by hand). Already prepared: [`docs/google-play.md`](docs/google-play.md).

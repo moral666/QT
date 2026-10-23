@@ -2022,7 +2022,7 @@ fun LockScreen(ui: UiState, onCode: (String) -> Unit, onBio: () -> Unit, onWipe:
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(
             value = code,
-            onValueChange = { v -> code = v.filter { it.isDigit() }.take(32) },
+            onValueChange = { v -> code = Lang.asciiDigits(v) },
             label = { Text(s(R.string.t_codigo_de_acesso)) },
             singleLine = true,
             enabled = !ui.unlocking,
@@ -2216,7 +2216,7 @@ fun CodeDialog(
 fun CodeField(value: String, onChange: (String) -> Unit, label: String) {
     OutlinedTextField(
         value = value,
-        onValueChange = { v -> onChange(v.filter { it.isDigit() }.take(32)) },
+        onValueChange = { v -> onChange(Lang.asciiDigits(v)) },
         label = { Text(label) },
         singleLine = true,
         visualTransformation = PasswordVisualTransformation(),

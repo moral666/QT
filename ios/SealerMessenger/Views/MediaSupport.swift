@@ -154,14 +154,15 @@ enum FilePrep {
     }
 }
 
-/// "350 KB", "2,4 MB".
+/// "350 KB", "2,4 MB". Comeca com LRM: num texto em arabe fica "2,4 MB" e nao "MB 2,4".
 func formatSize(_ bytes: Int64) -> String {
-    if bytes < 1024 { return "\(bytes) B" }
-    if bytes < 1024 * 1024 { return "\((bytes + 512) / 1024) KB" }
+    if bytes < 1024 { return "\u{200E}\(bytes) B" }
+    if bytes < 1024 * 1024 { return "\u{200E}\((bytes + 512) / 1024) KB" }
     let f = NumberFormatter()
+    f.locale = Lang.numbersLocale
     f.minimumFractionDigits = 1
     f.maximumFractionDigits = 1
-    return (f.string(from: NSNumber(value: Double(bytes) / (1024 * 1024))) ?? "?") + " MB"
+    return "\u{200E}" + (f.string(from: NSNumber(value: Double(bytes) / (1024 * 1024))) ?? "?") + " MB"
 }
 
 /// "PDF", "DOCX"... (para o icone); vazio se nao houver extensao curta.

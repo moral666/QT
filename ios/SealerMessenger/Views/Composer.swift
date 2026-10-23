@@ -103,6 +103,7 @@ struct ChatComposer: View {
                 }
             } label: {
                 Image(systemName: empty ? "mic.fill" : "paperplane.fill").font(.system(size: 20))
+                    .flipsForRightToLeftLayoutDirection(!empty)   // em arabe o aviao aponta para a esquerda
                     .foregroundStyle(c.onPrimary)
                     .frame(width: 52, height: 52)
                     .background(Circle().fill(c.primary))

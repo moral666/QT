@@ -108,18 +108,27 @@ import com.google.zxing.client.android.Intents
 
 /**
  * Forma dos cabecalhos: em baixo, a direita, uma curva larga que comeca a 36% da largura
- * e sobe `curve` ate ao lado direito.
+ * e sobe `curve` ate ao lado direito. Em arabe (direita para a esquerda) fica ao espelho:
+ * a curva passa para o canto de baixo a esquerda, como o resto do ecra.
  */
 class CurvedBottomShape(private val curve: Dp, private val widthFraction: Float = 0.64f) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val ry = with(density) { curve.toPx() }.coerceAtMost(size.height)
         val rx = size.width * widthFraction
         val path = Path().apply {
-            moveTo(0f, 0f)
-            lineTo(size.width, 0f)
-            lineTo(size.width, size.height - ry)
-            arcTo(Rect(size.width - 2 * rx, size.height - 2 * ry, size.width, size.height), 0f, 90f, false)
-            lineTo(0f, size.height)
+            if (layoutDirection == LayoutDirection.Rtl) {
+                moveTo(size.width, 0f)
+                lineTo(0f, 0f)
+                lineTo(0f, size.height - ry)
+                arcTo(Rect(0f, size.height - 2 * ry, 2 * rx, size.height), 180f, -90f, false)
+                lineTo(size.width, size.height)
+            } else {
+                moveTo(0f, 0f)
+                lineTo(size.width, 0f)
+                lineTo(size.width, size.height - ry)
+                arcTo(Rect(size.width - 2 * rx, size.height - 2 * ry, size.width, size.height), 0f, 90f, false)
+                lineTo(0f, size.height)
+            }
             close()
         }
         return Outline.Generic(path)
@@ -141,16 +150,18 @@ fun GalaxyHeader(curve: Dp, modifier: Modifier = Modifier, content: @Composable 
             .clip(CurvedBottomShape(curve))
             .background(Brush.linearGradient(c.topBarGradient))
             .drawBehind {
+                // Brilho junto a curva (do lado esquerdo em arabe, onde a curva fica ao espelho).
+                val glowX = if (layoutDirection == LayoutDirection.Rtl) (-90).dp.toPx() else size.width - 250.dp.toPx()
                 drawOval(
                     color = Color.White.copy(alpha = 0.09f),
-                    topLeft = Offset(size.width - 250.dp.toPx(), size.height - 100.dp.toPx()),
+                    topLeft = Offset(glowX, size.height - 100.dp.toPx()),
                     size = Size(340.dp.toPx(), 250.dp.toPx()),
                 )
                 for (s in stars) {
                     drawCircle(
                         color = Color.White.copy(alpha = s[3]),
                         radius = s[2].dp.toPx() / 2f,
-                        center = Offset(s[0] * size.width, s[1] * size.height),
+                        center = Offset((if (layoutDirection == LayoutDirection.Rtl) 1 - s[0] else s[0]) * size.width, s[1] * size.height),
                     )
                 }
             },

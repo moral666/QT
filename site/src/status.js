@@ -26,6 +26,7 @@ const TESTING = L({
   ja: 'SEALERはクローズドテスト中です。現在、サービスを利用できるのは招待された5人のテスターだけです。',
   zh: 'SEALER正在封闭测试中：目前只有5名受邀测试人员可以使用该服务。',
   hi: 'SEALER क्लोज़्ड टेस्टिंग में है: अभी सिर्फ़ 5 आमंत्रित टेस्टर ही सेवा का इस्तेमाल कर सकते हैं।',
+  ar: 'تطبيق SEALER في مرحلة اختبار مغلق: حاليًا لا يصل إلى الخدمة إلا المختبرون المدعوون (العدد: 5).',
 });
 const TAG = L({
   pt: 'Testes fechados<span class="status-pill__count"> · 5 pessoas</span>',
@@ -37,6 +38,7 @@ const TAG = L({
   ja: 'クローズドテスト<span class="status-pill__count"> · 5人</span>',
   zh: '封闭测试<span class="status-pill__count"> · 5人</span>',
   hi: 'क्लोज़्ड टेस्टिंग<span class="status-pill__count"> · 5 लोग</span>',
+  ar: 'اختبار مغلق<span class="status-pill__count"> · المختبرون: 5</span>',
 });
 
 const TEXT = L({
@@ -94,7 +96,23 @@ const TEXT = L({
     off: { short: 'सेवाएं ऑफ़लाइन', mini: 'ऑफ़लाइन', long: 'SEALER की सेवाएं अभी बंद हैं' },
     unknown: { short: 'स्थिति अज्ञात', mini: 'डेटा नहीं', long: 'SEALER की सेवाओं की स्थिति पता नहीं चल सकी' },
   },
+  ar: {
+    checking: { short: 'جارٍ فحص الخدمات', mini: 'جارٍ الفحص', long: 'جارٍ التحقق من عمل خدمات SEALER' },
+    on: { short: 'الخدمات تعمل', mini: 'تعمل', long: 'خدمات SEALER تعمل' },
+    off: { short: 'الخدمات متوقفة', mini: 'متوقفة', long: 'خدمات SEALER متوقفة حاليًا' },
+    unknown: { short: 'الحالة غير معروفة', mini: 'لا بيانات', long: 'تعذّرت معرفة حالة خدمات SEALER' },
+  },
 });
+
+/**
+ * "Há n minutos/horas/dias" em árabe: a palavra muda com o número (2 tem forma própria,
+ * 3 a 10 usa o plural, 11 ou mais o singular). n nunca é 1 aqui (há min1, h1).
+ */
+function arAgo(n, two, few, many) {
+  if (n === 2) return `منذ ${two}`;
+  const r = n % 100;
+  return `منذ ${n} ${r >= 3 && r <= 10 ? few : many}`;
+}
 
 const W = L({
   pt: {
@@ -155,7 +173,7 @@ const W = L({
     stop: '。', sep: '',
   },
   zh: {
-    how: '一条典型消息从发送者的手机发出，到收件人的手机确认收到所需的时间（发送到服务器加上送达）',
+    how: '一条典型消息从发送者的手机发出，到接收者的手机确认收到所需的时间（发送到服务器加上送达）',
     now: '刚刚', min1: '1分钟前', mins: (n) => `${n}分钟前`, h1: '1小时前', hs: (n) => `${n}小时前`, days: (n) => `${n}天前`,
     msg1: '1条消息', msgs: (n) => `${n}条消息`,
     hour: (v, n, how) => `最近1小时手机到手机的耗时：${v} ms（${n}），即${how}。`,
@@ -171,6 +189,14 @@ const W = L({
     last: (v, when, how) => ` फ़ोन से फ़ोन तक का पिछला समय: ${v} ms${when}, यानी ${how}।`,
     measured: (a) => ` (${a} मापा गया)`,
     stop: '।',
+  },
+  ar: {
+    how: 'وهو الوقت الذي تستغرقه رسالة نموذجية من هاتف المرسل حتى يؤكد هاتف المستلم وصولها (الإرسال إلى الخادم ثم التسليم)',
+    now: 'الآن', min1: 'منذ دقيقة', mins: (n) => arAgo(n, 'دقيقتين', 'دقائق', 'دقيقة'), h1: 'منذ ساعة', hs: (n) => arAgo(n, 'ساعتين', 'ساعات', 'ساعة'), days: (n) => arAgo(n, 'يومين', 'أيام', 'يومًا'),
+    msg1: 'رسالة واحدة', msgs: (n) => `الرسائل: ${n}`,
+    hour: (v, n, how) => ` الوقت بين الهواتف خلال الساعة الأخيرة: \u2066${v} ms\u2069 (${n})، ${how}.`,
+    last: (v, when, how) => ` آخر وقت مُقاس بين الهواتف: \u2066${v} ms\u2069${when}، ${how}.`,
+    measured: (a) => ` (قيس ${a})`,
   },
 });
 
@@ -249,7 +275,8 @@ export function initStatus(el) {
       const value = totalValue(data);
       if (value != null) {
         ms.hidden = false;
-        ms.textContent = `${fmt.format(value)} ms`;
+        // Isolado: numa página em árabe fica "250 ms" e não "ms 250".
+        ms.textContent = `\u2066${fmt.format(value)} ms\u2069`;
       }
     }
     // Japones e chines: ponto final 。 e sem espacos entre frases; hindi: ponto final ।.

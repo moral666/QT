@@ -334,7 +334,7 @@
     <string name="recovery_intro">12 शब्द, जिनसे आप नए फ़ोन पर अपना खाता वापस पा सकते हैं: वही ID, संपर्क, ब्लॉक किए गए लोग और बैज। मैसेज की हिस्ट्री और ग्रुप वापस नहीं आते।</string>
     <string name="recovery_privacy">आपके संपर्क सर्वर पर एक एन्क्रिप्टेड कॉपी में रहते हैं, जो सिर्फ़ इन शब्दों से खुलती है। न सर्वर और न ही Sealer टीम इसे पढ़ सकती है।</string>
     <string name="recovery_enable">12 शब्द बनाएं</string>
-    <string name="recovery_working">एक पल…</string>
+    <string name="recovery_working">एक पल रुकें…</string>
     <string name="recovery_write_down">इन शब्दों को इसी क्रम में कागज़ पर लिख लें। स्क्रीनशॉट न लें और इन्हें फ़ोन में सेव न करें।</string>
     <string name="recovery_warning">जिसके पास भी ये शब्द होंगे, वह आपका खाता अपने कब्ज़े में ले सकता है। Sealer आपसे ये शब्द कभी नहीं मांगेगा।</string>
     <string name="recovery_written">मैंने लिख लिए हैं</string>

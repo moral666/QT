@@ -6,6 +6,23 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 23 de outubro de 2026: árabe e correções dos revisores nativos (apps 0.9.25 e site)
+
+- Apps e site em árabe (`values-ar`, `ar.lproj`, `site/src/i18n/ar.js`): árabe padrão, neutro sempre que
+  possível (masculino genérico só onde não dá), algarismos 0-9 (Android `Lang.locale()` com `nu=latn`,
+  iPhone `Lang.numbersLocale`). Nomes do exemplo: آنا e روي. Palavra para apagar tudo: حذف (aceita حدف e DELETE).
+- Da direita para a esquerda: `android:supportsRtl`, cabeçalho curvo e estrelas ao espelho (Android e
+  iPhone), setas `chevron.backward/forward`, gesto de voltar do lado certo no iPhone, avião de enviar
+  virado, sem espaçamento entre letras nos rótulos. Site: `<html dir="rtl">`, CSS com propriedades lógicas,
+  setas do teclado trocadas no "Como funciona".
+- Texto misto (bidi): número de segurança, tamanhos de ficheiros e IDs ficam na ordem certa (LRM/isolados).
+- Código de acesso: algarismos de qualquer teclado (٠-٩, ०-९) passam a 0-9, para o mesmo código funcionar
+  com qualquer teclado.
+- Palavra de confirmação: ignora tatweel, sinais de vogal e marcas de direção.
+- Correções dos revisores nativos (japonês, chinês, hindi): 管理者をやめる, 表情回应, 对方/接收者 no site,
+  एक पल रुकें…, न विज्ञापन, न एनालिटिक्स.
+- Revisão independente do árabe (tradução e RTL) aplicada antes do patch.
+
 ### 22 de outubro de 2026: japonês, chinês simplificado e hindi (apps 0.9.24 e site)
 
 - Apps Android e iPhone em nove línguas: `values-ja`, `values-zh-rCN`, `values-hi` e as pastas

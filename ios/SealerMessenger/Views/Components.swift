@@ -71,10 +71,13 @@ struct BrandLogo: View {
 // ===================================================================== cabecalhos
 
 /// Forma dos cabecalhos (0.9.11): em baixo, a direita, uma curva larga que comeca a 36% da
-/// largura e sobe `curve` ate ao lado direito.
+/// largura e sobe `curve` ate ao lado direito. Em arabe o fundo do cabecalho fica ao espelho
+/// (`flipsForRightToLeftLayoutDirection` no GalaxyHeader).
 struct CurvedBottomShape: Shape {
     let curve: CGFloat
     var widthFraction: CGFloat = 0.64
+    /// Fixa: quem vira o desenho ao espelho em arabe e o GalaxyHeader (uma so vez).
+    var layoutDirectionBehavior: LayoutDirectionBehavior { .fixed }
 
     func path(in rect: CGRect) -> Path {
         let ry = min(curve, rect.height)
@@ -123,6 +126,8 @@ struct GalaxyHeader<Content: View>: View {
                     }
                 }
                 .clipShape(CurvedBottomShape(curve: curve))
+                // Direita para a esquerda (arabe): curva, brilho e estrelas ao espelho, como o ecra.
+                .flipsForRightToLeftLayoutDirection(true)
                 .ignoresSafeArea(edges: .top)
             )
     }
@@ -148,7 +153,7 @@ struct SealerTopBar<Title: View, Actions: View>: View {
             HStack(spacing: 4) {
                 if let onBack {
                     Button(action: onBack) {
-                        Image(systemName: "chevron.left").font(.system(size: 20, weight: .semibold))
+                        Image(systemName: "chevron.backward").font(.system(size: 20, weight: .semibold))
                             .frame(width: 44, height: 44)
                     }
                     .accessibilityLabel(s("t_voltar"))
@@ -196,6 +201,8 @@ struct MyAvatar: View {
     let action: () -> Void
     var size: CGFloat = 76
     @Environment(\.chat) private var c
+    /// Em arabe (direita para a esquerda) os desvios para fora do circulo ficam ao espelho.
+    @Environment(\.layoutDirection) private var direction
 
     var body: some View {
         Button(action: action) {
@@ -218,11 +225,11 @@ struct MyAvatar: View {
                 if ringed {
                     BadgeCoin(badge: ring, size: size * 0.45)
                         .frame(width: size, height: size, alignment: .bottomLeading)
-                        .offset(x: -6, y: 4)
+                        .offset(x: direction == .rightToLeft ? 6 : -6, y: 4)
                 }
                 Circle().fill(c.surface).frame(width: 32, height: 32).shadow(color: .black.opacity(0.2), radius: 3, y: 1)
                     .overlay(Image(systemName: badge).font(.system(size: 15, weight: .semibold)).foregroundStyle(c.primary))
-                    .offset(x: 6, y: 6)
+                    .offset(x: direction == .rightToLeft ? -6 : 6, y: 6)
             }
             .frame(width: size + 10, height: size + 10, alignment: .topLeading)
         }
@@ -278,6 +285,7 @@ struct Avatar: View {
     @Environment(\.photos) private var photos
     @Environment(\.badges) private var badges
     @Environment(\.chat) private var c
+    @Environment(\.layoutDirection) private var direction
 
     var body: some View {
         let palette = ChatColors.avatarPalette
@@ -302,7 +310,8 @@ struct Avatar: View {
             .frame(width: size, height: size)
             if ringed {
                 // Medalha no canto de baixo, a direita, um pouco por fora do aro.
-                BadgeCoin(badge: badge, size: size * Badges.coinScale).offset(x: size * 0.06, y: size * 0.04)
+                BadgeCoin(badge: badge, size: size * Badges.coinScale)
+                    .offset(x: (direction == .rightToLeft ? -1 : 1) * size * 0.06, y: size * 0.04)
             }
             if online {
                 let d = max(10, size / 4)
@@ -411,7 +420,7 @@ struct CodeField: View {
     let label: String
     @Binding var code: String
     var body: some View {
-        OutlinedField(label: label, text: Binding(get: { code }, set: { code = String($0.filter(\.isNumber).prefix(32)) }),
+        OutlinedField(label: label, text: Binding(get: { code }, set: { code = Lang.asciiDigits($0) }),
                       secure: true, numeric: true, singleLine: true)
     }
 }
@@ -422,7 +431,7 @@ struct SectionLabel: View {
     @Environment(\.chat) private var c
     var body: some View {
         Text(text.uppercased())
-            .font(Jakarta.font(12, .bold)).kerning(1)
+            .font(Jakarta.font(12, .bold)).kerning(Lang.current == "ar" ? 0 : 1)  // em arabe o espaco separa as letras ligadas
             .foregroundStyle(c.onSurfaceVariant)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 6)
@@ -486,7 +495,7 @@ extension SettingsRow where Trailing == AnyView {
         let hasAction = action != nil
         self.trailing = {
             AnyView(Group {
-                if hasAction { Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold)).foregroundStyle(.secondary) }
+                if hasAction { Image(systemName: "chevron.forward").font(.system(size: 14, weight: .semibold)).foregroundStyle(.secondary) }
             })
         }
     }
@@ -519,7 +528,7 @@ func statusGlyph(_ s: MessageStatus) -> String {
     }
 }
 
-private func formatter(_ pattern: String, locale: Locale = .current) -> DateFormatter {
+private func formatter(_ pattern: String, locale: Locale = Lang.numbersLocale) -> DateFormatter {
     let f = DateFormatter()
     f.locale = locale
     f.dateFormat = pattern
@@ -530,14 +539,14 @@ private let timeFmt = formatter("HH:mm")
 /// Datas na lingua do iPhone (0.9.23; antes sempre "dd/MM/yyyy").
 private let dateFmt: DateFormatter = {
     let f = DateFormatter()
-    f.locale = .current
+    f.locale = Lang.numbersLocale
     f.dateStyle = .short
     f.timeStyle = .none
     return f
 }()
 private let shortDateFmt: DateFormatter = {
     let f = DateFormatter()
-    f.locale = .current
+    f.locale = Lang.numbersLocale
     f.setLocalizedDateFormatFromTemplate("dM")
     return f
 }()

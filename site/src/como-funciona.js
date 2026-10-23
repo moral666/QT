@@ -15,7 +15,7 @@ import { L, translatePage } from './i18n.js';
 
 const SCENES = [
   {
-    title: L({ pt: 'A Ana escreve ao Rui', en: 'Ana writes to Rui', fr: 'Ana écrit à Rui', es: 'Ana le escribe a Rui', de: 'Ana schreibt Rui', it: 'Ana scrive a Rui', ja: 'アナがルイにメッセージを書く', zh: '安娜给鲁伊写消息', hi: 'अनु रवि को मैसेज लिखती हैं' }),
+    title: L({ pt: 'A Ana escreve ao Rui', en: 'Ana writes to Rui', fr: 'Ana écrit à Rui', es: 'Ana le escribe a Rui', de: 'Ana schreibt Rui', it: 'Ana scrive a Rui', ja: 'アナがルイにメッセージを書く', zh: '安娜给鲁伊写消息', hi: 'अनु रवि को मैसेज लिखती हैं', ar: 'آنا تكتب إلى روي' }),
     text: L({
       pt: 'Escreve «Olá, Rui!» e carrega em enviar.',
       en: 'She types “Hi, Rui!” and taps send.',
@@ -26,11 +26,12 @@ const SCENES = [
       ja: '「ルイ、こんにちは！」と書いて、送信をタップします。',
       zh: '她写下“你好，鲁伊！”，然后点击发送。',
       hi: 'वह "नमस्ते, रवि!" लिखती हैं और भेजें पर टैप करती हैं।',
+      ar: 'تكتب «مرحبًا يا روي!» وتنقر على إرسال.',
     }),
     ms: 4500,
   },
   {
-    title: L({ pt: 'A mensagem é trancada', en: 'The message is locked', fr: 'Le message est verrouillé', es: 'El mensaje se cierra con llave', de: 'Die Nachricht wird verschlossen', it: 'Il messaggio viene chiuso', ja: 'メッセージに鍵がかかる', zh: '消息被锁上', hi: 'मैसेज लॉक हो जाता है' }),
+    title: L({ pt: 'A mensagem é trancada', en: 'The message is locked', fr: 'Le message est verrouillé', es: 'El mensaje se cierra con llave', de: 'Die Nachricht wird verschlossen', it: 'Il messaggio viene chiuso', ja: 'メッセージに鍵がかかる', zh: '消息被锁上', hi: 'मैसेज लॉक हो जाता है', ar: 'الرسالة تُقفَل' }),
     text: L({
       pt: 'Ainda no telemóvel da Ana, a mensagem fica ilegível e leva um cadeado. Só a chave do Rui o abre.',
       en: 'Still on Ana’s phone, the message becomes unreadable and gets a padlock. Only Rui’s key opens it.',
@@ -41,11 +42,12 @@ const SCENES = [
       ja: 'まだアナのスマートフォンにあるうちに、メッセージは読めない形になり、南京錠がかかります。開けられるのはルイの鍵だけです。',
       zh: '还在安娜的手机上时，消息就变得无法读取，并加上了一把锁。只有鲁伊的密钥才能打开。',
       hi: 'अनु के फ़ोन पर ही मैसेज पढ़ने लायक नहीं रहता और उस पर ताला लग जाता है। इसे सिर्फ़ रवि की कुंजी खोल सकती है।',
+      ar: 'وهي لا تزال على هاتف آنا، تصبح الرسالة غير قابلة للقراءة ويُوضع عليها قفل. ولا يفتحه إلا مفتاح روي.',
     }),
     ms: 4500,
   },
   {
-    title: L({ pt: 'O servidor só a transporta', en: 'The server only carries it', fr: 'Le serveur ne fait que le transporter', es: 'El servidor solo lo transporta', de: 'Der Server transportiert sie nur', it: 'Il server si limita a trasportarlo', ja: 'サーバーは運ぶだけ', zh: '服务器只负责传送', hi: 'सर्वर सिर्फ़ इसे पहुंचाता है' }),
+    title: L({ pt: 'O servidor só a transporta', en: 'The server only carries it', fr: 'Le serveur ne fait que le transporter', es: 'El servidor solo lo transporta', de: 'Der Server transportiert sie nur', it: 'Il server si limita a trasportarlo', ja: 'サーバーは運ぶだけ', zh: '服务器只负责传送', hi: 'सर्वर सिर्फ़ इसे पहुंचाता है', ar: 'الخادم ينقلها فقط' }),
     text: L({
       pt: 'O servidor da SEALER entrega o envelope trancado. Não consegue ler o que está lá dentro, e o envelope não diz quem o enviou.',
       en: 'The SEALER server delivers the locked envelope. It cannot read what is inside, and the envelope does not say who sent it.',
@@ -56,11 +58,12 @@ const SCENES = [
       ja: 'SEALERのサーバーは、鍵のかかった封筒を届けます。中身を読むことはできず、封筒には誰が送ったかも書かれていません。',
       zh: 'SEALER的服务器送达这个锁好的信封。它无法读取里面的内容，信封上也不写是谁发送的。',
       hi: 'SEALER का सर्वर लॉक किया हुआ लिफ़ाफ़ा पहुंचाता है। वह अंदर लिखा हुआ नहीं पढ़ सकता, और लिफ़ाफ़े पर यह नहीं लिखा होता कि इसे किसने भेजा।',
+      ar: 'يسلّم خادم SEALER الظرف المقفل. ولا يستطيع قراءة ما بداخله، ولا يذكر الظرف من أرسله.',
     }),
     ms: 7000,
   },
   {
-    title: L({ pt: 'O Rui abre com a sua chave', en: 'Rui opens it with his key', fr: 'Rui l’ouvre avec sa clé', es: 'Rui lo abre con su llave', de: 'Rui öffnet sie mit seinem Schlüssel', it: 'Rui lo apre con la sua chiave', ja: 'ルイが自分の鍵で開ける', zh: '鲁伊用自己的密钥打开', hi: 'रवि अपनी कुंजी से इसे खोलते हैं' }),
+    title: L({ pt: 'O Rui abre com a sua chave', en: 'Rui opens it with his key', fr: 'Rui l’ouvre avec sa clé', es: 'Rui lo abre con su llave', de: 'Rui öffnet sie mit seinem Schlüssel', it: 'Rui lo apre con la sua chiave', ja: 'ルイが自分の鍵で開ける', zh: '鲁伊用自己的密钥打开', hi: 'रवि अपनी कुंजी से इसे खोलते हैं', ar: 'روي يفتحها بمفتاحه' }),
     text: L({
       pt: 'A chave está só no telemóvel do Rui. Nem a SEALER a tem.',
       en: 'The key is only on Rui’s phone. Not even SEALER has it.',
@@ -71,11 +74,12 @@ const SCENES = [
       ja: '鍵はルイのスマートフォンにしかありません。SEALERでさえ持っていません。',
       zh: '密钥只在鲁伊的手机上。连SEALER也没有。',
       hi: 'कुंजी सिर्फ़ रवि के फ़ोन में है। SEALER के पास भी नहीं।',
+      ar: 'المفتاح موجود على هاتف روي فقط. ولا يملكه حتى SEALER.',
     }),
     ms: 6500,
   },
   {
-    title: L({ pt: 'Protegida também para o futuro', en: 'Protected for the future too', fr: 'Protégé aussi pour l’avenir', es: 'Protegido también para el futuro', de: 'Auch für die Zukunft geschützt', it: 'Protetto anche per il futuro', ja: '未来に向けても保護', zh: '也为未来做好保护', hi: 'भविष्य के लिए भी सुरक्षित' }),
+    title: L({ pt: 'Protegida também para o futuro', en: 'Protected for the future too', fr: 'Protégé aussi pour l’avenir', es: 'Protegido también para el futuro', de: 'Auch für die Zukunft geschützt', it: 'Protetto anche per il futuro', ja: '未来に向けても保護', zh: '也为未来做好保护', hi: 'भविष्य के लिए भी सुरक्षित', ar: 'محمية للمستقبل أيضًا' }),
     text: L({
       pt: 'A SEALER usa também uma proteção pensada para os computadores quânticos, que um dia poderão quebrar a criptografia de hoje.',
       en: 'SEALER also uses protection designed for quantum computers, which may one day break today’s cryptography.',
@@ -86,22 +90,23 @@ const SCENES = [
       ja: 'SEALERは、いつか今の暗号を破るかもしれない量子コンピューターを想定した保護も使っています。',
       zh: 'SEALER还采用了专为抵御量子计算机攻击而设计的保护，量子计算机将来可能会破解今天的密码技术。',
       hi: 'SEALER ऐसी सुरक्षा भी इस्तेमाल करता है जो क्वांटम कंप्यूटरों को ध्यान में रखकर बनाई गई है, जो एक दिन आज की क्रिप्टोग्राफ़ी को तोड़ सकते हैं।',
+      ar: 'يستخدم SEALER أيضًا حماية مصممة لمواجهة الحواسيب الكمّية، التي قد تتمكن يومًا ما من كسر تشفير اليوم.',
     }),
     ms: 6000,
   },
 ];
 
-const PLAIN = L({ pt: 'Olá, Rui!', en: 'Hi, Rui!', fr: 'Salut, Rui !', es: '¡Hola, Rui!', de: 'Hallo, Rui!', it: 'Ciao, Rui!', ja: 'ルイ、こんにちは！', zh: '你好，鲁伊！', hi: 'नमस्ते, रवि!' });
+const PLAIN = L({ pt: 'Olá, Rui!', en: 'Hi, Rui!', fr: 'Salut, Rui !', es: '¡Hola, Rui!', de: 'Hallo, Rui!', it: 'Ciao, Rui!', ja: 'ルイ、こんにちは！', zh: '你好，鲁伊！', hi: 'नमस्ते, रवि!', ar: '\u2067مرحبًا يا روي!\u2069' }); // isolado: o desenho é LTR, o «!» fica no fim
 const T = {
-  step: (n, m) => L({ pt: `Passo ${n} de ${m}`, en: `Step ${n} of ${m}`, fr: `Étape ${n} sur ${m}`, es: `Paso ${n} de ${m}`, de: `Schritt ${n} von ${m}`, it: `Passo ${n} di ${m}`, ja: `ステップ ${n} / ${m}`, zh: `第${n}步，共${m}步`, hi: `${m} में से चरण ${n}` }),
-  stepLabel: (n, t) => L({ pt: `Passo ${n}: ${t}`, en: `Step ${n}: ${t}`, fr: `Étape ${n} : ${t}`, es: `Paso ${n}: ${t}`, de: `Schritt ${n}: ${t}`, it: `Passo ${n}: ${t}`, ja: `ステップ${n}：${t}`, zh: `第${n}步：${t}`, hi: `चरण ${n}: ${t}` }),
-  pause: L({ pt: 'Pausar', en: 'Pause', fr: 'Pause', es: 'Pausa', de: 'Pause', it: 'Pausa', ja: '一時停止', zh: '暂停', hi: 'रोकें' }),
-  play: L({ pt: 'Reproduzir', en: 'Play', fr: 'Lecture', es: 'Reproducir', de: 'Abspielen', it: 'Riproduci', ja: '再生', zh: '播放', hi: 'चलाएं' }),
-  locked: L({ pt: 'Trancada', en: 'Locked', fr: 'Verrouillé', es: 'Cerrado', de: 'Verschlossen', it: 'Chiuso', ja: 'ロック中', zh: '已锁定', hi: 'लॉक' }),
-  opened: L({ pt: 'Aberta', en: 'Opened', fr: 'Ouvert', es: 'Abierto', de: 'Geöffnet', it: 'Aperto', ja: '開封済み', zh: '已打开', hi: 'खुला' }),
+  step: (n, m) => L({ pt: `Passo ${n} de ${m}`, en: `Step ${n} of ${m}`, fr: `Étape ${n} sur ${m}`, es: `Paso ${n} de ${m}`, de: `Schritt ${n} von ${m}`, it: `Passo ${n} di ${m}`, ja: `ステップ ${n} / ${m}`, zh: `第${n}步，共${m}步`, hi: `${m} में से चरण ${n}`, ar: `الخطوة ${n} من ${m}` }),
+  stepLabel: (n, t) => L({ pt: `Passo ${n}: ${t}`, en: `Step ${n}: ${t}`, fr: `Étape ${n} : ${t}`, es: `Paso ${n}: ${t}`, de: `Schritt ${n}: ${t}`, it: `Passo ${n}: ${t}`, ja: `ステップ${n}：${t}`, zh: `第${n}步：${t}`, hi: `चरण ${n}: ${t}`, ar: `الخطوة ${n}: ${t}` }),
+  pause: L({ pt: 'Pausar', en: 'Pause', fr: 'Pause', es: 'Pausa', de: 'Pause', it: 'Pausa', ja: '一時停止', zh: '暂停', hi: 'रोकें', ar: 'إيقاف مؤقت' }),
+  play: L({ pt: 'Reproduzir', en: 'Play', fr: 'Lecture', es: 'Reproducir', de: 'Abspielen', it: 'Riproduci', ja: '再生', zh: '播放', hi: 'चलाएं', ar: 'تشغيل' }),
+  locked: L({ pt: 'Trancada', en: 'Locked', fr: 'Verrouillé', es: 'Cerrado', de: 'Verschlossen', it: 'Chiuso', ja: 'ロック中', zh: '已锁定', hi: 'लॉक', ar: 'مقفلة' }),
+  opened: L({ pt: 'Aberta', en: 'Opened', fr: 'Ouvert', es: 'Abierto', de: 'Geöffnet', it: 'Aperto', ja: '開封済み', zh: '已打开', hi: 'खुला', ar: 'مفتوحة' }),
 };
 const CIPHER = '7Fq#9zK@';
-const FIELD = L({ pt: 'Mensagem', en: 'Message', fr: 'Message', es: 'Mensaje', de: 'Nachricht', it: 'Messaggio', ja: 'メッセージ', zh: '消息', hi: 'मैसेज' });
+const FIELD = L({ pt: 'Mensagem', en: 'Message', fr: 'Message', es: 'Mensaje', de: 'Nachricht', it: 'Messaggio', ja: 'メッセージ', zh: '消息', hi: 'मैसेज', ar: 'رسالة' });
 const GLYPHS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghkmnpqrstuvwxyz0123456789#%&@$';
 
 /** Disposições do desenho. s é a escala do envelope e da chave. */
@@ -376,10 +381,12 @@ $('next').addEventListener('click', () => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.target.closest?.('input, textarea, select')) return;
-  if (e.key === 'ArrowRight') {
+  // Em árabe (direita para a esquerda) o passo seguinte fica à esquerda.
+  const rtl = document.documentElement.dir === 'rtl';
+  if (e.key === (rtl ? 'ArrowLeft' : 'ArrowRight')) {
     setPlaying(false);
     go(current + 1);
-  } else if (e.key === 'ArrowLeft') {
+  } else if (e.key === (rtl ? 'ArrowRight' : 'ArrowLeft')) {
     setPlaying(false);
     go(current - 1);
   }

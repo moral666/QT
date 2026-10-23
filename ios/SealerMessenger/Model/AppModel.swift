@@ -1293,7 +1293,7 @@ final class AppModel: ObservableObject {
         Task {
             do {
                 let n = try await background { try client.safetyNumber(peerPublicId: contact.publicId) }
-                ui.safetyNumber = "\(contact.nickname)\n\n\(n)"
+                ui.safetyNumber = "\(contact.nickname)\n\n\u{200E}\(n)"  // LRM: em arabe os grupos nao trocam de ordem
             } catch {
                 showError(s("t_nao_foi_possivel_calcular_o_safety", safeMessage(error)))
             }
