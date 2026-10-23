@@ -888,7 +888,9 @@ armazenamento de anexos do relay.
 - **Só contactos:** a app passa a lista dos contactos guardados; `profile_photo_sync` manda o
   estado atual (foto ou "sem foto") a quem ainda não tem essa versão (contactos novos, sessões
   novas), uma só vez por versão. Precisa de sessão: um contacto acabado de adicionar recebe a
-  foto depois da primeira troca de mensagens.
+  foto depois da primeira troca de mensagens. Desde a 0.9.29, ao receber uma sessão nova de um
+  contacto (ex.: recuperou a conta noutro telemóvel), a app esquece o que lhe tinha enviado
+  (`profile:sent:`) e a foto volta a seguir.
 - **Guardado:** na base de dados cifrada (SQLCipher, tabela `kv`). A foto de um contacto apaga-se
   com o contacto. No ecrã, só se mostram imagens até 1024 px de lado.
 - Versões antigas da app (até à 0.9.8) não conhecem o tipo 12: mostram "atualiza a app" no
@@ -914,7 +916,10 @@ emissor, que segue cifrado como qualquer mensagem.
   aparece como conversa.
 - **Mostrar aos outros:** `badge_sync` manda o certificado aos contactos guardados (tipo 13), uma
   vez por versão, junto com a foto de perfil. Quem recebe só o aceita se a identidade do
-  certificado for a de quem o enviou: copiar o badge de outra pessoa não serve.
+  certificado for a de quem o enviou: copiar o badge de outra pessoa não serve. Desde a 0.9.29,
+  uma sessão nova recebida de um contacto (ex.: recuperou a conta) apaga `badge:sent:` desse
+  contacto e o certificado volta a seguir. A cópia de recuperação é refeita quando o meu badge
+  chega ou muda.
 - **Mudar ou retirar:** vale sempre o certificado mais recente (`emitido_em`). Retirar é um
   certificado novo com o badge 0, que também segue para os contactos. Limitação: uma app
   alterada pode não enviar o certificado novo; quem já tinha o antigo continua a ver o aro até

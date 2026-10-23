@@ -21,7 +21,8 @@ falam entre si pelo mesmo relay.
 | `Groups.kt`                   | `Views/GroupScreens.swift`                                 |
 | `Composer.kt`, `Voice.kt`, `Files.kt` | `Views/Composer.swift`, `Views/MediaSupport.swift`  |
 | `Attachments.kt`              | `Views/AttachmentViews.swift`                              |
-| `Calls.kt`, `CallScreen.kt`   | `Calls/CallKit.swift`, `Calls/CallAudioIO.swift`, `Views/CallScreen.swift` |
+| `Calls.kt`, `CallScreen.kt`   | `Calls/CallKit.swift`, `Calls/CallAudioIO.swift`, `Views/CallScreen.swift` (`CallBar`: chamada minimizada, 0.9.29) |
+| `Links.kt`                    | `Views/Links.swift`: links com confirmação do site, 0.9.29 |
 | `Push.kt` (Firebase)          | `Calls/Push.swift` (Apple, **sem Firebase**)               |
 | `Keystore.kt`, `AppLock.kt`   | `Security/SecureBox.swift` (Secure Enclave, Face ID)       |
 | `ContactStore.kt`             | `Security/ContactStore.swift`                              |

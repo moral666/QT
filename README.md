@@ -62,11 +62,11 @@ O que isto protege e o que não protege está em [`docs/threat-model.md`](docs/t
 - App Android *release* assinada, em três Samsung e no emulador.
 - **Android 0.9.16 com iPhone 0.9.15** (20/10/2026), sem erros: adicionar, apagar e voltar a adicionar contactos, código QR, botão de partilhar o ID, todos os menus, mensagens de texto e de voz, GIFs, envio de ficheiros, bloquear contactos, apagar conversas e chamadas de voz entre Androids, entre Android e iPhone e entre iPhones.
 - **Android 0.9.22** (22/10/2026): bloqueio da app, apps recentes e recuperação da conta.
+- **Android 0.9.31** (23/10/2026), sem erros: pedidos dos testadores (toque de quem liga, altifalante antes de atender, chamada minimizada, copiar as 12 palavras, links, medalhas depois de recuperar a conta) e as dez línguas revistas, árabe incluído.
 - Teste de campo com cinco aparelhos em três plataformas e envios contínuos: nenhuma mensagem perdida ([`docs/field-tests.md`](docs/field-tests.md)).
 
 **A seguir:**
 
-- Revisão das traduções em árabe por falantes nativos (japonês, chinês e hindi já revistos a 23/10/2026).
 
 - No Android, a integração com o sistema de chamadas (Bluetooth, carro).
 - Distribuição pela Google Play e pela App Store (hoje a app é instalada à mão pelos testadores). Já preparado: [`docs/google-play.md`](docs/google-play.md).

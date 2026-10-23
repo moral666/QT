@@ -62,11 +62,11 @@ What this does and does not protect against is in [`docs/threat-model.md`](docs/
 - Signed *release* Android app on three Samsung phones and the emulator.
 - **Android 0.9.16 with iPhone 0.9.15** (20/10/2026), no bugs: adding, deleting and re-adding contacts, QR code, share ID button, all menus, text and voice messages, GIFs, sending files, blocking contacts, deleting chats and voice calls between Androids, between Android and iPhone and between iPhones.
 - **Android 0.9.22** (22/10/2026): app lock, recent apps and account recovery.
+- **Android 0.9.31** (23/10/2026), no bugs: testers' requests (ringback for the caller, speaker before the call is answered, minimized call, copying the 12 words, links, badges after account recovery) and all ten languages reviewed, Arabic included.
 - Field test with five devices on three platforms and continuous sending: no message lost ([`docs/field-tests.md`](docs/field-tests.md)).
 
 **Next:**
 
-- Native-speaker review of the Arabic translation (Japanese, Chinese and Hindi reviewed on 23/10/2026).
 
 - On Android, integration with the system call service (Bluetooth, car).
 - Distribution through Google Play and the App Store (today testers install the app by hand). Already prepared: [`docs/google-play.md`](docs/google-play.md).
