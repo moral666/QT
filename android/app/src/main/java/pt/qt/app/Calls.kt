@@ -505,7 +505,7 @@ object CallNotify {
      * A chamada perdida e um aviso como os outros e segue o interruptor.
      */
     @SuppressLint("MissingPermission")   // verificada em Push.permissionGranted
-    fun ringing(ctx: Context, name: String?, sound: Boolean) {
+    fun ringing(ctx: Context, name: String?, sound: Boolean, video: Boolean = false) {
         if (!Push.permissionGranted(ctx)) return
         if (sound) ensureRingChannel(ctx) else CallService.ensureChannel(ctx)
         val show = activityIntent(ctx, ACTION_SHOW, 4)
@@ -519,7 +519,7 @@ object CallNotify {
         fun base() = NotificationCompat.Builder(ctx, channel)
             .setSmallIcon(R.drawable.ic_stat_sealer)
             .setContentTitle(title)
-            .setContentText(s(R.string.t_chamada_de_voz_sealer))
+            .setContentText(s(if (video) R.string.video_call_sealer else R.string.t_chamada_de_voz_sealer))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)

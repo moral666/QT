@@ -10,9 +10,9 @@
 //! nao responder em 2 s, passa para a reserva `wss://<relay>/call` (feature `ws`).
 //!
 //! LIGACAO DIRETA (P2P, fase 5). Desligada por omissao: so o nucleo (`qt_ffi::call`) a
-//! liga (`p2p_enable`), depois de atender, com um contacto verificado e sem "sempre pelo
-//! relay" em nenhum dos lados. Sem isso o motor nunca recolhe enderecos nem envia nada a
-//! ninguem a nao ser ao relay.
+//! liga (`p2p_enable`), depois de atender, entre contactos mutuos que disseram OK na janela
+//! de aviso. Sem isso o motor nunca recolhe enderecos nem envia nada a ninguem a nao ser ao
+//! relay.
 //!   * O MESMO socket UDP serve o relay e o caminho direto (dual IPv4/IPv6 quando o
 //!     sistema deixa): a porta que o relay ve e a que o outro telemovel vai usar.
 //!   * Enderecos: os da rede local (escolha da rota, sem enviar nada) e o IP publico

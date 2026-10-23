@@ -169,8 +169,11 @@ object SealerCore {
 
     // ----------------------------------------------------------- chamada a tocar sem o ecra
 
-    /** Chamada a tocar sem o ecra. `callId` null: com o bloqueio da app (so se sabe que e uma chamada). */
-    class Ringing(val callId: String?, val contactId: String?, val name: String?)
+    /**
+     * Chamada a tocar sem o ecra. `callId` null: com o bloqueio da app (so se sabe que e uma
+     * chamada). `video`: videochamada ("Videochamada" no aviso).
+     */
+    class Ringing(val callId: String?, val contactId: String?, val name: String?, val video: Boolean = false)
 
     private val ringLock = Any()
     @Volatile var ringing: Ringing? = null
@@ -203,7 +206,7 @@ object SealerCore {
             ringing = r
             ringJob = scope.launch { watchRinging(ctx, r) }
         }
-        CallNotify.ringing(ctx, r.name, sound = true)
+        CallNotify.ringing(ctx, r.name, sound = true, video = r.video)
     }
 
     /** Para de tocar se `r` ainda for a chamada a tocar. */
@@ -462,7 +465,9 @@ object SealerCore {
                     } else {
                         // O Rust ja responde "ocupado" durante uma chamada: um toque antigo e lixo.
                         ringing?.let { stopRinging(ctx, it, missed = false) }
-                        startRinging(ctx, Ringing(ev.callId, ev.contactId, if (locked) null else contact.nickname))
+                        // A op "videochamada" chega com a oferta: ja foi tratada neste lote.
+                        val video = runCatching { c.callIsVideo(ev.callId) }.getOrDefault(false)
+                        startRinging(ctx, Ringing(ev.callId, ev.contactId, if (locked) null else contact.nickname, video))
                     }
                 }
                 is CallEvent.Ended -> {

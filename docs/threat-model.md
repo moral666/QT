@@ -92,6 +92,10 @@ e depois alimenta a root key do Double Ratchet.
   a ligação de quem envia é autenticada: um operador mal-intencionado pode associar
   a conta que envia a cada envelope no momento. Também não protege contra análise de
   tráfego/correlação temporal.
+* **Ligação direta nas chamadas** (desde 23/10/2026): entre contactos mútuos que disseram OK
+  na janela de aviso, depois de atender, cada telemóvel fica a saber os endereços IP (público e
+  locais) do outro. Não há verificação de contactos: confia-se que o ID guardado é de quem se
+  pensa. Com "Agora não", ou se um dos lados não tiver o outro nos contactos, tudo passa pelo relay.
 * **O relay pode censurar, atrasar, descartar ou reordenar** (disponibilidade
   não é garantida). Não há federação.
 * **Spam / abuso:** qualquer conta registada pode enfileirar mensagens para

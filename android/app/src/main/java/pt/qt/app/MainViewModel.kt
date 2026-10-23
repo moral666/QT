@@ -75,8 +75,6 @@ data class UiState(
     val readReceipts: Boolean = true,
     /** Notificacoes com a app fechada (interruptor "Notificações"). */
     val pushOn: Boolean = true,
-    /** "Chamadas sempre pelo servidor": nunca ligar direto ao outro telemovel (guardado no Rust). */
-    val callsRelayOnly: Boolean = false,
     /** Ja se pediu a permissao de notificacoes (Android 13+) uma vez. */
     val pushAsked: Boolean = false,
     /** Safety number a mostrar (nome + 60 digitos), ou null. */
@@ -117,6 +115,15 @@ data class UiState(
     val online: Set<String> = emptySet(),
     /** Chamada de voz a decorrer (a chamar, a tocar, atendida ou acabada de terminar). */
     val call: CallUi? = null,
+    /**
+     * Resposta a janela de aviso da ligacao direta, por contacto (true = OK, false = "Agora
+     * nao"). Sem entrada: ainda nao foi perguntado (fica pelo servidor). Guardado no Rust.
+     */
+    val directChoices: Map<String, Boolean> = emptyMap(),
+    /** Janela de aviso da ligacao direta a mostrar (nunca durante uma chamada). */
+    val directAsk: DirectAsk? = null,
+    /** Contactos com video (o botao da videochamada so aparece para eles). Vem do Rust. */
+    val videoContacts: Set<String> = emptySet(),
     /** "Atender" carregado na notificacao: o ecra atende (pedindo o microfone, se faltar). */
     val answerNow: String? = null,
     /** Fotos de perfil dos contactos (contactId), ja prontas a mostrar. So em memoria. */
@@ -176,7 +183,17 @@ data class CallUi(
     /** Porque acabou (no ecra durante uns segundos). */
     val endText: String = "",
     val video: VideoUi = VideoUi(),
+    /** Fui eu que recebi a chamada (para a janela de aviso depois de desligar). */
+    val incoming: Boolean = false,
+    /** Videochamada (quem liga comecou com a camara ligada): "Videochamada de [Nome]". */
+    val videoCall: Boolean = false,
 )
+
+/**
+ * Janela de aviso da ligacao direta para `contactId` (uma vez por contacto). `call`: depois
+ * da resposta, liga (`video`: videochamada). Sem `call`: aparece depois de uma chamada recebida.
+ */
+data class DirectAsk(val contactId: String, val name: String, val call: Boolean, val video: Boolean = false)
 
 /** Video da chamada (fase 5b). */
 data class VideoUi(
@@ -193,10 +210,6 @@ data class VideoUi(
     val peerAccepts: Boolean = false,
     val peerDeclined: Boolean = false,
     val paused: VideoPause? = null,
-    /** Pelo servidor (sem ligacao direta): no maximo 360p. */
-    val limitedByRelay: Boolean = false,
-    /** O contacto esta verificado (sem isso nunca ha ligacao direta). */
-    val verified: Boolean = false,
     /** Imagem do outro: tamanho e rotacao (para a por direita no ecra). */
     val remoteW: Int = 0,
     val remoteH: Int = 0,
@@ -360,7 +373,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val blocked = client.blockedContacts().toSet()
         val invites = client.pendingIntros().toSet()
         val recoveryOn = has && client.recoveryEnabled()
-        val relayOnly = runCatching { client.callsRelayOnly() }.getOrDefault(false)
         _ui.update {
             it.copy(
                 loading = false, hasIdentity = has, relayUrl = url, relayKeyHex = pin,
@@ -369,7 +381,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 conversations = conversations,
                 readReceipts = prefs.getBoolean("read_receipts", true),
                 pushOn = Push.isOn(getApplication()),
-                callsRelayOnly = relayOnly,
                 pushAsked = prefs.getBoolean("push_asked", false),
                 fullScreenAsked = prefs.getBoolean("full_screen_asked", false),
                 locked = false, unlocking = false, lockMessage = null,
@@ -975,7 +986,54 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             Log.w(TAG, "presenca: ${e.safeMsg()}")
         }
+        syncCallContacts(client)
         syncPhotos(client)
+    }
+
+    // ------------------------------------------------------------------- chamadas: contactos
+
+    /**
+     * Diz ao Rust quem sao os contactos: so com eles (e so se me tiverem tambem) ha ligacao
+     * direta, e so eles recebem o aviso "tenho video" (uma vez). Rele as respostas a janela.
+     */
+    private suspend fun syncCallContacts(client: QtClient) {
+        try {
+            if (client.callContactsSync(_ui.value.contacts.map { it.contactId }) > 0u) flushOutbox()
+        } catch (e: Exception) {
+            Log.w(TAG, "chamadas: ${e.safeMsg()}")
+        }
+        val choices = _ui.value.contacts.mapNotNull { c ->
+            runCatching { client.callDirectChoice(c.contactId) }.getOrNull()?.let { c.contactId to it }
+        }.toMap()
+        val video = runCatching { client.callVideoContacts().toSet() }.getOrDefault(emptySet())
+        _ui.update { it.copy(directChoices = choices, videoContacts = video) }
+    }
+
+    /** A janela de aviso da ligacao direta deste contacto ainda nao foi mostrada? */
+    fun needsDirectAsk(contactId: String): Boolean {
+        val u = _ui.value
+        return u.contacts.any { it.contactId == contactId } && contactId !in u.blocked && contactId !in u.directChoices
+    }
+
+    /** Antes da primeira chamada a este contacto: mostra a janela; quem a mostra liga depois. */
+    fun askDirect(contact: Contact, video: Boolean) =
+        _ui.update { it.copy(directAsk = DirectAsk(contact.contactId, contact.nickname, call = true, video = video)) }
+
+    /** Resposta a janela ([OK] ou [Agora nao]). Fecha-a; a chamada (se houver) segue no ecra. */
+    fun answerDirect(allowed: Boolean) {
+        val ask = _ui.value.directAsk ?: return
+        _ui.update { it.copy(directAsk = null) }
+        setDirectChoice(ask.contactId, allowed)
+    }
+
+    /** Fechou a janela sem responder: nao liga, e volta a aparecer na proxima chamada. */
+    fun dismissDirectAsk() = _ui.update { it.copy(directAsk = null) }
+
+    /** Ligacao direta com este contacto (janela de aviso ou opcao no menu da conversa). */
+    fun setDirectChoice(contactId: String, allowed: Boolean) = io {
+        val client = qt ?: return@io
+        client.callSetDirectChoice(contactId, allowed)
+        _ui.update { it.copy(directChoices = it.directChoices + (contactId to allowed)) }
     }
 
     // ------------------------------------------------------------------- foto de perfil
@@ -1702,13 +1760,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** "Chamadas sempre pelo servidor". Ligada a meio de uma chamada, o audio volta logo ao servidor. */
-    fun setCallsRelayOnly(on: Boolean) = io {
-        val client = qt ?: return@io
-        client.setCallsRelayOnly(on)
-        _ui.update { it.copy(callsRelayOnly = on) }
-    }
-
     fun setReadReceipts(on: Boolean) {
         prefs.edit().putBoolean("read_receipts", on).apply()
         _ui.update { it.copy(readReceipts = on) }
@@ -1737,6 +1788,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val invites = client.pendingIntros().toSet()
         val groups = client.groups()
         val online = client.presenceOnline().toSet()
+        // Quem anunciou que tem video chega como mensagem: o botao da videochamada aparece.
+        val video = runCatching { client.callVideoContacts().toSet() }.getOrDefault(emptySet())
         // Lida antes do update: a funcao do update pode correr mais de uma vez (concorrencia).
         val conversations = client.conversations()
         _ui.update {
@@ -1744,6 +1797,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 invites = invites,
                 groups = groups,
                 online = online,
+                videoContacts = video,
                 conversations = conversations,
                 chatMessages = if (window != null && it.openChatId == cid) mergeWindow(window, it.chatMessages, n) else it.chatMessages,
             )
@@ -2508,23 +2562,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** LIGAR a um contacto. A permissao do microfone ja foi dada (MainActivity). */
-    fun startCall(contact: Contact) = io {
+    /**
+     * LIGAR a um contacto. As permissoes (microfone; camara na videochamada) ja foram dadas
+     * (MainActivity). `video`: videochamada, com a minha camara ligada desde o inicio (o outro
+     * so a ve depois de atender e aceitar).
+     */
+    fun startCall(contact: Contact, video: Boolean = false) = io {
         if (premiumBlocked()) return@io
         val client = qt ?: return@io
         if (_ui.value.call != null) return@io
         if (contact.contactId in _ui.value.blocked) return@io
         try {
             ensureSession(client, contact)
-            val start = client.callStart(contact.contactId)
-            _ui.update { it.copy(call = CallUi(start.callId, contact.contactId, contact.nickname, CallPhase.CALLING)) }
+            val start = if (video) client.callStartVideo(contact.contactId) else client.callStart(contact.contactId)
+            val v = if (video) VideoUi(camera = true, accepted = true) else VideoUi()
+            _ui.update { it.copy(call = CallUi(start.callId, contact.contactId, contact.nickname, CallPhase.CALLING, video = v, videoCall = video)) }
             CallControl.hangup = { hangupCall() }
             // "tuu... tuu" logo ao ligar (como no iPhone). Antes so comecava com o aviso "a tocar"
             // do outro telemovel, que nao chega com o bloqueio da app ligado nem sem rede (0.9.29).
             callSounds.ringback()
             flushOutbox()
             startCallAudio(client, start.callId)
-            CallService.start(getApplication())
+            if (video) startSender()
+            CallService.start(getApplication(), camera = video)
             ensureCallTicker()
         } catch (e: Exception) {
             stopCallMedia()
@@ -2547,7 +2607,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             CallService.start(getApplication())
             _ui.update { it.copy(call = c.copy(phase = CallPhase.ACTIVE, answeredAt = SystemClock.elapsedRealtime())) }
             startCallIO()
-            videoOnAnswered(client, c.callId, c.contactId)
+            videoOnAnswered(client, c.callId)
             handleCallEvents(client)
         } catch (e: Exception) {
             endCallLocal(s(R.string.t_a_chamada_ja_nao_esta_disponivel))
@@ -2603,6 +2663,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val cur = u.call
                 if (cur != null && cur.callId == c.callId && cur.phase == CallPhase.ENDED) u.copy(call = null) else u
             }
+            // Recebi e atendi uma chamada deste contacto e a janela de aviso dele ainda nao foi
+            // mostrada: aparece agora, depois de desligar (nunca durante uma chamada).
+            if (c.incoming && c.answeredAt > 0L && needsDirectAsk(c.contactId)) {
+                _ui.update { u ->
+                    if (u.call == null && u.directAsk == null) u.copy(directAsk = DirectAsk(c.contactId, c.name, call = false)) else u
+                }
+            }
         }
     }
 
@@ -2632,7 +2699,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         // Nome: o do segundo plano, ou o dos contactos (com o bloqueio da app ele nao o sabia).
         val name = r.name ?: _ui.value.contacts.firstOrNull { it.contactId == r.contactId }?.nickname.orEmpty()
-        _ui.update { it.copy(call = CallUi(id, r.contactId.orEmpty(), name, CallPhase.INCOMING)) }
+        val videoCall = r.video || runCatching { client.callIsVideo(id) }.getOrDefault(false)
+        _ui.update { it.copy(call = CallUi(id, r.contactId.orEmpty(), name, CallPhase.INCOMING, incoming = true, videoCall = videoCall)) }
         CallControl.hangup = { hangupCall() }
         if (!SealerCore.answerRequested(id)) callSounds.ringIncoming()
         runCatching { startCallAudio(client, id) }
@@ -2680,12 +2748,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         runCatching { client.callHangup(ev.callId) }
                         continue
                     }
-                    _ui.update { it.copy(call = CallUi(ev.callId, ev.contactId, contact.nickname, CallPhase.INCOMING)) }
+                    // A op "videochamada" chega logo a seguir a oferta (normalmente no mesmo lote).
+                    val videoCall = runCatching { client.callIsVideo(ev.callId) }.getOrDefault(false)
+                    _ui.update { it.copy(call = CallUi(ev.callId, ev.contactId, contact.nickname, CallPhase.INCOMING, incoming = true, videoCall = videoCall)) }
                     CallControl.hangup = { hangupCall() }
                     callSounds.ringIncoming()
                     // Fora do ecra: notificacao de ecra inteiro (sem som: o toque e o de cima).
                     // Com o bloqueio da app, sem nome (a mesma regra que com a app fechada).
-                    if (!visible) CallNotify.ringing(app, if (_ui.value.lockEnabled) null else contact.nickname, sound = false)
+                    if (!visible) CallNotify.ringing(app, if (_ui.value.lockEnabled) null else contact.nickname, sound = false, video = videoCall)
                     runCatching { startCallAudio(client, ev.callId) }
                     ensureCallTicker()
                     checkAutoAnswer()
@@ -2704,7 +2774,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         callSounds.stop(keepRoute = true)
                         _ui.update { it.copy(call = c.copy(phase = CallPhase.ACTIVE, answeredAt = SystemClock.elapsedRealtime())) }
                         startCallIO()
-                        videoOnAnswered(client, c.callId, c.contactId)
+                        videoOnAnswered(client, c.callId)
                     }
                 }
                 is CallEvent.Ended -> {
@@ -2735,7 +2805,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             peerDeclined = ev.peerDeclined,
             declined = declined,
         )
-        _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = nv)) } ?: u }
+        // A tocar: a op "videochamada" pode chegar depois da oferta ("Videochamada de [Nome]").
+        val videoCall = c.videoCall || (qt?.let { runCatching { it.callIsVideo(ev.callId) }.getOrNull() } ?: false)
+        _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = nv, videoCall = videoCall)) } ?: u }
         // Recusou ver o meu video: desliga a minha camara (ninguem a ia ver) e avisa.
         if (ev.peerDeclined && v.camera && !v.peerDeclined) {
             _ui.update { it.copy(notice = s(R.string.video_declined, c.name)) }
@@ -2764,24 +2836,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Chamada atendida: o outro lado tem video? E a rede (Wi-Fi ou dados) para o teto. */
-    private fun videoOnAnswered(client: QtClient, callId: String, contactId: String) {
+    private fun videoOnAnswered(client: QtClient, callId: String) {
         val app = getApplication<Application>()
         val supported = runCatching { client.callVideoSupported(callId) }.getOrDefault(false)
-        val verified = runCatching { client.contactVerified(contactId) }.getOrDefault(false)
         _ui.update { u ->
-            u.call?.let { cur -> if (cur.callId == callId) u.copy(call = cur.copy(video = cur.video.copy(supported = cur.video.supported || supported, verified = verified))) else u } ?: u
+            u.call?.let { cur -> if (cur.callId == callId) u.copy(call = cur.copy(video = cur.video.copy(supported = cur.video.supported || supported))) else u } ?: u
         }
         callAudio?.setNetwork(VideoNet.current(app))
         if (stopNetWatch == null) stopNetWatch = VideoNet.watch(app) { kind -> callAudio?.setNetwork(kind) }
     }
 
-    /** Pausa e teto do relay, para as mensagens no ecra. */
+    /** Pausa do video, para a mensagem no ecra. */
     private fun refreshVideoParams() {
         val c = _ui.value.call ?: return
+        // Videochamada para quem afinal nao tem video (app antiga): a minha camara desliga-se.
+        if (c.videoCall && c.phase == CallPhase.ACTIVE && c.video.camera && !c.video.supported &&
+            SystemClock.elapsedRealtime() - c.answeredAt > NO_VIDEO_AFTER_MS
+        ) {
+            setCamera(false)
+            return
+        }
         if (!c.video.camera && !c.video.showRemote) return
         val p = callAudio?.videoParams() ?: return
-        if (p.paused != c.video.paused || p.limitedByRelay != c.video.limitedByRelay) {
-            _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = cur.video.copy(paused = p.paused, limitedByRelay = p.limitedByRelay))) } ?: u }
+        if (p.paused != c.video.paused) {
+            _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = cur.video.copy(paused = p.paused))) } ?: u }
         }
     }
 
@@ -2973,6 +3051,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val PHOTO_SYNC_MS = 60_000L
         /** Quanto tempo fica no ecra "Chamada terminada". */
         private const val ENDED_SHOW_MS = 2_000L
+        /** Videochamada atendida sem "tenho video" do outro ao fim disto: a camara desliga-se. */
+        private const val NO_VIDEO_AFTER_MS = 5_000L
         fun minCodeLen(): Int = uniffi.qt_ffi.appLockMinCodeLen().toInt()
     }
 }

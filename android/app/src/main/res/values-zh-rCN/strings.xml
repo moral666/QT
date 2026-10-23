@@ -42,9 +42,16 @@
     <string name="video_not_now">暂不</string>
     <string name="video_waiting">正在等待 %1$s…</string>
     <string name="video_declined">%1$s 不想观看视频</string>
-    <string name="video_paused_weak">视频已暂停 — 网络较弱</string>
-    <string name="video_paused_limit">视频已暂停 — 已达服务器每月上限</string>
-    <string name="video_limited_verify">画质受限 · 验证联系人可获得更好的画面</string>
+    <string name="video_paused_weak">视频已暂停 · 网络较弱</string>
+    <string name="video_paused_limit">视频已暂停 · 已达本月上限</string>
+    <string name="p2p_notice">你的对话依然受到保护，和消息、文件一样。为了提高质量，你的手机会直接连接 %1$s 的手机。这会与对方共享你网络连接的部分信息。</string>
+    <string name="p2p_ok">好</string>
+    <string name="p2p_not_now">暂不</string>
+    <string name="p2p_option">通话直连</string>
+    <string name="video_call_button">视频通话</string>
+    <string name="video_call_from">来自 %1$s 的视频通话</string>
+    <string name="video_call_sealer">SEALER视频通话</string>
+    <string name="recovery_restore_what">你的联系人会被恢复。旧消息和群组不会被恢复。</string>
     <string name="video_camera_denied">没有摄像头权限，无法打开视频。可以在 Android 设置中允许。</string>
     <string name="video_camera_failed">无法使用摄像头。</string>
     <string name="t_videochamada_em_curso">视频通话进行中</string>
@@ -130,7 +137,6 @@
     <string name="t_foto_de_perfil">头像</string>
     <string name="t_notificacoes">通知</string>
     <string name="t_confirmacoes_de_leitura">已读回执</string>
-    <string name="t_chamadas_sempre_pelo_servidor">通话始终通过服务器</string>
     <string name="t_mostrar_quando_estou_online">显示我的在线状态</string>
     <string name="t_bloqueio_da_app">应用锁</string>
     <string name="t_bloquear_agora">立即锁定</string>

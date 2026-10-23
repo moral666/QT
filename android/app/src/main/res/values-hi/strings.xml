@@ -42,9 +42,16 @@
     <string name="video_not_now">अभी नहीं</string>
     <string name="video_waiting">%1$s का इंतज़ार…</string>
     <string name="video_declined">%1$s ने वीडियो नहीं देखना चाहा</string>
-    <string name="video_paused_weak">वीडियो रुका हुआ — नेटवर्क कमज़ोर</string>
-    <string name="video_paused_limit">वीडियो रुका हुआ — सर्वर की मासिक सीमा</string>
-    <string name="video_limited_verify">सीमित गुणवत्ता · बेहतर तस्वीर के लिए संपर्क सत्यापित करें</string>
+    <string name="video_paused_weak">वीडियो रुका हुआ · नेटवर्क कमज़ोर</string>
+    <string name="video_paused_limit">वीडियो रुका हुआ · इस महीने की सीमा पूरी हो गई</string>
+    <string name="p2p_notice">आपकी बातचीत सुरक्षित रहती है, बिल्कुल मैसेज और फ़ाइलों की तरह। क्वालिटी बेहतर करने के लिए आपका फ़ोन सीधे %1$s के फ़ोन से जुड़ता है। इससे आपके इंटरनेट कनेक्शन की कुछ जानकारी उनके साथ साझा होती है।</string>
+    <string name="p2p_ok">ठीक है</string>
+    <string name="p2p_not_now">अभी नहीं</string>
+    <string name="p2p_option">कॉल में सीधा कनेक्शन</string>
+    <string name="video_call_button">वीडियो कॉल</string>
+    <string name="video_call_from">%1$s की वीडियो कॉल</string>
+    <string name="video_call_sealer">SEALER वीडियो कॉल</string>
+    <string name="recovery_restore_what">आपके संपर्क वापस आ जाएंगे। पुराने मैसेज और ग्रुप वापस नहीं आते।</string>
     <string name="video_camera_denied">कैमरे की अनुमति के बिना वीडियो चालू नहीं हो सकता। आप इसे Android सेटिंग्स में चालू कर सकते हैं।</string>
     <string name="video_camera_failed">कैमरा इस्तेमाल नहीं हो सका।</string>
     <string name="t_videochamada_em_curso">वीडियो कॉल जारी है</string>
@@ -130,7 +137,6 @@
     <string name="t_foto_de_perfil">प्रोफ़ाइल फ़ोटो</string>
     <string name="t_notificacoes">सूचनाएं</string>
     <string name="t_confirmacoes_de_leitura">रीड रिसीट</string>
-    <string name="t_chamadas_sempre_pelo_servidor">कॉल हमेशा सर्वर के ज़रिए</string>
     <string name="t_mostrar_quando_estou_online">मेरी ऑनलाइन स्थिति दिखाएं</string>
     <string name="t_bloqueio_da_app">ऐप लॉक</string>
     <string name="t_bloquear_agora">अभी लॉक करें</string>
