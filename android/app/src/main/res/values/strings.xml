@@ -120,6 +120,7 @@
     <string name="t_foto_de_perfil">Foto de perfil</string>
     <string name="t_notificacoes">Notificações</string>
     <string name="t_confirmacoes_de_leitura">Confirmações de leitura</string>
+    <string name="t_chamadas_sempre_pelo_servidor">Chamadas sempre pelo servidor</string>
     <string name="t_mostrar_quando_estou_online">Mostrar quando estou online</string>
     <string name="t_bloqueio_da_app">Bloqueio da app</string>
     <string name="t_bloquear_agora">Bloquear agora</string>

@@ -766,7 +766,8 @@ o bloqueio da app, toca até 45 s e o código é pedido ao abrir a app.
 ## 18. Chamadas de voz 1 a 1 (sinalização, cifra, relay, áudio e app Android)
 
 Desenho aprovado a 19/10/2026: só Android primeiro, sem ligação direta entre telemóveis (o áudio
-passa sempre pelo relay, o contacto nunca vê o IP). Fase 1 no núcleo (`core/src/call.rs`,
+passa sempre pelo relay, o contacto nunca vê o IP). Desde a fase 5 (23/10/2026) há ligação direta,
+mas só depois de atender e só com contactos verificados dos dois lados (ver "Ligação direta" abaixo). Fase 1 no núcleo (`core/src/call.rs`,
 `ffi/src/call.rs`, testes em `ffi/tests/calls.rs`); fase 2 no relay das chamadas
 (`server/src/call_relay.rs`, `server/src/bin/call_relay.rs`, testes em
 `server/tests/call_relay_e2e.rs`); fase 3 no motor de áudio (`call/`, crate `qt_call`, testes em
@@ -784,6 +785,8 @@ para uma versão antiga mostrar "atualiza a app" uma só vez por chamada. Corpo 
 | 4 | a tocar | vazio | não (`silent`) |
 | 2 | resposta | `[32 answer_secret]` | não |
 | 3 | desligar | `[1 motivo]`: 1 desligou, 2 recusou, 3 ocupado, 4 sem resposta, 5 cancelou | só "cancelou" e "sem resposta" de quem liga, marcada `CallEnd` (desde a 0.9.6) |
+| 5 | posso ligar direto | vazio (só depois de atender) | não |
+| 6 | endereços | `[1 n, 1 a 5][n × 19 endereço]` | não |
 
 * Uma chamada de cada vez. Uma oferta que chegue com mais de 45 s (`sent_at`, limitado à hora
   local) não toca: fica "chegou tarde" (chamada perdida). Sem resposta em 45 s, quem liga envia
@@ -857,6 +860,51 @@ CMake), com o DRED e o PLC neural (os modelos vêm no pacote).
 * Ferramenta do PC `tools/call-demo` (fora do workspace, precisa do ALSA): modo eco, a voz vai ao
   relay e volta, com `--perda N` para simular pacotes perdidos.
 
+**Ligação direta (P2P, fase 5, 23/10/2026).** A chamada começa sempre pelo relay. Os endereços
+para a ligação direta só são trocados depois de atender, dentro do ratchet (ops 5 e 6).
+
+* REGRA, de cada lado (`p2p_allowed`): contacto verificado com a chave de identidade que a sessão
+  tem agora (`verified:<contact_id>` guarda a chave verificada; se a chave mudar, deixa de valer),
+  não bloqueado, e a opção "chamadas sempre pelo servidor" desligada (`calls_relay_only`).
+* Quem cumpre a regra envia "posso" (op 5, sem endereços) ao atender. Só quem enviou "posso" E
+  recebeu o "posso" do outro envia os seus endereços (op 6). Os endereços recebidos só vão para o
+  motor de quem enviou "posso" (a regra volta a ser vista nesse momento). Assim nenhum endereço sai
+  antes de atender, para quem não verificou, nem para quem tem "sempre pelo servidor".
+* Compatibilidade: uma app antiga ignora as ops 5 e 6 e nunca envia "posso" (fica tudo no relay).
+  Um relay antigo não responde ao pedido de endereço (0x22): a recolha acaba ao fim de 1,5 s só com
+  os endereços locais. Uma app antiga com um relay novo não muda nada.
+* Endereço (19 bytes): `[1 família 4|6][16 IP, o IPv4 nos 4 primeiros e zeros][2 porta BE]`.
+  No máximo 5 por mensagem (o corpo do tipo 11 tem no máximo 128 bytes). O IP público primeiro.
+* Endereço visto pelo relay: `[1 0x22][8 room_id][8 txid][23 zeros][8 etiqueta relay_key]` (48
+  bytes) responde `[1 0x23][8 room_id][8 txid][19 endereço][8 etiqueta]` (44 bytes, sempre menos do
+  que recebeu). Só por UDP, só para salas abertas, e conta para o limite de pedidos por IP.
+* Motor: um só socket UDP para o relay e para o direto (dual IPv4/IPv6 quando o sistema deixa; a
+  porta que o relay vê é a que o outro telemóvel usa). Endereços locais por escolha de rota (sem
+  enviar nada) e o visto pelo relay, IPv6 incluído.
+* Sondas: `[1 0x30|papel][8 room_id][8 txid][8 etiqueta]` e a resposta `[1 0x32|papel]...`, com a
+  `p2p_key` (`HKDF(call_id, offer_secret ‖ answer_secret)`, `"QT-CALL-v1 p2p"`): o relay não a tem
+  e não consegue forjar sondas. Procura inicial a cada 200 ms durante 10 s (no máximo 30 s no
+  total). Áudio vindo de fora do relay só é aceite de endereços que já mandaram uma sonda válida.
+* Caminho em uso: sonda a cada 100 ms. Cada pacote sai pelos dois caminhos (direto e relay) até
+  decidir quando falta resposta às sondas há mais de 250 ms, ou quando o áudio do outro lado vinha
+  pelo direto e parou há mais de 150 ms (50 pacotes/s: vê-se antes das sondas). O áudio recebido
+  não conta como "o direto está vivo": só prova o sentido do outro para mim; uma falha só no meu
+  sentido é apanhada pelas sondas. Volta a só direto depois de 1 s bom (2 s se tinha caído). Sem
+  resposta em 3 s: só relay, com 1 sonda/s até o direto responder (e aí volta aos 100 ms). O
+  primeiro segundo de um caminho novo também vai pelos dois. O relay nunca deixa a sala (os
+  pedidos de entrada a cada 10 s mantêm-na aberta).
+* A cópia repetida (o mesmo contador pelos dois caminhos) é recusada pela janela anti-repetição
+  (1024 pacotes, ou seja 20 s; a cópia pelo relay chega 3 a 8 pacotes depois) e não chega ao jitter
+  buffer: não conta como recebida, atrasada nem perdida (`duplicates` à parte).
+* Medido (`call/tests/engine_e2e.rs`, com os dois a falar): numa queda brusca do direto nos dois
+  sentidos perdem-se ~7 pacotes e ~0,2 s são inventados pelo PLC/DRED; só num sentido, ~13 pacotes
+  e ~0,45 s. Com sondas a 200 ms e limite de 0,5 s eram ~0,75 s.
+
+**Vídeo (planeado, fases 5a a 5c).** Regra decidida a 23/10/2026: pelo relay, até 360p, a descer
+até 240p se a rede piorar; abaixo disso o vídeo pausa e a voz continua, com uma mensagem a explicar
+porquê. Em ligação direta: até 1080p em Wi-Fi e 720p em dados móveis, adaptativo. O áudio tem sempre
+prioridade. O motor já diz se o caminho é direto (`CallAudioStats.direct`).
+
 **API (`QtClient`).** `call_start`, `call_accept`, `call_hangup` (o motivo sai do estado),
 `call_events` (Incoming, Ringing, Answered, Ended; chamar depois de cada lote recebido e de
 segundo a segundo durante uma chamada), `call_current`, `call_join_packet` (com a chave pública
@@ -865,7 +913,8 @@ do relay), `call_join_ok`, `call_seal` e `call_open`. Com a feature `calls` (app
 já na sala, mesmo antes de atender) com `push_capture` e `pull_playback` (20 ms de PCM 16 bits,
 48 kHz, mono, 1920 bytes little-endian), `stats`, `active` e `stop`; ao atender, as chaves do
 áudio passam para o motor, e ao terminar a chamada ele para sozinho. As chaves nunca atravessam
-a FFI.
+a FFI. Ligação direta: `calls_relay_only` / `set_calls_relay_only` (ligada a meio de uma chamada,
+o áudio volta logo ao relay); `CallAudioStats.direct` e `both_paths`.
 
 ## 19. Foto de perfil (desde a app 0.9.9)
 

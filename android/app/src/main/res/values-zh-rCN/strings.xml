@@ -115,6 +115,7 @@
     <string name="t_foto_de_perfil">头像</string>
     <string name="t_notificacoes">通知</string>
     <string name="t_confirmacoes_de_leitura">已读回执</string>
+    <string name="t_chamadas_sempre_pelo_servidor">通话始终通过服务器</string>
     <string name="t_mostrar_quando_estou_online">显示我的在线状态</string>
     <string name="t_bloqueio_da_app">应用锁</string>
     <string name="t_bloquear_agora">立即锁定</string>

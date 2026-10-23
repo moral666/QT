@@ -1705,6 +1705,7 @@ dependencies = [
  "qt_server",
  "qt_transport",
  "rustls",
+ "socket2 0.6.4",
  "thiserror 1.0.69",
  "tokio",
  "tokio-tungstenite",

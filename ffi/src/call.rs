@@ -10,7 +10,17 @@
 //!   * Cada lado contribui 32 bytes aleatorios (oferta e resposta). As chaves do
 //!     audio, o codigo da sala e a chave do relay saem dai (`qt_core::call`).
 //!   * Tudo fica SO em memoria (nada em disco). Uma chamada de cada vez.
-//!   * O audio (fases seguintes) passa sempre pelo relay; nunca ha ligacao direta.
+//!   * O audio comeca SEMPRE pelo relay. LIGACAO DIRETA (P2P, fase 5) so depois de
+//!     atender e so se, DESTE lado, o contacto estiver verificado (`is_verified`) e a
+//!     opcao "chamadas sempre pelo relay" estiver desligada (`p2p_allowed`):
+//!       1. cada lado que cumpre a regra envia "posso" (op 5, sem enderecos);
+//!       2. so quem enviou "posso" E recebeu o "posso" do outro envia os seus enderecos
+//!          (op 6). Assim nenhum endereco sai para quem nao verificou quem liga, nem para
+//!          quem tem "sempre pelo relay": esse lado nunca envia "posso";
+//!       3. os enderecos recebidos so vao para o motor de quem enviou "posso" (a regra
+//!          volta a ser verificada nesse momento).
+//!   * O motor (`qt_call::engine`) tenta o caminho direto e, se falhar, fica no relay sem
+//!     cortar a chamada. Uma versao antiga da app ignora as ops 5 e 6: fica no relay.
 //!   * Ligamos os dois ao mesmo tempo um ao outro: fica a chamada com o call_id menor;
 //!     quem tinha a outra recebe `Ended(Cancelled)` dela e `Incoming` da que fica.
 //!   * Qualquer pessoa com sessao pode ligar (como pode escrever): e a app que decide
@@ -23,10 +33,16 @@
 //!   op 3 desligar: [1 motivo] (1 desligou, 2 recusou, 3 ocupado, 4 sem resposta, 5 cancelou)
 //!                  (o 6, "chegou tarde", so existe localmente e nunca e enviado)
 //!   op 4 a tocar:  (vazio)
+//!   op 5 posso ligar direto: (vazio)               (so depois de atender)
+//!   op 6 enderecos: [1 n, 1..=5][n x 19 endereco]  (`qt_core::call::encode_addr`)
 
 use std::collections::VecDeque;
+use std::net::SocketAddr;
 
-use qt_core::call::{join_payload, parse_join_ok, CallKeys, MediaSession, Role, RoomKeys, JOIN_KIND, JOIN_PROLOGUE, MAX_PAD, MIN_PAD};
+use qt_core::call::{
+    decode_addr, encode_addr, join_payload, parse_join_ok, CallKeys, MediaSession, Role, RoomKeys, ADDR_BYTES, JOIN_KIND,
+    JOIN_PROLOGUE, MAX_PAD, MIN_PAD,
+};
 use qt_storage as st;
 use qt_storage::messages as hm;
 use zeroize::Zeroizing;
@@ -39,6 +55,18 @@ const OP_OFFER: u8 = 1;
 const OP_ANSWER: u8 = 2;
 const OP_HANGUP: u8 = 3;
 const OP_RINGING: u8 = 4;
+const OP_P2P_READY: u8 = 5;
+const OP_P2P_ADDRS: u8 = 6;
+
+/// Maximo de enderecos numa mensagem op 6: o corpo do tipo 11 tem no maximo 128 bytes
+/// (`history.rs`), e 17 + 1 + 5 x 19 = 113. O motor da primeiro o IP publico.
+pub const MAX_P2P_ADDRS: usize = 5;
+const _: () = assert!(17 + 1 + MAX_P2P_ADDRS * ADDR_BYTES <= 128);
+/// "Chamadas sempre pelo relay" (definicao deste telemovel).
+const KV_RELAY_ONLY: &str = "calls_relay_only";
+/// Contacto verificado: guarda a chave de identidade que foi verificada. Se a chave da
+/// sessao deixar de ser esta, a verificacao deixa de valer (e a chamada fica no relay).
+pub(crate) const KV_VERIFIED: &str = "verified:";
 
 /// Uma oferta que chega mais tarde do que isto (ficou na fila do relay) ja nao toca:
 /// fica como chamada perdida.
@@ -145,6 +173,20 @@ struct Call {
     /// audio quando a chamada e atendida e para quando acaba.
     #[cfg(feature = "calls")]
     audio: Option<std::sync::Arc<crate::call_audio::CallAudio>>,
+    p2p: P2p,
+}
+
+/// Ligacao direta desta chamada (ver o inicio do ficheiro).
+#[derive(Default)]
+struct P2p {
+    /// Enviei "posso" (op 5): atendida e a regra cumprida deste lado.
+    ready_sent: bool,
+    /// O outro lado enviou "posso".
+    peer_ready: bool,
+    /// Ja enviei os meus enderecos (ou desisti: sem enderecos).
+    addrs_sent: bool,
+    /// Enderecos do outro lado a espera do motor de audio.
+    peer_addrs: Option<Vec<SocketAddr>>,
 }
 
 impl Call {
@@ -233,6 +275,90 @@ fn queue(client: &QtClient, c: &st::rusqlite::Connection, cid: &str, plain: &[u8
     Ok(OutboxItem { outbox_id: hex(&id), contact_id: cid.to_string(), blob, silent: wake.is_none(), relay_id: None, wake })
 }
 
+/// "Chamadas sempre pelo relay" esta ligada neste telemovel?
+pub(crate) fn relay_only(c: &st::rusqlite::Connection) -> Result<bool, QtError> {
+    Ok(st::kv_get(c, KV_RELAY_ONLY)?.is_some_and(|v| v.first() == Some(&1)))
+}
+
+/// O contacto esta verificado, com a chave de identidade que tem AGORA na sessao?
+pub(crate) fn is_verified(c: &st::rusqlite::Connection, cid: &str) -> Result<bool, QtError> {
+    let Some(saved) = st::kv_get(c, &format!("{KV_VERIFIED}{cid}"))? else { return Ok(false) };
+    let Some(meta) = st::load_session_meta(c, cid)? else { return Ok(false) };
+    Ok(saved.len() == 32 && saved == meta.peer_identity_public)
+}
+
+/// Marca o contacto como verificado com a chave de identidade da sessao atual (a parte da
+/// verificacao, QR ou codigo, chama isto depois de o utilizador confirmar).
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn mark_verified(c: &st::rusqlite::Connection, cid: &str) -> Result<(), QtError> {
+    let meta = st::load_session_meta(c, cid)?.ok_or_else(|| bad("contact_id"))?;
+    st::kv_set(c, &format!("{KV_VERIFIED}{cid}"), &meta.peer_identity_public)?;
+    Ok(())
+}
+
+/// A REGRA da ligacao direta, deste lado: contacto verificado, nao bloqueado, sem
+/// "sempre pelo relay", e com motor de audio nesta build.
+fn p2p_allowed(c: &st::rusqlite::Connection, cid: &str) -> Result<bool, QtError> {
+    Ok(cfg!(feature = "calls") && !relay_only(c)? && !is_blocked_in(c, cid)? && is_verified(c, cid)?)
+}
+
+fn encode_addrs(addrs: &[SocketAddr]) -> Vec<u8> {
+    let n = addrs.len().min(MAX_P2P_ADDRS);
+    let mut out = Vec::with_capacity(1 + n * ADDR_BYTES);
+    out.push(n as u8);
+    for a in &addrs[..n] {
+        out.extend_from_slice(&encode_addr(a));
+    }
+    out
+}
+
+fn decode_addrs(b: &[u8]) -> Option<Vec<SocketAddr>> {
+    let n = *b.first()? as usize;
+    if n == 0 || n > MAX_P2P_ADDRS || b.len() != 1 + n * ADDR_BYTES {
+        return None;
+    }
+    b[1..].chunks_exact(ADDR_BYTES).map(decode_addr).collect()
+}
+
+/// A chamada acabou de ficar atendida (de um lado ou do outro): se a regra deixar,
+/// envia "posso" e liga a ligacao direta no motor.
+fn p2p_on_answered(client: &QtClient, c: &st::rusqlite::Connection, call: &mut Call) -> Result<(), QtError> {
+    if call.state != State::Active || call.p2p.ready_sent || !p2p_allowed(c, &call.contact)? {
+        return Ok(());
+    }
+    queue(client, c, &call.contact.clone(), &encode(OP_P2P_READY, &call.id, &[]), None)?;
+    call.p2p.ready_sent = true;
+    #[cfg(feature = "calls")]
+    if let Some(a) = &call.audio {
+        a.p2p_enable();
+    }
+    Ok(())
+}
+
+/// Envia os meus enderecos quando os dois lados disseram "posso" e o motor ja os tem.
+fn p2p_send_addrs(client: &QtClient, c: &st::rusqlite::Connection, call: &mut Call) -> Result<(), QtError> {
+    let p = &call.p2p;
+    if call.state != State::Active || !p.ready_sent || !p.peer_ready || p.addrs_sent {
+        return Ok(());
+    }
+    // A regra outra vez: pode ter mudado a meio (ex.: "sempre pelo relay" ligada).
+    if !p2p_allowed(c, &call.contact)? {
+        call.p2p.addrs_sent = true;
+        return Ok(());
+    }
+    #[cfg(feature = "calls")]
+    {
+        let Some(local) = call.audio.as_ref().and_then(|a| a.p2p_local_candidates()) else { return Ok(()) };
+        call.p2p.addrs_sent = true;
+        if !local.is_empty() {
+            queue(client, c, &call.contact.clone(), &encode(OP_P2P_ADDRS, &call.id, &encode_addrs(&local)), None)?;
+        }
+    }
+    #[cfg(not(feature = "calls"))]
+    let _ = client;
+    Ok(())
+}
+
 fn derive_media(call: &Call, answer_secret: &[u8; 32]) -> Result<MediaSession, QtError> {
     let keys = CallKeys::derive(&call.offer_secret, answer_secret, &call.id, call.role);
     MediaSession::new(keys, call.pad as usize).map_err(|_| QtError::Crypto)
@@ -317,6 +443,7 @@ pub(crate) fn on_call(
                 media: None,
                 #[cfg(feature = "calls")]
                 audio: None,
+                p2p: P2p::default(),
             });
             queue(client, c, cid, &encode(OP_RINGING, &call_id, &[]), None)?;
             calls.push(CallEvent::Incoming { call_id: id_hex, contact_id: cid.to_string() });
@@ -337,7 +464,29 @@ pub(crate) fn on_call(
             call.state = State::Active;
             call.since = now;
             call.offer_outbox = None;
+            p2p_on_answered(client, c, call)?;
             calls.push(CallEvent::Answered { call_id: hex(&call_id) });
+        }
+        OP_P2P_READY if is_current && rest.is_empty() => {
+            if let Some(call) = calls.cur.as_mut().filter(|k| k.state == State::Active) {
+                call.p2p.peer_ready = true;
+                p2p_send_addrs(client, c, call)?;
+            }
+        }
+        OP_P2P_ADDRS if is_current => {
+            let Some(call) = calls.cur.as_mut().filter(|k| k.state == State::Active) else { return Ok(no_change) };
+            // So quem disse "posso" (e continua a cumprir a regra) aceita enderecos, uma vez.
+            if !call.p2p.ready_sent || call.p2p.peer_addrs.is_some() || !p2p_allowed(c, cid)? {
+                return Ok(no_change);
+            }
+            let Some(addrs) = decode_addrs(rest) else { return Ok(no_change) };
+            call.p2p.peer_ready = true;
+            #[cfg(feature = "calls")]
+            if let Some(a) = &call.audio {
+                a.p2p_set_peer(addrs.clone());
+            }
+            call.p2p.peer_addrs = Some(addrs);
+            p2p_send_addrs(client, c, call)?;
         }
         OP_HANGUP if is_current && rest.len() == 1 => {
             if let Some(reason) = CallEndReason::from_byte(rest[0]) {
@@ -369,6 +518,13 @@ pub(crate) fn start_for_call(calls: &mut Calls, id: [u8; 16], relay_url: &str, r
     let audio = CallAudio::new(engine);
     if let Some(media) = call.media.take() {
         audio.attach(media);
+    }
+    // Atendida antes de o motor existir: a ligacao direta ja tinha sido decidida.
+    if call.p2p.ready_sent {
+        audio.p2p_enable();
+        if let Some(peer) = &call.p2p.peer_addrs {
+            audio.p2p_set_peer(peer.clone());
+        }
     }
     call.audio = Some(audio.clone());
     Ok(audio)
@@ -411,6 +567,7 @@ impl QtClient {
             media: None,
             #[cfg(feature = "calls")]
             audio: None,
+            p2p: P2p::default(),
         });
         Ok(CallStart { call_id: hex(&id), item })
     }
@@ -431,10 +588,12 @@ impl QtClient {
         let plain = Zeroizing::new(encode(OP_ANSWER, &id, &answer[..]));
         let tx = c.unchecked_transaction()?;
         let item = queue(self, &tx, &call.contact.clone(), &plain, None)?;
-        tx.commit()?;
         call.set_media(media);
         call.state = State::Active;
         call.since = now_ms();
+        // "Posso ligar direto" vai para a outbox DEPOIS da resposta (a app envia-a a seguir).
+        p2p_on_answered(self, &tx, call)?;
+        tx.commit()?;
         calls.push(CallEvent::Answered { call_id });
         Ok(item)
     }
@@ -480,6 +639,12 @@ impl QtClient {
         let c = self.lock()?;
         let mut calls = crate::client::relock(&self.calls);
         expire(self, &c, &mut calls)?;
+        // Os meus enderecos ficam prontos uns instantes depois de atender: envia-os aqui.
+        if let Some(call) = calls.cur.as_mut() {
+            let tx = c.unchecked_transaction()?;
+            p2p_send_addrs(self, &tx, call)?;
+            tx.commit()?;
+        }
         Ok(calls.events.drain(..).collect())
     }
 
@@ -487,6 +652,28 @@ impl QtClient {
     pub fn call_current(&self) -> Result<Option<String>, QtError> {
         let calls = crate::client::relock(&self.calls);
         Ok(calls.cur.as_ref().map(|k| hex(&k.id)))
+    }
+
+    /// "Chamadas sempre pelo relay" (definicao deste telemovel). Ligada: nenhuma chamada
+    /// liga direto, mesmo com contactos verificados (o outro lado tambem fica no relay).
+    pub fn calls_relay_only(&self) -> Result<bool, QtError> {
+        let c = self.lock()?;
+        relay_only(&c)
+    }
+
+    /// Liga ou desliga "chamadas sempre pelo relay". Ligada a meio de uma chamada: o
+    /// audio volta ao relay e os meus enderecos ja nao saem.
+    pub fn set_calls_relay_only(&self, on: bool) -> Result<(), QtError> {
+        let c = self.lock()?;
+        st::kv_set(&c, KV_RELAY_ONLY, &[on as u8])?;
+        #[cfg(feature = "calls")]
+        if on {
+            let calls = crate::client::relock(&self.calls);
+            if let Some(a) = calls.cur.as_ref().and_then(|k| k.audio.as_ref()) {
+                a.p2p_disable();
+            }
+        }
+        Ok(())
     }
 
     /// Pedido para ENTRAR NA SALA do relay de chamadas (UDP 443 ou, se o UDP estiver
@@ -595,10 +782,196 @@ mod tests {
     }
 
     #[test]
+    fn formato_dos_enderecos() {
+        let a: Vec<SocketAddr> = vec!["85.1.2.3:40000".parse().unwrap(), "[2a01::5]:40000".parse().unwrap()];
+        let b = encode_addrs(&a);
+        assert_eq!(b.len(), 1 + 2 * ADDR_BYTES);
+        assert_eq!(decode_addrs(&b), Some(a));
+        assert_eq!(decode_addrs(&[0]), None, "lista vazia");
+        assert_eq!(decode_addrs(&b[..b.len() - 1]), None, "cortada");
+        let mut many = vec![6u8];
+        many.extend(std::iter::repeat_n(encode_addr(&"1.2.3.4:5".parse().unwrap()), 6).flatten());
+        assert_eq!(decode_addrs(&many), None, "mais de 5");
+        // A mensagem inteira cabe no limite do tipo 11 (senao o outro lado ignorava-a).
+        let full = encode(OP_P2P_ADDRS, &[1; 16], &encode_addrs(&vec!["1.2.3.4:5".parse().unwrap(); 9]));
+        assert!(full.len() - HDR <= 128, "{}", full.len() - HDR);
+        let mut bad = b.clone();
+        bad[1] = 7;
+        assert_eq!(decode_addrs(&bad), None, "familia desconhecida");
+    }
+
+    #[test]
     fn formato_da_oferta() {
         let id = [7u8; 16];
         let p = encode(OP_OFFER, &id, &[1u8; 34]);
         assert_eq!((p[0], p[1], &p[2..18]), (PAYLOAD_V1, T_CALL, &id[..]));
         assert_eq!((p[HDR], &p[HDR + 1..HDR + 17], p.len()), (OP_OFFER, &id[..], HDR + 17 + 34));
+    }
+}
+
+/// A regra da ligacao direta com dois telemoveis reais (QtClient + motor de audio), sem
+/// relay: o audio so pode passar pelo caminho direto (127.0.0.1).
+#[cfg(all(test, feature = "calls"))]
+mod p2p_tests {
+    use super::*;
+    use crate::client::{peer_bundle_from_relay_bytes, PublicIdentity};
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    struct Peer {
+        c: Arc<QtClient>,
+        id: PublicIdentity,
+    }
+
+    impl Peer {
+        fn new(name: &str, key: u8) -> Peer {
+            static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let path = format!("/tmp/qt_p2p_{name}_{}_{n}.sqlite", std::process::id());
+            let _ = std::fs::remove_file(&path);
+            let c = QtClient::open(path, vec![key; 32]).unwrap();
+            let id = c.create_identity().unwrap();
+            Peer { c, id }
+        }
+        fn cid(&self) -> String {
+            hex(&self.id.identity_public)
+        }
+        /// (enviei "posso", o outro disse "posso", enviei enderecos, recebi enderecos)
+        fn state(&self) -> (bool, bool, bool, bool) {
+            let calls = crate::client::relock(&self.c.calls);
+            let p = &calls.cur.as_ref().expect("chamada").p2p;
+            (p.ready_sent, p.peer_ready, p.addrs_sent, p.peer_addrs.is_some())
+        }
+        fn verify(&self, other: &Peer) {
+            mark_verified(&self.c.lock().unwrap(), &other.cid()).unwrap();
+        }
+    }
+
+    /// Entrega tudo o que `from` tem na outbox para `to`. Devolve quantas mensagens.
+    fn deliver(from: &Peer, to: &Peer) -> usize {
+        let items = from.c.outbox().unwrap();
+        for item in &items {
+            if item.contact_id == to.cid() {
+                to.c.receive_sealed(item.blob.clone()).unwrap();
+            }
+            from.c.outbox_sent(item.outbox_id.clone()).unwrap();
+        }
+        items.len()
+    }
+
+    fn pair() -> (Peer, Peer) {
+        let (a, b) = (Peer::new("a", 0xA1), Peer::new("b", 0xB2));
+        let bundle = peer_bundle_from_relay_bytes(b.c.publishable_bundle().unwrap()).unwrap();
+        a.c.start_session(b.id.public_id.clone(), bundle).unwrap();
+        a.c.send_text(b.cid(), "ola".into()).unwrap();
+        deliver(&a, &b);
+        b.c.send_text(a.cid(), "ola!".into()).unwrap();
+        deliver(&b, &a);
+        (a, b)
+    }
+
+    struct Call {
+        id: String,
+        audio_a: Arc<crate::call_audio::CallAudio>,
+        audio_b: Arc<crate::call_audio::CallAudio>,
+    }
+
+    /// A liga, B atende. Verifica que ANTES de atender nada de "posso" nem enderecos sai, e
+    /// devolve quantas mensagens B enviou ao atender.
+    fn call(a: &Peer, b: &Peer) -> (Call, usize) {
+        let url = "ws://127.0.0.1:9".to_string(); // sem relay: so o caminho direto funciona
+        let pin = qt_transport::generate_static_keypair().unwrap().public;
+        let id = a.c.call_start(b.cid()).unwrap().call_id;
+        let audio_a = a.c.call_audio_start(id.clone(), url.clone(), pin.clone()).unwrap();
+        assert_eq!(deliver(a, b), 1, "so a oferta");
+        assert!(matches!(b.c.call_events().unwrap()[0], CallEvent::Incoming { .. }));
+        let audio_b = b.c.call_audio_start(id.clone(), url, pin).unwrap();
+        // A tocar: nenhum lado disse "posso" nem tem enderecos para dar.
+        std::thread::sleep(Duration::from_millis(1700));
+        a.c.call_events().unwrap();
+        b.c.call_events().unwrap();
+        assert_eq!(deliver(b, a), 1, "so o \"a tocar\"");
+        assert_eq!(a.state(), (false, false, false, false));
+        assert_eq!(b.state(), (false, false, false, false));
+        assert!(audio_a.p2p_local_candidates().is_none() && audio_b.p2p_local_candidates().is_none());
+        b.c.call_accept(id.clone()).unwrap();
+        let sent_on_accept = deliver(b, a);
+        (Call { id, audio_a, audio_b }, sent_on_accept)
+    }
+
+    /// Faz o que a app faz a cada segundo (eventos + outbox) durante `secs` ou ate `done`.
+    fn run(a: &Peer, b: &Peer, secs: u64, mut done: impl FnMut() -> bool) -> bool {
+        let t = Instant::now();
+        while t.elapsed() < Duration::from_secs(secs) {
+            a.c.call_events().unwrap();
+            b.c.call_events().unwrap();
+            deliver(a, b);
+            deliver(b, a);
+            if done() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        false
+    }
+
+    #[test]
+    fn verificados_dos_dois_lados_ligam_direto() {
+        let (a, b) = pair();
+        a.verify(&b);
+        b.verify(&a);
+        let (k, on_accept) = call(&a, &b);
+        assert_eq!(on_accept, 2, "a resposta e o \"posso\"");
+        let direct = run(&a, &b, 10, || k.audio_a.stats().direct && k.audio_b.stats().direct);
+        assert!(direct, "A {:?} B {:?}", k.audio_a.stats(), k.audio_b.stats());
+        assert_eq!(a.state(), (true, true, true, true));
+        assert_eq!(b.state(), (true, true, true, true));
+        // "Sempre pelo relay" ligada a meio: o audio deixa logo o caminho direto.
+        a.c.set_calls_relay_only(true).unwrap();
+        assert!(a.c.calls_relay_only().unwrap());
+        assert!(run(&a, &b, 2, || !k.audio_a.stats().direct));
+        a.c.call_hangup(k.id).unwrap();
+    }
+
+    /// O outro lado nao me verificou (ou e uma app antiga, que nunca envia "posso" e ignora
+    /// as ops 5 e 6): nenhum dos dois envia enderecos.
+    #[test]
+    fn so_um_lado_verificou_nenhum_endereco_sai() {
+        let (a, b) = pair();
+        a.verify(&b);
+        let (k, on_accept) = call(&a, &b);
+        assert_eq!(on_accept, 1, "B so envia a resposta");
+        run(&a, &b, 4, || false);
+        assert_eq!(a.state(), (true, false, false, false), "A disse posso, mais nada");
+        assert_eq!(b.state(), (false, true, false, false), "B ouviu, nao respondeu nem enviou enderecos");
+        assert!(!k.audio_a.stats().direct && !k.audio_b.stats().direct);
+        assert!(k.audio_b.p2p_local_candidates().is_none(), "B nem recolheu enderecos");
+    }
+
+    #[test]
+    fn sempre_pelo_relay_num_lado_fica_tudo_no_relay() {
+        let (a, b) = pair();
+        a.verify(&b);
+        b.verify(&a);
+        b.c.set_calls_relay_only(true).unwrap();
+        let (k, on_accept) = call(&a, &b);
+        assert_eq!(on_accept, 1);
+        run(&a, &b, 4, || false);
+        assert_eq!(a.state(), (true, false, false, false));
+        assert_eq!(b.state(), (false, true, false, false));
+        assert!(!k.audio_a.stats().direct && !k.audio_b.stats().direct);
+    }
+
+    #[test]
+    fn verificacao_cai_se_a_chave_mudar() {
+        let (a, b) = pair();
+        let c = a.c.lock().unwrap();
+        assert!(!is_verified(&c, &b.cid()).unwrap());
+        mark_verified(&c, &b.cid()).unwrap();
+        assert!(is_verified(&c, &b.cid()).unwrap());
+        // A chave guardada deixa de ser a da sessao (o contacto mudou de chave).
+        st::kv_set(&c, &format!("{KV_VERIFIED}{}", b.cid()), &[7u8; 32]).unwrap();
+        assert!(!is_verified(&c, &b.cid()).unwrap());
+        assert!(!p2p_allowed(&c, &b.cid()).unwrap());
     }
 }

@@ -28,6 +28,19 @@
 //! relay fica a saber a sala e a chave das etiquetas, nunca a conta. Responde
 //! `[1 0x21][8 room_id][1 o outro ja esta na sala][8 etiqueta]` (`join_ok`), mais
 //! pequeno que o pedido (nao serve para amplificar ataques).
+//!
+//! LIGACAO DIRETA (P2P, fase 5, so com contactos verificados; a regra esta em
+//! `qt_ffi::call`). Os pacotes de audio sao os mesmos; so muda o destino.
+//!   * ENDERECO VISTO PELO RELAY: `[1 0x22][8 room_id][8 txid][23 zeros][8 etiqueta]`
+//!     (48 bytes, etiqueta com a `relay_key`). O relay so responde se a sala existir:
+//!     `[1 0x23][8 room_id][8 txid][19 endereco][8 etiqueta]` (44 bytes, menor que o
+//!     pedido). Nao revela nada novo ao relay: ja ve o IP.
+//!   * SONDAS do caminho direto: `[1 0x30|papel][8 room_id][8 txid][8 etiqueta]` e a
+//!     resposta `[1 0x32|papel]...` com o mesmo txid. A etiqueta usa a `p2p_key`, que
+//!     sai da oferta E da resposta (o relay nao a tem: nao consegue forjar sondas).
+//!   * ENDERECO (19 bytes): `[1 familia 4|6][16 IP, o IPv4 nos 4 primeiros e zeros][2 porta BE]`.
+
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
@@ -59,8 +72,23 @@ pub const MEDIA_OVERHEAD: usize = HEADER_LEN + AEAD_TAG_LEN + RELAY_TAG_LEN;
 /// Limites do tamanho cifrado de cada frame (inclui os 2 bytes do tamanho).
 pub const MIN_PAD: usize = 32;
 pub const MAX_PAD: usize = 1024;
+/// Pedido "que endereco ves?" ao relay e a resposta (ligacao direta).
+pub const ADDR_KIND: u8 = 0x22;
+pub const ADDR_OK_KIND: u8 = 0x23;
+/// Endereco IP + porta codificado (ver `encode_addr`).
+pub const ADDR_BYTES: usize = 1 + 16 + 2;
+/// O pedido e maior que a resposta: o relay nunca amplifica.
+pub const ADDR_LEN: usize = 48;
+pub const ADDR_OK_LEN: usize = 1 + ROOM_ID_LEN + 8 + ADDR_BYTES + RELAY_TAG_LEN;
+/// Sonda do caminho direto e a resposta (o bit 0 e o papel de quem envia).
+pub const PROBE_KIND: u8 = 0x30;
+pub const PROBE_ACK_KIND: u8 = 0x32;
+pub const PROBE_LEN: usize = 1 + ROOM_ID_LEN + 8 + RELAY_TAG_LEN;
 /// Janela anti-repeticao (pacotes).
 pub const REPLAY_WINDOW: u64 = 1024;
+// A copia que vem pelo relay chega 50-150 ms (3-8 pacotes) depois da direta: se o direto
+// perdeu o pacote, essa copia tem de caber na janela (nunca "demasiado antiga").
+const _: () = assert!(REPLAY_WINDOW >= 64);
 /// O contador nunca passa disto (a 50 pacotes/s seriam milhares de anos).
 pub const MAX_COUNTER: u64 = 1 << 48;
 
@@ -133,6 +161,9 @@ pub struct CallKeys {
     relay_key: [u8; 32],
     send_key: [u8; 32],
     recv_key: [u8; 32],
+    /// Etiquetas das sondas do caminho direto. Sai da oferta E da resposta: o relay
+    /// (que so conhece a oferta atraves da `relay_key`) nao a consegue calcular.
+    p2p_key: [u8; 32],
     #[zeroize(skip)]
     role: Role,
 }
@@ -154,13 +185,15 @@ impl CallKeys {
         // Os tamanhos pedidos sao sempre validos para HKDF-SHA256 (<= 255 x 32).
         hk.expand(b"QT-CALL-v1 caller->callee", &mut to_callee).expect("hkdf send");
         hk.expand(b"QT-CALL-v1 callee->caller", &mut to_caller).expect("hkdf recv");
+        let mut p2p_key = [0u8; 32];
+        hk.expand(b"QT-CALL-v1 p2p", &mut p2p_key).expect("hkdf p2p");
         let (send_key, recv_key) = match role {
             Role::Caller => (to_callee, to_caller),
             Role::Callee => (to_caller, to_callee),
         };
         to_callee.zeroize();
         to_caller.zeroize();
-        CallKeys { room_id, relay_key, send_key, recv_key, role }
+        CallKeys { room_id, relay_key, send_key, recv_key, p2p_key, role }
     }
 
     pub fn room_id(&self) -> [u8; ROOM_ID_LEN] {
@@ -278,6 +311,146 @@ pub fn parse_join_ok(room: &RoomKeys, p: &[u8]) -> Option<bool> {
     Some(p[1 + ROOM_ID_LEN] == 1)
 }
 
+/// Codifica um endereco em 19 bytes (um IPv4 dentro de IPv6, `::ffff:a.b.c.d`, vai como IPv4).
+pub fn encode_addr(a: &SocketAddr) -> [u8; ADDR_BYTES] {
+    let mut out = [0u8; ADDR_BYTES];
+    match a.ip().to_canonical() {
+        IpAddr::V4(v4) => {
+            out[0] = 4;
+            out[1..5].copy_from_slice(&v4.octets());
+        }
+        IpAddr::V6(v6) => {
+            out[0] = 6;
+            out[1..17].copy_from_slice(&v6.octets());
+        }
+    }
+    out[17..].copy_from_slice(&a.port().to_be_bytes());
+    out
+}
+
+/// Le um endereco de 19 bytes. Recusa porta 0, familia desconhecida e IPv4 com lixo.
+pub fn decode_addr(b: &[u8]) -> Option<SocketAddr> {
+    if b.len() != ADDR_BYTES {
+        return None;
+    }
+    let port = u16::from_be_bytes([b[17], b[18]]);
+    if port == 0 {
+        return None;
+    }
+    let ip = match b[0] {
+        4 if b[5..17].iter().all(|x| *x == 0) => IpAddr::V4(Ipv4Addr::new(b[1], b[2], b[3], b[4])),
+        6 => {
+            let o: [u8; 16] = b[1..17].try_into().ok()?;
+            IpAddr::V6(Ipv6Addr::from(o)).to_canonical()
+        }
+        _ => return None,
+    };
+    Some(SocketAddr::new(ip, port))
+}
+
+/// Pedido ao relay: "que endereco ves?" (para o telemovel saber o seu IP publico e porta).
+pub fn addr_request(room: &RoomKeys, txid: u64) -> [u8; ADDR_LEN] {
+    let mut p = [0u8; ADDR_LEN];
+    p[0] = ADDR_KIND;
+    p[1..1 + ROOM_ID_LEN].copy_from_slice(&room.room_id);
+    p[1 + ROOM_ID_LEN..1 + ROOM_ID_LEN + 8].copy_from_slice(&txid.to_be_bytes());
+    let tag = relay_tag(&room.relay_key, &p[..ADDR_LEN - RELAY_TAG_LEN]);
+    p[ADDR_LEN - RELAY_TAG_LEN..].copy_from_slice(&tag);
+    p
+}
+
+/// O relay le a sala de um pedido de endereco (a etiqueta verifica-se depois, com a chave da sala).
+pub fn addr_request_room(p: &[u8]) -> Option<[u8; ROOM_ID_LEN]> {
+    if p.len() != ADDR_LEN || p[0] != ADDR_KIND || p[1 + ROOM_ID_LEN + 8..ADDR_LEN - RELAY_TAG_LEN].iter().any(|x| *x != 0) {
+        return None;
+    }
+    p[1..1 + ROOM_ID_LEN].try_into().ok()
+}
+
+/// O relay responde com o endereco de onde veio o pedido. `None`: pedido invalido.
+pub fn addr_ok(relay_key: &[u8; 32], request: &[u8], seen: &SocketAddr) -> Option<[u8; ADDR_OK_LEN]> {
+    addr_request_room(request)?;
+    if !relay_tag_valid(relay_key, request) {
+        return None;
+    }
+    let mut p = [0u8; ADDR_OK_LEN];
+    p[0] = ADDR_OK_KIND;
+    p[1..1 + ROOM_ID_LEN + 8].copy_from_slice(&request[1..1 + ROOM_ID_LEN + 8]);
+    p[1 + ROOM_ID_LEN + 8..1 + ROOM_ID_LEN + 8 + ADDR_BYTES].copy_from_slice(&encode_addr(seen));
+    let tag = relay_tag(relay_key, &p[..ADDR_OK_LEN - RELAY_TAG_LEN]);
+    p[ADDR_OK_LEN - RELAY_TAG_LEN..].copy_from_slice(&tag);
+    Some(p)
+}
+
+/// O telemovel le a resposta: `(txid, o meu endereco visto pelo relay)`.
+pub fn parse_addr_ok(room: &RoomKeys, p: &[u8]) -> Option<(u64, SocketAddr)> {
+    if p.len() != ADDR_OK_LEN || p[0] != ADDR_OK_KIND || p[1..1 + ROOM_ID_LEN] != room.room_id {
+        return None;
+    }
+    if !relay_tag_valid(&room.relay_key, p) {
+        return None;
+    }
+    let txid = u64::from_be_bytes(p[1 + ROOM_ID_LEN..1 + ROOM_ID_LEN + 8].try_into().ok()?);
+    let addr = decode_addr(&p[1 + ROOM_ID_LEN + 8..1 + ROOM_ID_LEN + 8 + ADDR_BYTES])?;
+    Some((txid, addr))
+}
+
+/// Sonda ou resposta do caminho direto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Probe {
+    /// "Chegas-me por aqui?" (responder com `Ack` e o mesmo txid, para quem a enviou).
+    Ping(u64),
+    /// Resposta a uma sonda minha: o caminho funciona nos dois sentidos.
+    Ack(u64),
+}
+
+/// Chaves das sondas do caminho direto de UMA chamada (so existem depois de atender).
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
+pub struct PathKeys {
+    room_id: [u8; ROOM_ID_LEN],
+    p2p_key: [u8; 32],
+    #[zeroize(skip)]
+    role: Role,
+}
+
+impl PathKeys {
+    pub fn probe(&self, p: Probe) -> [u8; PROBE_LEN] {
+        let (kind, txid) = match p {
+            Probe::Ping(t) => (PROBE_KIND, t),
+            Probe::Ack(t) => (PROBE_ACK_KIND, t),
+        };
+        let mut out = [0u8; PROBE_LEN];
+        out[0] = kind | self.role.bit();
+        out[1..1 + ROOM_ID_LEN].copy_from_slice(&self.room_id);
+        out[1 + ROOM_ID_LEN..1 + ROOM_ID_LEN + 8].copy_from_slice(&txid.to_be_bytes());
+        let tag = relay_tag(&self.p2p_key, &out[..PROBE_LEN - RELAY_TAG_LEN]);
+        out[PROBE_LEN - RELAY_TAG_LEN..].copy_from_slice(&tag);
+        out
+    }
+
+    /// Le uma sonda do OUTRO lado (uma minha devolvida e recusada). Comparacao em tempo constante.
+    pub fn parse(&self, p: &[u8]) -> Option<Probe> {
+        if p.len() != PROBE_LEN || p[1..1 + ROOM_ID_LEN] != self.room_id {
+            return None;
+        }
+        let other = self.role.other().bit();
+        let is_ping = p[0] == PROBE_KIND | other;
+        if !is_ping && p[0] != PROBE_ACK_KIND | other {
+            return None;
+        }
+        if !relay_tag_valid(&self.p2p_key, p) {
+            return None;
+        }
+        let txid = u64::from_be_bytes(p[1 + ROOM_ID_LEN..1 + ROOM_ID_LEN + 8].try_into().ok()?);
+        Some(if is_ping { Probe::Ping(txid) } else { Probe::Ack(txid) })
+    }
+}
+
+/// E uma sonda (de qualquer lado)? Barato, sem chaves: so para separar do audio.
+pub fn is_probe(p: &[u8]) -> bool {
+    p.len() == PROBE_LEN && matches!(p[0] & !1, PROBE_KIND | PROBE_ACK_KIND)
+}
+
 /// Janela anti-repeticao (RFC 6479, como no WireGuard): `top` e o proximo contador
 /// "novo"; os bits guardam quais dos ultimos `REPLAY_WINDOW` ja chegaram.
 #[derive(Clone)]
@@ -348,6 +521,11 @@ impl MediaSession {
 
     pub fn relay_key(&self) -> [u8; 32] {
         self.keys.relay_key
+    }
+
+    /// Chaves das sondas do caminho direto (para o motor; nunca saem do Rust).
+    pub fn path_keys(&self) -> PathKeys {
+        PathKeys { room_id: self.keys.room_id, p2p_key: self.keys.p2p_key, role: self.keys.role }
     }
 
     /// Maior frame de audio que cabe num pacote.
@@ -471,6 +649,28 @@ mod tests {
     }
 
     #[test]
+    fn copia_atrasada_pelo_relay_cabe_na_janela() {
+        // Direto: chegam 0..=70 menos o 3 e o 7 (perdidos). Pelo relay chegam depois as
+        // copias de todos: as do 3 e do 7 (8 e 64 pacotes atras) sao aceites; o resto e
+        // repetido.
+        let (mut a, mut b) = pair(64);
+        let ps: Vec<_> = (0..71).map(|_| a.seal(b"x").unwrap()).collect();
+        for (i, p) in ps.iter().enumerate().take(11) {
+            if i != 3 && i != 7 {
+                b.open(p).unwrap();
+            }
+        }
+        assert_eq!(b.open(&ps[3]).unwrap().0, 3, "8 pacotes atras");
+        for p in &ps[11..71] {
+            b.open(p).unwrap();
+        }
+        assert_eq!(b.open(&ps[7]).unwrap().0, 7, "64 pacotes atras");
+        for p in &ps[..71] {
+            assert_eq!(b.open(p), Err(CallError::Replay), "a segunda copia e sempre recusada");
+        }
+    }
+
+    #[test]
     fn muito_antigo_recusado() {
         let (mut a, mut b) = pair(64);
         let old = a.seal(b"velho").unwrap();
@@ -545,6 +745,75 @@ mod tests {
         let other = RoomKeys::derive(&[2; 32], &[3; 16]);
         assert_eq!(parse_join_ok(&other, &ok), None);
         assert!(JOIN_OK_LEN < 1 + 32 + JOIN_PAYLOAD_LEN + 16, "resposta menor que o pedido");
+    }
+
+    #[test]
+    fn enderecos_ida_e_volta() {
+        for a in ["1.2.3.4:443", "[2001:db8::7]:50000", "192.168.1.10:9"] {
+            let a: SocketAddr = a.parse().unwrap();
+            assert_eq!(decode_addr(&encode_addr(&a)), Some(a));
+        }
+        // IPv4 dentro de IPv6 (socket dual) sai como IPv4.
+        let m: SocketAddr = "[::ffff:1.2.3.4]:5".parse().unwrap();
+        assert_eq!(decode_addr(&encode_addr(&m)), Some("1.2.3.4:5".parse().unwrap()));
+        let mut b = encode_addr(&"1.2.3.4:5".parse().unwrap());
+        b[9] = 1;
+        assert_eq!(decode_addr(&b), None, "IPv4 com lixo");
+        let mut b = encode_addr(&"1.2.3.4:5".parse().unwrap());
+        b[17] = 0;
+        b[18] = 0;
+        assert_eq!(decode_addr(&b), None, "porta 0");
+        b[0] = 5;
+        assert_eq!(decode_addr(&b), None);
+    }
+
+    #[test]
+    fn endereco_visto_pelo_relay() {
+        let r = RoomKeys::derive(&[1; 32], &[3; 16]);
+        let req = addr_request(&r, 77);
+        assert_eq!(addr_request_room(&req), Some(r.room_id));
+        let seen: SocketAddr = "[2001:db8::1]:40000".parse().unwrap();
+        let ok = addr_ok(&r.relay_key, &req, &seen).unwrap();
+        assert!(ok.len() < req.len(), "resposta menor que o pedido");
+        assert_eq!(parse_addr_ok(&r, &ok), Some((77, seen)));
+        // Etiqueta errada (quem nao conhece a sala): o relay nao responde.
+        assert!(addr_ok(&[9u8; 32], &req, &seen).is_none());
+        let mut bad = req;
+        bad[20] = 1;
+        assert!(addr_request_room(&bad).is_none());
+        // Resposta adulterada ou de outra sala: recusada.
+        let mut t = ok;
+        t[20] ^= 1;
+        assert!(parse_addr_ok(&r, &t).is_none());
+        assert!(parse_addr_ok(&RoomKeys::derive(&[2; 32], &[3; 16]), &ok).is_none());
+    }
+
+    #[test]
+    fn sondas_do_caminho_direto() {
+        let (a, b) = pair(64);
+        let (pa, pb) = (a.path_keys(), b.path_keys());
+        let ping = pa.probe(Probe::Ping(5));
+        assert!(is_probe(&ping) && !is_probe(&ping[1..]));
+        assert_eq!(pb.parse(&ping), Some(Probe::Ping(5)));
+        let ack = pb.probe(Probe::Ack(5));
+        assert_eq!(pa.parse(&ack), Some(Probe::Ack(5)));
+        // Uma sonda minha devolvida (refletida) nao conta.
+        assert_eq!(pa.parse(&ping), None);
+        // Adulterada ou de outra chamada: recusada.
+        let mut t = ping;
+        t[12] ^= 1;
+        assert_eq!(pb.parse(&t), None);
+        let mut c = MediaSession::new(CallKeys::derive(&[1; 32], &[8; 32], &[3; 16], Role::Callee), 64).unwrap();
+        assert_eq!(c.path_keys().parse(&ping), None, "mesma sala, outra resposta: outra p2p_key");
+        // O relay conhece a relay_key, nao a p2p_key: nao consegue forjar sondas.
+        let r = RoomKeys::derive(&[1; 32], &[3; 16]);
+        let mut forged = ping;
+        let tag = relay_tag(&r.relay_key, &forged[..PROBE_LEN - RELAY_TAG_LEN]);
+        forged[PROBE_LEN - RELAY_TAG_LEN..].copy_from_slice(&tag);
+        assert_eq!(pb.parse(&forged), None);
+        // Nao se confundem com audio.
+        assert!(parse_header(&ping).is_none());
+        let _ = c.seal(b"x");
     }
 
     #[test]

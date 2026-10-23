@@ -20,6 +20,8 @@ qt_transport = { path = "../transport" }
 # (os modelos vem dentro do pacote). Versao fixa: o DRED ainda muda entre versoes.
 opusic-sys = { version = "=0.7.5", features = ["dred"] }
 tokio = { version = "1", features = ["rt", "net", "time", "sync", "macros"] }
+# Socket UDP dual (IPv6 + IPv4) para a ligacao direta (o tokio ja usa esta versao).
+socket2 = "0.6"
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"], optional = true }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
 futures-util = { version = "0.3", optional = true }

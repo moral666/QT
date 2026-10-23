@@ -13,6 +13,10 @@
 //!     do que o ultimo visto, vindo de outro endereco, muda o endereco desse lado (como
 //!     no WireGuard). Um pacote antigo repetido de outro sitio nao desvia nada.
 //!   * Nada decifra o audio. Sem registos com IPs: so contagens por minuto.
+//!   * LIGACAO DIRETA (fase 5): quem ja esta numa sala pode perguntar "que endereco
+//!     ves?" (`addr_request`, com a etiqueta da sala). O relay responde com o IP e a
+//!     porta de onde veio o pedido, em menos bytes. Sem sala ou sem etiqueta valida, nada.
+//!     O relay ja via esse IP: nao fica a saber mais nada.
 //!
 //! LIMITES (para nao servir de tunel gratis): 2 lados por sala; a sala fecha se o
 //! segundo nao entrar em 60 s ou ao fim de 30 s sem pacotes; salas por IP e no total;
@@ -28,8 +32,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use qt_core::call::{
-    join_ok, parse_header, parse_join_payload, relay_tag_valid, Role, JOIN_KIND, JOIN_PAYLOAD_LEN,
-    JOIN_PROLOGUE, MAX_PAD, MEDIA_OVERHEAD, ROOM_ID_LEN,
+    addr_ok, addr_request_room, join_ok, parse_header, parse_join_payload, relay_tag_valid, Role, ADDR_KIND,
+    ADDR_LEN, JOIN_KIND, JOIN_PAYLOAD_LEN, JOIN_PROLOGUE, MAX_PAD, MEDIA_OVERHEAD, ROOM_ID_LEN,
 };
 use zeroize::Zeroizing;
 
@@ -80,6 +84,8 @@ pub struct CallStats {
     pub forwarded: AtomicU64,
     pub dropped: AtomicU64,
     pub roamed: AtomicU64,
+    /// Respostas "que endereco ves?" (ligacao direta).
+    pub addr_answered: AtomicU64,
 }
 
 struct Slot {
@@ -134,6 +140,7 @@ impl CallRelay {
     pub fn handle(&mut self, data: &[u8], from: Endpoint, ip: IpAddr, now: Instant) -> Vec<(Endpoint, Vec<u8>)> {
         let out = match data.first() {
             Some(&JOIN_KIND) if data.len() == JOIN_LEN => self.on_join(data, from, ip, now),
+            Some(&ADDR_KIND) if data.len() == ADDR_LEN => self.on_addr(data, from, ip, now),
             Some(_) if data.len() <= MAX_PACKET => self.on_media(data, from, now),
             _ => Vec::new(),
         };
@@ -202,6 +209,24 @@ impl CallRelay {
             out.push((ep, join_ok(&keys, true).to_vec()));
         }
         out
+    }
+
+    /// "Que endereco ves?": so por UDP (pela ligacao WebSocket nao ha endereco util), so
+    /// para salas abertas e com a etiqueta da sala; conta para o limite de pedidos por IP.
+    fn on_addr(&mut self, data: &[u8], from: Endpoint, ip: IpAddr, now: Instant) -> Vec<(Endpoint, Vec<u8>)> {
+        let Endpoint::Udp(seen) = from else { return Vec::new() };
+        let Some(room_id) = addr_request_room(data) else { return Vec::new() };
+        if !self.rooms.contains_key(&room_id) || !self.join_allowed(ip, now) {
+            return Vec::new();
+        }
+        let room = self.rooms.get(&room_id).expect("sala acabada de ver");
+        match addr_ok(&room.relay_key, data, &seen) {
+            Some(ok) => {
+                self.stats.addr_answered.fetch_add(1, Relaxed);
+                vec![(from, ok.to_vec())]
+            }
+            None => Vec::new(),
+        }
     }
 
     fn on_media(&mut self, data: &[u8], from: Endpoint, now: Instant) -> Vec<(Endpoint, Vec<u8>)> {
@@ -438,11 +463,12 @@ pub fn take_line(stats: &CallStats) -> Option<String> {
         stats.forwarded.swap(0, Relaxed),
         stats.dropped.swap(0, Relaxed),
         stats.roamed.swap(0, Relaxed),
+        stats.addr_answered.swap(0, Relaxed),
     ];
     (v.iter().any(|x| *x > 0)).then(|| {
         format!(
-            "chamadas: entradas={} recusadas={} salas_novas={} pacotes={} descartados={} mudancas_de_ip={}",
-            v[0], v[1], v[2], v[3], v[4], v[5]
+            "chamadas: entradas={} recusadas={} salas_novas={} pacotes={} descartados={} mudancas_de_ip={} enderecos={}",
+            v[0], v[1], v[2], v[3], v[4], v[5], v[6]
         )
     })
 }
@@ -624,6 +650,31 @@ mod tests {
         let p = join(&pk, &a);
         let out = r.handle(&p, ep(1), ip(), Instant::now());
         assert!(out[0].1.len() < p.len());
+    }
+
+    #[test]
+    fn endereco_visto_so_para_salas_abertas() {
+        use qt_core::call::{addr_request, parse_addr_ok};
+        let (mut r, pk) = setup(CallLimits::default());
+        let (a, _) = sides(1);
+        let t = Instant::now();
+        let req = addr_request(&a.room, 9);
+        // Sem sala: nada (o relay nao serve de STUN publico).
+        assert!(r.handle(&req, ep(1), ip(), t).is_empty());
+        r.handle(&join(&pk, &a), ep(1), ip(), t);
+        let out = r.handle(&req, ep(5), ip(), t);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].1.len() < req.len(), "resposta menor que o pedido");
+        let Endpoint::Udp(seen) = ep(5) else { unreachable!() };
+        assert_eq!((out[0].0, parse_addr_ok(&a.room, &out[0].1)), (ep(5), Some((9, seen))));
+        // Etiqueta de outra sala ou pela ligacao WebSocket: nada.
+        let (c, _) = sides(2);
+        let mut forged = addr_request(&c.room, 9);
+        forged[1..9].copy_from_slice(&a.room.room_id);
+        assert!(r.handle(&forged, ep(5), ip(), t).is_empty());
+        assert!(r.handle(&req, Endpoint::Ws(1), ip(), t).is_empty());
+        // Nao muda o endereco do lado na sala (nao e audio).
+        assert_eq!(r.rooms[&a.room.room_id].slots[0].as_ref().map(|s| s.ep), Some(ep(1)));
     }
 
     #[test]

@@ -115,6 +115,7 @@
     <string name="t_foto_de_perfil">Foto del profilo</string>
     <string name="t_notificacoes">Notifiche</string>
     <string name="t_confirmacoes_de_leitura">Conferme di lettura</string>
+    <string name="t_chamadas_sempre_pelo_servidor">Chiamate sempre tramite il server</string>
     <string name="t_mostrar_quando_estou_online">Mostra quando sono online</string>
     <string name="t_bloqueio_da_app">Blocco dell\'app</string>
     <string name="t_bloquear_agora">Blocca ora</string>

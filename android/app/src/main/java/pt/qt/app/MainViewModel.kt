@@ -73,6 +73,8 @@ data class UiState(
     val readReceipts: Boolean = true,
     /** Notificacoes com a app fechada (interruptor "Notificações"). */
     val pushOn: Boolean = true,
+    /** "Chamadas sempre pelo servidor": nunca ligar direto ao outro telemovel (guardado no Rust). */
+    val callsRelayOnly: Boolean = false,
     /** Ja se pediu a permissao de notificacoes (Android 13+) uma vez. */
     val pushAsked: Boolean = false,
     /** Safety number a mostrar (nome + 60 digitos), ou null. */
@@ -314,6 +316,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val blocked = client.blockedContacts().toSet()
         val invites = client.pendingIntros().toSet()
         val recoveryOn = has && client.recoveryEnabled()
+        val relayOnly = runCatching { client.callsRelayOnly() }.getOrDefault(false)
         _ui.update {
             it.copy(
                 loading = false, hasIdentity = has, relayUrl = url, relayKeyHex = pin,
@@ -322,6 +325,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 conversations = conversations,
                 readReceipts = prefs.getBoolean("read_receipts", true),
                 pushOn = Push.isOn(getApplication()),
+                callsRelayOnly = relayOnly,
                 pushAsked = prefs.getBoolean("push_asked", false),
                 fullScreenAsked = prefs.getBoolean("full_screen_asked", false),
                 locked = false, unlocking = false, lockMessage = null,
@@ -1654,6 +1658,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** "Chamadas sempre pelo servidor". Ligada a meio de uma chamada, o audio volta logo ao servidor. */
+    fun setCallsRelayOnly(on: Boolean) = io {
+        val client = qt ?: return@io
+        client.setCallsRelayOnly(on)
+        _ui.update { it.copy(callsRelayOnly = on) }
+    }
+
     fun setReadReceipts(on: Boolean) {
         prefs.edit().putBoolean("read_receipts", on).apply()
         _ui.update { it.copy(readReceipts = on) }
@@ -2433,7 +2444,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 try {
                     handleCallEvents(client)
                     callAudio?.stats()?.let { st ->
-                        val net = if (st.transport == "udp") "UDP" else if (st.transport == "websocket") "WebSocket" else st.transport
+                        val via = if (st.transport == "udp") "UDP" else if (st.transport == "websocket") "WebSocket" else st.transport
+                        val net = if (st.direct) "direto" + (if (st.bothPaths) " + servidor" else "") else via
                         val rtt = st.relayRttMs?.let { " · ${it} ms ao servidor" } ?: ""
                         val lost = if (st.lost > 0uL) " · ${st.lost} perdidos na rede (${st.dredFrames} recuperados)" else ""
                         val late = if (st.late > 0uL) " · ${st.late} atrasados" else ""
