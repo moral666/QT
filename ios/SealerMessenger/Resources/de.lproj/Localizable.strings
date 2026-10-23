@@ -6,7 +6,9 @@
 "badge_dev" = "Dev";
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
+"call_banner_back" = "Tippen, um zum Anruf zurückzukehren";
 "call_mic_lost" = "Das Mikrofon funktioniert nicht mehr (vielleicht nutzt es eine andere App). Die andere Person hört dich nicht mehr.";
+"call_minimize" = "Minimieren";
 "confirm_word" = "LÖSCHEN";
 "confirm_word_alt" = "";
 "contacts_unreadable_new" = "Neue Liste beginnen";
@@ -39,6 +41,11 @@
 "lang_report_body" = "Bildschirm mit dem Fehler:\nAktueller Text:\nSo sollte es heißen:\n";
 "lang_report_no_app" = "Keine E-Mail-App gefunden. Schreib an %1$@.";
 "lang_system" = "Sprache des Handys";
+"link_open_title" = "Diesen Link öffnen?";
+"link_open_warn" = "Du verlässt SEALER und öffnest diese Website. Prüfe den Namen der Website: Gefälschte Links ahmen bekannte Namen nach.";
+"msg_copied" = "Kopiert";
+"msg_copy" = "Nachricht kopieren";
+"msg_copy_link" = "Link kopieren";
 "photo_invalid" = "Dieses Bild kann nicht als Profilfoto verwendet werden.";
 "photo_preview_note" = "Danach kannst du dein Foto erst in 72 Stunden wieder ändern.";
 "photo_updated" = "Foto aktualisiert";
@@ -65,6 +72,8 @@
 "recovery_check" = "Wort Nr. %1$@";
 "recovery_check_intro" = "Bestätige, dass du sie notiert hast:";
 "recovery_check_wrong" = "Das ist es nicht. Sieh dir die Wörter noch einmal an.";
+"recovery_copied" = "Wörter kopiert. Füge sie nur in einen Passwortmanager ein, nie in Notizen oder Nachrichten. Die Zwischenablage wird in 1 Minute geleert.";
+"recovery_copy" = "Wörter kopieren";
 "recovery_disable" = "Ausschalten";
 "recovery_disable_confirm" = "Die Kopie wird vom Server gelöscht und die Wörter funktionieren nicht mehr.";
 "recovery_done" = "Fertig";

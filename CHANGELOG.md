@@ -6,6 +6,25 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 23 de outubro de 2026: pedidos dos testers (apps 0.9.29)
+
+- Chamadas: o "tuu... tuu" de quem liga começa logo ao ligar (antes só com o aviso "a tocar" do outro
+  telemóvel, que não chega com o bloqueio da app ligado nem sem rede) e mais alto (Android; o iPhone já
+  fazia assim).
+- Chamadas: minimizar (seta no ecrã da chamada ou "voltar" no Android). A app fica usável e uma barra verde
+  no topo, com o nome e o tempo, volta à chamada. A chamada a chegar nunca fica escondida.
+- Chave de recuperação: botão "Copiar as palavras". A cópia vai marcada como sensível e a área de
+  transferência é limpa ao fim de 1 minuto (iPhone: só neste aparelho, sem a área partilhada com o Mac).
+- Links nas mensagens: clicáveis, com confirmação que mostra o nome do site antes de sair da app. Só
+  `http(s)://` e `www.`. Sem pré-visualização (fica para depois). O toque longo numa mensagem de texto tem
+  "Copiar mensagem" e "Copiar link", também com o contacto bloqueado ou fora do grupo (aí sem reações).
+- Badges e fotos depois de recuperar a conta: quem recebe uma sessão nova de um contacto esquece o que lhe
+  tinha enviado (`badge:sent:`, `profile:sent:`), e a foto e o badge voltam a seguir (antes o contacto que
+  reinstalou ficava sem ver os badges dos outros). Teste `depois_de_recuperar_os_contactos_voltam_a_mandar_o_badge_e_a_foto`.
+  Só resulta quando os contactos também tiverem a 0.9.29.
+- Cópia de recuperação refeita quando o meu badge chega ou muda (antes só com mudanças nos contactos ou
+  bloqueados, e o badge podia ficar fora da cópia).
+
 ### 23 de outubro de 2026: árabe e correções dos revisores nativos (apps 0.9.25 e site)
 
 - Apps e site em árabe (`values-ar`, `ar.lproj`, `site/src/i18n/ar.js`): árabe padrão, neutro sempre que

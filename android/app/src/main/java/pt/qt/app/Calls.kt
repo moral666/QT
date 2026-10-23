@@ -281,7 +281,8 @@ class CallSounds(private val ctx: Context) {
     fun ringback() {
         stop()
         runCatching {
-            tone = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 60).apply { startTone(ToneGenerator.TONE_SUP_RINGTONE) }
+            // Volume 90 (antes 60, mal se ouvia nos Galaxy).
+            tone = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 90).apply { startTone(ToneGenerator.TONE_SUP_RINGTONE) }
         }
     }
 

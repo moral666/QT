@@ -393,4 +393,13 @@
     <string name="lang_report_body">出错的界面：\n当前文字：\n正确写法：\n</string>
     <string name="lang_report_no_app">没有邮件应用。请发送邮件至%1$s。</string>
     <string name="confirm_word_alt"></string>
+    <string name="call_minimize">最小化</string>
+    <string name="call_banner_back">点击返回通话</string>
+    <string name="recovery_copy">复制单词</string>
+    <string name="recovery_copied">单词已复制。只粘贴到密码管理器中，不要粘贴到笔记或消息里。剪贴板将在 1 分钟后清空。</string>
+    <string name="msg_copy">复制消息</string>
+    <string name="msg_copy_link">复制链接</string>
+    <string name="msg_copied">已复制</string>
+    <string name="link_open_title">打开这个链接？</string>
+    <string name="link_open_warn">你将离开 SEALER 并打开这个网站。请核对网站名称：虚假链接会模仿知名网站的名称。</string>
 </resources>

@@ -6,7 +6,9 @@
 "badge_dev" = "Dev";
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
+"call_banner_back" = "Touche pour revenir à l'appel";
 "call_mic_lost" = "Le micro ne fonctionne plus (une autre app l'utilise peut-être). Votre correspondant ne vous entend plus.";
+"call_minimize" = "Réduire";
 "confirm_word" = "SUPPRIMER";
 "confirm_word_alt" = "";
 "contacts_unreadable_new" = "Nouvelle liste";
@@ -39,6 +41,11 @@
 "lang_report_body" = "Écran où se trouve l'erreur :\nTexte actuel :\nCe qu'il devrait dire :\n";
 "lang_report_no_app" = "Aucune app d'e-mail. Écris à %1$@.";
 "lang_system" = "Langue du téléphone";
+"link_open_title" = "Ouvrir ce lien ?";
+"link_open_warn" = "Tu vas quitter SEALER pour ce site. Vérifie le nom du site : les faux liens imitent des noms connus.";
+"msg_copied" = "Copié";
+"msg_copy" = "Copier le message";
+"msg_copy_link" = "Copier le lien";
 "photo_invalid" = "Cette image ne peut pas servir de photo de profil.";
 "photo_preview_note" = "Une fois appliquée, tu ne pourras changer ta photo qu'après 72 heures.";
 "photo_updated" = "Photo mise à jour";
@@ -65,6 +72,8 @@
 "recovery_check" = "Mot n° %1$@";
 "recovery_check_intro" = "Confirme que tu les as notés :";
 "recovery_check_wrong" = "Ce n'est pas celui-là. Regarde à nouveau les mots.";
+"recovery_copied" = "Mots copiés. Colle-les uniquement dans un gestionnaire de mots de passe, jamais dans des notes ou des messages. Le presse-papiers sera vidé dans 1 minute.";
+"recovery_copy" = "Copier les mots";
 "recovery_disable" = "Désactiver";
 "recovery_disable_confirm" = "La copie est supprimée du serveur et les mots ne fonctionnent plus.";
 "recovery_done" = "Terminé";

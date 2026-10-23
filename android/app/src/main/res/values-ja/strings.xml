@@ -393,4 +393,13 @@
     <string name="lang_report_body">誤りがある画面：\n現在の文：\n正しい文：\n</string>
     <string name="lang_report_no_app">メールアプリがありません。%1$s までご連絡ください。</string>
     <string name="confirm_word_alt">さくじょ</string>
+    <string name="call_minimize">最小化</string>
+    <string name="call_banner_back">タップして通話に戻る</string>
+    <string name="recovery_copy">単語をコピー</string>
+    <string name="recovery_copied">単語をコピーしました。パスワード管理アプリにだけ貼り付けてください。メモやメッセージには貼り付けないでください。クリップボードは1分後に消去されます。</string>
+    <string name="msg_copy">メッセージをコピー</string>
+    <string name="msg_copy_link">リンクをコピー</string>
+    <string name="msg_copied">コピーしました</string>
+    <string name="link_open_title">このリンクを開きますか？</string>
+    <string name="link_open_warn">SEALERを離れてこのサイトを開きます。サイト名を確認してください。偽のリンクは有名な名前をまねています。</string>
 </resources>

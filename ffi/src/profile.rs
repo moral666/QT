@@ -144,6 +144,13 @@ pub(crate) fn on_profile(c: &st::rusqlite::Connection, cid: &str, body: &[u8]) -
     }
 }
 
+/// Sessao nova com `cid`: ja nao tem a minha foto. O proximo `profile_photo_sync` manda-a outra
+/// vez (0.9.29).
+pub(crate) fn forget_sent(c: &st::rusqlite::Connection, cid: &str) -> Result<(), QtError> {
+    st::kv_delete(c, &format!("{KV_SENT}{cid}"))?;
+    Ok(())
+}
+
 /// Ao apagar um contacto: esquece a foto dele e o que lhe enviei.
 pub(crate) fn forget_contact(c: &st::rusqlite::Connection, cid: &str) -> Result<(), QtError> {
     st::kv_delete(c, &format!("{KV_PHOTO}{cid}"))?;

@@ -395,4 +395,13 @@
     <string name="lang_report_body">Screen with the error:\nCurrent text:\nWhat it should say:\n</string>
     <string name="lang_report_no_app">No email app found. Write to %1$s.</string>
     <string name="confirm_word_alt"></string>
+    <string name="call_minimize">Minimize</string>
+    <string name="call_banner_back">Tap to return to the call</string>
+    <string name="recovery_copy">Copy the words</string>
+    <string name="recovery_copied">Words copied. Paste them only into a password manager, never into notes or messages. The clipboard is cleared in 1 minute.</string>
+    <string name="msg_copy">Copy message</string>
+    <string name="msg_copy_link">Copy link</string>
+    <string name="msg_copied">Copied</string>
+    <string name="link_open_title">Open this link?</string>
+    <string name="link_open_warn">You are leaving SEALER for this site. Check the site name: fake links imitate well-known names.</string>
 </resources>

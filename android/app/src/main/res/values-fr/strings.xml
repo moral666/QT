@@ -395,4 +395,13 @@
     <string name="lang_report_body">Écran où se trouve l\'erreur :\nTexte actuel :\nCe qu\'il devrait dire :\n</string>
     <string name="lang_report_no_app">Aucune app d\'e-mail. Écris à %1$s.</string>
     <string name="confirm_word_alt"></string>
+    <string name="call_minimize">Réduire</string>
+    <string name="call_banner_back">Touche pour revenir à l\'appel</string>
+    <string name="recovery_copy">Copier les mots</string>
+    <string name="recovery_copied">Mots copiés. Colle-les uniquement dans un gestionnaire de mots de passe, jamais dans des notes ou des messages. Le presse-papiers sera vidé dans 1 minute.</string>
+    <string name="msg_copy">Copier le message</string>
+    <string name="msg_copy_link">Copier le lien</string>
+    <string name="msg_copied">Copié</string>
+    <string name="link_open_title">Ouvrir ce lien ?</string>
+    <string name="link_open_warn">Tu vas quitter SEALER pour ce site. Vérifie le nom du site : les faux liens imitent des noms connus.</string>
 </resources>

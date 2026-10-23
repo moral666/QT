@@ -393,4 +393,13 @@
     <string name="lang_report_body">जिस स्क्रीन पर गलती है:\nअभी का टेक्स्ट:\nसही टेक्स्ट क्या होना चाहिए:\n</string>
     <string name="lang_report_no_app">कोई ईमेल ऐप नहीं मिला। %1$s पर लिखें।</string>
     <string name="confirm_word_alt">हटायें,हटाये,हटाए,DELETE</string>
+    <string name="call_minimize">छोटा करें</string>
+    <string name="call_banner_back">कॉल पर लौटने के लिए टैप करें</string>
+    <string name="recovery_copy">शब्द कॉपी करें</string>
+    <string name="recovery_copied">शब्द कॉपी हो गए। इन्हें केवल पासवर्ड मैनेजर में पेस्ट करें, नोट्स या मैसेज में कभी नहीं। 1 मिनट बाद क्लिपबोर्ड साफ़ कर दिया जाएगा।</string>
+    <string name="msg_copy">मैसेज कॉपी करें</string>
+    <string name="msg_copy_link">लिंक कॉपी करें</string>
+    <string name="msg_copied">कॉपी हो गया</string>
+    <string name="link_open_title">क्या यह लिंक खोलें?</string>
+    <string name="link_open_warn">आप SEALER से निकलकर इस साइट पर जा रहे हैं। साइट का नाम जाँच लें: नकली लिंक जाने-माने नामों की नकल करते हैं।</string>
 </resources>

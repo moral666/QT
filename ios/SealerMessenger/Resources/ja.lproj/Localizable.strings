@@ -6,7 +6,9 @@
 "badge_dev" = "Dev";
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
+"call_banner_back" = "タップして通話に戻る";
 "call_mic_lost" = "マイクが使えなくなりました（ほかのアプリが使用している可能性があります）。相手にはあなたの声が聞こえていません。";
+"call_minimize" = "最小化";
 "confirm_word" = "削除";
 "confirm_word_alt" = "さくじょ";
 "contacts_unreadable_new" = "新しいリストを始める";
@@ -39,6 +41,11 @@
 "lang_report_body" = "誤りがある画面：\n現在の文：\n正しい文：\n";
 "lang_report_no_app" = "メールアプリがありません。%1$@ までご連絡ください。";
 "lang_system" = "スマートフォンの言語";
+"link_open_title" = "このリンクを開きますか？";
+"link_open_warn" = "SEALERを離れてこのサイトを開きます。サイト名を確認してください。偽のリンクは有名な名前をまねています。";
+"msg_copied" = "コピーしました";
+"msg_copy" = "メッセージをコピー";
+"msg_copy_link" = "リンクをコピー";
 "photo_invalid" = "その画像はプロフィール写真に使えません。";
 "photo_preview_note" = "適用すると、次に写真を変更できるのは72時間後です。";
 "photo_updated" = "写真を更新しました";
@@ -65,6 +72,8 @@
 "recovery_check" = "%1$@番目の単語";
 "recovery_check_intro" = "書き留めたことを確認してください：";
 "recovery_check_wrong" = "正しくありません。単語をもう一度確認してください。";
+"recovery_copied" = "単語をコピーしました。パスワード管理アプリにだけ貼り付けてください。メモやメッセージには貼り付けないでください。クリップボードは1分後に消去されます。";
+"recovery_copy" = "単語をコピー";
 "recovery_disable" = "オフにする";
 "recovery_disable_confirm" = "コピーはサーバーから削除され、単語は使えなくなります。";
 "recovery_done" = "完了";

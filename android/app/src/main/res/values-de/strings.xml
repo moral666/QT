@@ -395,4 +395,13 @@
     <string name="lang_report_body">Bildschirm mit dem Fehler:\nAktueller Text:\nSo sollte es heißen:\n</string>
     <string name="lang_report_no_app">Keine E-Mail-App gefunden. Schreib an %1$s.</string>
     <string name="confirm_word_alt"></string>
+    <string name="call_minimize">Minimieren</string>
+    <string name="call_banner_back">Tippen, um zum Anruf zurückzukehren</string>
+    <string name="recovery_copy">Wörter kopieren</string>
+    <string name="recovery_copied">Wörter kopiert. Füge sie nur in einen Passwortmanager ein, nie in Notizen oder Nachrichten. Die Zwischenablage wird in 1 Minute geleert.</string>
+    <string name="msg_copy">Nachricht kopieren</string>
+    <string name="msg_copy_link">Link kopieren</string>
+    <string name="msg_copied">Kopiert</string>
+    <string name="link_open_title">Diesen Link öffnen?</string>
+    <string name="link_open_warn">Du verlässt SEALER und öffnest diese Website. Prüfe den Namen der Website: Gefälschte Links ahmen bekannte Namen nach.</string>
 </resources>

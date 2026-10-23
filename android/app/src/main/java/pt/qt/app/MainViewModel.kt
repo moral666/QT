@@ -955,7 +955,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (b != Badges.NONE) map[c.contactId] = b
             }
             val mine = client.badgeMine().toInt()
-            if (map != _ui.value.badges || mine != _ui.value.myBadge) _ui.update { it.copy(badges = map, myBadge = mine) }
+            val mineChanged = mine != _ui.value.myBadge
+            if (map != _ui.value.badges || mineChanged) _ui.update { it.copy(badges = map, myBadge = mine) }
+            // O meu badge mudou (ou chegou): a copia de recuperacao passa a leva-lo (0.9.29; antes
+            // so se refazia quando mudavam os contactos e o badge podia ficar de fora). O Rust so
+            // envia se a copia mudou.
+            if (mineChanged) scheduleBackup()
         } catch (e: Exception) {
             Log.w(TAG, "badge: ${e.safeMsg()}")
         }
@@ -2449,6 +2454,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val start = client.callStart(contact.contactId)
             _ui.update { it.copy(call = CallUi(start.callId, contact.contactId, contact.nickname, CallPhase.CALLING)) }
             CallControl.hangup = { hangupCall() }
+            // "tuu... tuu" logo ao ligar (como no iPhone). Antes so comecava com o aviso "a tocar"
+            // do outro telemovel, que nao chega com o bloqueio da app ligado nem sem rede (0.9.29).
+            callSounds.ringback()
             flushOutbox()
             startCallAudio(client, start.callId)
             CallService.start(getApplication())
@@ -2616,7 +2624,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 is CallEvent.Ringing -> _ui.update { u ->
                     val c = u.call
                     if (c != null && c.callId == ev.callId && c.phase == CallPhase.CALLING) {
-                        callSounds.ringback()
+                        // O toque ja esta a tocar desde o inicio: so muda o texto para "A tocar".
                         u.copy(call = c.copy(phase = CallPhase.RINGING_OUT))
                     } else u
                 }

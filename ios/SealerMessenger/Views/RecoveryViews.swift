@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 // ============================================================ chave de recuperacao
 
@@ -39,6 +41,7 @@ struct RecoveryScreen: View {
     @State private var justCreated = false
     @State private var confirmNew = false
     @State private var confirmOff = false
+    @State private var copied = false
     @Environment(\.chat) private var c
 
     var body: some View {
@@ -54,6 +57,16 @@ struct RecoveryScreen: View {
                     } else if let words = ui.recoveryWords {
                         Text(s("recovery_write_down")).font(.sBodyMedium)
                         WordGrid(words: words)
+                        // Copiar as 12 palavras com um toque (0.9.29): so neste iPhone (sem a
+                        // area de transferencia partilhada com o Mac) e apagadas ao fim de 1 minuto.
+                        OutlineButton(title: s("recovery_copy")) {
+                            UIPasteboard.general.setItems(
+                                [[UTType.plainText.identifier: words.joined(separator: " ")]],
+                                options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(60)]
+                            )
+                            copied = true
+                        }
+                        if copied { Text(s("recovery_copied")).font(.sBodySmall) }
                         Text(s("recovery_warning")).font(.sBodySmall).foregroundStyle(c.error)
                         PrimaryButton(title: justCreated ? s("recovery_written") : s("recovery_done")) {
                             if justCreated { checking = true } else { onHide() }

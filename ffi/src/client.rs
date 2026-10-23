@@ -933,6 +933,12 @@ impl QtClient {
             // Sessao nova recebida depois de o contacto ter terminado a anterior (tipo 10).
             crate::history::after_new_session(self, &tx, contact_id)?;
         }
+        if new_session {
+            // O contacto comecou do zero (ex.: reinstalou e recuperou a conta com as 12
+            // palavras): a minha foto e o meu badge voltam a seguir no proximo sync.
+            crate::profile::forget_sent(&tx, contact_id)?;
+            crate::badges::forget_sent(&tx, contact_id)?;
+        }
         // Ganchos do chamador (ex.: guardar a mensagem no historico) na MESMA transacao.
         after(&tx, contact_id, &env_id, &plaintext)?;
         tx.commit()?;
