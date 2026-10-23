@@ -1,6 +1,10 @@
 package pt.qt.app
 
+import android.graphics.SurfaceTexture
 import android.os.SystemClock
+import android.view.Surface
+import android.view.TextureView
+import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,9 +23,11 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,10 +35,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,14 +49,26 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
+import uniffi.qt_ffi.VideoPause
+import uniffi.qt_ffi.VideoResponse
 
 private val GREEN = Color(0xFF2E9E5B)
 private val RED = Color(0xFFD64545)
+private val SCRIM = Color(0x99000000)
 
-/** Ecra de chamada (a chamar, a tocar, a chegar, atendida, terminada). */
+/**
+ * Ecra de chamada (a chamar, a tocar, a chegar, atendida, terminada). Com video (fase 5b): o
+ * video do outro enche o ecra e a minha camara fica num canto; enquanto o outro nao aceita,
+ * a minha camara enche o ecra com "A espera de [Nome]...". FLAG_SECURE: nada deste ecra sai
+ * em capturas, gravacoes do ecra nem na lista de apps recentes.
+ */
 @Composable
 fun CallScreen(
     call: CallUi,
@@ -58,55 +78,200 @@ fun CallScreen(
     onSpeaker: () -> Unit,
     /** Minimizar (volta-se pela barra no topo da app); `null` = sem botao (a chegar, terminada). */
     onMinimize: (() -> Unit)? = null,
+    /** Video (`null` = sem video neste ecra, ex.: por cima do bloqueio do telemovel). */
+    onCamera: (() -> Unit)? = null,
+    onSwitchCamera: () -> Unit = {},
+    onVideoRespond: ((VideoResponse) -> Unit)? = null,
+    onSelfPreview: (SurfaceTexture?) -> Unit = {},
+    onRemoteSurface: (Surface?) -> Unit = {},
 ) {
     val colors = LocalChatColors.current
     val status = callStatusText(call)
+    val activity = LocalContext.current.findActivity()
+    DisposableEffect(activity) {
+        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        onDispose { activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+    }
+    val v = call.video
+    val active = call.phase == CallPhase.ACTIVE
+    val videoAllowed = onCamera != null && active
+    val showRemote = videoAllowed && v.showRemote
+    val showSelf = videoAllowed && v.camera
+    val videoOn = showRemote || showSelf
     Box(
         Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(colors.topBarGradient))
-            .safeDrawingPadding(),
+            .background(if (videoOn) Brush.verticalGradient(listOf(Color.Black, Color.Black)) else Brush.verticalGradient(colors.topBarGradient)),
     ) {
-        if (onMinimize != null) {
-            IconButton(onClick = onMinimize, modifier = Modifier.align(Alignment.TopStart).padding(8.dp)) {
-                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = s(R.string.call_minimize), tint = colors.onTopBar, modifier = Modifier.size(32.dp))
-            }
+        // Camadas do video (por baixo de tudo, ate as bordas do ecra).
+        if (showRemote) RemoteVideo(v, onRemoteSurface, Modifier.fillMaxSize())
+        if (showSelf) {
+            val pip = Modifier
+                .align(Alignment.TopEnd)
+                .safeDrawingPadding()
+                .padding(top = 56.dp, end = 12.dp)
+                .size(108.dp, 160.dp)
+                .clip(RoundedCornerShape(12.dp))
+            SelfVideo(v, onSelfPreview, if (showRemote) pip else Modifier.fillMaxSize())
         }
-        Column(
-            Modifier.fillMaxSize().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Spacer(Modifier.height(48.dp))
-            Avatar(call.name, call.contactId, sizeDp = 112)
-            Spacer(Modifier.height(16.dp))
-            Text(
-                call.name, style = MaterialTheme.typography.headlineMedium, color = colors.onTopBar,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onTopBar.copy(alpha = 0.85f))
-            Spacer(Modifier.height(4.dp))
-            Text(s(R.string.t_cifrada_ponta_a_ponta), style = MaterialTheme.typography.labelSmall, color = colors.onTopBar.copy(alpha = 0.6f))
-            Spacer(Modifier.weight(1f))
-            when (call.phase) {
-                CallPhase.INCOMING -> Row(horizontalArrangement = Arrangement.spacedBy(56.dp)) {
-                    RoundAction(s(R.string.t_recusar), RED, Icons.Filled.Call, hangup = true, onClick = onHangup)
-                    RoundAction(s(R.string.t_atender), GREEN, Icons.Filled.Call, hangup = false, onClick = onAccept)
-                }
-                CallPhase.ENDED -> Spacer(Modifier.height(1.dp))
-                else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        val btn = ButtonDefaults.outlinedButtonColors(contentColor = colors.onTopBar)
-                        OutlinedButton(onClick = onMute, colors = btn) { Text(if (call.muted) s(R.string.t_ligar_o_microfone) else s(R.string.t_silenciar)) }
-                        OutlinedButton(onClick = onSpeaker, colors = btn) { Text(if (call.speaker) s(R.string.t_auricular) else s(R.string.t_altifalante)) }
-                    }
-                    Spacer(Modifier.height(28.dp))
-                    RoundAction(s(R.string.t_desligar), RED, Icons.Filled.Call, hangup = true, onClick = onHangup)
+        Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+            if (onMinimize != null) {
+                IconButton(onClick = onMinimize, modifier = Modifier.align(Alignment.TopStart).padding(8.dp)) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = s(R.string.call_minimize), tint = colors.onTopBar, modifier = Modifier.size(32.dp))
                 }
             }
-            Spacer(Modifier.height(32.dp))
+            Column(
+                Modifier.fillMaxSize().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (videoOn) {
+                    // Com video: so o nome e o tempo, por cima da imagem.
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "${call.name} · $status", style = MaterialTheme.typography.titleMedium, color = Color.White,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(SCRIM).padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                } else {
+                    Spacer(Modifier.height(48.dp))
+                    Avatar(call.name, call.contactId, sizeDp = 112)
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        call.name, style = MaterialTheme.typography.headlineMedium, color = colors.onTopBar,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onTopBar.copy(alpha = 0.85f))
+                    Spacer(Modifier.height(4.dp))
+                    Text(s(R.string.t_cifrada_ponta_a_ponta), style = MaterialTheme.typography.labelSmall, color = colors.onTopBar.copy(alpha = 0.6f))
+                }
+                if (videoAllowed) {
+                    Spacer(Modifier.height(12.dp))
+                    videoMessage(call)?.let { VideoBanner(it) }
+                }
+                Spacer(Modifier.weight(1f))
+                if (videoAllowed && v.request && onVideoRespond != null) {
+                    VideoRequest(call.name, onVideoRespond)
+                    Spacer(Modifier.height(16.dp))
+                }
+                when (call.phase) {
+                    CallPhase.INCOMING -> Row(horizontalArrangement = Arrangement.spacedBy(56.dp)) {
+                        RoundAction(s(R.string.t_recusar), RED, Icons.Filled.Call, hangup = true, onClick = onHangup)
+                        RoundAction(s(R.string.t_atender), GREEN, Icons.Filled.Call, hangup = false, onClick = onAccept)
+                    }
+                    CallPhase.ENDED -> Spacer(Modifier.height(1.dp))
+                    else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        val content = if (videoOn) Color.White else colors.onTopBar
+                        val btn = ButtonDefaults.outlinedButtonColors(contentColor = content, containerColor = if (videoOn) SCRIM else Color.Transparent)
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            OutlinedButton(onClick = onMute, colors = btn) { Text(if (call.muted) s(R.string.t_ligar_o_microfone) else s(R.string.t_silenciar)) }
+                            OutlinedButton(onClick = onSpeaker, colors = btn) { Text(if (call.speaker) s(R.string.t_auricular) else s(R.string.t_altifalante)) }
+                        }
+                        // Botao da camara so se os dois lados tiverem video (app antiga: so voz).
+                        if (videoAllowed && v.supported && onCamera != null) {
+                            Spacer(Modifier.height(12.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                OutlinedButton(onClick = onCamera, colors = btn) {
+                                    Text(if (v.camera) s(R.string.video_camera_off) else s(R.string.video_camera_on))
+                                }
+                                if (v.camera) {
+                                    OutlinedButton(onClick = onSwitchCamera, colors = btn) { Text(s(R.string.video_switch)) }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(28.dp))
+                        RoundAction(s(R.string.t_desligar), RED, Icons.Filled.Call, hangup = true, onClick = onHangup)
+                    }
+                }
+                Spacer(Modifier.height(32.dp))
+            }
         }
     }
+}
+
+/** A mensagem do video no topo, se houver (pausa, a espera, qualidade limitada). */
+@Composable
+private fun videoMessage(call: CallUi): String? {
+    val v = call.video
+    if (!v.camera && !v.showRemote) return null
+    return when {
+        v.paused == VideoPause.WEAK_NETWORK -> s(R.string.video_paused_weak)
+        v.paused == VideoPause.RELAY_LIMIT -> s(R.string.video_paused_limit)
+        v.waiting -> s(R.string.video_waiting, call.name)
+        v.limitedByRelay && !v.verified -> s(R.string.video_limited_verify)
+        else -> null
+    }
+}
+
+@Composable
+private fun VideoBanner(text: String) {
+    Text(
+        text, color = Color.White, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center,
+        modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(SCRIM).padding(horizontal = 14.dp, vertical = 8.dp),
+    )
+}
+
+/** "[Nome] quer mostrar video": [Ver] [Ligar a minha camara] [Agora nao]. */
+@Composable
+private fun VideoRequest(name: String, onRespond: (VideoResponse) -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xCC000000)).padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(s(R.string.video_request_title, name), color = Color.White, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(4.dp))
+        Button(onClick = { onRespond(VideoResponse.VIEW) }, modifier = Modifier.fillMaxWidth()) { Text(s(R.string.video_view)) }
+        Button(onClick = { onRespond(VideoResponse.VIEW_AND_CAMERA) }, modifier = Modifier.fillMaxWidth()) { Text(s(R.string.video_view_and_camera)) }
+        OutlinedButton(
+            onClick = { onRespond(VideoResponse.NOT_NOW) }, modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+        ) { Text(s(R.string.video_not_now)) }
+    }
+}
+
+/** Ouvinte de uma TextureView: avisa quando a superficie aparece e desaparece. */
+private fun textureListener(onReady: (SurfaceTexture?) -> Unit) = object : TextureView.SurfaceTextureListener {
+    override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) = onReady(st)
+    override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) {}
+    override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
+        onReady(null)
+        return true
+    }
+    override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
+}
+
+/** O video do outro (o descodificador desenha aqui), direito e a encher a vista. */
+@Composable
+private fun RemoteVideo(v: VideoUi, onSurface: (Surface?) -> Unit, modifier: Modifier) {
+    val current by rememberUpdatedState(onSurface)
+    AndroidView(
+        factory = { ctx ->
+            VideoTextureView(ctx).apply {
+                surfaceTextureListener = textureListener { st -> current(st?.let { Surface(it) }) }
+            }
+        },
+        update = { it.setFrame(v.remoteW, v.remoteH, v.remoteRotation, mirrored = false) },
+        modifier = modifier,
+    )
+}
+
+/**
+ * A minha camara. A Camera2 ja roda a pre-visualizacao para o telemovel direito (e espelha a
+ * da frente); aqui so se corrige o ecra deitado e o tamanho.
+ */
+@Composable
+private fun SelfVideo(v: VideoUi, onPreview: (SurfaceTexture?) -> Unit, modifier: Modifier) {
+    val current by rememberUpdatedState(onPreview)
+    val view = LocalView.current
+    val displayRotation = (view.display?.rotation ?: Surface.ROTATION_0) * 90
+    AndroidView(
+        factory = { ctx ->
+            VideoTextureView(ctx).apply { surfaceTextureListener = textureListener { st -> current(st) } }
+        },
+        update = { it.setFrame(v.previewH, v.previewW, (360 - displayRotation) % 360, mirrored = false) },
+        modifier = modifier,
+    )
 }
 
 /** "A chamar", "A tocar", o tempo da chamada (atualizado de segundo a segundo) ou como acabou. */

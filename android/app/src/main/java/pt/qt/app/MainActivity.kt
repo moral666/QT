@@ -161,6 +161,7 @@ import kotlin.math.sin
 import uniffi.qt_ffi.ChatMessage
 import uniffi.qt_ffi.ConversationSummary
 import uniffi.qt_ffi.MessageStatus
+import uniffi.qt_ffi.VideoResponse
 import uniffi.qt_ffi.reportsAvailable
 
 // FragmentActivity (e nao ComponentActivity): o BiometricPrompt precisa dela.
@@ -467,6 +468,26 @@ fun AppRoot(
             askMic.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
+    // Videochamadas: a camara e pedida so ao carregar no botao da camara (ou "Ligar a minha camara").
+    var afterCamera by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val askCamera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val then = afterCamera
+        afterCamera = null
+        if (granted) {
+            then?.invoke()
+        } else {
+            android.widget.Toast.makeText(ctx, s(R.string.video_camera_denied), android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    val withCamera: (() -> Unit) -> Unit = { action ->
+        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            action()
+        } else {
+            afterCamera = action
+            AutoLockPause.active = true   // o pedido de permissao nao conta como sair da app
+            askCamera.launch(Manifest.permission.CAMERA)
+        }
+    }
     LaunchedEffect(ui.hasIdentity, ui.locked, ui.termsAccepted, ui.loading) {
         val ready = !ui.loading && ui.hasIdentity && !ui.locked && ui.termsAccepted
         if (ready && Push.available && ui.pushOn && !ui.pushAsked && Build.VERSION.SDK_INT >= 33 && !Push.permissionGranted(ctx)) {
@@ -522,6 +543,12 @@ fun AppRoot(
                 onMute = vm::toggleMute,
                 onSpeaker = vm::toggleSpeaker,
                 onMinimize = if (canMinimize) ({ callMinimized = true }) else null,
+                // Desligar a camara nao precisa de permissao; ligar sim.
+                onCamera = { if (call.video.camera) vm.toggleCamera() else withCamera { vm.toggleCamera() } },
+                onSwitchCamera = vm::switchCamera,
+                onVideoRespond = { r -> if (r == VideoResponse.VIEW_AND_CAMERA) withCamera { vm.respondVideo(r) } else vm.respondVideo(r) },
+                onSelfPreview = vm::setSelfPreview,
+                onRemoteSurface = vm::setRemoteSurface,
             )
         }
         ui.locked -> LockScreen(ui, onCode = vm::unlockWithCode, onBio = vm::requestBioUnlock, onWipe = vm::wipeLockedData)

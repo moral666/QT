@@ -355,8 +355,9 @@ object CallControl {
 
 /**
  * Servico em primeiro plano durante a chamada: o Android so deixa usar o microfone com a
- * app fora do ecra se houver um (tipo "microphone"). Mostra a notificacao "Chamada em
- * curso", sem o nome de quem esta do outro lado.
+ * app fora do ecra se houver um (tipo "microphone"); com a camara ligada, tambem do tipo
+ * "camera" (fase 5b). Mostra a notificacao "Chamada em curso", sem o nome de quem esta do
+ * outro lado.
  */
 class CallService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -366,23 +367,33 @@ class CallService : Service() {
             CallControl.hangup?.invoke()
             return START_NOT_STICKY
         }
-        val n = notification(this)
+        val camera = intent?.getBooleanExtra(EXTRA_CAMERA, false) == true
+        val n = notification(this, camera)
         try {
             if (Build.VERSION.SDK_INT >= 30) {
-                startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+                var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                if (camera) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                startForeground(NOTIFICATION_ID, n, types)
             } else {
                 startForeground(NOTIFICATION_ID, n)
             }
         } catch (e: Exception) {
-            // Ex.: sem permissao do microfone. A chamada continua enquanto a app estiver aberta.
+            // Ex.: sem permissao do microfone (ou da camara). A chamada continua enquanto a app
+            // estiver aberta; com a camara recusada, fica pelo menos o microfone.
             Log.w(TAG, "servico da chamada: ${e.javaClass.simpleName}")
-            stopSelf()
+            if (camera && Build.VERSION.SDK_INT >= 30) {
+                runCatching { startForeground(NOTIFICATION_ID, notification(this, false), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) }
+                    .onFailure { stopSelf() }
+            } else {
+                stopSelf()
+            }
         }
         return START_NOT_STICKY
     }
 
     companion object {
         private const val ACTION_HANGUP = "pt.qt.app.HANGUP"
+        private const val EXTRA_CAMERA = "pt.qt.app.CAMARA"
         private const val NOTIFICATION_ID = 7
         const val CHANNEL = "chamadas"
 
@@ -398,7 +409,7 @@ class CallService : Service() {
             )
         }
 
-        private fun notification(ctx: Context): Notification {
+        private fun notification(ctx: Context, camera: Boolean): Notification {
             ensureChannel(ctx)
             val open = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             val pi = PendingIntent.getActivity(ctx, 1, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -409,7 +420,7 @@ class CallService : Service() {
             return NotificationCompat.Builder(ctx, CHANNEL)
                 .setSmallIcon(R.drawable.ic_stat_sealer)
                 .setContentTitle("SEALER")
-                .setContentText(s(R.string.t_chamada_de_voz_em_curso))
+                .setContentText(s(if (camera) R.string.t_videochamada_em_curso else R.string.t_chamada_de_voz_em_curso))
                 .setOngoing(true)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -418,10 +429,13 @@ class CallService : Service() {
                 .build()
         }
 
-        fun start(ctx: Context) {
-            runCatching { ContextCompat.startForegroundService(ctx, Intent(ctx, CallService::class.java)) }
+        fun start(ctx: Context, camera: Boolean = false) {
+            runCatching { ContextCompat.startForegroundService(ctx, Intent(ctx, CallService::class.java).putExtra(EXTRA_CAMERA, camera)) }
                 .onFailure { Log.w(TAG, "servico da chamada: ${it.javaClass.simpleName}") }
         }
+
+        /** A camara ligou ou desligou: o servico passa a ser (ou deixa de ser) do tipo camara. */
+        fun update(ctx: Context, camera: Boolean) = start(ctx, camera)
 
         fun stop(ctx: Context) {
             ctx.stopService(Intent(ctx, CallService::class.java))
