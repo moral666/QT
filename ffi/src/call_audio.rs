@@ -35,6 +35,11 @@ pub struct CallAudioStats {
     pub peer_present: bool,
     /// Ida e volta ate ao relay das chamadas, em ms.
     pub relay_rtt_ms: Option<u32>,
+    /// O audio que envio vai direto ao outro telemovel (ligacao direta, so com contactos
+    /// verificados). `false`: pelo relay.
+    pub direct: bool,
+    /// ... e tambem pelo servidor: o caminho direto falhou respostas ha pouco (ainda a decidir).
+    pub both_paths: bool,
     pub received: u64,
     /// Frames perdidos na rede (reconstruidos pelo DRED ou preenchidos pelo PLC).
     pub lost: u64,
@@ -61,6 +66,29 @@ impl CallAudio {
     pub(crate) fn attach(&self, media: qt_core::call::MediaSession) {
         if let Some(e) = self.engine() {
             e.attach_media(media);
+        }
+    }
+
+    /// Ligacao direta: so `crate::call` chama isto, com a regra cumprida (ver la).
+    pub(crate) fn p2p_enable(&self) {
+        if let Some(e) = self.engine() {
+            e.p2p_enable();
+        }
+    }
+
+    pub(crate) fn p2p_disable(&self) {
+        if let Some(e) = self.engine() {
+            e.p2p_disable();
+        }
+    }
+
+    pub(crate) fn p2p_local_candidates(&self) -> Option<Vec<std::net::SocketAddr>> {
+        self.engine().and_then(|e| e.p2p_local_candidates())
+    }
+
+    pub(crate) fn p2p_set_peer(&self, peer: Vec<std::net::SocketAddr>) {
+        if let Some(e) = self.engine() {
+            e.p2p_set_peer(peer);
         }
     }
 }
@@ -98,6 +126,8 @@ impl CallAudio {
             joined: s.joined,
             peer_present: s.peer_present,
             relay_rtt_ms: s.relay_rtt_ms,
+            direct: s.direct,
+            both_paths: s.both_paths,
             received: s.received,
             lost: s.jitter.lost,
             late: s.jitter.gave_up,
@@ -160,7 +190,14 @@ pub(crate) fn relay_target(relay_url: &str) -> Result<RelayTarget, QtError> {
 }
 
 pub(crate) fn engine_config(relay_url: &str) -> Result<EngineConfig, QtError> {
-    Ok(EngineConfig::new(relay_target(relay_url)?))
+    #[allow(unused_mut)]
+    let mut cfg = EngineConfig::new(relay_target(relay_url)?);
+    // Testes desta crate: os dois telemoveis estao no mesmo PC (127.0.0.1).
+    #[cfg(test)]
+    {
+        cfg.p2p_allow_loopback = true;
+    }
+    Ok(cfg)
 }
 
 #[cfg(test)]

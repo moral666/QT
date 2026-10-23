@@ -622,6 +622,7 @@ fun AppRoot(
                 onUnblock = vm::unblockContact,
                 onPresence = vm::setPresence,
                 onReadReceipts = vm::setReadReceipts,
+                onCallsRelayOnly = vm::setCallsRelayOnly,
                 onPush = { on ->
                     vm.setPush(on)
                     if (on && !Push.permissionGranted(ctx) && Build.VERSION.SDK_INT >= 33) {

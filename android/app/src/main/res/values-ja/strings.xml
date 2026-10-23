@@ -115,6 +115,7 @@
     <string name="t_foto_de_perfil">プロフィール写真</string>
     <string name="t_notificacoes">通知</string>
     <string name="t_confirmacoes_de_leitura">既読通知</string>
+    <string name="t_chamadas_sempre_pelo_servidor">通話を常にサーバー経由にする</string>
     <string name="t_mostrar_quando_estou_online">オンライン状態を表示</string>
     <string name="t_bloqueio_da_app">アプリのロック</string>
     <string name="t_bloquear_agora">今すぐロック</string>

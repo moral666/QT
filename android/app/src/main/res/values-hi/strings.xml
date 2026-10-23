@@ -115,6 +115,7 @@
     <string name="t_foto_de_perfil">प्रोफ़ाइल फ़ोटो</string>
     <string name="t_notificacoes">सूचनाएं</string>
     <string name="t_confirmacoes_de_leitura">रीड रिसीट</string>
+    <string name="t_chamadas_sempre_pelo_servidor">कॉल हमेशा सर्वर के ज़रिए</string>
     <string name="t_mostrar_quando_estou_online">मेरी ऑनलाइन स्थिति दिखाएं</string>
     <string name="t_bloqueio_da_app">ऐप लॉक</string>
     <string name="t_bloquear_agora">अभी लॉक करें</string>

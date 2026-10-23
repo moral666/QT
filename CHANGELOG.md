@@ -6,6 +6,23 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 23 de outubro de 2026: chamadas, ligação direta (P2P, fase 5, primeira parte)
+
+- A chamada começa sempre pelo relay. Depois de atender, se os dois lados tiverem o outro verificado e
+  nenhum tiver "Chamadas sempre pelo servidor", os telemóveis trocam endereços dentro do ratchet (ops 5
+  e 6) e o áudio passa a ir direto. Nenhum endereço sai antes de atender nem para quem não verificou.
+- Endereços IPv4 e IPv6 (socket dual), incluindo o IP público visto pelo relay (pedido 0x22, só para
+  salas abertas, resposta mais pequena que o pedido).
+- Se o direto falhar, o áudio vai pelos dois caminhos (direto e relay) a partir de 150 ms sem áudio do
+  outro lado ou 250 ms sem resposta às sondas (uma a cada 100 ms), e fica só no relay aos 3 s (1 sonda/s
+  até o direto voltar). Corte medido numa queda brusca: ~0,2 s (antes ~0,75 s).
+- A cópia repetida é descartada pela janela anti-repetição e não conta como recebida, atrasada nem
+  perdida.
+- Compatível com apps e relays antigos: sem suporte dos dois lados, tudo pelo relay como hoje.
+- App Android: interruptor "Chamadas sempre pelo servidor" em Definições, Privacidade (dez línguas).
+- Ainda não há forma de verificar um contacto na app (parte 2) nem a janela de aviso (parte 3): até lá
+  as chamadas continuam todas pelo relay.
+
 ### 23 de outubro de 2026: texto das 12 palavras (apps Android 0.9.32 e iPhone 0.9.30)
 
 - Ecrã das 12 palavras: saiu "Não tires captura de ecrã nem as guardes no telemóvel" (dez línguas), que
