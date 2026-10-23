@@ -428,8 +428,13 @@ async fn copia_pelo_relay_preenche_o_que_o_direto_perdeu() {
         assert!(got + 2 >= sent, "so {got} de {sent} aceites (copias do relay recusadas?): {sb:?}");
         assert_eq!(got + dups, 2 * sent - lost_direct, "cada pacote: 1 aceite, o resto copias");
         assert_eq!(sb.invalid, 0, "{sb:?}");
-        // O que o direto perdeu e a copia trouxe tarde demais para tocar (o jitter buffer
-        // esta a 40 ms e o relay a +150 ms) e reconstruido pelo DRED: ouve-se na mesma.
+        // O jitter buffer aprende com as copias atrasadas (+150 ms) e espera por elas: o que
+        // o direto perdeu toca a partir da copia, quase nada fica para o DRED (antes: ~60
+        // frames dados por perdidos e ~60 copias a chegar tarde).
+        let mut out = vec![0i16; FRAME_SAMPLES];
+        b.pull_playback(&mut out).unwrap();
+        let sb = b.stats();
+        assert!(sb.jitter.lost <= 5 && sb.jitter.late <= 8, "copias do relay nao chegaram a tempo: {sb:?}");
         let audible = heard[20..].iter().filter(|e| **e > 1e4).count();
         assert!(audible >= 120, "so {audible} de 180 frames com som; {sb:?}");
         (a, b)

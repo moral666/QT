@@ -6,6 +6,15 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 23 de outubro de 2026: jitter buffer espera pelos atrasados até ao alvo
+
+- Os pacotes que chegam tarde demais passam a contar para o atraso alvo, e um frame em falta com outro
+  já à frente espera (até ao alvo) em vez de ser dado logo por perdido. Simulação com +0 a 150 ms de
+  variação durante 4 s: 37 frames perdidos passam a 4, com +20 ms de atraso no pico; o atraso volta ao
+  normal no mesmo tempo (~5 s). Com a ligação direta em duplicado, as cópias pelo relay (+150 ms)
+  passam a tocar em vez de chegarem tarde.
+- Muda o comportamento da 0.9.5 em todas as chamadas, também só pelo relay: testar em telemóveis reais.
+
 ### 23 de outubro de 2026: chamadas, ligação direta (P2P, fase 5, primeira parte)
 
 - A chamada começa sempre pelo relay. Depois de atender, se os dois lados tiverem o outro verificado e

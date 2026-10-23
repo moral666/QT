@@ -3,8 +3,11 @@
 //!
 //! COMO DECIDE (cada `pop`, a cada 20 ms):
 //!   1. O frame seguinte chegou: toca-o.
-//!   2. Nao chegou, mas ja ha um pacote mais a frente: foi perdido. Reconstroi-se com
-//!      o DRED desse pacote (`Slot::Lost`), que traz o audio anterior comprimido.
+//!   2. Nao chegou, mas ja ha um pacote mais a frente. Se o atraso atual ainda esta abaixo
+//!      do alvo, espera por ele (PLC sem avancar, como em 3: o atraso sobe 20 ms de cada
+//!      vez, ate ao alvo). Senao foi perdido: reconstroi-se com o DRED desse pacote
+//!      (`Slot::Lost`), que traz o audio anterior comprimido. E o que deixa a copia pelo
+//!      relay (ligacao direta em duplicado) chegar a tempo.
 //!   3. Nao chegou e nao ha nada a frente (a rede ou o microfone do outro lado
 //!      pararam): espera ate `MAX_HOLD` (200 ms, contados no relogio e nao em `pop`,
 //!      porque o altifalante as vezes pede varios frames seguidos), preenchendo com PLC
@@ -17,7 +20,8 @@
 //!      pacotes seguintes chegavam "atrasados" e esse lado ficava mudo ate ao fim.
 //!
 //! O atraso alvo segue a variacao medida das chegadas (percentil 95 dos ultimos 3 s):
-//! entre 40 e 200 ms. Quando ha frames a mais do que o alvo durante meio segundo,
+//! entre 40 e 200 ms. Os pacotes que chegam tarde demais tambem contam para a medida
+//! (senao o alvo nunca aprendia com eles). Quando ha frames a mais do que o alvo durante meio segundo,
 //! salta-se um frame (20 ms) para baixar o atraso.
 //!
 //! Nao depende do Opus nem da rede: os testes simulam o tempo.
@@ -160,6 +164,11 @@ impl JitterBuffer {
             Some(n) if counter < n => {
                 if !(self.stalled && self.packets.range(n..).next().is_none()) {
                     self.stats.late += 1;
+                    // Chegou tarde: conta para a variacao, para o alvo subir e os seguintes
+                    // como ele chegarem a tempo.
+                    if !self.trim {
+                        self.measure(counter, now);
+                    }
                     return;
                 }
                 self.resync(counter, now);
@@ -246,6 +255,15 @@ impl JitterBuffer {
             self.hold_since = None;
             self.stalled = false;
             return Slot::Frame(f);
+        }
+        // Falta este mas ha outro a frente: com menos atraso do que o alvo, espera por ele
+        // (ate MAX_HOLD) em vez de o dar ja por perdido.
+        if self.depth() < self.target && self.packets.range(next + 1..).next().is_some() {
+            let since = *self.hold_since.get_or_insert(now);
+            if now.saturating_duration_since(since) < MAX_HOLD {
+                self.stats.holds += 1;
+                return Slot::Conceal;
+            }
         }
         if let Some((&m, p)) = self.packets.range(next + 1..).next() {
             let slot = Slot::Lost { ahead_counter: m, ahead: p.clone(), frames_back: (m - next) as u32 };
@@ -349,6 +367,34 @@ mod tests {
         assert_eq!(s[4], Slot::Lost { ahead_counter: 5, ahead: f(5), frames_back: 1 });
         assert_eq!(s[5], Slot::Frame(f(5)));
         assert_eq!(j.stats().lost, 3);
+    }
+
+    /// Ligacao direta em duplicado: um terco dos pacotes perdeu-se no direto e so chega a
+    /// copia pelo relay, 100 ms depois. O alvo aprende com eles e o buffer espera: depois
+    /// de aprender, quase nada se perde (antes perdia-se um terco).
+    #[test]
+    fn copia_atrasada_pelo_relay_chega_a_tempo() {
+        let t0 = Instant::now();
+        let mut j = JitterBuffer::new();
+        let mut arrivals: Vec<(u64, u64)> = (0..300u64).map(|c| (c * 20 + 30 + if c % 3 == 1 { 100 } else { 0 }, c)).collect();
+        arrivals.sort();
+        let (mut ai, mut lost_after) = (0, 0u64);
+        for ms in 0..6_400u64 {
+            while ai < arrivals.len() && arrivals[ai].0 <= ms {
+                let c = arrivals[ai].1;
+                j.push(c, f(c), at(t0, ms));
+                ai += 1;
+            }
+            if ms % 20 == 5 {
+                let slot = j.pop(at(t0, ms));
+                if ms >= 2_000 && matches!(slot, Slot::Lost { .. }) {
+                    lost_after += 1;
+                }
+            }
+        }
+        let st = j.stats();
+        assert!(st.target_ms >= 120, "o alvo devia cobrir os 100 ms: {st:?}");
+        assert!(lost_after <= 2, "{lost_after} perdidos depois de aprender: {st:?}");
     }
 
     #[test]
