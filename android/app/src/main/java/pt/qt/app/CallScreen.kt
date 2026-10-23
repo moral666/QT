@@ -1,12 +1,19 @@
 package pt.qt.app
 
+import android.content.Context
 import android.graphics.SurfaceTexture
 import android.os.SystemClock
 import android.view.Surface
 import android.view.TextureView
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityManager
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +29,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -40,7 +48,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -51,11 +61,18 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
 import uniffi.qt_ffi.VideoResponse
@@ -89,12 +106,30 @@ val VideoCallIcon: ImageVector by lazy {
     }
 }
 
+/** Fundo dos botoes por cima do video: preto a 65% (o branco por cima tem contraste mesmo com video claro). */
+private val ON_VIDEO = Color(0xA6000000)
+/** Botao redondo normal (claro e escuro: o fundo da chamada e sempre o gradiente escuro ou o video). */
+private val ROUND_IDLE = Color(0x29FFFFFF)
+/** Icone de um botao ligado (fundo branco). */
+private val ICON_ON = Color(0xFF1C1B1F)
+/** Com video, o topo e os controlos desaparecem ao fim disto sem toques (o Android pode pedir mais). */
+private const val CONTROLS_HIDE_MS = 3_500L
+
 /**
- * Ecra de chamada (a chamar, a tocar, a chegar, atendida, terminada). Com video (fase 5b): o
- * video do outro enche o ecra e a minha camara fica num canto; enquanto o outro nao aceita,
- * a minha camara enche o ecra com "A espera de [Nome]...". Numa videochamada minha, a camara
- * ja aparece enquanto chama. FLAG_SECURE: nada deste ecra sai em capturas, gravacoes do ecra
- * nem na lista de apps recentes.
+ * Ecra de chamada (a chamar, a tocar, a chegar, atendida, terminada). Desenho da 0.9.38: o esboco
+ * do Nuno so serviu de referencia de layout; logo e cores sao os da app (tema 0.9.11, claro e
+ * escuro), com o "Sealer" em Manrope Bold, parado.
+ *
+ *  * Com video: o video do outro enche o ecra e a minha camara fica num canto, com cantos
+ *    arredondados. Enquanto o outro nao aceita, a minha camara enche o ecra com "A espera de
+ *    [Nome]..." (o unico texto de estado). Video do outro parado: so a foto ou a inicial dele.
+ *  * Topo: "Sealer" a esquerda, o tempo da chamada a direita.
+ *  * Barra de controlos flutuante (microfone, altifalante, camara, trocar camara) e, por baixo,
+ *    o desligar vermelho com o auscultador.
+ *  * Com video, o topo e os controlos desaparecem ao fim de 3-4 s sem toques e voltam com um
+ *    toque no ecra. So de voz (ou com o TalkBack ligado): sempre visiveis.
+ *
+ * FLAG_SECURE: nada deste ecra sai em capturas, gravacoes do ecra nem na lista de apps recentes.
  */
 @Composable
 fun CallScreen(
@@ -114,7 +149,8 @@ fun CallScreen(
 ) {
     val colors = LocalChatColors.current
     val status = callStatusText(call)
-    val activity = LocalContext.current.findActivity()
+    val context = LocalContext.current
+    val activity = context.findActivity()
     DisposableEffect(activity) {
         activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         onDispose { activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
@@ -127,10 +163,45 @@ fun CallScreen(
     val calling = call.phase == CallPhase.CALLING || call.phase == CallPhase.RINGING_OUT
     val showSelf = onCamera != null && v.camera && (active || calling)
     val videoOn = showRemote || showSelf
+    val request = videoAllowed && v.request && onVideoRespond != null
+
+    // Esconder o topo e os controlos: so com video e atendida, sem um pedido de video por
+    // responder, e nunca com o TalkBack (o leitor de ecra tem de encontrar sempre os botoes).
+    val touchExploration = remember(context) {
+        (context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager)?.isTouchExplorationEnabled == true
+    }
+    val autoHide = videoOn && active && !request && !touchExploration
+    var controlsShown by remember { mutableStateOf(true) }
+    var touches by remember { mutableIntStateOf(0) }
+    val a11y = LocalAccessibilityManager.current
+    val hideAfter = remember(a11y) {
+        a11y?.calculateRecommendedTimeoutMillis(CONTROLS_HIDE_MS, containsIcons = true, containsControls = true) ?: CONTROLS_HIDE_MS
+    }
+    LaunchedEffect(autoHide, controlsShown, touches) {
+        if (!autoHide) {
+            controlsShown = true
+        } else if (controlsShown) {
+            delay(hideAfter)
+            controlsShown = false
+        }
+    }
+    val visible = controlsShown || !autoHide
+    // Tocar num botao tambem conta como toque (os 3-4 s recomecam).
+    val touched: (() -> Unit) -> (() -> Unit) = { f -> { touches++; f() } }
+    val ink = if (videoOn) Color.White else colors.onTopBar
+
     Box(
         Modifier
             .fillMaxSize()
-            .background(if (videoOn) Brush.verticalGradient(listOf(Color.Black, Color.Black)) else Brush.verticalGradient(colors.topBarGradient)),
+            .background(if (videoOn) Brush.verticalGradient(listOf(Color.Black, Color.Black)) else Brush.verticalGradient(colors.topBarGradient))
+            .pointerInput(autoHide) {
+                detectTapGestures(onTap = {
+                    if (autoHide) {
+                        controlsShown = !controlsShown
+                        touches++
+                    }
+                })
+            },
     ) {
         // Camadas do video (por baixo de tudo, ate as bordas do ecra).
         if (showRemote) {
@@ -139,86 +210,191 @@ fun CallScreen(
             if (v.remoteStalled) RemotePaused(call, colors.topBarGradient)
         }
         if (showSelf) {
+            val shape = RoundedCornerShape(16.dp)
             val pip = Modifier
                 .align(Alignment.TopEnd)
                 .safeDrawingPadding()
-                .padding(top = 56.dp, end = 12.dp)
-                .size(108.dp, 160.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .padding(top = 68.dp, end = 16.dp)
+                .size(104.dp, 156.dp)
+                .clip(shape)
+                .border(1.dp, Color.White.copy(alpha = 0.35f), shape)
             SelfVideo(v, onSelfPreview, if (showRemote) pip else Modifier.fillMaxSize())
         }
-        Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-            if (onMinimize != null) {
-                IconButton(onClick = onMinimize, modifier = Modifier.align(Alignment.TopStart).padding(8.dp)) {
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = s(R.string.call_minimize), tint = colors.onTopBar, modifier = Modifier.size(32.dp))
-                }
+        // Sombras suaves por cima do video, para o topo e os controlos se lerem sempre.
+        if (videoOn) {
+            AnimatedVisibility(visible, Modifier.align(Alignment.TopCenter), enter = fadeIn(), exit = fadeOut()) {
+                Box(Modifier.fillMaxWidth().height(150.dp).background(Brush.verticalGradient(listOf(Color(0x99000000), Color.Transparent))))
             }
-            Column(
-                Modifier.fillMaxSize().padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                if (videoOn) {
-                    // Com video: so o nome e o tempo, por cima da imagem.
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "${call.name} · $status", style = MaterialTheme.typography.titleMedium, color = Color.White,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(SCRIM).padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
-                } else {
-                    Spacer(Modifier.height(48.dp))
-                    Avatar(call.name, call.contactId, sizeDp = 112)
-                    Spacer(Modifier.height(16.dp))
+            AnimatedVisibility(visible, Modifier.align(Alignment.BottomCenter), enter = fadeIn(), exit = fadeOut()) {
+                Box(Modifier.fillMaxWidth().height(280.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000)))))
+            }
+        }
+        Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+            // Topo: "Sealer" a esquerda, o tempo da chamada a direita.
+            AnimatedVisibility(visible, Modifier.align(Alignment.TopCenter), enter = fadeIn(), exit = fadeOut()) {
+                CallTopBar(onMinimize = onMinimize?.let(touched), time = if (active) status else null, tint = ink)
+            }
+            if (!videoOn) {
+                // So de voz (ou a chegar): a foto, o nome e o estado, no meio.
+                Column(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = 112.dp, start = 24.dp, end = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Avatar(call.name, call.contactId, sizeDp = 120)
+                    Spacer(Modifier.height(20.dp))
                     Text(
                         call.name, style = MaterialTheme.typography.headlineMedium, color = colors.onTopBar,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
-                    Spacer(Modifier.height(8.dp))
-                    Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onTopBar.copy(alpha = 0.85f))
-                    Spacer(Modifier.height(4.dp))
-                    Text(s(R.string.t_cifrada_ponta_a_ponta), style = MaterialTheme.typography.labelSmall, color = colors.onTopBar.copy(alpha = 0.6f))
+                    if (!active) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onTopBar.copy(alpha = 0.85f), textAlign = TextAlign.Center)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(s(R.string.t_cifrada_ponta_a_ponta), style = MaterialTheme.typography.labelMedium, color = colors.onTopBar.copy(alpha = 0.7f))
                 }
-                if (videoAllowed) {
-                    Spacer(Modifier.height(12.dp))
-                    videoMessage(call)?.let { VideoBanner(it) }
-                }
-                Spacer(Modifier.weight(1f))
-                if (videoAllowed && v.request && onVideoRespond != null) {
-                    VideoRequest(call.name, onVideoRespond)
+            } else {
+                // Com video: "A espera de [Nome]..." enquanto o outro nao aceita; a chamar, o nome e o estado.
+                val banner = if (active) videoMessage(call) else "${call.name} · $status"
+                banner?.let { VideoBanner(it, Modifier.align(Alignment.TopCenter).padding(top = 64.dp, start = 24.dp, end = 24.dp)) }
+            }
+            Column(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (request) {
+                    VideoRequest(call.name, onVideoRespond!!)
                     Spacer(Modifier.height(16.dp))
                 }
                 when (call.phase) {
-                    CallPhase.INCOMING -> Row(horizontalArrangement = Arrangement.spacedBy(56.dp)) {
+                    CallPhase.INCOMING -> Row(horizontalArrangement = Arrangement.spacedBy(64.dp)) {
                         RoundAction(s(R.string.t_recusar), RED, Icons.Filled.Call, hangup = true, onClick = onHangup)
                         RoundAction(s(R.string.t_atender), GREEN, Icons.Filled.Call, hangup = false, onClick = onAccept)
                     }
                     CallPhase.ENDED -> Spacer(Modifier.height(1.dp))
-                    else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        val content = if (videoOn) Color.White else colors.onTopBar
-                        val btn = ButtonDefaults.outlinedButtonColors(contentColor = content, containerColor = if (videoOn) SCRIM else Color.Transparent)
-                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            OutlinedButton(onClick = onMute, colors = btn) { Text(if (call.muted) s(R.string.t_ligar_o_microfone) else s(R.string.t_silenciar)) }
-                            OutlinedButton(onClick = onSpeaker, colors = btn) { Text(if (call.speaker) s(R.string.t_auricular) else s(R.string.t_altifalante)) }
+                    else -> AnimatedVisibility(visible, enter = fadeIn(), exit = fadeOut()) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            ControlBar(
+                                call = call,
+                                onVideo = videoOn,
+                                // Camara so se os dois lados tiverem video (app antiga: so voz).
+                                camera = if (videoAllowed && v.supported && onCamera != null) touched(onCamera) else null,
+                                onMute = touched(onMute),
+                                onSpeaker = touched(onSpeaker),
+                                onSwitchCamera = touched(onSwitchCamera),
+                            )
+                            Spacer(Modifier.height(20.dp))
+                            HangupButton(touched(onHangup))
                         }
-                        // Botao da camara so se os dois lados tiverem video (app antiga: so voz).
-                        if (videoAllowed && v.supported && onCamera != null) {
-                            Spacer(Modifier.height(12.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                OutlinedButton(onClick = onCamera, colors = btn) {
-                                    Text(if (v.camera) s(R.string.video_camera_off) else s(R.string.video_camera_on))
-                                }
-                                if (v.camera) {
-                                    OutlinedButton(onClick = onSwitchCamera, colors = btn) { Text(s(R.string.video_switch)) }
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(28.dp))
-                        RoundAction(s(R.string.t_desligar), RED, Icons.Filled.Call, hangup = true, onClick = onHangup)
                     }
                 }
-                Spacer(Modifier.height(32.dp))
             }
         }
+    }
+}
+
+/** Topo da chamada: (minimizar) logo e "Sealer" a esquerda, o tempo a direita. */
+@Composable
+private fun CallTopBar(onMinimize: (() -> Unit)?, time: String?, tint: Color) {
+    Row(
+        Modifier.fillMaxWidth().height(56.dp).padding(start = 4.dp, end = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (onMinimize != null) {
+            IconButton(onClick = onMinimize) {
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = s(R.string.call_minimize), tint = tint, modifier = Modifier.size(30.dp))
+            }
+        } else {
+            Spacer(Modifier.width(16.dp))
+        }
+        BrandLogo(28)
+        Spacer(Modifier.width(8.dp))
+        Text("Sealer", fontFamily = ManropeBold, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = tint, maxLines = 1)
+        Spacer(Modifier.weight(1f))
+        if (time != null) {
+            Text(time, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = tint, maxLines = 1)
+        }
+    }
+}
+
+/**
+ * Barra flutuante com os botoes redondos: microfone (silenciar), altifalante (ouvido ou
+ * altifalante, nunca os auscultadores), camara (ligar/desligar) e trocar camara. `camera` nulo:
+ * sem os dois botoes da camara (o outro lado nao tem video).
+ */
+@Composable
+private fun ControlBar(
+    call: CallUi,
+    onVideo: Boolean,
+    camera: (() -> Unit)?,
+    onMute: () -> Unit,
+    onSpeaker: () -> Unit,
+    onSwitchCamera: () -> Unit,
+) {
+    val v = call.video
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(44.dp))
+            .background(if (onVideo) ON_VIDEO else Color(0x1AFFFFFF))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ToggleRound(if (call.muted) MicOffIcon else MicIcon, s(R.string.t_silenciar), on = call.muted, onClick = onMute)
+        ToggleRound(SpeakerIcon, s(R.string.t_altifalante), on = call.speaker, onClick = onSpeaker)
+        if (camera != null) {
+            ToggleRound(if (v.camera) VideoCallIcon else VideoOffIcon, s(R.string.call_camera), on = v.camera, onClick = camera)
+            ActionRound(SwitchCameraIcon, s(R.string.video_switch), enabled = v.camera, onClick = onSwitchCamera)
+        }
+    }
+}
+
+/** Botao redondo de ligar/desligar: ligado = fundo branco e icone escuro. O TalkBack diz "ligado/desligado". */
+@Composable
+private fun ToggleRound(icon: ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(56.dp)
+            .clip(CircleShape)
+            .background(if (on) Color.White else ROUND_IDLE)
+            .toggleable(value = on, role = Role.Switch, onValueChange = { onClick() })
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = if (on) ICON_ON else Color.White, modifier = Modifier.size(26.dp))
+    }
+}
+
+/** Botao redondo de uma acao (trocar camara). Desativado: mais transparente. */
+@Composable
+private fun ActionRound(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(56.dp)
+            .clip(CircleShape)
+            .background(if (enabled) ROUND_IDLE else Color(0x14FFFFFF))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = Color.White.copy(alpha = if (enabled) 1f else 0.45f), modifier = Modifier.size(26.dp))
+    }
+}
+
+/** Desligar: botao redondo vermelho com o auscultador (o padrao que toda a gente reconhece). */
+@Composable
+private fun HangupButton(onClick: () -> Unit) {
+    val label = s(R.string.t_desligar)
+    Box(
+        Modifier
+            .size(72.dp)
+            .clip(CircleShape)
+            .background(RED)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Filled.Call, contentDescription = null, tint = Color.White, modifier = Modifier.size(34.dp).rotate(135f))
     }
 }
 
@@ -241,10 +417,11 @@ private fun RemotePaused(call: CallUi, gradient: List<Color>) {
 }
 
 @Composable
-private fun VideoBanner(text: String) {
+private fun VideoBanner(text: String, modifier: Modifier = Modifier) {
     Text(
         text, color = Color.White, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center,
-        modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(SCRIM).padding(horizontal = 14.dp, vertical = 8.dp),
+        maxLines = 2, overflow = TextOverflow.Ellipsis,
+        modifier = modifier.clip(RoundedCornerShape(16.dp)).background(SCRIM).padding(horizontal = 14.dp, vertical = 8.dp),
     )
 }
 
