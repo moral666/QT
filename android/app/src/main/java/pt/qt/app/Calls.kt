@@ -176,19 +176,7 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
     }
 
     /** Altifalante (true) ou auricular (false). */
-    fun setSpeaker(on: Boolean) {
-        if (Build.VERSION.SDK_INT >= 31) {
-            if (on) {
-                am.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-                    ?.let { am.setCommunicationDevice(it) }
-            } else {
-                am.clearCommunicationDevice()
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            am.isSpeakerphoneOn = on
-        }
-    }
+    fun setSpeaker(on: Boolean) = CallRoute.speaker(am, on)
 
     private fun requestFocus() {
         if (Build.VERSION.SDK_INT >= 26) {
@@ -240,10 +228,31 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
     }
 }
 
+/** Saida do som das chamadas: altifalante ou auricular (tambem antes de atender, 0.9.30). */
+object CallRoute {
+    fun speaker(am: AudioManager, on: Boolean) {
+        if (Build.VERSION.SDK_INT >= 31) {
+            if (on) {
+                am.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                    ?.let { am.setCommunicationDevice(it) }
+            } else {
+                am.clearCommunicationDevice()
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            am.isSpeakerphoneOn = on
+        }
+    }
+}
+
 /** Toque de chamada a chegar (toque + vibracao) e o "tuu... tuu" de quem liga. */
 class CallSounds(private val ctx: Context) {
     private var player: MediaPlayer? = null
     private var tone: ToneGenerator? = null
+    private val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    /** O "tuu... tuu" pos o telemovel em modo de chamada (e e este que o tira, se ninguem atender). */
+    private var routed = false
+    private var focus: AudioFocusRequest? = null
 
     fun ringIncoming() {
         stop()
@@ -278,20 +287,64 @@ class CallSounds(private val ctx: Context) {
         }
     }
 
-    fun ringback() {
-        stop()
+    /**
+     * "tuu... tuu" de quem liga. Desde a 0.9.30 o telemovel entra logo em modo de chamada: o toque
+     * sai pelo auricular (ou pelo altifalante, se `speaker`) e o botao do altifalante ja funciona
+     * antes de atender. As outras apps baixam o som, como numa chamada normal.
+     */
+    fun ringback(speaker: Boolean = false) {
+        stop(keepRoute = true)
+        runCatching {
+            am.mode = AudioManager.MODE_IN_COMMUNICATION
+            routed = true
+            requestFocus()
+            CallRoute.speaker(am, speaker)
+        }
         runCatching {
             // Volume 90 (antes 60, mal se ouvia nos Galaxy).
             tone = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 90).apply { startTone(ToneGenerator.TONE_SUP_RINGTONE) }
         }
     }
 
-    fun stop() {
+    /** Altifalante durante o "tuu... tuu" (antes de atender). */
+    fun setSpeaker(on: Boolean) {
+        if (routed) runCatching { CallRoute.speaker(am, on) }
+    }
+
+    /**
+     * Para o toque. `keepRoute`: a chamada foi atendida e o microfone/altifalante (CallAudioIO)
+     * fica com o modo de chamada e a saida escolhida; sem isso, o som do telemovel volta ao normal.
+     */
+    fun stop(keepRoute: Boolean = false) {
         player?.let { runCatching { it.stop() }; runCatching { it.release() } }
         player = null
         tone?.let { runCatching { it.stopTone(); it.release() } }
         tone = null
         runCatching { ContextCompat.getSystemService(ctx, Vibrator::class.java)?.cancel() }
+        abandonFocus()
+        if (routed && !keepRoute) leaveRoute()
+        routed = false
+    }
+
+    /** Som do telemovel de volta ao normal (auricular desligado, fora do modo de chamada). */
+    fun leaveRoute() {
+        runCatching { CallRoute.speaker(am, false) }
+        runCatching { am.mode = AudioManager.MODE_NORMAL }
+    }
+
+    private fun requestFocus() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            val f = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).build())
+                .build()
+            am.requestAudioFocus(f)
+            focus = f
+        }
+    }
+
+    private fun abandonFocus() {
+        if (Build.VERSION.SDK_INT >= 26) focus?.let { runCatching { am.abandonAudioFocusRequest(it) } }
+        focus = null
     }
 }
 

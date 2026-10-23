@@ -6,6 +6,14 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 23 de outubro de 2026: altifalante antes de atender (app Android 0.9.30)
+
+- O botão do altifalante passa a funcionar enquanto se chama: o telemóvel entra em modo de chamada logo
+  com o "tuu... tuu" (auricular por omissão, altifalante a pedido; as outras apps baixam o som). Antes o
+  botão só mudava o texto.
+- A escolha feita antes de atender mantém-se depois de atender (antes o ecrã dizia altifalante e o som
+  saía pelo auricular). Sem resposta, o som do telemóvel volta ao normal. O iPhone já fazia assim.
+
 ### 23 de outubro de 2026: pedidos dos testers (apps 0.9.29)
 
 - Chamadas: o "tuu... tuu" de quem liga começa logo ao ligar (antes só com o aviso "a tocar" do outro
