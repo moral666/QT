@@ -87,7 +87,7 @@ export default {
   'index.80': '即将推出',
   'index.81': '即将推出',
   'index.82': '接下来',
-  'index.83': '加密语音通话、群组、最大25&nbsp;MB的文件、恢复密钥和应用锁都已推出。下一步：Google Play和App Store。<a href="./funcionalidades">查看应用的全部功能</a>',
+  'index.83': '加密语音通话、群组、最大25&nbsp;MB的文件、恢复密钥和应用锁都已推出。下一步：加密视频通话、Google Play和App Store。<a href="./funcionalidades">查看应用的全部功能</a>',
   'index.84': '本页面不使用Cookie，也不使用任何追踪你行为的工具。<a href="./politica-de-cookies">Cookie政策</a>',
   'index.85': '<a href="./funcionalidades">功能</a> · <a href="./como-funciona">工作原理</a> · <a href="./privacidade">隐私</a> · <a href="./termos">条款</a> · <a href="./apagar-conta">删除账户</a>',
   'index.86': '© 2026 SEALER，QT项目。',

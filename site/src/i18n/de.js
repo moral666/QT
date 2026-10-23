@@ -86,7 +86,7 @@ export default {
   'index.80': 'Unterwegs',
   'index.81': 'Unterwegs',
   'index.82': 'Was als Nächstes kommt',
-  'index.83': 'Verschlüsselte Sprachanrufe, Gruppen, Dateien bis 25&nbsp;MB, ein Wiederherstellungsschlüssel und die App-Sperre sind schon da. Als Nächstes: Google Play und der App&nbsp;Store. <a href="./funcionalidades">Alles, was die App kann</a>',
+  'index.83': 'Verschlüsselte Sprachanrufe, Gruppen, Dateien bis 25&nbsp;MB, ein Wiederherstellungsschlüssel und die App-Sperre sind schon da. Als Nächstes: verschlüsselte Videoanrufe, Google Play und der App&nbsp;Store. <a href="./funcionalidades">Alles, was die App kann</a>',
   'index.84': 'Diese Seite verwendet keine Cookies und keine Werkzeuge, die verfolgen, was du auf ihr tust. <a href="./politica-de-cookies">Cookie-Richtlinie</a>',
   'index.85': '<a href="./funcionalidades">Funktionen</a> · <a href="./como-funciona">So funktioniert es</a> · <a href="./privacidade">Datenschutz</a> · <a href="./termos">Nutzungsbedingungen</a> · <a href="./apagar-conta">Konto löschen</a>',
   'index.86': '© 2026 SEALER, ein QT-Projekt.',

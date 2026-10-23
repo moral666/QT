@@ -86,7 +86,7 @@ export default {
   'index.80': 'On the way',
   'index.81': 'On the way',
   'index.82': 'What comes next',
-  'index.83': 'Encrypted voice calls, groups, files up to 25&nbsp;MB, a recovery key and app lock are already here. Next: Google Play and the App&nbsp;Store. <a href="./funcionalidades">Everything the app does</a>',
+  'index.83': 'Encrypted voice calls, groups, files up to 25&nbsp;MB, a recovery key and app lock are already here. Next: encrypted video calls, Google Play and the App&nbsp;Store. <a href="./funcionalidades">Everything the app does</a>',
   'index.84': 'This page uses no cookies and no tools to track what you do on it. <a href="./politica-de-cookies">Cookie policy</a>',
   'index.85': '<a href="./funcionalidades">Features</a> · <a href="./como-funciona">How it works</a> · <a href="./privacidade">Privacy</a> · <a href="./termos">Terms</a> · <a href="./apagar-conta">Delete account</a>',
   'index.86': '© 2026 SEALER, a QT project.',
