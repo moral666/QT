@@ -1004,6 +1004,14 @@ para a ligação direta só são trocados depois de atender, dentro do ratchet (
   para (pausa, rede, sem fichas) ao fim de 2 s sem imagens, o ecrã mostra só a foto ou a inicial
   dele, sem texto. Só fica "À espera de [Nome]…" (o pedido da câmara). Sai também a janela de aviso
   da ligação direta e a opção "Ligação direta nas chamadas" do menu da conversa.
+* App Android 0.9.42 (`0010`): videochamada com a app fechada ou o telemóvel bloqueado. O aviso de ecrã
+  inteiro diz "Videochamada de [Nome]" (também quando a op 7 chega noutro lote, sem voltar a tocar) e o
+  ecrã por cima do bloqueio tem o pedido e o vídeo do outro. Com a app fora do ecrã (segundo plano,
+  ecrã bloqueado) a minha câmara fecha e `CallAudio.video_hold(true)` para o envio SÓ deste lado, sem
+  op 8: para o outro o vídeo para (2 s depois vê a minha foto ou a inicial). Ao voltar,
+  `video_hold(false)` repõe o que o núcleo autorizou, com imagem completa. A pausa nunca autoriza nada.
+  Serviço da chamada `phoneCall|microphone|camera` (câmara só com a câmara ligada); sensor de
+  proximidade só de voz.
 
 **API (`QtClient`).** `call_start`, `call_accept`, `call_hangup` (o motivo sai do estado),
 `call_events` (Incoming, Ringing, Answered, Ended; chamar depois de cada lote recebido e de
@@ -1020,7 +1028,8 @@ lista volta logo ao relay); `CallAudioStats.direct` e `both_paths` (só para o r
 `None` ao desligar a câmara de uma videochamada para quem não tem vídeo), `call_video_respond`
 (`View`, `ViewAndCamera`, `NotNow`) e o evento `CallEvent::Video`; no `CallAudio`: `video_params` (enviar, débito, resolução, imagens/s,
 pausa, limitado pelo relay, `keyframe_seq`), `video_push` (imagem H.264, rotação, idade),
-`video_pull` (a próxima imagem do outro lado, já na hora certa), `video_request_keyframe` e
+`video_pull` (a próxima imagem do outro lado, já na hora certa), `video_request_keyframe`,
+`video_hold` (pausa local da minha câmara, desde o 0010) e
 `set_network` (Wi-Fi ou dados móveis).
 
 ## 19. Foto de perfil (desde a app 0.9.9)

@@ -294,6 +294,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var stopNetWatch: (() -> Unit)? = null
     @Volatile private var selfPreview: android.graphics.SurfaceTexture? = null
     @Volatile private var remoteSurface: android.view.Surface? = null
+    /**
+     * A minha camara esta em pausa porque a app saiu do ecra (segundo plano ou ecra bloqueado,
+     * 0010). O botao continua "ligado": volta sozinha quando a app voltar ao ecra.
+     */
+    @Volatile private var cameraHeld = false
+    /** Abrir e fechar a camara nunca se cruzam (ecra, ciclo da chamada e segundo plano). */
+    private val senderLock = Any()
     private val callSounds = CallSounds(app)
     /**
      * O ficheiro dos contactos existe mas nao abriu nesta sessao: nao se grava por cima nem se
@@ -467,6 +474,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun onAppHidden() {
         Push.appVisible = false
+        // Videochamada: a minha camara pausa em silencio (privacidade e regras do Android); a voz continua.
+        holdCameraForBackground()
         if (authInProgress) return
         hiddenAt = SystemClock.elapsedRealtime()
         synchronized(pauseLock) { visible = false }
@@ -2543,6 +2552,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun stopCallMedia() {
+        cameraHeld = false
         stopVideo()
         callSounds.stop()
         // Sem CallAudioIO (ninguem atendeu ou o microfone falhou) nao ha quem devolva o som ao normal.
@@ -2611,7 +2621,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             flushOutbox()
             startCallAudio(client, start.callId)
             if (video) startSender()
-            CallService.start(getApplication(), camera = video)
+            CallService.start(getApplication(), camera = video && !cameraHeld, video = video)
             ensureCallTicker()
         } catch (e: Exception) {
             stopCallMedia()
@@ -2631,7 +2641,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             client.callAccept(c.callId)
             flushOutbox()
             startCallAudio(client, c.callId)
-            CallService.start(getApplication())
+            CallService.start(getApplication(), camera = false, video = c.videoCall)
             _ui.update { it.copy(call = c.copy(phase = CallPhase.ACTIVE, answeredAt = SystemClock.elapsedRealtime())) }
             startCallIO()
             videoOnAnswered(client, c.callId)
@@ -2828,6 +2838,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // A tocar: a op "videochamada" pode chegar depois da oferta ("Videochamada de [Nome]").
         val videoCall = c.videoCall || (qt?.let { runCatching { it.callIsVideo(ev.callId) }.getOrNull() } ?: false)
         _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = nv, videoCall = videoCall)) } ?: u }
+        // Fora do ecra, a tocar: o aviso de ecra inteiro passa a "Videochamada de [Nome]" (sem voltar a tocar).
+        val stillRinging = _ui.value.call?.let { it.callId == c.callId && it.phase == CallPhase.INCOMING } == true
+        if (videoCall && !c.videoCall && stillRinging && !visible) {
+            CallNotify.ringing(
+                getApplication(), if (_ui.value.lockEnabled) null else c.name,
+                sound = false, video = true, update = true,
+            )
+        }
         // Recusou ver o meu video: desliga a minha camara (ninguem a ia ver), em silencio.
         if (ev.peerDeclined && v.camera && !v.peerDeclined) setCamera(false)
         syncReceiver()
@@ -2910,7 +2928,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { flushOutbox() } }
         if (on) startSender() else stopSender()
         syncReceiver()
-        CallService.update(getApplication(), camera = on)
+        CallService.update(getApplication(), camera = on && !cameraHeld)
     }
 
     /** Resposta ao pedido do outro: ver, ver e ligar a minha camara, ou agora nao. */
@@ -2938,7 +2956,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         flushOutbox()
         if (response == VideoResponse.VIEW_AND_CAMERA) {
             startSender()
-            CallService.update(getApplication(), camera = true)
+            CallService.update(getApplication(), camera = !cameraHeld)
         }
         syncReceiver()
     }
@@ -2951,25 +2969,69 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun startSender() {
-        if (videoSender != null) return
-        val a = callAudio ?: return
-        val front = _ui.value.call?.video?.front ?: true
-        videoSender = VideoSender(getApplication(), a).also { vs ->
-            vs.onError = { _ui.update { it.copy(notice = s(R.string.video_camera_failed)) } }
-            vs.onPreview = {
-                val size = vs.previewSize
-                if (size != null) {
-                    _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = cur.video.copy(previewW = size.width, previewH = size.height))) } ?: u }
+        synchronized(senderLock) {
+            // A app fora do ecra: a camara so abre quando voltar (onAppResumed).
+            if (videoSender != null || cameraHeld) return
+            val a = callAudio ?: return
+            val front = _ui.value.call?.video?.front ?: true
+            videoSender = VideoSender(getApplication(), a).also { vs ->
+                vs.onError = { _ui.update { it.copy(notice = s(R.string.video_camera_failed)) } }
+                vs.onPreview = {
+                    val size = vs.previewSize
+                    if (size != null) {
+                        _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = cur.video.copy(previewW = size.width, previewH = size.height))) } ?: u }
+                    }
                 }
+                vs.setPreview(selfPreview)
+                vs.start(front)
             }
-            vs.setPreview(selfPreview)
-            vs.start(front)
         }
     }
 
     private fun stopSender() {
-        videoSender?.stop()
-        videoSender = null
+        synchronized(senderLock) {
+            videoSender?.let { vs ->
+                // Fechada por nos (ex.: segundo plano): uma queda da camara a meio nao e um erro a mostrar.
+                vs.onError = null
+                vs.stop()
+            }
+            videoSender = null
+        }
+    }
+
+    /**
+     * A app saiu do ecra (segundo plano ou ecra bloqueado) com a minha camara ligada: a camara
+     * fecha e nada sai, sem avisar o outro lado (para ele o video para e ve so a minha foto ou
+     * a inicial, sem texto). A voz continua. O botao fica "ligado".
+     */
+    private fun holdCameraForBackground() {
+        val c = _ui.value.call ?: return
+        if (c.phase == CallPhase.ENDED || !c.video.camera) return
+        synchronized(senderLock) {
+            if (cameraHeld) return
+            cameraHeld = true
+        }
+        callAudio?.videoHold(true)
+        stopSender()
+        CallService.update(getApplication(), camera = false)
+    }
+
+    /**
+     * A app voltou ao ecra (Activity.onResume): a camara volta sozinha se continuava ligada. O
+     * tipo camara do servico primeiro (o Android so o da com a app no ecra), depois a camara.
+     */
+    fun onAppResumed() {
+        val cur = _ui.value.call
+        if (cur != null && cur.phase != CallPhase.INCOMING && cur.phase != CallPhase.ENDED) CallService.ensure(getApplication())
+        synchronized(senderLock) {
+            if (!cameraHeld) return
+            cameraHeld = false
+        }
+        val c = _ui.value.call
+        val on = c != null && c.phase != CallPhase.ENDED && c.video.camera
+        if (on) CallService.update(getApplication(), camera = true)
+        callAudio?.videoHold(false)
+        if (on) startSender()
     }
 
     private fun stopVideo() {

@@ -22,6 +22,11 @@
 //!
 //! O que pode sair e entrar decide o nucleo (`call_video_set_camera` / `call_video_respond`):
 //! sem o outro aceitar, `video_push` devolve `false` e nada sai.
+//!
+//! PAUSA LOCAL (0010, `video_hold`): a app saiu do ecra (segundo plano ou ecra bloqueado) com a
+//! camara ligada. A camara fecha e o envio para SO deste lado, sem avisar o outro: para ele o
+//! video simplesmente para (ve a minha foto ou a inicial). So pode tirar, nunca dar: com a pausa
+//! nada sai, mesmo que o nucleo autorize; sem ela fica o que o nucleo autorizou.
 
 use std::sync::{Arc, Mutex};
 
@@ -36,6 +41,15 @@ pub const CALL_FRAME_BYTES: u32 = (FRAME_SAMPLES * 2) as u32;
 #[derive(uniffi::Object)]
 pub struct CallAudio {
     engine: Mutex<Option<Arc<CallEngine>>>,
+    /// O que o nucleo autorizou e a pausa local da app (ver o inicio do ficheiro).
+    gate: Mutex<VideoGate>,
+}
+
+/// Enviar video: o que o nucleo autorizou e a pausa local (`video_hold`).
+#[derive(Default)]
+struct VideoGate {
+    send: bool,
+    hold: bool,
 }
 
 /// Rede do telemovel, para o teto do video em ligacao direta.
@@ -113,7 +127,7 @@ pub struct CallAudioStats {
 
 impl CallAudio {
     pub(crate) fn new(engine: CallEngine) -> Arc<Self> {
-        Arc::new(CallAudio { engine: Mutex::new(Some(Arc::new(engine))) })
+        Arc::new(CallAudio { engine: Mutex::new(Some(Arc::new(engine))), gate: Mutex::new(VideoGate::default()) })
     }
 
     fn engine(&self) -> Option<Arc<CallEngine>> {
@@ -130,9 +144,13 @@ impl CallAudio {
     /// Ligacao direta: so `crate::call` chama isto, com a regra cumprida (ver la).
     /// O nucleo: o que pode sair (camara ligada E o outro aceitou) e entrar (aceitei E a
     /// camara dele esta ligada).
+    /// Com a pausa local (`video_hold`) nada sai, mesmo autorizado.
     pub(crate) fn video_authorize(&self, send: bool, receive: bool) {
+        // O motor muda com o `gate` preso: uma pausa e uma autorizacao nunca se cruzam.
+        let Ok(mut g) = self.gate.lock() else { return };
+        g.send = send;
         if let Some(e) = self.engine() {
-            e.video_set_sending(send);
+            e.video_set_sending(send && !g.hold);
             e.video_set_receiving(receive);
         }
     }
@@ -230,6 +248,21 @@ impl CallAudio {
     pub fn video_request_keyframe(&self) {
         if let Some(e) = self.engine() {
             e.video_request_keyframe();
+        }
+    }
+
+    /// PAUSA LOCAL da minha camara (a app saiu do ecra: segundo plano ou ecra bloqueado). `true`:
+    /// nada sai, sem avisar o outro lado (para ele o video para, como numa falha de rede).
+    /// `false`: volta ao que o nucleo autorizou (com imagem completa logo a seguir). Nunca
+    /// autoriza nada sozinha: o consentimento continua a ser do nucleo.
+    pub fn video_hold(&self, on: bool) {
+        let Ok(mut g) = self.gate.lock() else { return };
+        if g.hold == on {
+            return;
+        }
+        g.hold = on;
+        if let Some(e) = self.engine() {
+            e.video_set_sending(g.send && !on);
         }
     }
 

@@ -171,9 +171,13 @@ object SealerCore {
 
     /**
      * Chamada a tocar sem o ecra. `callId` null: com o bloqueio da app (so se sabe que e uma
-     * chamada). `video`: videochamada ("Videochamada" no aviso).
+     * chamada). `video`: videochamada ("Videochamada de [Nome]" no aviso); pode passar a true
+     * depois de comecar a tocar, se a op do video chegar noutro lote ([upgradeToVideo]).
      */
-    class Ringing(val callId: String?, val contactId: String?, val name: String?, val video: Boolean = false)
+    class Ringing(val callId: String?, val contactId: String?, val name: String?, video: Boolean = false) {
+        @Volatile var video: Boolean = video
+            internal set
+    }
 
     private val ringLock = Any()
     @Volatile var ringing: Ringing? = null
@@ -206,7 +210,17 @@ object SealerCore {
             ringing = r
             ringJob = scope.launch { watchRinging(ctx, r) }
         }
-        CallNotify.ringing(ctx, r.name, sound = true, video = r.video)
+        CallNotify.ringing(ctx, r.name, sound = true, video = r.video, kindKnown = r.callId != null)
+    }
+
+    /** A chamada a tocar afinal e uma videochamada: troca o aviso (sem voltar a tocar do inicio). */
+    private fun upgradeToVideo(ctx: Context, r: Ringing) {
+        // Dentro do lock: um "parar de tocar" ao mesmo tempo nunca fica com o aviso de volta.
+        synchronized(ringLock) {
+            if (ringing !== r || r.video) return
+            r.video = true
+            CallNotify.ringing(ctx, r.name, sound = true, video = true, update = true)
+        }
     }
 
     /** Para de tocar se `r` ainda for a chamada a tocar. */
@@ -473,6 +487,16 @@ object SealerCore {
                 is CallEvent.Ended -> {
                     val r = ringing
                     if (r != null && r.callId == ev.callId) stopRinging(ctx, r, missed = true) else leftover += ev
+                }
+                is CallEvent.Video -> {
+                    // A op "videochamada" chegou depois da oferta: o aviso passa a "Videochamada de [Nome]".
+                    val r = ringing
+                    if (r != null && r.callId == ev.callId && !r.video &&
+                        runCatching { c.callIsVideo(ev.callId) }.getOrDefault(false)
+                    ) {
+                        upgradeToVideo(ctx, r)
+                    }
+                    leftover += ev   // o ecra tambem precisa dele (estado do video)
                 }
                 else -> leftover += ev
             }

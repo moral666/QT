@@ -1,5 +1,6 @@
 package pt.qt.app
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
@@ -9,6 +10,7 @@ import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
@@ -24,7 +26,10 @@ import android.media.ToneGenerator
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.PowerManager
 import android.os.Process
 import android.os.SystemClock
 import android.os.VibrationEffect
@@ -37,6 +42,7 @@ import androidx.core.content.ContextCompat
 import uniffi.qt_ffi.CallAudio
 import uniffi.qt_ffi.callFrameBytes
 import kotlinx.coroutines.launch
+import java.lang.ref.WeakReference
 
 /**
  * Chamadas de voz (fase 4a: com a app aberta). Aqui so ha o que e do Android:
@@ -354,48 +360,109 @@ object CallControl {
 }
 
 /**
- * Servico em primeiro plano durante a chamada: o Android so deixa usar o microfone com a
- * app fora do ecra se houver um (tipo "microphone"); com a camara ligada, tambem do tipo
- * "camera" (fase 5b). Mostra a notificacao "Chamada em curso", sem o nome de quem esta do
- * outro lado.
+ * Servico em primeiro plano durante a chamada: o Android so deixa usar o microfone (e a camara)
+ * com a app fora do ecra se houver um. Mostra a notificacao "Chamada em curso", sem o nome de
+ * quem esta do outro lado.
+ *
+ * Desde a 0.9.42 (0010):
+ *  * Tipos (Android 11+): `phoneCall` sempre; `microphone` com a permissao do microfone;
+ *    `camera` so enquanto a camara esta ligada (em segundo plano ela pausa, ver MainViewModel).
+ *  * So ARRANCA com a app no ecra (ligar, atender): o Android 12+ nao deixa arrancar um servico
+ *    destes em segundo plano e o 14+ so da microfone e camara a um servico arrancado no ecra.
+ *    Depois, mudar de tipo vai direto ao servico que ja corre (`startForeground`), sem outro
+ *    `startForegroundService` (que em segundo plano dava ForegroundServiceStartNotAllowedException).
+ *  * Um tipo recusado (SecurityException: permissao retirada, por exemplo) tenta com menos:
+ *    sem camara e, so ao arrancar, so `phoneCall`. Nunca para sem ter chamado `startForeground`
+ *    (o Android fechava a app) e nunca com `stopService` de fora: so o proprio servico para,
+ *    quando ja nao ha chamada.
  */
 class CallService : Service() {
+    /** O ultimo pedido entregue: `stopSelfResult` so para se nao houver um mais novo a caminho. */
+    private var lastStartId = 0
+    /** Tipos com que esta em primeiro plano agora; -1 = ainda nao esta. */
+    private var current = -1
+
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        ref = WeakReference(this)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
+        ref = WeakReference(this)
         if (intent?.action == ACTION_HANGUP) {
             CallControl.hangup?.invoke()
+            if (!wanted) finish()
             return START_NOT_STICKY
         }
-        val camera = intent?.getBooleanExtra(EXTRA_CAMERA, false) == true
-        val n = notification(this, camera)
-        try {
-            if (Build.VERSION.SDK_INT >= 30) {
-                var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                if (camera) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-                startForeground(NOTIFICATION_ID, n, types)
-            } else {
-                startForeground(NOTIFICATION_ID, n)
+        promote()
+        // A chamada acabou antes de o servico arrancar: ja chamou startForeground, pode parar.
+        if (!wanted) finish()
+        return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        if (ref?.get() === this) ref = null
+        super.onDestroy()
+    }
+
+    private fun granted(permission: String) =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+    /** Primeiro plano com os tipos que a chamada quer agora (thread principal). */
+    private fun promote() {
+        if (!wanted && current >= 0) return
+        val n = notification(this, videoText)
+        if (Build.VERSION.SDK_INT >= 30) {
+            val phone = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+            val mic = if (granted(Manifest.permission.RECORD_AUDIO)) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0
+            val cam = if (wantCamera && granted(Manifest.permission.CAMERA)) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0
+            val full = phone or mic or cam
+            // Ja em primeiro plano: nunca descer abaixo do microfone (a voz cortava em segundo plano).
+            val tries = if (current < 0) listOf(full, phone or mic, phone) else listOf(full, phone or mic)
+            for (types in tries.distinct()) {
+                try {
+                    startForeground(NOTIFICATION_ID, n, types)
+                    current = types
+                    return
+                } catch (e: Exception) {
+                    Log.w(TAG, "servico da chamada: ${e.javaClass.simpleName} (tipos $types)")
+                }
             }
-        } catch (e: Exception) {
-            // Ex.: sem permissao do microfone (ou da camara). A chamada continua enquanto a app
-            // estiver aberta; com a camara recusada, fica pelo menos o microfone.
-            Log.w(TAG, "servico da chamada: ${e.javaClass.simpleName}")
-            if (camera && Build.VERSION.SDK_INT >= 30) {
-                runCatching { startForeground(NOTIFICATION_ID, notification(this, false), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) }
-                    .onFailure { stopSelf() }
-            } else {
-                stopSelf()
+        } else {
+            // Android 7 a 10: sem tipos de microfone/camara (ficam os do manifesto).
+            try {
+                startForeground(NOTIFICATION_ID, n)
+                current = 0
+            } catch (e: Exception) {
+                Log.w(TAG, "servico da chamada: ${e.javaClass.simpleName}")
             }
         }
-        return START_NOT_STICKY
+    }
+
+    /** Sem chamada: sai do primeiro plano e para (so se nao houver outro pedido a caminho). */
+    private fun finish() {
+        if (wanted) return
+        if (ref?.get() === this) ref = null
+        if (current >= 0) runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+        current = -1
+        stopSelfResult(lastStartId)
     }
 
     companion object {
         private const val ACTION_HANGUP = "pt.qt.app.HANGUP"
-        private const val EXTRA_CAMERA = "pt.qt.app.CAMARA"
         private const val NOTIFICATION_ID = 7
         const val CHANNEL = "chamadas"
+        private val main = Handler(Looper.getMainLooper())
+        /** O servico a correr (para lhe mudar os tipos sem novo startForegroundService). */
+        @Volatile private var ref: WeakReference<CallService>? = null
+        /** Ha uma chamada que quer o servico. `false`: o servico para assim que puder. */
+        @Volatile private var wanted = false
+        @Volatile private var wantCamera = false
+        /** "Videochamada em curso" (fica ate a chamada acabar, mesmo com a camara em pausa). */
+        @Volatile private var videoText = false
 
         fun ensureChannel(ctx: Context) {
             if (Build.VERSION.SDK_INT < 26) return
@@ -409,7 +476,7 @@ class CallService : Service() {
             )
         }
 
-        private fun notification(ctx: Context, camera: Boolean): Notification {
+        private fun notification(ctx: Context, video: Boolean): Notification {
             ensureChannel(ctx)
             val open = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             val pi = PendingIntent.getActivity(ctx, 1, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -420,8 +487,9 @@ class CallService : Service() {
             return NotificationCompat.Builder(ctx, CHANNEL)
                 .setSmallIcon(R.drawable.ic_stat_sealer)
                 .setContentTitle("SEALER")
-                .setContentText(s(if (camera) R.string.t_videochamada_em_curso else R.string.t_chamada_de_voz_em_curso))
+                .setContentText(s(if (video) R.string.t_videochamada_em_curso else R.string.t_chamada_de_voz_em_curso))
                 .setOngoing(true)
+                .setOnlyAlertOnce(true)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setContentIntent(pi)
@@ -429,17 +497,76 @@ class CallService : Service() {
                 .build()
         }
 
-        fun start(ctx: Context, camera: Boolean = false) {
-            runCatching { ContextCompat.startForegroundService(ctx, Intent(ctx, CallService::class.java).putExtra(EXTRA_CAMERA, camera)) }
+        /**
+         * A chamada comecou (ligar ou atender, sempre com a app no ecra). `camera`: a minha camara
+         * ligada; `video`: videochamada (o texto da notificacao). Ja a correr: so muda os tipos.
+         */
+        fun start(ctx: Context, camera: Boolean = false, video: Boolean = camera) {
+            wanted = true
+            wantCamera = camera
+            videoText = video || camera
+            val svc = ref?.get()
+            if (svc != null) {
+                main.post { svc.promote() }
+                return
+            }
+            runCatching { ContextCompat.startForegroundService(ctx, Intent(ctx, CallService::class.java)) }
                 .onFailure { Log.w(TAG, "servico da chamada: ${it.javaClass.simpleName}") }
         }
 
-        /** A camara ligou ou desligou: o servico passa a ser (ou deixa de ser) do tipo camara. */
-        fun update(ctx: Context, camera: Boolean) = start(ctx, camera)
-
-        fun stop(ctx: Context) {
-            ctx.stopService(Intent(ctx, CallService::class.java))
+        /**
+         * A app voltou ao ecra com uma chamada: se o servico nao chegou a arrancar (o Android pode
+         * recusar o arranque fora do ecra), tenta outra vez agora.
+         */
+        fun ensure(ctx: Context) {
+            if (!wanted || ref?.get() != null) return
+            runCatching { ContextCompat.startForegroundService(ctx, Intent(ctx, CallService::class.java)) }
+                .onFailure { Log.w(TAG, "servico da chamada: ${it.javaClass.simpleName}") }
         }
+
+        /**
+         * A camara ligou ou desligou (ou pausou): o servico passa a ser (ou deixa de ser) do tipo
+         * camara. Ligar so com a app no ecra. Ainda a arrancar: o arranque ja usa o valor novo.
+         */
+        @Suppress("UNUSED_PARAMETER")
+        fun update(ctx: Context, camera: Boolean) {
+            if (!wanted) return
+            wantCamera = camera
+            if (camera) videoText = true
+            val svc = ref?.get() ?: return
+            main.post { svc.promote() }
+        }
+
+        /** A chamada acabou: o servico sai do primeiro plano e para (ele proprio, sem stopService). */
+        @Suppress("UNUSED_PARAMETER")
+        fun stop(ctx: Context) {
+            wanted = false
+            wantCamera = false
+            videoText = false
+            val svc = ref?.get() ?: return
+            main.post { svc.finish() }
+        }
+    }
+}
+
+/** Ecra apagado ao encostar o telemovel ao ouvido (so nas chamadas de voz, ver CallScreen). */
+object CallProximity {
+    /** `null`: o telemovel nao tem sensor de proximidade (ou o Android nao deixa). */
+    @SuppressLint("WakelockTimeout")   // largado quando o ecra da chamada sai ou passa a video
+    fun acquire(ctx: Context): PowerManager.WakeLock? {
+        val pm = ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return null
+        if (!pm.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) return null
+        return runCatching {
+            pm.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "sealer:chamada").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }.getOrNull()
+    }
+
+    /** Larga; se o telemovel ainda estiver encostado, o ecra so acende quando o afastar. */
+    fun release(lock: PowerManager.WakeLock) {
+        runCatching { if (lock.isHeld) lock.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY) }
     }
 }
 
@@ -503,9 +630,21 @@ object CallNotify {
      * Nao depende do interruptor "Notificacoes" (de proposito): e a forma de atender. Com ele
      * desligado o relay nao acorda o telemovel, por isso so toca com a app ainda a correr.
      * A chamada perdida e um aviso como os outros e segue o interruptor.
+     *
+     * `video`: videochamada, "Videochamada de [Nome]" (0010; com o botao de atender com a camara).
+     * `kindKnown` false: com o bloqueio da app nada se decifra e nao se sabe se e de voz ou de
+     * video (fica so "Chamada SEALER"). `update`: a mesma chamada passou a videochamada (a op do
+     * video chegou depois da oferta): troca o texto sem voltar a tocar nem a abrir o ecra.
      */
     @SuppressLint("MissingPermission")   // verificada em Push.permissionGranted
-    fun ringing(ctx: Context, name: String?, sound: Boolean, video: Boolean = false) {
+    fun ringing(
+        ctx: Context,
+        name: String?,
+        sound: Boolean,
+        video: Boolean = false,
+        kindKnown: Boolean = true,
+        update: Boolean = false,
+    ) {
         if (!Push.permissionGranted(ctx)) return
         if (sound) ensureRingChannel(ctx) else CallService.ensureChannel(ctx)
         val show = activityIntent(ctx, ACTION_SHOW, 4)
@@ -514,22 +653,31 @@ object CallNotify {
             ctx, 6, Intent(ctx, CallActionReceiver::class.java).setAction(ACTION_DECLINE),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val title = name?.takeIf { it.isNotBlank() } ?: s(R.string.t_chamada_sealer)
+        val known = name?.takeIf { it.isNotBlank() }
+        val title = known ?: s(R.string.t_chamada_sealer)
+        val text = when {
+            !kindKnown -> null
+            video && known != null -> s(R.string.video_call_from, known)
+            video -> s(R.string.video_call_sealer)
+            else -> s(R.string.t_chamada_de_voz_sealer)
+        }
         val channel = if (sound) RING_CHANNEL else CallService.CHANNEL
         fun base() = NotificationCompat.Builder(ctx, channel)
             .setSmallIcon(R.drawable.ic_stat_sealer)
             .setContentTitle(title)
-            .setContentText(s(if (video) R.string.video_call_sealer else R.string.t_chamada_de_voz_sealer))
+            .apply { if (text != null) setContentText(text) }
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
+            // Atualizacao: o toque continua (nao recomeca) e o ecra inteiro nao volta a abrir.
+            .setOnlyAlertOnce(update)
             .setContentIntent(show)
             .setFullScreenIntent(show, true)
             .setTimeoutAfter(SealerCore.RING_MS)
         val n = runCatching {
             val person = Person.Builder().setName(title).setImportant(true).build()
-            base().setStyle(NotificationCompat.CallStyle.forIncomingCall(person, decline, answer)).build()
+            base().setStyle(NotificationCompat.CallStyle.forIncomingCall(person, decline, answer).setIsVideo(video)).build()
         }.getOrElse {
             // Sem o estilo de chamada: botoes normais.
             base().addAction(0, s(R.string.t_recusar), decline).addAction(0, s(R.string.t_atender), answer).build()

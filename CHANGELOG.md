@@ -6,6 +6,26 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 24 de outubro de 2026: videochamadas com a app fechada ou o ecrã bloqueado (0010, app Android 0.9.42)
+
+- Videochamada a chegar com a app fechada ou o telemóvel bloqueado: o aviso de ecrã inteiro diz
+  "Videochamada de [Nome]" (com o botão de atender com a câmara). Se a indicação de vídeo chegar
+  depois da chamada, o aviso muda sem voltar a tocar do início. Com o bloqueio da app só aparece
+  "Chamada SEALER", sem dizer se é de voz ou de vídeo.
+- Por cima do bloqueio do telemóvel o ecrã da chamada passa a ter vídeo: o pedido "[Nome] quer mostrar
+  vídeo" e o vídeo do outro aparecem; a minha câmara só liga se eu carregar no botão.
+- App em segundo plano ou ecrã bloqueado a meio da chamada: a voz continua; a minha câmara fecha em
+  silêncio e volta sozinha quando a app volta ao ecrã, se estava ligada. Do outro lado vê-se só a
+  minha foto ou a inicial, sem texto. A pausa é só deste lado (`CallAudio.video_hold` no núcleo):
+  nada sai para a rede e o outro lado não recebe aviso nenhum.
+- Serviço da chamada com os tipos `phoneCall|microphone|camera` (Android 14+; câmara só com a câmara
+  ligada). Arranca só com a app no ecrã; depois os tipos mudam no próprio serviço, sem novo arranque em
+  segundo plano. Nunca para antes de entrar em primeiro plano. Permissões novas:
+  `FOREGROUND_SERVICE_PHONE_CALL`, `MANAGE_OWN_CALLS` e `WAKE_LOCK`.
+- Sensor de proximidade só nas chamadas de voz (ecrã apaga ao encostar ao ouvido, nunca com vídeo nem em
+  altifalante). Com vídeo, o ecrã fica sempre aceso.
+- Sem strings novas e sem bibliotecas novas.
+
 ### 24 de outubro de 2026: política de privacidade, site e alarme de orçamento (0008)
 
 - Política de privacidade (dez línguas): secção nova "Chamadas e videochamadas" (ligação direta entre

@@ -96,7 +96,8 @@ A Play Console não tem questionário. O enquadramento está em
 | Aplicações governamentais | Não |
 | Funcionalidades financeiras | Nenhuma |
 | Saúde | Nenhuma |
-| Intenção de ecrã inteiro (`USE_FULL_SCREEN_INTENT`) | Declarar o uso: **chamadas de voz** (a chamada a chegar aparece em ecrã inteiro com o telemóvel bloqueado). Sem esta declaração, no Android 14 ou mais recente a permissão vem desligada e a chamada só aparece como um aviso pequeno. A app pede-a uma vez (desde a 0.9.23). |
+| Intenção de ecrã inteiro (`USE_FULL_SCREEN_INTENT`) | Declarar o uso: **chamadas de voz e videochamadas** (a chamada a chegar aparece em ecrã inteiro com o telemóvel bloqueado). Sem esta declaração, no Android 14 ou mais recente a permissão vem desligada e a chamada só aparece como um aviso pequeno. A app pede-a uma vez (desde a 0.9.23). |
+| Serviços em primeiro plano (Android 14+) | Declarar os três tipos do serviço da chamada (desde a 0.9.42): **phoneCall** (chamada de voz ou videochamada em curso), **microphone** (a voz continua com a app fora do ecrã) e **camera** (só enquanto a câmara da videochamada está ligada; com a app fora do ecrã a câmara pausa). A Play Console pede um vídeo curto a mostrar cada uso. |
 
 ## 6. Antes de publicar
 

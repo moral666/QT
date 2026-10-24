@@ -74,6 +74,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.delay
 import uniffi.qt_ffi.VideoResponse
 
@@ -130,6 +133,9 @@ private const val CONTROLS_HIDE_MS = 3_500L
  *    toque no ecra. So de voz (ou com o TalkBack ligado): sempre visiveis.
  *
  * FLAG_SECURE: nada deste ecra sai em capturas, gravacoes do ecra nem na lista de apps recentes.
+ *
+ * Ecra (0010): com video fica sempre aceso; so de voz, apaga-se ao encostar ao ouvido (sensor de
+ * proximidade), nunca com video. A app fora do ecra: a minha camara pausa (MainViewModel).
  */
 @Composable
 fun CallScreen(
@@ -140,7 +146,7 @@ fun CallScreen(
     onSpeaker: () -> Unit,
     /** Minimizar (volta-se pela barra no topo da app); `null` = sem botao (a chegar, terminada). */
     onMinimize: (() -> Unit)? = null,
-    /** Video (`null` = sem video neste ecra, ex.: por cima do bloqueio do telemovel). */
+    /** Video (`null` = sem video neste ecra). Desde a 0.9.42 tambem por cima do bloqueio do telemovel. */
     onCamera: (() -> Unit)? = null,
     onSwitchCamera: () -> Unit = {},
     onVideoRespond: ((VideoResponse) -> Unit)? = null,
@@ -164,6 +170,9 @@ fun CallScreen(
     val showSelf = onCamera != null && v.camera && (active || calling)
     val videoOn = showRemote || showSelf
     val request = videoAllowed && v.request && onVideoRespond != null
+    // Ecra apagado ao ouvido so de voz (0010): nunca com video no ecra, com um pedido de video por
+    // responder ou em altifalante. Com video, o ecra fica sempre aceso.
+    CallScreenPower(proximity = (active || calling) && !videoOn && !request && !call.speaker, keepOn = videoOn)
 
     // Esconder o topo e os controlos: so com video e atendida, sem um pedido de video por
     // responder, e nunca com o TalkBack (o leitor de ecra tem de encontrar sempre os botoes).
@@ -290,6 +299,36 @@ fun CallScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Aceso com video (sem isto o Android apagava o ecra pelo tempo de inatividade) e apagado ao
+ * encostar ao ouvido so de voz (sensor de proximidade). O sensor so conta com a app no ecra:
+ * em segundo plano nunca apaga o ecra das outras apps.
+ */
+@Composable
+private fun CallScreenPower(proximity: Boolean, keepOn: Boolean) {
+    val view = LocalView.current
+    DisposableEffect(view, keepOn) {
+        if (keepOn) view.keepScreenOn = true
+        onDispose { if (keepOn) view.keepScreenOn = false }
+    }
+    val context = LocalContext.current
+    val owner = context.findActivity() as? LifecycleOwner
+    var started by remember(owner) { mutableStateOf(owner?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: true) }
+    DisposableEffect(owner) {
+        val obs = LifecycleEventObserver { _, e ->
+            if (e == Lifecycle.Event.ON_START) started = true
+            if (e == Lifecycle.Event.ON_STOP) started = false
+        }
+        owner?.lifecycle?.addObserver(obs)
+        onDispose { owner?.lifecycle?.removeObserver(obs) }
+    }
+    val on = proximity && started
+    DisposableEffect(on) {
+        val lock = if (on) CallProximity.acquire(context.applicationContext) else null
+        onDispose { lock?.let { CallProximity.release(it) } }
     }
 }
 

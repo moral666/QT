@@ -1570,6 +1570,45 @@ mod p2p_tests {
     }
 
     #[test]
+    fn pausa_local_da_camara_nada_sai_nem_avisa_e_volta() {
+        let (a, b) = pair();
+        let k = video_call(&a, &b);
+        a.c.call_video_set_camera(k.id.clone(), true).unwrap();
+        deliver(&a, &b);
+        b.c.call_video_respond(k.id.clone(), VideoResponse::View).unwrap();
+        deliver(&b, &a);
+        a.c.call_events().unwrap();
+        b.c.call_events().unwrap();
+        assert!(k.audio_a.video_params().send);
+        // A app de A sai do ecra: nada sai e B nao recebe aviso nenhum.
+        k.audio_a.video_hold(true);
+        assert!(!k.audio_a.video_params().send);
+        assert!(!k.audio_a.video_push(vec![1; 5000], true, 0, 0), "nada sai em pausa");
+        assert_eq!(deliver(&a, &b), 0, "a pausa nao manda nada ao outro lado");
+        assert!(video_events(&b).is_empty());
+        // Uma autorizacao nova do nucleo (B volta a responder) nao tira a pausa.
+        b.c.call_video_respond(k.id.clone(), VideoResponse::View).unwrap();
+        deliver(&b, &a);
+        a.c.call_events().unwrap();
+        assert!(!k.audio_a.video_params().send, "a pausa fica ate a app a tirar");
+        // A volta ao ecra: o video volta a sair e a chegar a B.
+        k.audio_a.video_hold(false);
+        assert!(k.audio_a.video_params().send);
+        std::thread::scope(|sc| {
+            sc.spawn(|| push_frames(&k.audio_a, 60));
+            let got = pull_all(&k.audio_b, 2_500);
+            assert!(got >= 40, "B so recebeu {got} imagens depois da pausa");
+        });
+        // A pausa nunca autoriza: com a camara desligada, tirar a pausa nao faz sair nada.
+        a.c.call_video_set_camera(k.id.clone(), false).unwrap();
+        k.audio_a.video_hold(true);
+        k.audio_a.video_hold(false);
+        assert!(!k.audio_a.video_params().send);
+        assert!(!k.audio_a.video_push(vec![1; 5000], true, 0, 0));
+        a.c.call_hangup(k.id).unwrap();
+    }
+
+    #[test]
     fn agora_nao_nada_chega_e_quem_pediu_fica_a_saber() {
         let (a, b) = pair();
         let k = video_call(&a, &b);
