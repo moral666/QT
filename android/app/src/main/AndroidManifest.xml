@@ -11,6 +11,13 @@
          microfone quando a app sai do ecra), altifalante/auricular e vibracao ao tocar. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Desde a 0.9.42 (0010) o servico da chamada e tambem do tipo "phoneCall" (chamada em curso):
+         o Android 14+ pede esta permissao e a MANAGE_OWN_CALLS (normal, dada ao instalar; a app
+         nao usa o Telecom nem mexe nas chamadas do telemovel). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <!-- Ecra apagado ao encostar ao ouvido, so nas chamadas de voz (sensor de proximidade). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Videochamadas (fase 5b): a camara e pedida so quando se carrega no botao da camara
          (tambem a usa o leitor de QR). O servico da chamada passa a ser tambem do tipo
          "camera" enquanto a camara esta ligada. Telemoveis sem camara instalam na mesma. -->
@@ -58,12 +65,12 @@
             android:authorities="${applicationId}.ficheiros"
             android:exported="false"
             android:grantUriPermissions="true" />
-        <!-- Chamada em curso (Calls.kt): mantem o microfone (e a camara, com video) com a app
-             fora do ecra. -->
+        <!-- Chamada em curso (Calls.kt): mantem a chamada e o microfone com a app fora do ecra; o
+             tipo "camera" so enquanto a camara esta ligada (com a app fora do ecra ela pausa). -->
         <service
             android:name=".CallService"
             android:exported="false"
-            android:foregroundServiceType="microphone|camera" />
+            android:foregroundServiceType="phoneCall|microphone|camera" />
         <!-- "Recusar" na notificacao da chamada a chegar (Calls.kt). -->
         <receiver
             android:name=".CallActionReceiver"

@@ -338,6 +338,8 @@ class MainActivity : FragmentActivity() {
             hiddenForRecents = false
             applySecure()
         }
+        // Videochamada: a minha camara volta se tinha pausado com a app fora do ecra (0010).
+        vm.onAppResumed()
     }
 
     override fun onStop() {
@@ -535,7 +537,7 @@ fun AppRoot(
     // A barra ja ocupa a barra de estado: os ecras por baixo nao a reservam outra vez.
     Box(Modifier.weight(1f).then(if (showCallBar) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier)) {
     when {
-        overLock -> CallOverLock(ui, vm, withMic, keyguardLocked, onLeaveLock, onDone)
+        overLock -> CallOverLock(ui, vm, withMic, withCamera, keyguardLocked, onLeaveLock, onDone)
         ui.loading -> LoadingScreen()
         call != null && !ui.locked && !showCallBar -> {
             // O "voltar" minimiza (antes nao fazia nada); desligar so no botao.
@@ -777,12 +779,16 @@ fun AppRoot(
  * Por cima do bloqueio do telemovel (a app abriu por uma chamada): so a chamada, ou o codigo
  * da app se o bloqueio estiver ativo. Nada das conversas. Sem chamada (acabou ou nunca
  * chegou), fecha; com o telemovel desbloqueado, volta a app normal.
+ *
+ * Desde a 0.9.42 (0010) tambem com video: o pedido "[Nome] quer mostrar video" e o video do
+ * outro aparecem aqui; a minha camara so liga se eu carregar no botao (como com a app aberta).
  */
 @Composable
 private fun CallOverLock(
     ui: UiState,
     vm: MainViewModel,
     withMic: (() -> Unit) -> Unit,
+    withCamera: (() -> Unit) -> Unit,
     keyguardLocked: () -> Boolean,
     onLeaveLock: () -> Unit,
     onDone: () -> Unit,
@@ -814,6 +820,11 @@ private fun CallOverLock(
             onHangup = vm::hangupCall,
             onMute = vm::toggleMute,
             onSpeaker = vm::toggleSpeaker,
+            onCamera = { if (call.video.camera) vm.toggleCamera() else withCamera { vm.toggleCamera() } },
+            onSwitchCamera = vm::switchCamera,
+            onVideoRespond = { r -> if (r == VideoResponse.VIEW_AND_CAMERA) withCamera { vm.respondVideo(r) } else vm.respondVideo(r) },
+            onSelfPreview = vm::setSelfPreview,
+            onRemoteSurface = vm::setRemoteSurface,
         )
         // Sem "apagar os dados" aqui: o telemovel ainda esta bloqueado.
         ui.locked -> LockScreen(ui, onCode = vm::unlockWithCode, onBio = vm::requestBioUnlock, onWipe = {}, canWipe = false)
