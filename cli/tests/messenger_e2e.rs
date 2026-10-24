@@ -146,8 +146,10 @@ async fn dois_terminais_trocam_mensagens_e_recibos() {
     let id_r = public_id_from(&ok(run(&rui, pass_r, None, &["identity"]).await));
     assert_eq!(public_id_from(&ok(run(&ana, pass_a, None, &["id"]).await)), id_a);
 
-    // O Rui publica as chaves; a Ana adiciona-o e escreve.
+    // Os dois publicam as chaves: o relay so aceita mensagens de uma conta registada (o `send`
+    // nao regista; as apps registam sempre que abrem). A Ana adiciona o Rui e escreve.
     ok(run(&rui, pass_r, Some(&relay), &["register"]).await);
+    ok(run(&ana, pass_a, Some(&relay), &["register"]).await);
     ok(run(&ana, pass_a, None, &["add", "Rui", &id_r]).await);
     let s = ok(run(&ana, pass_a, Some(&relay), &["send", "--to", "Rui", "--message", "ola Rui"]).await);
     assert!(s.contains("enviada"), "{s}");
@@ -195,6 +197,10 @@ async fn terminal_e_app_falam_nos_dois_sentidos() {
     let mut link = AppLink::connect(&app, &relay).await;
     let r = link.req(app.relay_request_register_bundle(app.publishable_bundle().unwrap()).unwrap()).await;
     assert!(matches!(r, RelayResponse::Ack));
+
+    // O terminal tambem publica as chaves: o relay so aceita mensagens de (e para) uma conta
+    // registada.
+    ok(run(&cli_db, pass, Some(&relay), &["register"]).await);
 
     // Terminal -> app.
     ok(run(&cli_db, pass, None, &["add", "Telemovel", &me.public_id]).await);
