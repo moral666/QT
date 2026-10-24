@@ -165,6 +165,8 @@ Em `wrangler.jsonc`, `workers_dev: false`: o site só existe em sealer.pt, sem o
 
 **Publicar sozinho a cada push (opcional).** No painel da Cloudflare: Workers & Pages → `sealer` → Settings → Builds, ligar ao repositório QT, com a pasta raiz `site`, o comando de compilação `npm run build` e o comando de publicação `npx wrangler deploy`.
 
+**Chaves das fichas do vídeo (`estado.json`).** A app vai buscar `https://sealer.pt/estado.json` para saber a chave pública das fichas do vídeo de cada mês, fora do relay (ver `docs/protocol-spec.md`, secção 24). O ficheiro é gerado no servidor pelo `deploy/aws/setup-ec2.sh` (em `/home/ubuntu/sealer-estado.json`, só chaves públicas, 24 meses) e vai para `public/estado.json`; a compilação copia-o para `dist/` e o `_headers` dá-lhe 5 minutos de cache. Publique-o sempre que o script disser "PUBLICAR" (primeira instalação, semente nova, ou quando faltar menos de um ano de chaves). Sem ele, ou com chaves erradas, o vídeo pelo relay fica em pausa em todas as apps (a voz e a ligação direta continuam). Não confundir com o `estado.json` do relay (`https://<relay>/estado.json`), que é o do marcador de estado.
+
 **Noutro alojamento.** Envie o conteúdo de `dist/` para qualquer alojamento de sites estáticos.
 
 A política de segurança de conteúdo (CSP) vai embutida no HTML, e a compilação gera também `dist/_headers` com a mesma política, que a Cloudflare (Workers e Pages) e a Netlify aplicam. O ficheiro de cabeçalhos acrescenta `frame-ancestors`, que não funciona dentro do HTML.

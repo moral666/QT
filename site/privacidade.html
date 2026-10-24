@@ -30,7 +30,7 @@
     </header>
 
     <main class="legal">
-      <p class="legal__label" data-i18n="priv.1">Última atualização: 22 de outubro de 2026</p>
+      <p class="legal__label" data-i18n="priv.1">Última atualização: 24 de outubro de 2026</p>
       <h1 data-i18n="priv.2">Política de privacidade</h1>
       <p class="legal__lede" data-i18n="priv.3">
         Resumindo: não pedimos o teu número de telefone, nem email, nem nome. As tuas mensagens são cifradas no teu
@@ -49,11 +49,17 @@
       <h2 data-i18n="priv.7">O que fica só no teu telemóvel</h2>
       <p data-i18n="priv.8">As tuas mensagens, imagens, mensagens de voz, ficheiros, contactos, a lista de pessoas que bloqueaste, a tua identidade (as tuas chaves) e as definições ficam guardados apenas no teu telemóvel, numa base de dados cifrada (SQLCipher) cuja chave está protegida pelo próprio telemóvel. Nós nunca recebemos estes dados em claro. Se perderes o telemóvel ou desinstalares a app, não os conseguimos recuperar (a cópia de recuperação, se a ligares, está explicada mais abaixo).</p>
       <p data-i18n="priv.9">
-        As chamadas de voz não são gravadas, nem no telemóvel nem no servidor. A app só usa o microfone quando gravas uma
-        mensagem de voz ou estás numa chamada, depois de lhe dares permissão.
+        As chamadas de voz e as videochamadas não são gravadas, nem no telemóvel nem no servidor. A app só usa o
+        microfone quando gravas uma mensagem de voz ou estás numa chamada, e a câmara só quando a ligas numa
+        videochamada, sempre depois de lhe dares permissão.
       </p>
       <p data-i18n="priv.10">Os grupos funcionam da mesma forma: cada mensagem é cifrada para cada membro e o servidor não sabe que o grupo existe. O estado "online" (podes desligá-lo nas Definições) é enviado só aos teus contactos, cifrado como uma mensagem, quando abres e fechas a app. Não fica guardado em lado nenhum, nem no servidor nem no telemóvel de quem o recebe.</p>
       <p data-i18n="priv.11">A foto de perfil, se escolheres uma, é reduzida no teu telemóvel e enviada só aos teus contactos, cifrada como uma mensagem. O servidor não sabe que é uma foto e só a guarda, cifrada, até o contacto a receber. Fica no telemóvel de cada contacto até ele te apagar dos contactos, ou até a tirares. As medalhas funcionam da mesma forma: o certificado da medalha vai cifrado só aos teus contactos e o servidor não sabe que é uma medalha.</p>
+
+      <h2 data-i18n="priv.44">Chamadas e videochamadas</h2>
+      <p data-i18n="priv.45"><strong>Entre contactos mútuos, a chamada é direta.</strong> Quando os dois têm um ao outro nos contactos, a chamada liga-se diretamente de telemóvel para telemóvel, logo na primeira chamada e só depois de atenderes. Assim o som e a imagem chegam melhor. Nesse caso, cada um fica a saber o endereço de rede (IP) do outro. A chamada continua cifrada ponta a ponta: ninguém pelo caminho a consegue ouvir nem ver.</p>
+      <p data-i18n="priv.46"><strong>Nos outros casos, passa pelo nosso servidor.</strong> Se não forem contactos mútuos, ou se um de vocês bloquear o outro ou o apagar dos contactos, a chamada passa pelo servidor das chamadas e o teu IP não é partilhado com o contacto. Se isso acontecer a meio de uma chamada, ela passa logo para o servidor.</p>
+      <p data-i18n="priv.47"><strong>Vídeo só para quem aceita.</strong> Numa videochamada, o teu vídeo só é mostrado a quem aceitar vê-lo. Se a outra pessoa não aceitar, a tua câmara desliga-se. Podes desligar a câmara quando quiseres.</p>
 
       <h2 data-i18n="priv.12">O que passa pelo nosso servidor</h2>
       <p data-i18n="priv.13">
@@ -77,14 +83,14 @@
           Nas chamadas de voz vai marcado como chamada, para o telemóvel tocar mesmo com o bloqueio da app ativo.
         </li>
         <li data-i18n="priv.18">
-          <strong>Chamadas de voz</strong>: o som passa pelo servidor das chamadas já cifrado no teu telemóvel, por isso o
-          servidor não o consegue ouvir. Também não sabe que contas estão a falar: vê só um código de sala aleatório e os
-          endereços de rede dos dois telemóveis, que guarda em memória apenas enquanto a chamada dura.
+          <strong>Chamadas de voz e videochamadas pelo servidor</strong> (quando não são diretas): o som e a imagem passam
+          pelo servidor das chamadas já cifrados no teu telemóvel, por isso o servidor não os consegue ouvir nem ver.
+          Também não sabe que contas estão a falar: vê só um código de sala aleatório e os endereços de rede dos dois
+          telemóveis, que guarda em memória apenas enquanto a chamada dura.
         </li>
-        <li data-i18n="priv.18a"><strong>A cópia de recuperação</strong> (só se ligares a chave de recuperação, nas Definições): a tua identidade, os teus contactos (nome e ID), a lista de bloqueados e a tua medalha, cifrados no teu telemóvel com uma chave que sai das tuas 12 palavras. O servidor guarda a cópia sem a conseguir abrir, ligada ao teu ID. Não leva mensagens nem grupos. As 12 palavras nunca saem do telemóvel.</li>
+        <li data-i18n="priv.18a"><strong>A cópia de recuperação</strong> (só se ligares a chave de recuperação, nas Definições): a tua identidade, os teus contactos (nome e ID), a lista de bloqueados e a tua medalha, cifrados no teu telemóvel com uma chave que sai das tuas 12 palavras. O servidor guarda a cópia sem a conseguir abrir, ligada ao teu ID. Não leva mensagens nem grupos. As 12 palavras nunca saem do telemóvel. Por isso, num telemóvel novo, as 12 palavras recuperam o teu ID e os contactos, mas nunca as mensagens antigas nem os grupos.</li>
         <li data-i18n="priv.18b"><strong>Denúncias</strong> (só se denunciares alguém): o motivo, o ID da conta denunciada e as mensagens que escolheres (até 20, sem anexos), cifrados no teu telemóvel para uma chave que só a equipa da SEALER tem. O servidor guarda a denúncia sem a conseguir ler e sem registar quem a fez; conta apenas quantas denúncias cada conta fez num dia, para evitar abusos.</li>
         <li data-i18n="priv.18c"><strong>Contas banidas</strong>: se uma conta for banida por não cumprir os <a href="./termos">termos</a>, o servidor guarda o ID dessa conta para recusar a ligação dela.</li>
-        <li data-i18n="priv.18d"><strong>Acesso às funções pagas</strong> (só se o tiveres): até que data a tua conta tem esse acesso, ligada ao teu ID, para o servidor saber se pode aceitar as tuas chamadas e anexos.</li>
         <li data-i18n="priv.19">
           <strong>O endereço de rede (IP) do teu telemóvel</strong>: é necessário para manter a ligação. Só é usado em
           memória enquanto estás ligado e não fica registado.
@@ -106,11 +112,10 @@
           O endereço de notificações: enquanto as notificações estiverem ligadas. É renovado sempre que abres a app e
           apagado ao fim de 90 dias sem a abrires, quando desligas as notificações ou quando apagas a conta.
         </li>
-        <li data-i18n="priv.26">Chamadas de voz: nada fica guardado. A sala desaparece do servidor quando a chamada acaba.</li>
+        <li data-i18n="priv.26">Chamadas de voz e videochamadas: nada fica guardado. A sala desaparece do servidor quando a chamada acaba.</li>
         <li data-i18n="priv.26a">Cópia de recuperação: enquanto usares a app (é renovada quando a abres). Apagada ao fim de 90 dias sem a abrires, quando desligas a chave de recuperação ou quando apagas a conta.</li>
         <li data-i18n="priv.26b">Denúncias: 30 dias. O número de denúncias feitas por cada conta num dia: 2 dias.</li>
         <li data-i18n="priv.26c">Contas banidas: enquanto o banimento durar.</li>
-        <li data-i18n="priv.26d">Acesso às funções pagas: até 30 dias depois de terminar, ou até apagares a conta.</li>
         <li data-i18n="priv.27">Quanto enviaste em anexos por dia (só um número, para evitar abusos): 2 dias.</li>
         <li data-i18n="priv.28">
           Depois de apagares a conta: durante 30 dias, o servidor lembra-se só de que aquele ID foi apagado, para avisar
@@ -151,6 +156,9 @@
         <a href="mailto:privacidade@sealer.pt">privacidade@sealer.pt</a>. Podes também apresentar queixa à Comissão
         Nacional de Proteção de Dados (CNPD), em <a href="https://www.cnpd.pt" rel="noopener">cnpd.pt</a>.
       </p>
+
+      <h2 data-i18n="priv.50">Idade mínima</h2>
+      <p data-i18n="priv.51">A SEALER é para pessoas com 16 anos ou mais. Se tens menos de 16 anos, não uses a app.</p>
 
       <h2 data-i18n="priv.40">Alterações a esta política</h2>
       <p data-i18n="priv.41">
