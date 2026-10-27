@@ -6,7 +6,7 @@
 //!       --modo descartaveis --ligacoes 20 --msgs 300
 //!
 //! Produção (pequeno, depois de atualizar o relay; só confirma que é recusado):
-//!   cargo run --release -p qt_server --example abuso -- --relay wss://relay.sealer.pt \
+//!   cargo run --release -p qt_server --example abuso -- --relay wss://relay.sealerapp.com \
 //!       --pin <pin> --modo descartaveis --ligacoes 1 --msgs 3
 //!
 //! Modos:

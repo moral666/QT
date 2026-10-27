@@ -42,7 +42,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use zeroize::Zeroizing;
 
-const RELAY: &str = "wss://relay.sealer.pt";
+const RELAY: &str = "wss://relay.sealerapp.com";
 const PIN: &str = "f018d46b67d2437571cefc86827dec0dc3b0fd586bd22c664d3839f6a1c67f1a";
 
 fn arg(name: &str) -> Option<String> {

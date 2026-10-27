@@ -10,7 +10,7 @@
 //!   cargo run --release -- eco --ws            # usa a reserva wss://.../call
 //!   cargo run --release -- eco --tom           # som de teste em vez do microfone
 //!
-//! Outras opcoes: --relay <nome> (relay.sealer.pt), --pin <hex> (chave do relay),
+//! Outras opcoes: --relay <nome> (relay.sealerapp.com), --pin <hex> (chave do relay),
 //! --segundos <n> (60), --debito <bit/s> (36000).
 //!
 //! USA AUSCULTADORES: com colunas, o som volta a entrar no microfone (eco). No PC nao
@@ -24,7 +24,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-const RELAY: &str = "relay.sealer.pt";
+const RELAY: &str = "relay.sealerapp.com";
 const PIN: &str = "f018d46b67d2437571cefc86827dec0dc3b0fd586bd22c664d3839f6a1c67f1a";
 
 struct Opts {

@@ -25,7 +25,7 @@ use qt_ffi::*;
 use std::sync::Arc;
 use tokio_tungstenite::tungstenite::Message;
 
-const RELAY: &str = "wss://relay.sealer.pt";
+const RELAY: &str = "wss://relay.sealerapp.com";
 const PIN: &str = "f018d46b67d2437571cefc86827dec0dc3b0fd586bd22c664d3839f6a1c67f1a";
 
 type Ws =
