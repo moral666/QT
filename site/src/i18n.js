@@ -16,7 +16,7 @@
  * L({ pt, en, fr, es, de, it, ja, zh, hi, ar }) (uma língua que falte fica em inglês).
  *
  * Nas línguas traduzidas, o rodapé ganha uma linha para avisar de erros de tradução
- * (email para privacidade@sealer.pt, com a língua e a página no assunto).
+ * (email para privacidade@sealerapp.com, com a língua e a página no assunto).
  */
 
 const SUPPORTED = ['pt', 'en', 'fr', 'es', 'de', 'it', 'ja', 'zh', 'hi', 'ar'];
@@ -89,7 +89,7 @@ function addReportLine() {
   const footer = document.querySelector('.legal-footer, .footer');
   if (!text || !footer || footer.querySelector('.i18n-report')) return;
   const page = document.documentElement.dataset.page || 'index';
-  const href = 'mailto:privacidade@sealer.pt?subject=' + encodeURIComponent(`SEALER: erro de tradução (site, ${lang}, ${page})`);
+  const href = 'mailto:privacidade@sealerapp.com?subject=' + encodeURIComponent(`SEALER: erro de tradução (site, ${lang}, ${page})`);
   const p = document.createElement('p');
   p.className = 'i18n-report';
   p.innerHTML = text.replace('%s', href);

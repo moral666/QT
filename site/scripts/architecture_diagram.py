@@ -76,7 +76,7 @@ CONTENT = {
             ("ffi", "Ponte para as apps", "UniFFI para Kotlin, Swift e Python · cifra dos anexos de imagem"),
         ],
         "site_eyebrow": "Fora do caminho das mensagens",
-        "site_title": "Site sealer.pt",
+        "site_title": "Site sealerapp.com",
         "site_sub": "Pasta site/ deste repositório",
         "site_facts": ["Cloudflare, Worker sealer", "Só ficheiros estáticos",
                        "Sem cookies, CSP estrita", "Não comunica com o relay"],
@@ -88,7 +88,7 @@ CONTENT = {
             "A cifra acontece no núcleo, dentro de cada telemóvel. As apps trocam envelopes cifrados através "
             "de um relay na AWS, em Estocolmo (HAProxy com TLS, relay em Rust e Redis), por Noise_XX sobre wss "
             "com a chave do relay fixada nas apps. O relay nunca vê o conteúdo nem quem envia. O núcleo tem "
-            "quatro partes: core, transport, storage e ffi. O site sealer.pt está à parte, na Cloudflare, e "
+            "quatro partes: core, transport, storage e ffi. O site sealerapp.com está à parte, na Cloudflare, e "
             "não comunica com o relay."
         ),
     },
@@ -130,7 +130,7 @@ CONTENT = {
             ("ffi", "Bridge to the apps", "UniFFI for Kotlin, Swift and Python · image attachment encryption"),
         ],
         "site_eyebrow": "Outside the message path",
-        "site_title": "sealer.pt website",
+        "site_title": "sealerapp.com website",
         "site_sub": "Folder site/ in this repository",
         "site_facts": ["Cloudflare, Worker sealer", "Static files only",
                        "No cookies, strict CSP", "Never talks to the relay"],
@@ -142,7 +142,7 @@ CONTENT = {
             "Encryption happens in the core, on each phone. The apps exchange encrypted envelopes through a "
             "relay on AWS in Stockholm (HAProxy with TLS, a Rust relay and Redis), using Noise_XX over wss with "
             "the relay key pinned in the apps. The relay never sees the content or the sender. The core has "
-            "four parts: core, transport, storage and ffi. The sealer.pt website is separate, on Cloudflare, "
+            "four parts: core, transport, storage and ffi. The sealerapp.com website is separate, on Cloudflare, "
             "and never talks to the relay."
         ),
     },
@@ -613,7 +613,7 @@ def build(c):
     # Marca à direita, alinhada pelas linhas de base do título e da frase.
     wordmark_w = text(W - M, 110, "SEALER", "wordmark", anchor="end")
     dot(W - M - wordmark_w - 16, 102, "violet")
-    text(W - M, 144, "sealer.pt", "domain", anchor="end")
+    text(W - M, 144, "sealerapp.com", "domain", anchor="end")
 
     # Linha 1: telemóvel, relay, telemóvel. A altura vem do conteúdo.
     row_y = 176
