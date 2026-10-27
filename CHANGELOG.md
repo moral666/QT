@@ -6,6 +6,11 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 27 de outubro de 2026: relay em relay.sealerapp.com (app Android 0.9.43, iPhone 0.9.31)
+
+- As apps passam a ligar a `wss://relay.sealerapp.com` (o mesmo servidor e o mesmo pin). As versões
+  anteriores deixam de chegar ao relay e têm de ser atualizadas.
+
 ### 24 de outubro de 2026: videochamadas com a app fechada ou o ecrã bloqueado (0010, app Android 0.9.42)
 
 - Videochamada a chegar com a app fechada ou o telemóvel bloqueado: o aviso de ecrã inteiro diz

@@ -1,5 +1,5 @@
 // Relay usado pela app de RELEASE (o mesmo que a app Android: android/gradle.properties).
 // NOTA: em .xcconfig "//" comeca um comentario; por isso o URL escreve-se "wss:/$()/host".
-QT_RELAY_URL = wss:/$()/relay.sealer.pt
+QT_RELAY_URL = wss:/$()/relay.sealerapp.com
 // Chave publica estatica Noise do relay (64 hex), impressa pelo setup-ec2.sh.
 QT_RELAY_PIN = f018d46b67d2437571cefc86827dec0dc3b0fd586bd22c664d3839f6a1c67f1a
