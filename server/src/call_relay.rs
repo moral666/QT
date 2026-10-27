@@ -7,7 +7,7 @@
 //!     papel (quem liga / quem atende) e a chave das etiquetas. Nunca sabe a conta, e
 //!     este processo nem tem acesso ao Redis.
 //!   * UDP 443 e, se o UDP estiver bloqueado, uma ligacao WebSocket SEM CONTA
-//!     (`wss://relay.sealer.pt/call`, pelo HAProxy) com os mesmos pacotes. Os dois
+//!     (`wss://relay.sealerapp.com/call`, pelo HAProxy) com os mesmos pacotes. Os dois
 //!     lados podem estar em transportes diferentes.
 //!   * MUDANCA DE IP (Wi-Fi para 4G): um pacote com etiqueta valida e contador maior
 //!     do que o ultimo visto, vindo de outro endereco, muda o endereco desse lado (como
