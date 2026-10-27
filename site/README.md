@@ -4,7 +4,7 @@ Página de apresentação da SEALER, a app de mensagens do projeto QT.
 
 O ecrã inteiro é uma grelha de janelas que se arrasta com o rato ou com o dedo, inspirada no site da Phantom. Cada janela tem uma informação: para todos, para especialistas, sobre a arquitetura e sobre testes. Ao centro, por cima da grelha, está o logótipo em 3D, com o nome e a frase principal. Quem preferir ler de seguida tem o botão "Ver em lista".
 
-O núcleo criptográfico do QT não foi tocado: este projeto é independente e vive na pasta `site/` do repositório QT. Está publicado em https://sealer.pt.
+O núcleo criptográfico do QT não foi tocado: este projeto é independente e vive na pasta `site/` do repositório QT. Está publicado em https://sealerapp.com.
 
 ## Índice
 
@@ -143,13 +143,13 @@ Todo o conteúdo das janelas está no `index.html`, dentro de `<main class="list
 - Mantenha o texto curto: cerca de 120 caracteres no máximo. Os testes verificam, em 8 tamanhos de ecrã, se o texto cabe em todas as janelas.
 - Os pictogramas são SVG com traço (`viewBox="0 0 48 48"`), sem cor própria: a cor vem do CSS.
 
-- **Línguas (PT, EN, FR, ES, DE, IT, JA, ZH, HI, AR, as mesmas dez da app):** cada texto tem `data-i18n="index.n"` (e `data-i18n-alt`, `-aria-label`, `-content` nos atributos). O português fica no HTML; as outras línguas estão em `src/i18n/en.js`, `fr.js`, `es.js`, `de.js`, `it.js`, `ja.js`, `zh.js` (chinês simplificado), `hi.js` e `ar.js`, com as mesmas chaves. Ao mudar ou acrescentar um texto, mudar também nesses nove ficheiros (uma chave que falte fica em português). A língua vem de `?lang=pt|en|fr|es|de|it|ja|zh|hi|ar` (menu de línguas, cada uma no seu nome e sem bandeiras) ou do navegador (outra qualquer, e o chinês tradicional: inglês); nada é guardado no navegador. Textos criados em JavaScript usam `L({ pt, en, fr, es, de, it, ja, zh, hi, ar })` de `src/i18n.js`. Nas línguas traduzidas, o rodapé tem uma linha para avisar de erros de tradução (email para privacidade@sealer.pt). Japonês e chinês têm letras do sistema próprias (`html:lang(ja)`, `html:lang(zh-Hans)`) e o hindi e o árabe não levam espaçamento entre letras. O árabe põe `<html dir="rtl">`: no CSS usar propriedades lógicas (`margin-inline-start`, `inset-inline-start`, `text-align: start`), nunca `left`/`right` para o que deve ficar ao espelho.
+- **Línguas (PT, EN, FR, ES, DE, IT, JA, ZH, HI, AR, as mesmas dez da app):** cada texto tem `data-i18n="index.n"` (e `data-i18n-alt`, `-aria-label`, `-content` nos atributos). O português fica no HTML; as outras línguas estão em `src/i18n/en.js`, `fr.js`, `es.js`, `de.js`, `it.js`, `ja.js`, `zh.js` (chinês simplificado), `hi.js` e `ar.js`, com as mesmas chaves. Ao mudar ou acrescentar um texto, mudar também nesses nove ficheiros (uma chave que falte fica em português). A língua vem de `?lang=pt|en|fr|es|de|it|ja|zh|hi|ar` (menu de línguas, cada uma no seu nome e sem bandeiras) ou do navegador (outra qualquer, e o chinês tradicional: inglês); nada é guardado no navegador. Textos criados em JavaScript usam `L({ pt, en, fr, es, de, it, ja, zh, hi, ar })` de `src/i18n.js`. Nas línguas traduzidas, o rodapé tem uma linha para avisar de erros de tradução (email para privacidade@sealerapp.com). Japonês e chinês têm letras do sistema próprias (`html:lang(ja)`, `html:lang(zh-Hans)`) e o hindi e o árabe não levam espaçamento entre letras. O árabe põe `<html dir="rtl">`: no CSS usar propriedades lógicas (`margin-inline-start`, `inset-inline-start`, `text-align: start`), nunca `left`/`right` para o que deve ficar ao espelho.
 
 Depois de editar: `npm run build` e `python3 tests/run_tests.py`.
 
 ## 5. Publicar
 
-O site está na Cloudflare, num Worker chamado `sealer` que só tem ficheiros estáticos, com os domínios `sealer.pt` e `www.sealer.pt`. O domínio está registado na dominios.pt e usa os nameservers da Cloudflare. A configuração está em `wrangler.jsonc`.
+O site está na Cloudflare, num Worker chamado `sealer` que só tem ficheiros estáticos, com os domínios `sealerapp.com` e `www.sealerapp.com`. O domínio está registado na dominios.pt e usa os nameservers da Cloudflare. A configuração está em `wrangler.jsonc`.
 
 **Publicar uma versão nova**, dentro desta pasta:
 
@@ -161,11 +161,11 @@ npx wrangler deploy    # envia a pasta dist/ para o Worker sealer
 
 A primeira versão foi carregada no painel da Cloudflare, por arrastar e largar. As seguintes publicam-se daqui, com o wrangler. Na primeira vez, o wrangler pode avisar que o Worker foi criado no painel: confirme.
 
-Em `wrangler.jsonc`, `workers_dev: false`: o site só existe em sealer.pt, sem o endereço `*.workers.dev` da conta da Cloudflare.
+Em `wrangler.jsonc`, `workers_dev: false`: o site só existe em sealerapp.com, sem o endereço `*.workers.dev` da conta da Cloudflare.
 
 **Publicar sozinho a cada push (opcional).** No painel da Cloudflare: Workers & Pages → `sealer` → Settings → Builds, ligar ao repositório QT, com a pasta raiz `site`, o comando de compilação `npm run build` e o comando de publicação `npx wrangler deploy`.
 
-**Chaves das fichas do vídeo (`estado.json`).** A app vai buscar `https://sealer.pt/estado.json` para saber a chave pública das fichas do vídeo de cada mês, fora do relay (ver `docs/protocol-spec.md`, secção 24). O ficheiro é gerado no servidor pelo `deploy/aws/setup-ec2.sh` (em `/home/ubuntu/sealer-estado.json`, só chaves públicas, 24 meses) e vai para `public/estado.json`; a compilação copia-o para `dist/` e o `_headers` dá-lhe 5 minutos de cache. Publique-o sempre que o script disser "PUBLICAR" (primeira instalação, semente nova, ou quando faltar menos de um ano de chaves). Sem ele, ou com chaves erradas, o vídeo pelo relay fica em pausa em todas as apps (a voz e a ligação direta continuam). Não confundir com o `estado.json` do relay (`https://<relay>/estado.json`), que é o do marcador de estado.
+**Chaves das fichas do vídeo (`estado.json`).** A app vai buscar `https://sealerapp.com/estado.json` para saber a chave pública das fichas do vídeo de cada mês, fora do relay (ver `docs/protocol-spec.md`, secção 24). O ficheiro é gerado no servidor pelo `deploy/aws/setup-ec2.sh` (em `/home/ubuntu/sealer-estado.json`, só chaves públicas, 24 meses) e vai para `public/estado.json`; a compilação copia-o para `dist/` e o `_headers` dá-lhe 5 minutos de cache. Publique-o sempre que o script disser "PUBLICAR" (primeira instalação, semente nova, ou quando faltar menos de um ano de chaves). Sem ele, ou com chaves erradas, o vídeo pelo relay fica em pausa em todas as apps (a voz e a ligação direta continuam). Não confundir com o `estado.json` do relay (`https://<relay>/estado.json`), que é o do marcador de estado.
 
 **Noutro alojamento.** Envie o conteúdo de `dist/` para qualquer alojamento de sites estáticos.
 
@@ -194,7 +194,7 @@ Header always set X-Content-Type-Options "nosniff"
 
 Ative a compressão gzip ou brotli no servidor: os pesos indicados na secção 10 assumem compressão.
 
-A imagem de pré-visualização para redes sociais (`og:image`, no `index.html`) aponta para `https://sealer.pt/og-image.jpg`. Se o domínio mudar, atualize esse endereço: as redes sociais só aceitam endereços completos.
+A imagem de pré-visualização para redes sociais (`og:image`, no `index.html`) aponta para `https://sealerapp.com/og-image.jpg`. Se o domínio mudar, atualize esse endereço: as redes sociais só aceitam endereços completos.
 
 ## 6. Integrar num site existente
 

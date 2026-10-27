@@ -14,13 +14,13 @@
   "vars": {
     // Relay da SEALER na AWS (o mesmo endereço wss:// da app, escrito com https://).
     // O marcador de estado no canto do site verifica se este endereço responde.
-    "RELAY_URL": "https://relay.sealer.pt"
+    "RELAY_URL": "https://relay.sealerapp.com"
   },
   "routes": [
-    { "pattern": "sealer.pt", "custom_domain": true },
-    { "pattern": "www.sealer.pt", "custom_domain": true }
+    { "pattern": "sealerapp.com", "custom_domain": true },
+    { "pattern": "www.sealerapp.com", "custom_domain": true }
   ],
-  // false: o site só existe em sealer.pt (sem o endereço *.workers.dev da conta).
+  // false: o site só existe em sealerapp.com (sem o endereço *.workers.dev da conta).
   "workers_dev": false,
   "preview_urls": false
 }
