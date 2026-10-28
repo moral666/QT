@@ -22,7 +22,6 @@
     <string name="t_a_chamar">Anruf läuft…</string>
     <string name="t_a_tocar">Klingelt…</string>
     <string name="t_chamada_de_voz">Sprachanruf</string>
-    <string name="t_cifrada_ponta_a_ponta">Ende-zu-Ende-verschlüsselt</string>
     <string name="t_recusar">Ablehnen</string>
     <string name="t_atender">Annehmen</string>
     <string name="t_ligar_o_microfone">Mikrofon an</string>
@@ -74,7 +73,7 @@
     <string name="t_enviar_ficheiro">Datei senden</string>
     <string name="t_o_ficheiro_tem_mais_de_25">Die Datei ist größer als 25 MB und kann nicht gesendet werden.</string>
     <string name="t_vai_tal_como_esta_cifrado_no">Wird unverändert gesendet, auf deinem Handy verschlüsselt, bevor es rausgeht.</string>
-    <string name="t_pessoas_cifrado_ponta_a_ponta">%1$s Personen · Ende-zu-Ende-verschlüsselt</string>
+    <string name="t_n_pessoas">%1$s Personen</string>
     <string name="t_informacao_do_grupo">Gruppeninfo</string>
     <string name="t_a_carregar_mensagens_anteriores">Ältere Nachrichten werden geladen…</string>
     <string name="t_ja_nao_fazes_parte_deste_grupo">Du bist nicht mehr Mitglied dieser Gruppe.</string>
@@ -158,7 +157,6 @@
     <string name="t_sem_acesso_a_camara_para_ler">Kein Zugriff auf die Kamera. Um den QR-Code zu lesen, erlaube ihn in den App-Einstellungen oder gib die ID von Hand ein.</string>
     <string name="t_ler_codigo_qr">QR-Code lesen</string>
     <string name="t_recebe_o_id_diretamente_da_pessoa">Hol dir die ID direkt von der Person: lies ihren QR-Code, wenn ihr zusammen seid, oder nutze einen Kanal, dem du vertraust.</string>
-    <string name="t_cifrada_ponta_a_ponta_2">Ende-zu-Ende-verschlüsselt</string>
     <string name="t_ligar">Anrufen</string>
     <string name="t_desbloquear_2">Freigeben</string>
     <string name="t_bloquear">Blockieren</string>
@@ -420,4 +418,8 @@
     <string name="msg_copied">Kopiert</string>
     <string name="link_open_title">Diesen Link öffnen?</string>
     <string name="link_open_warn">Du verlässt SEALER und öffnest diese Website. Prüfe den Namen der Website: Gefälschte Links ahmen bekannte Namen nach.</string>
+    <string name="call_diag_title">Anrufdiagnose</string>
+    <string name="call_diag_copy">Diagnose kopieren</string>
+    <string name="call_diag_copy_last">Diagnose des letzten Anrufs kopieren</string>
+    <string name="call_diag_copied">Diagnose kopiert</string>
 </resources>

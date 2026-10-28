@@ -7,6 +7,11 @@
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
 "call_banner_back" = "タップして通話に戻る";
+"call_camera" = "カメラ";
+"call_diag_copied" = "診断をコピーしました";
+"call_diag_copy" = "診断をコピー";
+"call_diag_copy_last" = "前回の通話の診断をコピー";
+"call_diag_title" = "通話の診断";
 "call_mic_lost" = "マイクが使えなくなりました（ほかのアプリが使用している可能性があります）。相手にはあなたの声が聞こえていません。";
 "call_minimize" = "最小化";
 "confirm_word" = "削除";
@@ -89,6 +94,7 @@
 "recovery_restore" = "アカウントを復元";
 "recovery_restore_hint" = "12個の単語を順番どおりに、スペースで区切って入力してください。";
 "recovery_restore_warning" = "アカウントは一度に1台のスマートフォンでしか使えません。以前のスマートフォンではメッセージを受信できなくなります。";
+"recovery_restore_what" = "連絡先は復元されます。以前のメッセージとグループは復元されません。";
 "recovery_restored" = "アカウントを復元しました。チャットは自動的に再開されます。";
 "recovery_restoring" = "復元中…";
 "recovery_see_again" = "単語をもう一度見る";
@@ -186,8 +192,6 @@
 "t_chave_do_armazenamento_seguro_indisponivel" = "安全なストレージの鍵を利用できません：%1$@";
 "t_chave_publica_do_relay_pinning" = "リレーの公開鍵（ピンニング）";
 "t_cifrada_no_teu_telemovel_antes_de" = "送信前にスマートフォン上で暗号化されます。写真の位置情報は削除されます。";
-"t_cifrada_ponta_a_ponta" = "エンドツーエンドで暗号化";
-"t_cifrada_ponta_a_ponta_2" = "エンドツーエンドで暗号化";
 "t_codigo_alterado" = "パスコードを変更しました。";
 "t_codigo_atual" = "現在のパスコード";
 "t_codigo_de_acesso" = "パスコード";
@@ -287,6 +291,7 @@
 "t_mudar" = "変更";
 "t_mudar_codigo" = "パスコードを変更";
 "t_mudar_o_nome" = "名前を変更";
+"t_n_pessoas" = "%1$@人";
 "t_nao_foi_possivel_abrir_o_armazenamento" = "安全なストレージを開けませんでした：%1$@";
 "t_nao_foi_possivel_abrir_o_ficheiro" = "ファイルを開けませんでした。";
 "t_nao_foi_possivel_aceitar_o_convite" = "メッセージリクエストを承認できませんでした：%1$@";
@@ -360,7 +365,6 @@
 "t_partilha_o_teu_id_com_quem" = "話したい相手とあなたのIDを共有するか、+ をタップして相手のIDを追加してください。";
 "t_partilhar" = "共有";
 "t_partilhar_o_meu_id" = "自分のIDを共有";
-"t_pessoas_cifrado_ponta_a_ponta" = "%1$@人 · エンドツーエンドで暗号化";
 "t_pessoas_opcional_ate_escolhidas_podes_acrescen" = "メンバー（任意、%1$@人まで）：%2$@人を選択中。あとから追加することもできます。";
 "t_podes_tentar_de_novo_quando_tiveres" = "接続できるときにもう一度試すか、今すぐこのスマートフォンからのみ削除できます。その場合、サーバー上のデータは自動的に削除されます（未受信のメッセージは30日後、公開鍵は90日後）。";
 "t_politica_de_privacidade" = "プライバシーポリシー";
@@ -414,5 +418,19 @@
 "t_verificar_seguranca" = "セキュリティを確認";
 "t_versao" = "バージョン %1$@";
 "t_versao_de_testes" = "テスト版です。バージョン1.0まで、アプリは改良が続けられます。";
+"t_videochamada_em_curso" = "ビデオ通話中";
 "t_voltar" = "戻る";
+"video_call_button" = "ビデオ通話";
+"video_call_from" = "%1$@さんからのビデオ通話";
+"video_call_sealer" = "SEALERビデオ通話";
+"video_camera_denied" = "カメラへのアクセスがないとビデオをオンにできません。Androidの設定で許可できます。";
+"video_camera_failed" = "カメラを使用できませんでした。";
+"video_camera_off" = "カメラをオフ";
+"video_camera_on" = "カメラをオン";
+"video_not_now" = "今はしない";
+"video_request_title" = "%1$@さんがビデオを見せたいと言っています";
+"video_switch" = "カメラを切り替え";
+"video_view" = "見る";
+"video_view_and_camera" = "自分のカメラもオン";
+"video_waiting" = "%1$@さんを待っています…";
 "zxing_msg_camera_framework_bug" = "カメラを使用できませんでした。QRコードを読み取るには、アプリの設定でカメラへのアクセスを許可するか、IDを手入力してください。";

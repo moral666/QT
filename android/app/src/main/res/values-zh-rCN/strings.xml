@@ -22,7 +22,6 @@
     <string name="t_a_chamar">正在呼叫…</string>
     <string name="t_a_tocar">正在响铃…</string>
     <string name="t_chamada_de_voz">语音通话</string>
-    <string name="t_cifrada_ponta_a_ponta">端到端加密</string>
     <string name="t_recusar">拒绝</string>
     <string name="t_atender">接听</string>
     <string name="t_ligar_o_microfone">取消静音</string>
@@ -74,7 +73,7 @@
     <string name="t_enviar_ficheiro">发送文件</string>
     <string name="t_o_ficheiro_tem_mais_de_25">文件超过25 MB，无法发送。</string>
     <string name="t_vai_tal_como_esta_cifrado_no">按原样发送，发送前在你的手机上加密。</string>
-    <string name="t_pessoas_cifrado_ponta_a_ponta">%1$s人 · 端到端加密</string>
+    <string name="t_n_pessoas">%1$s人</string>
     <string name="t_informacao_do_grupo">群组信息</string>
     <string name="t_a_carregar_mensagens_anteriores">正在加载更早的消息…</string>
     <string name="t_ja_nao_fazes_parte_deste_grupo">你已不再是此群组的成员。</string>
@@ -158,7 +157,6 @@
     <string name="t_sem_acesso_a_camara_para_ler">没有相机权限。要扫描二维码，请在应用设置中允许，或手动输入ID。</string>
     <string name="t_ler_codigo_qr">扫描二维码</string>
     <string name="t_recebe_o_id_diretamente_da_pessoa">请直接从对方那里获取ID：见面时扫描对方的二维码，或使用你信任的渠道。</string>
-    <string name="t_cifrada_ponta_a_ponta_2">端到端加密</string>
     <string name="t_ligar">通话</string>
     <string name="t_desbloquear_2">取消屏蔽</string>
     <string name="t_bloquear">屏蔽</string>
@@ -418,4 +416,8 @@
     <string name="msg_copied">已复制</string>
     <string name="link_open_title">打开这个链接？</string>
     <string name="link_open_warn">你将离开 SEALER 并打开这个网站。请核对网站名称：虚假链接会模仿知名网站的名称。</string>
+    <string name="call_diag_title">通话诊断</string>
+    <string name="call_diag_copy">复制诊断</string>
+    <string name="call_diag_copy_last">复制上次通话的诊断</string>
+    <string name="call_diag_copied">诊断已复制</string>
 </resources>

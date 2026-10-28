@@ -7,6 +7,11 @@
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
 "call_banner_back" = "Tippen, um zum Anruf zurückzukehren";
+"call_camera" = "Kamera";
+"call_diag_copied" = "Diagnose kopiert";
+"call_diag_copy" = "Diagnose kopieren";
+"call_diag_copy_last" = "Diagnose des letzten Anrufs kopieren";
+"call_diag_title" = "Anrufdiagnose";
 "call_mic_lost" = "Das Mikrofon funktioniert nicht mehr (vielleicht nutzt es eine andere App). Die andere Person hört dich nicht mehr.";
 "call_minimize" = "Minimieren";
 "confirm_word" = "LÖSCHEN";
@@ -89,6 +94,7 @@
 "recovery_restore" = "Konto wiederherstellen";
 "recovery_restore_hint" = "Gib die 12 Wörter in der richtigen Reihenfolge ein, getrennt durch Leerzeichen.";
 "recovery_restore_warning" = "Ein Konto funktioniert nur auf einem Handy gleichzeitig: Das alte Handy bekommt keine Nachrichten mehr.";
+"recovery_restore_what" = "Du bekommst deine Kontakte zurück. Alte Nachrichten und Gruppen werden nicht wiederhergestellt.";
 "recovery_restored" = "Konto wiederhergestellt. Die Unterhaltungen starten von selbst neu.";
 "recovery_restoring" = "Wird wiederhergestellt…";
 "recovery_see_again" = "Wörter noch einmal ansehen";
@@ -186,8 +192,6 @@
 "t_chave_do_armazenamento_seguro_indisponivel" = "Schlüssel des sicheren Speichers nicht verfügbar: %1$@";
 "t_chave_publica_do_relay_pinning" = "Öffentlicher Schlüssel des Relays (Pinning)";
 "t_cifrada_no_teu_telemovel_antes_de" = "Auf deinem Handy verschlüsselt, bevor es rausgeht. Der Standort des Fotos wird entfernt.";
-"t_cifrada_ponta_a_ponta" = "Ende-zu-Ende-verschlüsselt";
-"t_cifrada_ponta_a_ponta_2" = "Ende-zu-Ende-verschlüsselt";
 "t_codigo_alterado" = "Code geändert.";
 "t_codigo_atual" = "Aktueller Code";
 "t_codigo_de_acesso" = "Zugangscode";
@@ -287,6 +291,7 @@
 "t_mudar" = "Ändern";
 "t_mudar_codigo" = "Code ändern";
 "t_mudar_o_nome" = "Umbenennen";
+"t_n_pessoas" = "%1$@ Personen";
 "t_nao_foi_possivel_abrir_o_armazenamento" = "Der sichere Speicher konnte nicht geöffnet werden: %1$@";
 "t_nao_foi_possivel_abrir_o_ficheiro" = "Die Datei konnte nicht geöffnet werden.";
 "t_nao_foi_possivel_aceitar_o_convite" = "Die Einladung konnte nicht angenommen werden: %1$@";
@@ -360,7 +365,6 @@
 "t_partilha_o_teu_id_com_quem" = "Teile deine ID mit allen, mit denen du schreiben willst, oder tippe auf +, um die ID einer anderen Person hinzuzufügen.";
 "t_partilhar" = "Teilen";
 "t_partilhar_o_meu_id" = "Meine ID teilen";
-"t_pessoas_cifrado_ponta_a_ponta" = "%1$@ Personen · Ende-zu-Ende-verschlüsselt";
 "t_pessoas_opcional_ate_escolhidas_podes_acrescen" = "Personen (optional, bis zu %1$@): %2$@ ausgewählt. Du kannst später weitere hinzufügen.";
 "t_podes_tentar_de_novo_quando_tiveres" = "Du kannst es erneut versuchen, wenn du Netz hast, oder jetzt nur von diesem Handy löschen. In dem Fall löscht sich, was auf dem Server liegt, selbst: wartende Nachrichten nach 30 Tagen und deine öffentlichen Schlüssel nach 90 Tagen.";
 "t_politica_de_privacidade" = "Datenschutzerklärung";
@@ -414,5 +418,19 @@
 "t_verificar_seguranca" = "Sicherheit prüfen";
 "t_versao" = "Version %1$@";
 "t_versao_de_testes" = "Testversion. Bis zur Version 1.0 wird die App weiter verbessert.";
+"t_videochamada_em_curso" = "Videoanruf läuft";
 "t_voltar" = "Zurück";
+"video_call_button" = "Videoanruf";
+"video_call_from" = "Videoanruf von %1$@";
+"video_call_sealer" = "SEALER-Videoanruf";
+"video_camera_denied" = "Ohne Zugriff auf die Kamera kann kein Video eingeschaltet werden. Du kannst ihn in den Android-Einstellungen erlauben.";
+"video_camera_failed" = "Die Kamera konnte nicht verwendet werden.";
+"video_camera_off" = "Kamera ausschalten";
+"video_camera_on" = "Kamera einschalten";
+"video_not_now" = "Jetzt nicht";
+"video_request_title" = "%1$@ möchte Video zeigen";
+"video_switch" = "Kamera wechseln";
+"video_view" = "Ansehen";
+"video_view_and_camera" = "Meine Kamera einschalten";
+"video_waiting" = "Warte auf %1$@…";
 "zxing_msg_camera_framework_bug" = "Die Kamera konnte nicht verwendet werden. Um den QR-Code zu lesen, erlaube den Kamerazugriff in den App-Einstellungen oder gib die ID von Hand ein.";

@@ -14,6 +14,7 @@ import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.net.ConnectivityManager
 import android.net.Network
@@ -290,7 +291,7 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
         return ranges.filter { it.upper >= fps }.minByOrNull { (it.upper - fps) * 100 + (it.upper - it.lower) } ?: ranges.lastOrNull()
     }
 
-    private fun avcFormat(size: Size, bitrate: Int, fps: Int, strict: Boolean): MediaFormat =
+    private fun avcFormat(size: Size, bitrate: Int, fps: Int, strict: Boolean, prepend: Boolean = true): MediaFormat =
         MediaFormat.createVideoFormat(AVC, size.width, size.height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
@@ -298,7 +299,9 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
             // Imagens completas so a pedido (o Rust pede quando o outro lado perde uma).
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 10)
             if (Build.VERSION.SDK_INT >= 23) setInteger(MediaFormat.KEY_PRIORITY, 0)
-            if (Build.VERSION.SDK_INT >= 29) setInteger(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES, 1)
+            // Sem esta chave (codificadores por software, ex. c2.android.avc.encoder) o SPS/PPS
+            // vai a frente de cada imagem completa a partir do `csd` (ver `outputLoop`).
+            if (prepend && Build.VERSION.SDK_INT >= 29) setInteger(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES, 1)
             if (strict) {
                 // Tempo real: debito constante e perfil base (sem imagens B, todos os descodificadores).
                 setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
@@ -309,6 +312,42 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
                 )
             }
         }
+
+    /**
+     * Abre um codificador H.264 que aceite o formato. Tenta cada codificador do telemovel
+     * (hardware primeiro) com tres formatos, do mais exigente ao mais simples: tempo real
+     * (CBR, perfil base), so o essencial, e sem `KEY_PREPEND_HEADER_TO_SYNC_FRAMES` (que
+     * alguns codificadores por software recusam com BAD_VALUE).
+     */
+    private fun openEncoder(size: Size, bitrate: Int, fps: Int): MediaCodec? {
+        val names = runCatching {
+            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+                .filter { it.isEncoder && it.supportedTypes.any { t -> t.equals(AVC, ignoreCase = true) } }
+                .sortedBy { if (Build.VERSION.SDK_INT >= 29 && it.isSoftwareOnly) 1 else 0 }
+                .map { it.name }
+        }.getOrDefault(emptyList())
+        val attempts = listOf(true to true, false to true, false to false)
+        for (name in names.ifEmpty { listOf<String?>(null) }) {
+            val enc = try {
+                if (name != null) MediaCodec.createByCodecName(name) else MediaCodec.createEncoderByType(AVC)
+            } catch (e: Exception) {
+                CallDiag.log(TAG, "codificador $name: ${e.javaClass.simpleName}")
+                continue
+            }
+            for ((strict, prepend) in attempts) {
+                try {
+                    enc.configure(avcFormat(size, bitrate, fps, strict, prepend), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                    CallDiag.log(TAG, "codificador ${enc.name} ${size.width}x${size.height} strict=$strict prepend=$prepend")
+                    return enc
+                } catch (e: Exception) {
+                    CallDiag.log(TAG, "codificador ${enc.name} strict=$strict prepend=$prepend: ${e.javaClass.simpleName}")
+                    runCatching { enc.reset() }
+                }
+            }
+            runCatching { enc.release() }
+        }
+        return null
+    }
 
     /** (Re)cria o codificador para os parametros atuais. */
     private fun configureEncoder() {
@@ -321,23 +360,7 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
         val size = chooseSize(map.getOutputSizes(MediaCodec::class.java), w, h)
         val fps = p.fps.toInt().coerceIn(10, 30)
         val bitrate = p.bitrateBps.toInt().coerceAtLeast(100_000)
-        val enc = try {
-            MediaCodec.createEncoderByType(AVC)
-        } catch (e: Exception) {
-            return fail("sem codificador H.264")
-        }
-        try {
-            enc.configure(avcFormat(size, bitrate, fps, strict = true), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        } catch (e: Exception) {
-            // Alguns codificadores recusam CBR ou o nivel: so o essencial.
-            try {
-                enc.reset()
-                enc.configure(avcFormat(size, bitrate, fps, strict = false), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            } catch (e2: Exception) {
-                enc.release()
-                return fail("codificador: ${e2.javaClass.simpleName}")
-            }
-        }
+        val enc = openEncoder(size, bitrate, fps) ?: return fail("codificador: nenhum aceitou")
         val surface = enc.createInputSurface()
         enc.start()
         csd = null

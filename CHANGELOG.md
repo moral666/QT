@@ -6,6 +6,22 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 28 de outubro de 2026: diagnóstico das chamadas e acertos (app Android 0.9.44)
+
+- Diagnóstico para os testers (fase 5c): `CallAudio.diagnostic()` no núcleo dá os números da chamada
+  (tempo em direto e pelo relay, perdas da voz e do vídeo, débito, resolução, pausas do vídeo, mudanças
+  de rede, fichas), sem IPs, IDs nem conteúdo, e o resumo final depois de desligar. Fica só no telemóvel.
+  Android: toque longo no tempo da chamada abre o painel com "Copiar diagnóstico"; nas Definições,
+  "Copiar diagnóstico da última chamada"; registos discretos no logcat (rede, caminho, codificador).
+  Ligado por omissão nas builds de teste; desligar antes da Play Store com `-PqtCallDiag=false`.
+- Vídeo: se o codificador recusar o formato (ex. `c2.android.avc.encoder` com
+  `KEY_PREPEND_HEADER_TO_SYNC_FRAMES`), a app tenta os outros codificadores do telemóvel (hardware
+  primeiro) e formatos mais simples; o SPS/PPS vai à frente de cada imagem completa.
+- Sai "Cifrada ponta a ponta" do cabeçalho da conversa, do ecrã da chamada e do cabeçalho dos grupos
+  (agora só "N pessoas"), no Android e no iPhone, nas dez línguas. O site continua a explicar a cifra.
+- Teste `ligar_tocar_atender_falar_desligar`: passa também com `--features video` (ignora o evento de
+  vídeo ao atender, que é o comportamento certo).
+
 ### 27 de outubro de 2026: pessoas online (só relay)
 
 - Relay: `AdminOnline` (só o operador) diz quantas pessoas têm a app ligada agora (contas, não

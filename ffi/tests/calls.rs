@@ -32,8 +32,10 @@ impl Peer {
     fn cid(&self) -> String {
         self.id.identity_public.iter().map(|b| format!("{b:02x}")).collect()
     }
+    /// Eventos da chamada, sem os de video: com a feature `video` cada lado anuncia que
+    /// tem video ao atender (`CallEvent::Video`), e estes testes sao so da voz.
     fn events(&self) -> Vec<CallEvent> {
-        self.c.call_events().unwrap()
+        self.c.call_events().unwrap().into_iter().filter(|e| !matches!(e, CallEvent::Video { .. })).collect()
     }
 }
 

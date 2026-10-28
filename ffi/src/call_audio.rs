@@ -27,8 +27,15 @@
 //! camara ligada. A camara fecha e o envio para SO deste lado, sem avisar o outro: para ele o
 //! video simplesmente para (ve a minha foto ou a inicial). So pode tirar, nunca dar: com a pausa
 //! nada sai, mesmo que o nucleo autorize; sem ela fica o que o nucleo autorizou.
+//!
+//! DIAGNOSTICO (testers, fase 5c): `diagnostic()` devolve um texto curto com os numeros da
+//! chamada (caminho direto/relay, perdas, debito, resolucao, pausas, mudancas de rede), sem IPs,
+//! IDs nem conteudo. Fica so no telemovel: a app mostra-o e o tester copia-o se quiser. Depois de
+//! `stop()` continua a dar o resumo final da chamada.
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use qt_call::codec::FRAME_SAMPLES;
 use qt_call::engine::{CallEngine, EngineConfig, Net, Pause, RelayTarget, Transport};
@@ -43,6 +50,209 @@ pub struct CallAudio {
     engine: Mutex<Option<Arc<CallEngine>>>,
     /// O que o nucleo autorizou e a pausa local da app (ver o inicio do ficheiro).
     gate: Mutex<VideoGate>,
+    /// Numeros acumulados para o diagnostico (ver o inicio do ficheiro).
+    diag: Mutex<Diag>,
+}
+
+/// Contas do diagnostico: tempo em cada caminho e resolucao, pausas e mudancas de rede.
+/// Amostrado sempre que a app pede `stats` ou `video_params` (varias vezes por segundo).
+struct Diag {
+    started: Instant,
+    last: Option<Instant>,
+    ms_direct: u64,
+    ms_relay: u64,
+    ms_both: u64,
+    /// Tempo a enviar video em cada resolucao (altura) e debito pedido (bps x ms).
+    ms_by_height: BTreeMap<u16, u64>,
+    ms_sending: u64,
+    bitrate_ms: u128,
+    bitrate_min: u32,
+    bitrate_max: u32,
+    ms_limited_by_relay: u64,
+    pause: Option<Pause>,
+    pauses_weak: u32,
+    pauses_relay: u32,
+    net: Option<Net>,
+    net_changes: u32,
+    transport: Transport,
+    transport_changes: u32,
+    /// Resumo final (guardado no `stop`).
+    final_text: Option<String>,
+}
+
+impl Diag {
+    fn new() -> Self {
+        Diag {
+            started: Instant::now(),
+            last: None,
+            ms_direct: 0,
+            ms_relay: 0,
+            ms_both: 0,
+            ms_by_height: BTreeMap::new(),
+            ms_sending: 0,
+            bitrate_ms: 0,
+            bitrate_min: u32::MAX,
+            bitrate_max: 0,
+            ms_limited_by_relay: 0,
+            pause: None,
+            pauses_weak: 0,
+            pauses_relay: 0,
+            net: None,
+            net_changes: 0,
+            transport: Transport::Connecting,
+            transport_changes: 0,
+            final_text: None,
+        }
+    }
+
+    fn sample(&mut self, e: &CallEngine) {
+        let now = Instant::now();
+        let dt = self.last.map(|l| now.duration_since(l).as_millis() as u64).unwrap_or(0).min(2_000);
+        self.last = Some(now);
+        let s = e.stats();
+        if s.transport != self.transport {
+            if self.transport != Transport::Connecting {
+                self.transport_changes += 1;
+            }
+            self.transport = s.transport;
+        }
+        if s.joined && s.peer_present && e.has_media() {
+            if s.both_paths {
+                self.ms_both += dt;
+            } else if s.direct {
+                self.ms_direct += dt;
+            } else {
+                self.ms_relay += dt;
+            }
+        }
+        let p = e.video_params();
+        if p.send {
+            self.ms_sending += dt;
+            *self.ms_by_height.entry(p.height).or_default() += dt;
+            self.bitrate_ms += p.bitrate_bps as u128 * dt as u128;
+            self.bitrate_min = self.bitrate_min.min(p.bitrate_bps);
+            self.bitrate_max = self.bitrate_max.max(p.bitrate_bps);
+            if p.limited_by_relay {
+                self.ms_limited_by_relay += dt;
+            }
+        }
+        if p.paused != self.pause {
+            match p.paused {
+                Some(Pause::WeakNetwork) => self.pauses_weak += 1,
+                Some(Pause::RelayLimit) => self.pauses_relay += 1,
+                None => {}
+            }
+            self.pause = p.paused;
+        }
+    }
+
+    fn set_net(&mut self, n: Net) {
+        if self.net.is_some_and(|old| old != n) {
+            self.net_changes += 1;
+        }
+        self.net = Some(n);
+    }
+
+    fn text(&self, e: &CallEngine) -> String {
+        fn pct(part: u64, total: u64) -> String {
+            match (part * 100 + total / 2).checked_div(total) {
+                Some(v) => format!("{v}%"),
+                None => "0%".into(),
+            }
+        }
+        fn permille(part: u64, total: u64) -> String {
+            if total == 0 { "0%".into() } else { format!("{:.1}%", part as f64 * 100.0 / total as f64) }
+        }
+        let s = e.stats();
+        let v = e.video_stats();
+        let secs = self.started.elapsed().as_secs();
+        let mut t = String::new();
+        t += &format!("duracao: {}m{:02}s\n", secs / 60, secs % 60);
+        let path_total = self.ms_direct + self.ms_relay + self.ms_both;
+        t += &format!(
+            "caminho: direto {} · relay {} · os dois {} · {}\n",
+            pct(self.ms_direct, path_total),
+            pct(self.ms_relay, path_total),
+            pct(self.ms_both, path_total),
+            match s.transport {
+                Transport::Udp => "udp",
+                Transport::WebSocket => "websocket",
+                Transport::Connecting => "a ligar",
+            },
+        );
+        if self.transport_changes > 0 {
+            t += &format!("trocas udp/websocket: {}\n", self.transport_changes);
+        }
+        if let Some(rtt) = s.relay_rtt_ms {
+            t += &format!("ida e volta ao relay: {rtt} ms\n");
+        }
+        t += &format!(
+            "rede: {} · mudancas {}\n",
+            match self.net {
+                Some(Net::Wifi) => "wi-fi",
+                Some(Net::Mobile) => "dados moveis",
+                _ => "?",
+            },
+            self.net_changes,
+        );
+        let lost = s.jitter.lost;
+        t += &format!(
+            "voz: recebidos {} · perdidos {} ({}) · tardios {} · dred {} · plc {} · jitter {} ms · buffer {} ms\n",
+            s.received,
+            lost,
+            permille(lost, s.received + lost),
+            s.jitter.gave_up,
+            s.dred_frames,
+            s.plc_frames,
+            s.jitter.jitter_ms,
+            s.jitter.depth_ms,
+        );
+        if self.ms_sending > 0 || v.sent_frames > 0 {
+            let res: Vec<String> = self
+                .ms_by_height
+                .iter()
+                .rev()
+                .map(|(h, ms)| format!("{h}p {}", pct(*ms, self.ms_sending)))
+                .collect();
+            let avg = if self.ms_sending > 0 { (self.bitrate_ms / self.ms_sending as u128) as u32 } else { 0 };
+            t += &format!(
+                "video enviado: {} · {} kb/s (min {} max {}) · limitado pelo relay {} · imagens {} · deitadas fora {}\n",
+                if res.is_empty() { "-".into() } else { res.join(" ") },
+                avg / 1000,
+                if self.bitrate_min == u32::MAX { 0 } else { self.bitrate_min / 1000 },
+                self.bitrate_max / 1000,
+                pct(self.ms_limited_by_relay, self.ms_sending),
+                v.sent_frames,
+                v.dropped_frames,
+            );
+            t += &format!(
+                "video enviado, do outro lado: perda {:.1}% · relatorios {} · sem chegar nada {}\n",
+                v.peer_loss_permille as f64 / 10.0,
+                v.feedbacks,
+                v.stalls,
+            );
+        }
+        if v.recv.frames > 0 || v.recv.lost_frames > 0 {
+            let r = &v.recv;
+            t += &format!(
+                "video recebido: imagens {} · perdidas {} ({}) · completas {} · pedidos {} · fila {} ms · atras do audio {} ms\n",
+                r.frames,
+                r.lost_frames,
+                permille(r.lost_frames, r.frames + r.lost_frames),
+                r.keyframes,
+                r.keyframe_requests,
+                r.queue_delay_ms,
+                r.av_lag_ms,
+            );
+        }
+        if self.pauses_weak + self.pauses_relay > 0 {
+            t += &format!("pausas do video: rede fraca {} · limite do relay {}\n", self.pauses_weak, self.pauses_relay);
+        }
+        if v.fichas_spent > 0 || v.relay_mode != 0 {
+            t += &format!("fichas gastas: {} · relay: {}\n", v.fichas_spent, ["normal", "so 240p", "sem video"].get(v.relay_mode as usize).unwrap_or(&"?"));
+        }
+        t
+    }
 }
 
 /// Enviar video: o que o nucleo autorizou e a pausa local (`video_hold`).
@@ -126,8 +336,18 @@ pub struct CallAudioStats {
 }
 
 impl CallAudio {
+    fn sample(&self) {
+        if let (Some(e), Ok(mut d)) = (self.engine(), self.diag.lock()) {
+            d.sample(&e);
+        }
+    }
+
     pub(crate) fn new(engine: CallEngine) -> Arc<Self> {
-        Arc::new(CallAudio { engine: Mutex::new(Some(Arc::new(engine))), gate: Mutex::new(VideoGate::default()) })
+        Arc::new(CallAudio {
+            engine: Mutex::new(Some(Arc::new(engine))),
+            gate: Mutex::new(VideoGate::default()),
+            diag: Mutex::new(Diag::new()),
+        })
     }
 
     fn engine(&self) -> Option<Arc<CallEngine>> {
@@ -201,6 +421,7 @@ impl CallAudio {
 
     /// O que o codificador deve fazer agora (perguntar a cada ~250 ms).
     pub fn video_params(&self) -> VideoEncoderParams {
+        self.sample();
         let p = self.engine().map(|e| e.video_params());
         match p {
             Some(p) => VideoEncoderParams {
@@ -268,6 +489,13 @@ impl CallAudio {
 
     /// Rede do telemovel (Wi-Fi ou dados moveis).
     pub fn set_network(&self, kind: NetworkKind) {
+        if let Ok(mut d) = self.diag.lock() {
+            d.set_net(match kind {
+                NetworkKind::Unknown => Net::Unknown,
+                NetworkKind::Wifi => Net::Wifi,
+                NetworkKind::Mobile => Net::Mobile,
+            });
+        }
         if let Some(e) = self.engine() {
             e.set_network(match kind {
                 NetworkKind::Unknown => Net::Unknown,
@@ -278,6 +506,7 @@ impl CallAudio {
     }
 
     pub fn stats(&self) -> CallAudioStats {
+        self.sample();
         let s = self.engine().map(|e| e.stats()).unwrap_or_default();
         let v = self.engine().map(|e| e.video_stats()).unwrap_or_default();
         CallAudioStats {
@@ -313,7 +542,28 @@ impl CallAudio {
     /// Para o motor (fecha a ligacao ao relay das chamadas). Pode ser chamado varias vezes.
     pub fn stop(&self) {
         let e = self.engine.lock().ok().and_then(|mut e| e.take());
+        if let (Some(e), Ok(mut d)) = (e.as_ref(), self.diag.lock()) {
+            if d.final_text.is_none() {
+                d.sample(e);
+                d.final_text = Some(d.text(e));
+            }
+        }
         drop(e);
+    }
+
+    /// DIAGNOSTICO para os testers (ver o inicio do ficheiro): os numeros desta chamada, num
+    /// texto curto, sem IPs, IDs nem conteudo. Depois de `stop()`, o resumo final.
+    pub fn diagnostic(&self) -> String {
+        match self.engine() {
+            Some(e) => match self.diag.lock() {
+                Ok(mut d) => {
+                    d.sample(&e);
+                    d.text(&e)
+                }
+                Err(_) => String::new(),
+            },
+            None => self.diag.lock().ok().and_then(|d| d.final_text.clone()).unwrap_or_default(),
+        }
     }
 }
 

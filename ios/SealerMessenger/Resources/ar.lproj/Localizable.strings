@@ -7,6 +7,11 @@
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
 "call_banner_back" = "النقر للعودة إلى المكالمة";
+"call_camera" = "الكاميرا";
+"call_diag_copied" = "تم نسخ التشخيص";
+"call_diag_copy" = "نسخ التشخيص";
+"call_diag_copy_last" = "نسخ تشخيص آخر مكالمة";
+"call_diag_title" = "تشخيص المكالمة";
 "call_mic_lost" = "توقف الميكروفون عن العمل (ربما يستخدمه تطبيق آخر). لم يعد الطرف الآخر يسمعك.";
 "call_minimize" = "تصغير";
 "confirm_word" = "حذف";
@@ -89,6 +94,7 @@
 "recovery_restore" = "استرداد الحساب";
 "recovery_restore_hint" = "يُرجى كتابة الكلمات الـ12 بالترتيب، مع فصلها بمسافات.";
 "recovery_restore_warning" = "لا يعمل الحساب إلا على هاتف واحد في كل مرة: سيتوقف الهاتف القديم عن استلام الرسائل.";
+"recovery_restore_what" = "ستستعيد جهات اتصالك. لا تُستعاد الرسائل القديمة ولا المجموعات.";
 "recovery_restored" = "تم استرداد الحساب. ستُستأنف الدردشات تلقائيًا.";
 "recovery_restoring" = "جارٍ الاسترداد…";
 "recovery_see_again" = "عرض الكلمات مجددًا";
@@ -186,8 +192,6 @@
 "t_chave_do_armazenamento_seguro_indisponivel" = "مفتاح التخزين الآمن غير متاح: %1$@";
 "t_chave_publica_do_relay_pinning" = "المفتاح العام لخادم الترحيل (التثبيت)";
 "t_cifrada_no_teu_telemovel_antes_de" = "تُشفَّر على هاتفك قبل إرسالها، ويُزال منها موقع التصوير.";
-"t_cifrada_ponta_a_ponta" = "مشفّرة بين الطرفين";
-"t_cifrada_ponta_a_ponta_2" = "مشفّرة بين الطرفين";
 "t_codigo_alterado" = "تم تغيير رمز المرور.";
 "t_codigo_atual" = "رمز المرور الحالي";
 "t_codigo_de_acesso" = "رمز المرور";
@@ -287,6 +291,7 @@
 "t_mudar" = "تغيير";
 "t_mudar_codigo" = "تغيير رمز المرور";
 "t_mudar_o_nome" = "إعادة التسمية";
+"t_n_pessoas" = "الأعضاء: %1$@";
 "t_nao_foi_possivel_abrir_o_armazenamento" = "تعذّر فتح التخزين الآمن: %1$@";
 "t_nao_foi_possivel_abrir_o_ficheiro" = "تعذّر فتح الملف.";
 "t_nao_foi_possivel_aceitar_o_convite" = "تعذّر قبول طلب المراسلة: %1$@";
@@ -360,7 +365,6 @@
 "t_partilha_o_teu_id_com_quem" = "يمكنك مشاركة معرّفك مع أي شخص للتحدث إليه، أو النقر على + لإضافة معرّف شخص آخر.";
 "t_partilhar" = "مشاركة";
 "t_partilhar_o_meu_id" = "مشاركة معرّفي";
-"t_pessoas_cifrado_ponta_a_ponta" = "الأعضاء: %1$@ · مشفّرة بين الطرفين";
 "t_pessoas_opcional_ate_escolhidas_podes_acrescen" = "الأعضاء (اختياري، الحد الأقصى %1$@): تم اختيار %2$@. يمكنك إضافة المزيد لاحقًا.";
 "t_podes_tentar_de_novo_quando_tiveres" = "يمكنك المحاولة مرة أخرى عند توفر الاتصال، أو الحذف من هذا الهاتف فقط الآن. وفي هذه الحالة، يُحذف ما على الخادم تلقائيًا: الرسائل المنتظِرة بعد 30 يومًا، ومفاتيحك العامة بعد 90 يومًا.";
 "t_politica_de_privacidade" = "سياسة الخصوصية";
@@ -414,5 +418,19 @@
 "t_verificar_seguranca" = "التحقق من الأمان";
 "t_versao" = "الإصدار %1$@";
 "t_versao_de_testes" = "نسخة تجريبية. سيستمر تحسين التطبيق حتى الإصدار 1.0.";
+"t_videochamada_em_curso" = "مكالمة فيديو جارية";
 "t_voltar" = "رجوع";
+"video_call_button" = "مكالمة فيديو";
+"video_call_from" = "مكالمة فيديو من %1$@";
+"video_call_sealer" = "مكالمة فيديو عبر SEALER";
+"video_camera_denied" = "بدون الوصول إلى الكاميرا لا يمكن تشغيل الفيديو. يمكنك السماح بذلك في إعدادات Android.";
+"video_camera_failed" = "تعذّر استخدام الكاميرا.";
+"video_camera_off" = "إيقاف الكاميرا";
+"video_camera_on" = "تشغيل الكاميرا";
+"video_not_now" = "ليس الآن";
+"video_request_title" = "يريد %1$@ عرض الفيديو";
+"video_switch" = "تبديل الكاميرا";
+"video_view" = "مشاهدة";
+"video_view_and_camera" = "تشغيل الكاميرا الخاصة بي";
+"video_waiting" = "في انتظار %1$@…";
 "zxing_msg_camera_framework_bug" = "تعذّر استخدام الكاميرا. لمسح رمز QR، يمكنك السماح بالوصول إلى الكاميرا من إعدادات التطبيق، أو كتابة المعرّف يدويًا.";

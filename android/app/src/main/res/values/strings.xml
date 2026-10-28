@@ -27,7 +27,6 @@
     <string name="t_a_chamar">A chamar…</string>
     <string name="t_a_tocar">A tocar…</string>
     <string name="t_chamada_de_voz">Chamada de voz</string>
-    <string name="t_cifrada_ponta_a_ponta">Cifrada ponta a ponta</string>
     <string name="t_recusar">Recusar</string>
     <string name="t_atender">Atender</string>
     <string name="t_ligar_o_microfone">Ligar o microfone</string>
@@ -79,7 +78,7 @@
     <string name="t_enviar_ficheiro">Enviar ficheiro</string>
     <string name="t_o_ficheiro_tem_mais_de_25">O ficheiro tem mais de 25 MB e não pode ser enviado.</string>
     <string name="t_vai_tal_como_esta_cifrado_no">Vai tal como está, cifrado no teu telemóvel antes de sair.</string>
-    <string name="t_pessoas_cifrado_ponta_a_ponta">%1$s pessoas · cifrado ponta a ponta</string>
+    <string name="t_n_pessoas">%1$s pessoas</string>
     <string name="t_informacao_do_grupo">Informação do grupo</string>
     <string name="t_a_carregar_mensagens_anteriores">A carregar mensagens anteriores…</string>
     <string name="t_ja_nao_fazes_parte_deste_grupo">Já não fazes parte deste grupo.</string>
@@ -163,7 +162,6 @@
     <string name="t_sem_acesso_a_camara_para_ler">Sem acesso à câmara. Para ler o código QR, permite-o nas definições da app, ou escreve o ID à mão.</string>
     <string name="t_ler_codigo_qr">Ler código QR</string>
     <string name="t_recebe_o_id_diretamente_da_pessoa">Recebe o ID diretamente da pessoa: lê o código QR dela quando estiverem juntos, ou usa um canal em que confies.</string>
-    <string name="t_cifrada_ponta_a_ponta_2">cifrada ponta a ponta</string>
     <string name="t_ligar">Ligar</string>
     <string name="t_desbloquear_2">Desbloquear</string>
     <string name="t_bloquear">Bloquear</string>
@@ -425,4 +423,8 @@
     <string name="msg_copied">Copiado</string>
     <string name="link_open_title">Abrir este link?</string>
     <string name="link_open_warn">Vais sair da SEALER para este site. Confirma o nome do site: os links falsos imitam nomes conhecidos.</string>
+    <string name="call_diag_title">Diagnóstico da chamada</string>
+    <string name="call_diag_copy">Copiar diagnóstico</string>
+    <string name="call_diag_copy_last">Copiar diagnóstico da última chamada</string>
+    <string name="call_diag_copied">Diagnóstico copiado</string>
 </resources>

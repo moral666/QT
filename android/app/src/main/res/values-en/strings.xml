@@ -22,7 +22,6 @@
     <string name="t_a_chamar">Calling…</string>
     <string name="t_a_tocar">Ringing…</string>
     <string name="t_chamada_de_voz">Voice call</string>
-    <string name="t_cifrada_ponta_a_ponta">End-to-end encrypted</string>
     <string name="t_recusar">Decline</string>
     <string name="t_atender">Answer</string>
     <string name="t_ligar_o_microfone">Unmute</string>
@@ -74,7 +73,7 @@
     <string name="t_enviar_ficheiro">Send file</string>
     <string name="t_o_ficheiro_tem_mais_de_25">The file is larger than 25 MB and cannot be sent.</string>
     <string name="t_vai_tal_como_esta_cifrado_no">Sent as is, encrypted on your phone before it leaves.</string>
-    <string name="t_pessoas_cifrado_ponta_a_ponta">%1$s people · end-to-end encrypted</string>
+    <string name="t_n_pessoas">%1$s people</string>
     <string name="t_informacao_do_grupo">Group info</string>
     <string name="t_a_carregar_mensagens_anteriores">Loading earlier messages…</string>
     <string name="t_ja_nao_fazes_parte_deste_grupo">You are no longer a member of this group.</string>
@@ -158,7 +157,6 @@
     <string name="t_sem_acesso_a_camara_para_ler">No access to the camera. To scan the QR code, allow it in the app settings, or type the ID by hand.</string>
     <string name="t_ler_codigo_qr">Scan QR code</string>
     <string name="t_recebe_o_id_diretamente_da_pessoa">Get the ID directly from the person: scan their QR code when you are together, or use a channel you trust.</string>
-    <string name="t_cifrada_ponta_a_ponta_2">end-to-end encrypted</string>
     <string name="t_ligar">Call</string>
     <string name="t_desbloquear_2">Unblock</string>
     <string name="t_bloquear">Block</string>
@@ -420,4 +418,8 @@
     <string name="msg_copied">Copied</string>
     <string name="link_open_title">Open this link?</string>
     <string name="link_open_warn">You are leaving SEALER for this site. Check the site name: fake links imitate well-known names.</string>
+    <string name="call_diag_title">Call diagnostics</string>
+    <string name="call_diag_copy">Copy diagnostics</string>
+    <string name="call_diag_copy_last">Copy last call diagnostics</string>
+    <string name="call_diag_copied">Diagnostics copied</string>
 </resources>

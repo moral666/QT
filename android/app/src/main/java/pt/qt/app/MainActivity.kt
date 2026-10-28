@@ -555,6 +555,7 @@ fun AppRoot(
                 onVideoRespond = { r -> if (r == VideoResponse.VIEW_AND_CAMERA) withCamera { vm.respondVideo(r) } else vm.respondVideo(r) },
                 onSelfPreview = vm::setSelfPreview,
                 onRemoteSurface = vm::setRemoteSurface,
+                diagnostic = if (CallDiag.enabled) vm::callDiagnostic else null,
             )
         }
         ui.locked -> LockScreen(ui, onCode = vm::unlockWithCode, onBio = vm::requestBioUnlock, onWipe = vm::wipeLockedData)
@@ -825,6 +826,7 @@ private fun CallOverLock(
             onVideoRespond = { r -> if (r == VideoResponse.VIEW_AND_CAMERA) withCamera { vm.respondVideo(r) } else vm.respondVideo(r) },
             onSelfPreview = vm::setSelfPreview,
             onRemoteSurface = vm::setRemoteSurface,
+            diagnostic = if (CallDiag.enabled) vm::callDiagnostic else null,
         )
         // Sem "apagar os dados" aqui: o telemovel ainda esta bloqueado.
         ui.locked -> LockScreen(ui, onCode = vm::unlockWithCode, onBio = vm::requestBioUnlock, onWipe = {}, canWipe = false)
@@ -1403,10 +1405,12 @@ fun ChatScreen(
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                if (isOnline) s(R.string.t_online) else s(R.string.t_cifrada_ponta_a_ponta_2),
-                                style = MaterialTheme.typography.labelSmall, color = colors.onTopBar.copy(alpha = 0.8f),
-                            )
+                            if (isOnline) {
+                                Text(
+                                    s(R.string.t_online),
+                                    style = MaterialTheme.typography.labelSmall, color = colors.onTopBar.copy(alpha = 0.8f),
+                                )
+                            }
                         }
                     }
                 },

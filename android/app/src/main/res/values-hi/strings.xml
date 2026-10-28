@@ -22,7 +22,6 @@
     <string name="t_a_chamar">कॉल की जा रही है…</string>
     <string name="t_a_tocar">घंटी बज रही है…</string>
     <string name="t_chamada_de_voz">वॉइस कॉल</string>
-    <string name="t_cifrada_ponta_a_ponta">एंड-टू-एंड एन्क्रिप्टेड</string>
     <string name="t_recusar">अस्वीकार करें</string>
     <string name="t_atender">जवाब दें</string>
     <string name="t_ligar_o_microfone">अनम्यूट करें</string>
@@ -74,7 +73,7 @@
     <string name="t_enviar_ficheiro">फ़ाइल भेजें</string>
     <string name="t_o_ficheiro_tem_mais_de_25">फ़ाइल 25 MB से बड़ी है और भेजी नहीं जा सकती।</string>
     <string name="t_vai_tal_como_esta_cifrado_no">जैसी है वैसी ही भेजी जाएगी, और भेजने से पहले आपके फ़ोन पर एन्क्रिप्ट होगी।</string>
-    <string name="t_pessoas_cifrado_ponta_a_ponta">%1$s लोग · एंड-टू-एंड एन्क्रिप्टेड</string>
+    <string name="t_n_pessoas">%1$s लोग</string>
     <string name="t_informacao_do_grupo">ग्रुप की जानकारी</string>
     <string name="t_a_carregar_mensagens_anteriores">पिछले मैसेज लोड हो रहे हैं…</string>
     <string name="t_ja_nao_fazes_parte_deste_grupo">अब आप इस ग्रुप के सदस्य नहीं हैं।</string>
@@ -158,7 +157,6 @@
     <string name="t_sem_acesso_a_camara_para_ler">कैमरे की अनुमति नहीं है। QR कोड स्कैन करने के लिए ऐप की सेटिंग में अनुमति दें, या ID खुद टाइप करें।</string>
     <string name="t_ler_codigo_qr">QR कोड स्कैन करें</string>
     <string name="t_recebe_o_id_diretamente_da_pessoa">ID सीधे उसी व्यक्ति से लें: मिलने पर उनका QR कोड स्कैन करें, या किसी भरोसेमंद तरीके का इस्तेमाल करें।</string>
-    <string name="t_cifrada_ponta_a_ponta_2">एंड-टू-एंड एन्क्रिप्टेड</string>
     <string name="t_ligar">कॉल करें</string>
     <string name="t_desbloquear_2">अनब्लॉक करें</string>
     <string name="t_bloquear">ब्लॉक करें</string>
@@ -418,4 +416,8 @@
     <string name="msg_copied">कॉपी हो गया</string>
     <string name="link_open_title">क्या यह लिंक खोलें?</string>
     <string name="link_open_warn">आप SEALER से निकलकर इस साइट पर जा रहे हैं। साइट का नाम जाँच लें: नकली लिंक जाने-माने नामों की नकल करते हैं।</string>
+    <string name="call_diag_title">कॉल निदान</string>
+    <string name="call_diag_copy">निदान कॉपी करें</string>
+    <string name="call_diag_copy_last">पिछली कॉल का निदान कॉपी करें</string>
+    <string name="call_diag_copied">निदान कॉपी हो गया</string>
 </resources>

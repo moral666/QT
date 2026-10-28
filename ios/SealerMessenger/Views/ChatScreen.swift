@@ -126,7 +126,7 @@ struct ChatScreen: View {
                         Avatar(name: g.name, seed: g.groupId, size: 38)
                         VStack(alignment: .leading, spacing: 0) {
                             Text(g.name).font(.sTitleMedium).lineLimit(1)
-                            Text(s("t_pessoas_cifrado_ponta_a_ponta", g.members.count)).font(.sLabelSmall).opacity(0.8)
+                            Text(s("t_n_pessoas", g.members.count)).font(.sLabelSmall).opacity(0.8)
                         }
                     }
                 }
@@ -141,7 +141,9 @@ struct ChatScreen: View {
                     Avatar(name: name, seed: conversationId, size: 38, online: isOnline)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(name).font(.sTitleMedium).lineLimit(1)
-                        Text(isOnline ? s("t_online") : s("t_cifrada_ponta_a_ponta_2")).font(.sLabelSmall).opacity(0.8)
+                        if isOnline {
+                            Text(s("t_online")).font(.sLabelSmall).opacity(0.8)
+                        }
                     }
                 }
             }, actions: {
