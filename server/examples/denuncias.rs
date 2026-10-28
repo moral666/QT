@@ -29,6 +29,12 @@
 //! ... --example denuncias -- premium-bloqueio --key ... [--ligar | --desligar] [--json]
 //! ```
 //!
+//! Pessoas com a app ligada ao relay agora (so o numero, sem o operador):
+//!
+//! ```text
+//! ... --example denuncias -- online --key ... [--json]
+//! ```
+//!
 //! `premium-bloqueio` (0.9.21): sem opcao so mostra o estado. Ligado, o relay recusa anexos e
 //! chamadas a contas sem premium e as apps fecham as funcoes pagas.
 //!
@@ -327,8 +333,17 @@ async fn main() {
                 other => fail(&format!("resposta inesperada: {other:?}")),
             }
         }
+        "online" => {
+            let seed = load_seed();
+            let mut c = connect(&seed).await;
+            match ask(&mut c, ClientMessage::AdminOnline).await {
+                ServerMessage::Online { users } if flag("--json") => println!("{}", serde_json::json!({ "online": users })),
+                ServerMessage::Online { users } => println!("Online agora: {users}"),
+                other => fail(&format!("resposta inesperada: {other:?}")),
+            }
+        }
         _ => {
-            eprintln!("Uso: --example denuncias -- (chave|listar|apagar|banir|desbanir|banidos|premium-dar|premium-tirar|premium-lista|premium-bloqueio) --key <ficheiro>");
+            eprintln!("Uso: --example denuncias -- (chave|listar|apagar|banir|desbanir|banidos|premium-dar|premium-tirar|premium-lista|premium-bloqueio|online) --key <ficheiro>");
             std::process::exit(2);
         }
     }

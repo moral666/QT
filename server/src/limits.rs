@@ -106,6 +106,12 @@ impl UserSlot {
         })
     }
 
+    /// Contas diferentes com pelo menos uma ligacao autenticada agora, sem contar
+    /// `except` (o operador que pergunta). So o numero: o mapa nao sai daqui.
+    pub fn users_online(except: Option<&str>) -> usize {
+        with(|m| m.len() - except.map_or(0, |e| m.contains_key(e) as usize))
+    }
+
     /// Completa quando esta ligacao tem de fechar (ha uma mais nova da mesma conta).
     pub async fn must_close(&self) {
         self.close.notified().await
@@ -152,6 +158,7 @@ mod tests {
         // A primeira recebe o aviso (mesmo que so agora comece a ouvir).
         tokio::time::timeout(std::time::Duration::from_millis(200), s1.must_close()).await.unwrap();
         assert!(tokio::time::timeout(std::time::Duration::from_millis(50), s2.must_close()).await.is_err());
+        assert!(UserSlot::users_online(None) >= 1);
         drop((s1, s2, s3));
         assert!(with(|m| !m.contains_key(&user)), "a conta sai do mapa quando fecha tudo");
     }

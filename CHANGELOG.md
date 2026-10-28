@@ -6,6 +6,12 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 27 de outubro de 2026: pessoas online (só relay)
+
+- Relay: `AdminOnline` (só o operador) diz quantas pessoas têm a app ligada agora (contas, não
+  ligações; sem o operador). Só o número, contado em memória. Ferramenta:
+  `--example denuncias -- online --key ... [--json]`.
+
 ### 27 de outubro de 2026: relay em relay.sealerapp.com (app Android 0.9.43, iPhone 0.9.31)
 
 - As apps passam a ligar a `wss://relay.sealerapp.com` (o mesmo servidor e o mesmo pin). As versões

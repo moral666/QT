@@ -1128,8 +1128,12 @@ operador: o relay guarda-a sem a conseguir ler e sem saber quem denunciou.
   campainha, fecha as ligações abertas e passa a recusar a autenticação e o registo ("conta
   banida"). Limite: sem número de telefone, a pessoa pode criar um ID novo (com prova de trabalho).
 
-Testes: `core/src/report.rs`, `ffi/src/report.rs`, `server/tests/relay_reports.rs` e
-`server/tests/redis_acl.rs`.
+- **Pessoas online** (27/10/2026): `AdminOnline` (só o operador) → `Online { users }`, o número de
+  contas diferentes com a app ligada ao relay agora (não ligações; sem o operador). Contado em
+  memória, sem nada no Redis e sem IDs na resposta. Relays antigos respondem `Error`.
+
+Testes: `core/src/report.rs`, `ffi/src/report.rs`, `server/tests/relay_reports.rs`,
+`server/tests/relay_online.rs` e `server/tests/redis_acl.rs`.
 
 ## 22. Chave de recuperação (desde a app 0.9.19)
 
