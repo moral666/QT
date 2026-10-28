@@ -22,7 +22,6 @@
     <string name="t_a_chamar">Chiamata in corso…</string>
     <string name="t_a_tocar">Sta squillando…</string>
     <string name="t_chamada_de_voz">Chiamata vocale</string>
-    <string name="t_cifrada_ponta_a_ponta">Cifrata end-to-end</string>
     <string name="t_recusar">Rifiuta</string>
     <string name="t_atender">Rispondi</string>
     <string name="t_ligar_o_microfone">Riattiva microfono</string>
@@ -74,7 +73,7 @@
     <string name="t_enviar_ficheiro">Invia file</string>
     <string name="t_o_ficheiro_tem_mais_de_25">Il file supera i 25 MB e non può essere inviato.</string>
     <string name="t_vai_tal_como_esta_cifrado_no">Viene inviato così com\'è, cifrato sul tuo telefono prima di partire.</string>
-    <string name="t_pessoas_cifrado_ponta_a_ponta">%1$s persone · cifrato end-to-end</string>
+    <string name="t_n_pessoas">%1$s persone</string>
     <string name="t_informacao_do_grupo">Info gruppo</string>
     <string name="t_a_carregar_mensagens_anteriores">Caricamento dei messaggi precedenti…</string>
     <string name="t_ja_nao_fazes_parte_deste_grupo">Non fai più parte di questo gruppo.</string>
@@ -158,7 +157,6 @@
     <string name="t_sem_acesso_a_camara_para_ler">Nessun accesso alla fotocamera. Per leggere il codice QR, consentilo nelle impostazioni dell\'app, oppure scrivi l\'ID a mano.</string>
     <string name="t_ler_codigo_qr">Leggi codice QR</string>
     <string name="t_recebe_o_id_diretamente_da_pessoa">Ricevi l\'ID direttamente dalla persona: leggi il suo codice QR quando siete insieme, oppure usa un canale di cui ti fidi.</string>
-    <string name="t_cifrada_ponta_a_ponta_2">cifrata end-to-end</string>
     <string name="t_ligar">Chiama</string>
     <string name="t_desbloquear_2">Sblocca</string>
     <string name="t_bloquear">Blocca</string>
@@ -420,4 +418,8 @@
     <string name="msg_copied">Copiato</string>
     <string name="link_open_title">Aprire questo link?</string>
     <string name="link_open_warn">Stai per lasciare SEALER per questo sito. Controlla il nome del sito: i link falsi imitano nomi noti.</string>
+    <string name="call_diag_title">Diagnostica della chiamata</string>
+    <string name="call_diag_copy">Copia diagnostica</string>
+    <string name="call_diag_copy_last">Copia la diagnostica dell\'ultima chiamata</string>
+    <string name="call_diag_copied">Diagnostica copiata</string>
 </resources>

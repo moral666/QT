@@ -27,8 +27,6 @@ struct CallScreen: View {
                 Text(call.name).font(Jakarta.font(28, .semibold)).lineLimit(1).foregroundStyle(c.onTopBar)
                 Spacer().frame(height: 8)
                 Text(status).font(.sTitleMedium).foregroundStyle(c.onTopBar.opacity(0.85)).monospacedDigit()
-                Spacer().frame(height: 4)
-                Text(s("t_cifrada_ponta_a_ponta")).font(.sLabelSmall).foregroundStyle(c.onTopBar.opacity(0.6))
                 Spacer()
                 switch call.phase {
                 case .incoming:

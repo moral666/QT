@@ -125,11 +125,19 @@ async fn chamada_como_na_app() {
         let audible = heard[20..].iter().filter(|e| **e > 1e4).count();
         assert!(audible >= 45, "so {audible} de 60 frames com som; {:?}", audio_b.stats());
 
+        // Diagnostico para os testers: so numeros, sem IDs.
+        let diag = audio_b.diagnostic();
+        assert!(diag.contains("caminho: ") && diag.contains("voz: recebidos "), "{diag}");
+        assert!(!diag.contains(&call), "o diagnostico nao leva o id da chamada");
+
         // Desligar para o motor dos dois lados.
         a.c.call_hangup(call.clone()).unwrap();
         deliver(&a, &b);
         assert!(!audio_a.active());
         assert!(!audio_b.active());
+        // Depois de desligar continua a dar o resumo final.
+        assert!(audio_b.diagnostic().contains("voz: recebidos "), "{}", audio_b.diagnostic());
+        println!("{}", audio_b.diagnostic());
         assert_eq!(audio_b.pull_playback(), vec![0u8; call_frame_bytes() as usize]);
     })
     .await

@@ -22,7 +22,6 @@
     <string name="t_a_chamar">جارٍ الاتصال…</string>
     <string name="t_a_tocar">يرنّ…</string>
     <string name="t_chamada_de_voz">مكالمة صوتية</string>
-    <string name="t_cifrada_ponta_a_ponta">مشفّرة بين الطرفين</string>
     <string name="t_recusar">رفض</string>
     <string name="t_atender">رد</string>
     <string name="t_ligar_o_microfone">إلغاء كتم الصوت</string>
@@ -74,7 +73,7 @@
     <string name="t_enviar_ficheiro">إرسال ملف</string>
     <string name="t_o_ficheiro_tem_mais_de_25">حجم الملف أكبر من 25 ميغابايت ولا يمكن إرساله.</string>
     <string name="t_vai_tal_como_esta_cifrado_no">يُرسَل الملف كما هو، ويُشفَّر على هاتفك قبل إرساله.</string>
-    <string name="t_pessoas_cifrado_ponta_a_ponta">الأعضاء: %1$s · مشفّرة بين الطرفين</string>
+    <string name="t_n_pessoas">الأعضاء: %1$s</string>
     <string name="t_informacao_do_grupo">معلومات المجموعة</string>
     <string name="t_a_carregar_mensagens_anteriores">جارٍ تحميل الرسائل السابقة…</string>
     <string name="t_ja_nao_fazes_parte_deste_grupo">لم يعد حسابك عضوًا في هذه المجموعة.</string>
@@ -158,7 +157,6 @@
     <string name="t_sem_acesso_a_camara_para_ler">لا يوجد إذن للوصول إلى الكاميرا. لمسح رمز QR، يمكنك السماح بذلك من إعدادات التطبيق، أو كتابة المعرّف يدويًا.</string>
     <string name="t_ler_codigo_qr">مسح رمز QR</string>
     <string name="t_recebe_o_id_diretamente_da_pessoa">يُرجى الحصول على المعرّف من الشخص مباشرةً: بمسح رمز QR الخاص به عند اللقاء، أو عبر وسيلة موثوقة.</string>
-    <string name="t_cifrada_ponta_a_ponta_2">مشفّرة بين الطرفين</string>
     <string name="t_ligar">اتصال</string>
     <string name="t_desbloquear_2">إلغاء الحظر</string>
     <string name="t_bloquear">حظر</string>
@@ -418,4 +416,8 @@
     <string name="msg_copied">تم النسخ</string>
     <string name="link_open_title">فتح هذا الرابط؟</string>
     <string name="link_open_warn">سيتم الخروج من SEALER إلى هذا الموقع. يُرجى التحقق من اسم الموقع: الروابط المزيفة تقلّد أسماء معروفة.</string>
+    <string name="call_diag_title">تشخيص المكالمة</string>
+    <string name="call_diag_copy">نسخ التشخيص</string>
+    <string name="call_diag_copy_last">نسخ تشخيص آخر مكالمة</string>
+    <string name="call_diag_copied">تم نسخ التشخيص</string>
 </resources>

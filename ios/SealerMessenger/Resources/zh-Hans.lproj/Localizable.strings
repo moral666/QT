@@ -7,6 +7,11 @@
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
 "call_banner_back" = "点击返回通话";
+"call_camera" = "摄像头";
+"call_diag_copied" = "诊断已复制";
+"call_diag_copy" = "复制诊断";
+"call_diag_copy_last" = "复制上次通话的诊断";
+"call_diag_title" = "通话诊断";
 "call_mic_lost" = "麦克风已停止工作（可能有其他应用正在使用）。对方已听不到你的声音。";
 "call_minimize" = "最小化";
 "confirm_word" = "删除";
@@ -89,6 +94,7 @@
 "recovery_restore" = "恢复账户";
 "recovery_restore_hint" = "请按顺序输入12个单词，用空格分隔。";
 "recovery_restore_warning" = "一个账户同一时间只能在一部手机上使用：旧手机将无法再接收消息。";
+"recovery_restore_what" = "你的联系人会被恢复。旧消息和群组不会被恢复。";
 "recovery_restored" = "账户已恢复。聊天会自动重新开始。";
 "recovery_restoring" = "正在恢复…";
 "recovery_see_again" = "再看一遍单词";
@@ -186,8 +192,6 @@
 "t_chave_do_armazenamento_seguro_indisponivel" = "安全存储密钥不可用：%1$@";
 "t_chave_publica_do_relay_pinning" = "中继服务器公钥（公钥固定）";
 "t_cifrada_no_teu_telemovel_antes_de" = "发送前在你的手机上加密。照片中的位置信息会被删除。";
-"t_cifrada_ponta_a_ponta" = "端到端加密";
-"t_cifrada_ponta_a_ponta_2" = "端到端加密";
 "t_codigo_alterado" = "密码已更改。";
 "t_codigo_atual" = "当前密码";
 "t_codigo_de_acesso" = "密码";
@@ -287,6 +291,7 @@
 "t_mudar" = "更改";
 "t_mudar_codigo" = "更改密码";
 "t_mudar_o_nome" = "重命名";
+"t_n_pessoas" = "%1$@人";
 "t_nao_foi_possivel_abrir_o_armazenamento" = "无法打开安全存储：%1$@";
 "t_nao_foi_possivel_abrir_o_ficheiro" = "无法打开文件。";
 "t_nao_foi_possivel_aceitar_o_convite" = "无法接受邀请：%1$@";
@@ -360,7 +365,6 @@
 "t_partilha_o_teu_id_com_quem" = "把你的ID分享给想聊天的人，或点击 + 添加别人的ID。";
 "t_partilhar" = "分享";
 "t_partilhar_o_meu_id" = "分享我的ID";
-"t_pessoas_cifrado_ponta_a_ponta" = "%1$@人 · 端到端加密";
 "t_pessoas_opcional_ate_escolhidas_podes_acrescen" = "成员（可选，最多%1$@人）：已选择%2$@人。你也可以以后再添加。";
 "t_podes_tentar_de_novo_quando_tiveres" = "你可以在有网络时重试，或现在只从此手机删除。在这种情况下，服务器上的内容会自动删除：待接收的消息在30天后删除，你的公钥在90天后删除。";
 "t_politica_de_privacidade" = "隐私政策";
@@ -414,5 +418,19 @@
 "t_verificar_seguranca" = "验证安全性";
 "t_versao" = "版本%1$@";
 "t_versao_de_testes" = "测试版。在1.0版本之前，应用会持续改进。";
+"t_videochamada_em_curso" = "视频通话进行中";
 "t_voltar" = "返回";
+"video_call_button" = "视频通话";
+"video_call_from" = "来自 %1$@ 的视频通话";
+"video_call_sealer" = "SEALER视频通话";
+"video_camera_denied" = "没有摄像头权限，无法打开视频。可以在 Android 设置中允许。";
+"video_camera_failed" = "无法使用摄像头。";
+"video_camera_off" = "关闭摄像头";
+"video_camera_on" = "打开摄像头";
+"video_not_now" = "暂不";
+"video_request_title" = "%1$@ 想展示视频";
+"video_switch" = "切换摄像头";
+"video_view" = "观看";
+"video_view_and_camera" = "打开我的摄像头";
+"video_waiting" = "正在等待 %1$@…";
 "zxing_msg_camera_framework_bug" = "无法使用相机。要扫描二维码，请在应用设置中允许访问相机，或手动输入ID。";

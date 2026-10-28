@@ -7,6 +7,11 @@
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
 "call_banner_back" = "Toca para voltar à chamada";
+"call_camera" = "Câmara";
+"call_diag_copied" = "Diagnóstico copiado";
+"call_diag_copy" = "Copiar diagnóstico";
+"call_diag_copy_last" = "Copiar diagnóstico da última chamada";
+"call_diag_title" = "Diagnóstico da chamada";
 "call_mic_lost" = "O microfone deixou de funcionar (outra app pode estar a usá-lo). O outro lado deixou de te ouvir.";
 "call_minimize" = "Minimizar";
 "confirm_word" = "APAGAR";
@@ -89,6 +94,7 @@
 "recovery_restore" = "Recuperar conta";
 "recovery_restore_hint" = "Escreve as 12 palavras, por ordem, separadas por espaços.";
 "recovery_restore_warning" = "Uma conta só funciona num telemóvel de cada vez: o telemóvel antigo deixa de receber mensagens.";
+"recovery_restore_what" = "Vais recuperar os teus contactos. As mensagens antigas e os grupos não são recuperados.";
 "recovery_restored" = "Conta recuperada. As conversas recomeçam sozinhas.";
 "recovery_restoring" = "A recuperar…";
 "recovery_see_again" = "Ver as palavras de novo";
@@ -186,8 +192,6 @@
 "t_chave_do_armazenamento_seguro_indisponivel" = "Chave do armazenamento seguro indisponível: %1$@";
 "t_chave_publica_do_relay_pinning" = "Chave pública do relay (pinning)";
 "t_cifrada_no_teu_telemovel_antes_de" = "Cifrada no teu telemóvel antes de sair. A localização da foto é removida.";
-"t_cifrada_ponta_a_ponta" = "Cifrada ponta a ponta";
-"t_cifrada_ponta_a_ponta_2" = "cifrada ponta a ponta";
 "t_codigo_alterado" = "Código alterado.";
 "t_codigo_atual" = "Código atual";
 "t_codigo_de_acesso" = "Código de acesso";
@@ -287,6 +291,7 @@
 "t_mudar" = "Mudar";
 "t_mudar_codigo" = "Mudar código";
 "t_mudar_o_nome" = "Mudar o nome";
+"t_n_pessoas" = "%1$@ pessoas";
 "t_nao_foi_possivel_abrir_o_armazenamento" = "Não foi possível abrir o armazenamento seguro: %1$@";
 "t_nao_foi_possivel_abrir_o_ficheiro" = "Não foi possível abrir o ficheiro.";
 "t_nao_foi_possivel_aceitar_o_convite" = "Não foi possível aceitar o convite: %1$@";
@@ -360,7 +365,6 @@
 "t_partilha_o_teu_id_com_quem" = "Partilha o teu ID com quem quiseres falar, ou toca em + para adicionar o ID de outra pessoa.";
 "t_partilhar" = "Partilhar";
 "t_partilhar_o_meu_id" = "Partilhar o meu ID";
-"t_pessoas_cifrado_ponta_a_ponta" = "%1$@ pessoas · cifrado ponta a ponta";
 "t_pessoas_opcional_ate_escolhidas_podes_acrescen" = "Pessoas (opcional, até %1$@): %2$@ escolhidas. Podes acrescentar mais tarde.";
 "t_podes_tentar_de_novo_quando_tiveres" = "Podes tentar de novo quando tiveres rede, ou apagar já só deste telemóvel. Nesse caso, o que está no servidor apaga-se sozinho: as mensagens em espera ao fim de 30 dias e as tuas chaves públicas ao fim de 90 dias.";
 "t_politica_de_privacidade" = "Política de privacidade";
@@ -414,5 +418,19 @@
 "t_verificar_seguranca" = "Verificar segurança";
 "t_versao" = "Versão %1$@";
 "t_versao_de_testes" = "Versão de testes. Até à versão 1.0, a app continua a ser melhorada.";
+"t_videochamada_em_curso" = "Videochamada em curso";
 "t_voltar" = "Voltar";
+"video_call_button" = "Videochamada";
+"video_call_from" = "Videochamada de %1$@";
+"video_call_sealer" = "Videochamada SEALER";
+"video_camera_denied" = "Sem acesso à câmara não é possível ligar o vídeo. Podes ativá-la nas definições do Android.";
+"video_camera_failed" = "Não foi possível usar a câmara.";
+"video_camera_off" = "Desligar câmara";
+"video_camera_on" = "Ligar câmara";
+"video_not_now" = "Agora não";
+"video_request_title" = "%1$@ quer mostrar vídeo";
+"video_switch" = "Trocar câmara";
+"video_view" = "Ver";
+"video_view_and_camera" = "Ligar a minha câmara";
+"video_waiting" = "À espera de %1$@…";
 "zxing_msg_camera_framework_bug" = "Não foi possível usar a câmara. Para ler o código QR, permite o acesso à câmara nas definições da app, ou escreve o ID à mão.";

@@ -7,6 +7,11 @@
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
 "call_banner_back" = "Tap to return to the call";
+"call_camera" = "Camera";
+"call_diag_copied" = "Diagnostics copied";
+"call_diag_copy" = "Copy diagnostics";
+"call_diag_copy_last" = "Copy last call diagnostics";
+"call_diag_title" = "Call diagnostics";
 "call_mic_lost" = "The microphone stopped working (another app may be using it). The other person can no longer hear you.";
 "call_minimize" = "Minimize";
 "confirm_word" = "DELETE";
@@ -89,6 +94,7 @@
 "recovery_restore" = "Recover account";
 "recovery_restore_hint" = "Type the 12 words, in order, separated by spaces.";
 "recovery_restore_warning" = "An account works on one phone at a time: the old phone stops receiving messages.";
+"recovery_restore_what" = "You'll recover your contacts. Old messages and groups aren't recovered.";
 "recovery_restored" = "Account recovered. Conversations restart by themselves.";
 "recovery_restoring" = "Recovering…";
 "recovery_see_again" = "See the words again";
@@ -186,8 +192,6 @@
 "t_chave_do_armazenamento_seguro_indisponivel" = "Secure storage key unavailable: %1$@";
 "t_chave_publica_do_relay_pinning" = "Relay public key (pinning)";
 "t_cifrada_no_teu_telemovel_antes_de" = "Encrypted on your phone before it leaves. The photo's location is removed.";
-"t_cifrada_ponta_a_ponta" = "End-to-end encrypted";
-"t_cifrada_ponta_a_ponta_2" = "end-to-end encrypted";
 "t_codigo_alterado" = "Passcode changed.";
 "t_codigo_atual" = "Current passcode";
 "t_codigo_de_acesso" = "Passcode";
@@ -287,6 +291,7 @@
 "t_mudar" = "Change";
 "t_mudar_codigo" = "Change passcode";
 "t_mudar_o_nome" = "Rename";
+"t_n_pessoas" = "%1$@ people";
 "t_nao_foi_possivel_abrir_o_armazenamento" = "Could not open secure storage: %1$@";
 "t_nao_foi_possivel_abrir_o_ficheiro" = "Could not open the file.";
 "t_nao_foi_possivel_aceitar_o_convite" = "Could not accept the invitation: %1$@";
@@ -360,7 +365,6 @@
 "t_partilha_o_teu_id_com_quem" = "Share your ID with whoever you want to talk to, or tap + to add someone else's ID.";
 "t_partilhar" = "Share";
 "t_partilhar_o_meu_id" = "Share my ID";
-"t_pessoas_cifrado_ponta_a_ponta" = "%1$@ people · end-to-end encrypted";
 "t_pessoas_opcional_ate_escolhidas_podes_acrescen" = "People (optional, up to %1$@): %2$@ selected. You can add more later.";
 "t_podes_tentar_de_novo_quando_tiveres" = "You can try again when you have a connection, or delete only from this phone now. In that case, what is on the server deletes itself: waiting messages after 30 days and your public keys after 90 days.";
 "t_politica_de_privacidade" = "Privacy policy";
@@ -414,5 +418,19 @@
 "t_verificar_seguranca" = "Verify security";
 "t_versao" = "Version %1$@";
 "t_versao_de_testes" = "Test version. Until version 1.0, the app keeps being improved.";
+"t_videochamada_em_curso" = "Video call in progress";
 "t_voltar" = "Back";
+"video_call_button" = "Video call";
+"video_call_from" = "Video call from %1$@";
+"video_call_sealer" = "SEALER video call";
+"video_camera_denied" = "Without access to the camera, video can't be turned on. You can allow it in Android settings.";
+"video_camera_failed" = "Couldn't use the camera.";
+"video_camera_off" = "Turn camera off";
+"video_camera_on" = "Turn camera on";
+"video_not_now" = "Not now";
+"video_request_title" = "%1$@ wants to show video";
+"video_switch" = "Switch camera";
+"video_view" = "View";
+"video_view_and_camera" = "Turn on my camera";
+"video_waiting" = "Waiting for %1$@…";
 "zxing_msg_camera_framework_bug" = "Could not use the camera. To scan the QR code, allow camera access in the app settings, or type the ID by hand.";

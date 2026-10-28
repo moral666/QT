@@ -389,6 +389,14 @@ fun ProfileSettingsScreen(
             SettingsRow(null, s(R.string.lang_menu), onClick = onLanguage, glyph = "Aa")
             SettingsRow(Icons.Filled.Email, s(R.string.lang_report), onClick = { Lang.reportTranslation(ctx) })
             if (BuildConfig.RELAY_EDITABLE) SettingsRow(Icons.Filled.Build, s(R.string.t_relay_teste), onClick = onRelay)
+            // Testers (fase 5c): os numeros da ultima chamada, para colar numa mensagem.
+            val lastDiag = ui.lastCallDiag
+            if (CallDiag.enabled && lastDiag != null) {
+                SettingsRow(Icons.Filled.Build, s(R.string.call_diag_copy_last), onClick = {
+                    CallDiag.copy(ctx, lastDiag)
+                    android.widget.Toast.makeText(ctx, s(R.string.call_diag_copied), android.widget.Toast.LENGTH_SHORT).show()
+                })
+            }
             // Versao instalada (build.gradle.kts, versionName), so informativa.
             SettingsRow(Icons.Filled.Info, s(R.string.t_versao, BuildConfig.VERSION_NAME), onClick = null, divider = false)
 

@@ -51,6 +51,8 @@ import uniffi.qt_ffi.BackupContact
 
 data class UiState(
     val loading: Boolean = true,
+    /** Diagnostico da ultima chamada (so com `CallDiag.enabled`), para "Copiar diagnostico". */
+    val lastCallDiag: String? = null,
     val hasIdentity: Boolean = false,
     val publicId: String = "",
     val relayUrl: String = BuildConfig.RELAY_URL,
@@ -2559,6 +2561,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         callIO?.stop() ?: callSounds.leaveRoute()
         callIO = null
         callAudio?.stop()
+        // Depois do `stop` o Rust guarda o resumo final da chamada (so com o diagnostico ligado).
+        if (CallDiag.enabled) {
+            runCatching { callAudio?.diagnostic() }.getOrNull()?.takeIf { it.isNotBlank() }?.let { d ->
+                val text = CallDiag.withHeader(d)
+                CallDiag.log(TAG, "chamada terminada: " + d.trim().replace("\n", " | "))
+                _ui.update { it.copy(lastCallDiag = text) }
+            }
+        }
         callAudio?.destroy()
         callAudio = null
         callTicker?.cancel()
@@ -2588,7 +2598,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         val late = if (st.late > 0uL) " · ${st.late} atrasados" else ""
                         val loss = "$lost$late"
                         // Os numeros da rede so vao para o registo (adb logcat), nunca para o ecra.
-                        if (++callStatsTick % 5 == 0) Log.d(TAG, "chamada: $net$rtt$loss")
+                        if (++callStatsTick % 5 == 0) CallDiag.log(TAG, "chamada: $net$rtt$loss")
+                        if (CallDiag.enabled && callStatsTick % 10 == 0) {
+                            runCatching { callAudio?.diagnostic() }.getOrNull()?.let { CallDiag.log(TAG, it.trim().replace("\n", " | ")) }
+                        }
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -2663,6 +2676,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         endCallLocal(if (c.phase == CallPhase.INCOMING) s(R.string.t_chamada_recusada) else s(R.string.t_chamada_terminada))
     }
+
+    /** Diagnostico da chamada em curso (painel dos testers); `null` sem chamada ou desligado. */
+    fun callDiagnostic(): String? =
+        if (!CallDiag.enabled) null else runCatching { callAudio?.diagnostic() }.getOrNull()?.let { CallDiag.withHeader(it) }
 
     fun toggleMute() {
         val c = _ui.value.call ?: return
@@ -2877,8 +2894,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _ui.update { u ->
             u.call?.let { cur -> if (cur.callId == callId) u.copy(call = cur.copy(video = cur.video.copy(supported = cur.video.supported || supported))) else u } ?: u
         }
-        callAudio?.setNetwork(VideoNet.current(app))
-        if (stopNetWatch == null) stopNetWatch = VideoNet.watch(app) { kind -> callAudio?.setNetwork(kind) }
+        callAudio?.setNetwork(VideoNet.current(app).also { CallDiag.log(TAG, "rede: $it") })
+        if (stopNetWatch == null) stopNetWatch = VideoNet.watch(app) { kind ->
+            CallDiag.log(TAG, "rede mudou: $kind")
+            callAudio?.setNetwork(kind)
+        }
     }
 
     /**

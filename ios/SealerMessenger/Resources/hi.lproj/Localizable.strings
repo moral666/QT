@@ -7,6 +7,11 @@
 "badge_founder" = "Founder";
 "badge_tester" = "Tester";
 "call_banner_back" = "कॉल पर लौटने के लिए टैप करें";
+"call_camera" = "कैमरा";
+"call_diag_copied" = "निदान कॉपी हो गया";
+"call_diag_copy" = "निदान कॉपी करें";
+"call_diag_copy_last" = "पिछली कॉल का निदान कॉपी करें";
+"call_diag_title" = "कॉल निदान";
 "call_mic_lost" = "माइक्रोफ़ोन ने काम करना बंद कर दिया (हो सकता है कोई दूसरा ऐप इसका इस्तेमाल कर रहा हो)। सामने वाले को अब आपकी आवाज़ सुनाई नहीं दे रही है।";
 "call_minimize" = "छोटा करें";
 "confirm_word" = "हटाएं";
@@ -89,6 +94,7 @@
 "recovery_restore" = "खाता वापस पाएं";
 "recovery_restore_hint" = "12 शब्द क्रम से, बीच में स्पेस देकर लिखें।";
 "recovery_restore_warning" = "एक खाता एक समय में सिर्फ़ एक फ़ोन पर काम करता है: पुराने फ़ोन पर मैसेज आने बंद हो जाएंगे।";
+"recovery_restore_what" = "आपके संपर्क वापस आ जाएंगे। पुराने मैसेज और ग्रुप वापस नहीं आते।";
 "recovery_restored" = "खाता वापस मिल गया। चैट अपने आप फिर से शुरू हो जाएंगी।";
 "recovery_restoring" = "खाता वापस लाया जा रहा है…";
 "recovery_see_again" = "शब्द फिर से देखें";
@@ -186,8 +192,6 @@
 "t_chave_do_armazenamento_seguro_indisponivel" = "सुरक्षित स्टोरेज की कुंजी उपलब्ध नहीं है: %1$@";
 "t_chave_publica_do_relay_pinning" = "रिले की पब्लिक कुंजी (पिनिंग)";
 "t_cifrada_no_teu_telemovel_antes_de" = "भेजने से पहले आपके फ़ोन पर ही एन्क्रिप्ट की जाती है। फ़ोटो की लोकेशन हटा दी जाती है।";
-"t_cifrada_ponta_a_ponta" = "एंड-टू-एंड एन्क्रिप्टेड";
-"t_cifrada_ponta_a_ponta_2" = "एंड-टू-एंड एन्क्रिप्टेड";
 "t_codigo_alterado" = "पासकोड बदल दिया गया।";
 "t_codigo_atual" = "मौजूदा पासकोड";
 "t_codigo_de_acesso" = "पासकोड";
@@ -287,6 +291,7 @@
 "t_mudar" = "बदलें";
 "t_mudar_codigo" = "पासकोड बदलें";
 "t_mudar_o_nome" = "नाम बदलें";
+"t_n_pessoas" = "%1$@ लोग";
 "t_nao_foi_possivel_abrir_o_armazenamento" = "सुरक्षित स्टोरेज नहीं खोला जा सका: %1$@";
 "t_nao_foi_possivel_abrir_o_ficheiro" = "फ़ाइल खोली नहीं जा सकी।";
 "t_nao_foi_possivel_aceitar_o_convite" = "आमंत्रण स्वीकार नहीं किया जा सका: %1$@";
@@ -360,7 +365,6 @@
 "t_partilha_o_teu_id_com_quem" = "जिससे बात करना चाहते हैं, उसके साथ अपनी ID शेयर करें, या किसी और की ID जोड़ने के लिए + पर टैप करें।";
 "t_partilhar" = "शेयर करें";
 "t_partilhar_o_meu_id" = "मेरी ID शेयर करें";
-"t_pessoas_cifrado_ponta_a_ponta" = "%1$@ लोग · एंड-टू-एंड एन्क्रिप्टेड";
 "t_pessoas_opcional_ate_escolhidas_podes_acrescen" = "सदस्य (वैकल्पिक, %1$@ तक): %2$@ चुने गए। आप बाद में और जोड़ सकते हैं।";
 "t_podes_tentar_de_novo_quando_tiveres" = "नेटवर्क मिलने पर आप फिर से कोशिश कर सकते हैं, या अभी सिर्फ़ इस फ़ोन से हटा सकते हैं। उस स्थिति में, सर्वर पर जो है वह अपने आप हट जाता है: इंतज़ार कर रहे मैसेज 30 दिन बाद और आपकी पब्लिक कुंजियां 90 दिन बाद।";
 "t_politica_de_privacidade" = "गोपनीयता नीति";
@@ -414,5 +418,19 @@
 "t_verificar_seguranca" = "सुरक्षा जांचें";
 "t_versao" = "वर्ज़न %1$@";
 "t_versao_de_testes" = "टेस्ट वर्ज़न। वर्ज़न 1.0 आने तक ऐप में सुधार होते रहेंगे।";
+"t_videochamada_em_curso" = "वीडियो कॉल जारी है";
 "t_voltar" = "वापस";
+"video_call_button" = "वीडियो कॉल";
+"video_call_from" = "%1$@ की वीडियो कॉल";
+"video_call_sealer" = "SEALER वीडियो कॉल";
+"video_camera_denied" = "कैमरे की अनुमति के बिना वीडियो चालू नहीं हो सकता। आप इसे Android सेटिंग्स में चालू कर सकते हैं।";
+"video_camera_failed" = "कैमरा इस्तेमाल नहीं हो सका।";
+"video_camera_off" = "कैमरा बंद करें";
+"video_camera_on" = "कैमरा चालू करें";
+"video_not_now" = "अभी नहीं";
+"video_request_title" = "%1$@ वीडियो दिखाना चाहते हैं";
+"video_switch" = "कैमरा बदलें";
+"video_view" = "देखें";
+"video_view_and_camera" = "मेरा कैमरा चालू करें";
+"video_waiting" = "%1$@ का इंतज़ार…";
 "zxing_msg_camera_framework_bug" = "कैमरा इस्तेमाल नहीं किया जा सका। QR कोड स्कैन करने के लिए ऐप की सेटिंग में कैमरे की अनुमति दें, या ID खुद टाइप करें।";

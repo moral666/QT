@@ -37,6 +37,9 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.materialIcon
 import androidx.compose.material.icons.materialPath
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -44,6 +47,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -152,8 +156,11 @@ fun CallScreen(
     onVideoRespond: ((VideoResponse) -> Unit)? = null,
     onSelfPreview: (SurfaceTexture?) -> Unit = {},
     onRemoteSurface: (Surface?) -> Unit = {},
+    /** Testers (`CallDiag`): toque longo no tempo da chamada abre os numeros. `null` = desligado. */
+    diagnostic: (() -> String?)? = null,
 ) {
     val colors = LocalChatColors.current
+    var showDiag by remember { mutableStateOf(false) }
     val status = callStatusText(call)
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -241,7 +248,10 @@ fun CallScreen(
         Box(Modifier.fillMaxSize().safeDrawingPadding()) {
             // Topo: "Sealer" a esquerda, o tempo da chamada a direita.
             AnimatedVisibility(visible, Modifier.align(Alignment.TopCenter), enter = fadeIn(), exit = fadeOut()) {
-                CallTopBar(onMinimize = onMinimize?.let(touched), time = if (active) status else null, tint = ink)
+                CallTopBar(
+                    onMinimize = onMinimize?.let(touched), time = if (active) status else null, tint = ink,
+                    onTimeLongPress = if (diagnostic != null && active) ({ showDiag = true }) else null,
+                )
             }
             if (!videoOn) {
                 // So de voz (ou a chegar): a foto, o nome e o estado, no meio.
@@ -259,8 +269,6 @@ fun CallScreen(
                         Spacer(Modifier.height(8.dp))
                         Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onTopBar.copy(alpha = 0.85f), textAlign = TextAlign.Center)
                     }
-                    Spacer(Modifier.height(6.dp))
-                    Text(s(R.string.t_cifrada_ponta_a_ponta), style = MaterialTheme.typography.labelMedium, color = colors.onTopBar.copy(alpha = 0.7f))
                 }
             } else {
                 // Com video: "A espera de [Nome]..." enquanto o outro nao aceita; a chamar, o nome e o estado.
@@ -300,6 +308,39 @@ fun CallScreen(
             }
         }
     }
+    if (showDiag && diagnostic != null) {
+        if (active) CallDiagDialog(diagnostic) { showDiag = false } else showDiag = false
+    }
+}
+
+/** Painel dos testers: os numeros da chamada (de segundo a segundo) e "Copiar diagnostico". */
+@Composable
+private fun CallDiagDialog(diagnostic: () -> String?, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    var text by remember { mutableStateOf(diagnostic().orEmpty()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000L)
+            text = diagnostic().orEmpty()
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(s(R.string.call_diag_title)) },
+        text = {
+            Text(
+                text, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 11.sp,
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                CallDiag.copy(ctx, text)
+                android.widget.Toast.makeText(ctx, s(R.string.call_diag_copied), android.widget.Toast.LENGTH_SHORT).show()
+            }) { Text(s(R.string.call_diag_copy)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(s(R.string.t_fechar)) } },
+    )
 }
 
 /**
@@ -334,7 +375,7 @@ private fun CallScreenPower(proximity: Boolean, keepOn: Boolean) {
 
 /** Topo da chamada: (minimizar) logo e "Sealer" a esquerda, o tempo a direita. */
 @Composable
-private fun CallTopBar(onMinimize: (() -> Unit)?, time: String?, tint: Color) {
+private fun CallTopBar(onMinimize: (() -> Unit)?, time: String?, tint: Color, onTimeLongPress: (() -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth().height(56.dp).padding(start = 4.dp, end = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -351,7 +392,8 @@ private fun CallTopBar(onMinimize: (() -> Unit)?, time: String?, tint: Color) {
         Text("Sealer", fontFamily = ManropeBold, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = tint, maxLines = 1)
         Spacer(Modifier.weight(1f))
         if (time != null) {
-            Text(time, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = tint, maxLines = 1)
+            val m = if (onTimeLongPress != null) Modifier.pointerInput(onTimeLongPress) { detectTapGestures(onLongPress = { onTimeLongPress() }) } else Modifier
+            Text(time, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = tint, maxLines = 1, modifier = m)
         }
     }
 }

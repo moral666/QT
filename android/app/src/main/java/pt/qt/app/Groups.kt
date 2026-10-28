@@ -119,7 +119,7 @@ fun GroupChatScreen(
                         Column {
                             Text(group.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
-                                s(R.string.t_pessoas_cifrado_ponta_a_ponta, group.members.size),
+                                s(R.string.t_n_pessoas, group.members.size),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = colors.onTopBar.copy(alpha = 0.8f),
                             )
