@@ -696,6 +696,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
         | ClientMessage::AdminUnban { .. }
         | ClientMessage::AdminListBans
         | ClientMessage::AdminSetFichasQuota { .. }
+        | ClientMessage::AdminOnline
             if cfg.operator.as_deref() != Some(me) =>
         {
             err(crate::protocol::NOT_OPERATOR)
@@ -731,6 +732,9 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 Err(e) => internal(e),
             }
         }
+        ClientMessage::AdminOnline => ServerMessage::Online {
+            users: crate::limits::UserSlot::users_online(Some(me)) as u64,
+        },
         ClientMessage::AdminListBans => match store.list_bans().await {
             Ok(user_ids) => ServerMessage::Bans { user_ids },
             Err(e) => internal(e),

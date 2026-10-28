@@ -182,6 +182,10 @@ pub enum ClientMessage {
     /// OPERADOR: fichas por mes desta conta (quota propria); `None` volta
     /// ao valor do relay. Resposta: `Ack`.
     AdminSetFichasQuota { user_id: UserId, per_month: Option<u32> },
+    /// OPERADOR (27/10/2026): quantas contas tem a app ligada ao relay agora (contas
+    /// diferentes, nao ligacoes; sem o operador). So o numero, contado em memoria.
+    /// Resposta: `Online`. Relays antigos respondem `Error`.
+    AdminOnline,
 }
 
 /// Uma conta com premium (lista do operador).
@@ -323,6 +327,8 @@ pub enum ServerMessage {
     /// diferente do pedido: o relay ja esta noutro mes (pedir outra vez para esse, sem nada
     /// dado). `remaining`: quantas esta conta ainda pode pedir neste mes; `per_month`: o teto.
     Fichas { epoch: u32, public_key: String, evaluated: String, proof: String, granted: u32, remaining: u32, per_month: u32 },
+    /// Resposta a `AdminOnline`.
+    Online { users: u64 },
 }
 
 pub fn serialize_client_message(msg: &ClientMessage) -> Vec<u8> {
