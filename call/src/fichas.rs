@@ -6,7 +6,7 @@
 //!   * so quando o video SAI PELO RELAY (caminho direto nao gasta nada). Com a ligacao direta
 //!     ainda a procurar caminho, espera ate `P2P_GRACE` antes da primeira ficha;
 //!   * primeiro pergunta ao relay, na sala, a chave do mes (`key_request`). So se gastam fichas
-//!     se essa chave for a PUBLICADA no site (`https://sealer.pt/estado.json`, fora do relay;
+//!     se essa chave for a PUBLICADA no site (`https://sealerapp.com/estado.json`, fora do relay;
 //!     `FichasConfig::published`) e se as fichas foram emitidas com ela. Um relay comprometido
 //!     que desse a cada conta uma chave diferente (particao de chaves) nao passa daqui. Sem a
 //!     chave do site, ou com outra: nada se gasta e o video pelo relay fica em pausa;

@@ -1797,8 +1797,8 @@ fun InviteCard(onAccept: (String) -> Unit, onDecline: () -> Unit, onBlock: () ->
 // ===================================================================== termos
 
 /** Endereco dos termos de utilizacao e da politica de privacidade (site). */
-private const val TERMS_URL = "https://sealer.pt/termos"
-private const val PRIVACY_URL = "https://sealer.pt/privacidade"
+private const val TERMS_URL = "https://sealerapp.com/termos"
+private const val PRIVACY_URL = "https://sealerapp.com/privacidade"
 
 /**
  * Antes de usar a app: aceitar os termos de utilizacao e a politica de privacidade

@@ -26,7 +26,7 @@ enum Lang {
     }
 
     /// Para onde vao os avisos de erros de traducao (Definicoes > Reportar erro de traducao).
-    static let reportEmail = "privacidade@sealer.pt"
+    static let reportEmail = "privacidade@sealerapp.com"
 
     /// Email com um aviso de erro de traducao: so a lingua e a versao da app (nada do utilizador).
     static func reportURL(version: String) -> URL? {

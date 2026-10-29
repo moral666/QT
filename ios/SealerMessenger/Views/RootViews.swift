@@ -255,8 +255,8 @@ struct TermsScreen: View {
                     .font(.sBodyMedium)
                 }
                 HStack(spacing: 16) {
-                    Button(s("t_termos_de_utilizacao")) { if let u = URL(string: "https://sealer.pt/termos") { openURL(u) } }
-                    Button(s("t_politica_de_privacidade")) { if let u = URL(string: "https://sealer.pt/privacidade") { openURL(u) } }
+                    Button(s("t_termos_de_utilizacao")) { if let u = URL(string: "https://sealerapp.com/termos") { openURL(u) } }
+                    Button(s("t_politica_de_privacidade")) { if let u = URL(string: "https://sealerapp.com/privacidade") { openURL(u) } }
                 }
                 .font(.sLabelLarge)
                 Button { agreed.toggle() } label: {

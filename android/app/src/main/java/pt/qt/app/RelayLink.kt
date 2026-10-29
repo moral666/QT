@@ -1,5 +1,8 @@
 package pt.qt.app
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -29,8 +32,15 @@ class PermanentRelayException(msg: String) : Exception(msg)
  * Noise, a assinatura de autenticacao e o codec das mensagens vivem no Rust.
  *
  * Segue a maquina de estados de docs/android-integration.md §4:
- *   ligar -> handshake Noise -> (pinning) -> autenticar -> pedidos sequenciais.
+ *   ligar -> handshake Noise -> (pinning) -> autenticar -> pedidos.
  * Qualquer erro: fecha, DESCARTA a NoiseSession e re-liga com backoff (nova sessao sempre).
+ *
+ * Desde a 0.9.45 a app usa UMA so ligacao para tudo (antes eram tres: pedidos, espera e anexos;
+ * cada ligacao custa ~40 KB no servidor). Os pedidos vao em fila pela mesma ligacao, sem esperar
+ * pela resposta do anterior, e o relay responde sempre pela mesma ordem: cada resposta vai para o
+ * pedido mais antigo por responder ([Conn.pending]). A espera por mensagens (`WaitMessages`) e um
+ * pedido como os outros: quando chega outro pedido a meio, o relay acaba a espera (responde com o
+ * que houver) e trata o pedido a seguir. Assim um envio nunca fica parado atras da espera.
  */
 class RelayLink(
     private val qt: QtClient,
@@ -38,42 +48,78 @@ class RelayLink(
     /** Chave publica estatica Noise do relay (hex), impressa no arranque do `relay_server`. Opcional. */
     private val pinnedRelayKeyHex: String?,
 ) {
-    private val lock = Mutex()
-    private var conn: Conn? = null
+    /** Para ligar e para escrever na ligacao: cifrar e enviar tem de ser pela mesma ordem. */
+    private val sendLock = Mutex()
+    @Volatile private var conn: Conn? = null
     /** Terminada de vez ([shutdown]): nao volta a ligar, os pedidos falham logo. */
     @Volatile private var shut = false
 
-    private class Conn(val ws: WebSocket, val noise: NoiseSession, val inbox: Channel<ByteArray>)
+    private class Conn(val noise: NoiseSession, val inbox: Channel<ByteArray>) {
+        lateinit var ws: WebSocket
+        /** Respostas por chegar, pela ordem dos pedidos (guardado com `synchronized(pending)`). */
+        val pending = ArrayDeque<CompletableDeferred<RelayResponse>>()
+        /** Handshake e autenticacao acabados: as frames passam a ir para [pending]. */
+        @Volatile var ready = false
+        @Volatile var dead = false
+
+        /** Uma frame do relay (thread do OkHttp, uma de cada vez e pela ordem de chegada). */
+        fun onFrame(frame: ByteArray) {
+            if (!ready) { inbox.trySend(frame); return }
+            val d = synchronized(pending) { pending.removeFirstOrNull() }
+            if (d == null) { fail(IOException("resposta do relay sem pedido")); return }
+            try {
+                // Decifrar aqui, pela ordem de chegada (os contadores do Noise exigem-no).
+                d.complete(relayParseResponse(noise.decrypt(frame)))
+            } catch (e: Exception) {
+                d.completeExceptionally(e)
+                fail(e)
+            }
+        }
+
+        /** A ligacao acabou: todos os pedidos por responder falham (quem pode repetir, repete). */
+        fun fail(e: Throwable) {
+            val all = synchronized(pending) {
+                dead = true
+                pending.toList().also { pending.clear() }
+            }
+            for (d in all) d.completeExceptionally(e)
+            inbox.close(e)
+        }
+
+        /** Junta pedidos a fila; falha se a ligacao ja acabou. */
+        fun expect(n: Int): List<CompletableDeferred<RelayResponse>> = synchronized(pending) {
+            if (dead) throw IOException("ligacao fechada")
+            List(n) { CompletableDeferred<RelayResponse>() }.also { pending.addAll(it) }
+        }
+    }
 
     /**
      * Envia um pedido (ja construido com qt.relayRequest*) e devolve a resposta, com reconnect.
      * `timeoutMs`: tempo maximo pela resposta (maior para `relayRequestWait`, que so responde
-     * quando chega uma mensagem).
+     * quando chega uma mensagem ou outro pedido).
      */
-    suspend fun request(bytes: ByteArray, timeoutMs: Long = REQUEST_MS): RelayResponse =
-        lock.withLock { requestLocked(bytes, timeoutMs) }
-
-    private suspend fun requestLocked(bytes: ByteArray, timeoutMs: Long): RelayResponse {
+    suspend fun request(bytes: ByteArray, timeoutMs: Long = REQUEST_MS): RelayResponse {
         var last: Exception? = null
         val repeatable = repeatable(bytes)
         for (attempt in 0..MAX_RETRIES) {
             if (attempt > 0) delay((BACKOFF_MS shl (attempt - 1)).coerceAtMost(8_000L))
             if (shut) throw IOException(SHUT_MSG)
-            var sent = false
+            var c: Conn? = null
             try {
-                val c = conn ?: connect().also { conn = it; closeIfShut() }
-                send(c.ws, c.noise.encrypt(bytes))
-                sent = true
-                val frame = withTimeout(timeoutMs) { c.inbox.receive() }
-                return relayParseResponse(c.noise.decrypt(frame))
+                val (sentOn, answers) = enqueue(listOf(bytes))
+                c = sentOn
+                return withTimeout(timeoutMs) { answers[0].await() }
             } catch (e: PermanentRelayException) {
-                close(); throw e
+                close(c); throw e
             } catch (e: Exception) {
-                close(); last = e          // timeout, queda de rede, frame invalido...
+                // Quem pediu desistiu (ecra fechado): a resposta, quando chegar, fica sem dono e
+                // a ligacao continua boa para os outros pedidos.
+                if (e is CancellationException && e !is TimeoutCancellationException) throw e
+                close(c); last = e          // timeout, queda de rede, frame invalido...
                 Log.w(TAG, "pedido falhou (tentativa ${attempt + 1}): ${e.javaClass.simpleName}: ${e.message?.take(120)}")
                 // Ja tinha saido e a resposta perdeu-se: um envio ou um anexo novo nao se repete
                 // aqui (podia chegar duas vezes). Quem chama tenta mais tarde (a outbox fica).
-                if (sent && !repeatable) throw IOException("sem resposta do relay", e)
+                if (c != null && !repeatable) throw IOException("sem resposta do relay", e)
             }
         }
         throw IOException("relay indisponivel: ${last?.message}", last)
@@ -93,34 +139,53 @@ class RelayLink(
      * Varios pedidos seguidos e so depois as respostas, pela mesma ordem: para os
      * blocos dos anexos, sem esperar uma volta inteira a rede por cada bloco.
      * Sem repeticao automatica: se falhar, quem chama retoma (o relay diz onde ficou).
+     * Um pedido de outra parte da app que chegue entretanto vai logo a seguir a estes blocos
+     * (por isso os lotes sao pequenos: [MainViewModel] usa 4 blocos de 40 KB).
      */
-    suspend fun requestMany(requests: List<ByteArray>): List<RelayResponse> = lock.withLock {
-        if (shut) throw IOException(SHUT_MSG)
-        val c = try {
-            conn ?: connect().also { conn = it; closeIfShut() }
-        } catch (e: Exception) {
-            close(); throw e
-        }
+    suspend fun requestMany(requests: List<ByteArray>): List<RelayResponse> {
+        if (requests.isEmpty()) return emptyList()
+        var c: Conn? = null
         try {
-            for (r in requests) send(c.ws, c.noise.encrypt(r))
-            requests.map {
-                val frame = withTimeout(REQUEST_MS) { c.inbox.receive() }
-                relayParseResponse(c.noise.decrypt(frame))
-            }
+            val (sentOn, answers) = enqueue(requests)
+            c = sentOn
+            return answers.map { withTimeout(REQUEST_MS) { it.await() } }
         } catch (e: Exception) {
-            close(); throw e
+            if (e is CancellationException && e !is TimeoutCancellationException) throw e
+            close(c); throw e
         }
     }
 
-    fun close() {
-        conn?.let {
-            runCatching { it.ws.close(1000, null) }
-            it.inbox.close()
-            // Liberta ja a sessao Noise no Rust (e as chaves desta ligacao), sem esperar pelo GC.
-            // Se outro pedido ainda a estiver a usar, o UniFFI so a apaga quando esse acabar.
-            runCatching { it.noise.close() }
+    /**
+     * Cifra e envia os pedidos (ligando primeiro, se preciso) e devolve onde ficam as respostas.
+     * Ligar e escrever acontecem com [sendLock]: os pedidos saem inteiros e pela ordem da fila.
+     */
+    private suspend fun enqueue(requests: List<ByteArray>): Pair<Conn, List<CompletableDeferred<RelayResponse>>> =
+        sendLock.withLock {
+            if (shut) throw IOException(SHUT_MSG)
+            val c = conn?.takeUnless { it.dead } ?: run {
+                close(conn)
+                connect().also { conn = it; closeIfShut(it) }
+            }
+            try {
+                val answers = c.expect(requests.size)
+                for (r in requests) send(c.ws, c.noise.encrypt(r))
+                c to answers
+            } catch (e: Exception) {
+                close(c); throw e
+            }
         }
-        conn = null
+
+    fun close() = close(conn)
+
+    /** Fecha esta ligacao (se ainda for a atual, deixa de o ser). Os pedidos por responder falham. */
+    private fun close(c: Conn?) {
+        if (c == null) return
+        c.fail(IOException("ligacao fechada"))
+        runCatching { c.ws.close(1000, null) }
+        // Liberta ja a sessao Noise no Rust (e as chaves desta ligacao), sem esperar pelo GC.
+        // Se outra thread ainda a estiver a usar, o UniFFI so a apaga quando essa acabar.
+        runCatching { c.noise.close() }
+        if (conn === c) conn = null
     }
 
     /**
@@ -134,9 +199,9 @@ class RelayLink(
     }
 
     /** Uma ligacao que acabou de abrir depois de [shutdown]: fecha-a ja. */
-    private fun closeIfShut() {
+    private fun closeIfShut(c: Conn) {
         if (shut) {
-            close()
+            close(c)
             throw IOException(SHUT_MSG)
         }
     }
@@ -150,19 +215,20 @@ class RelayLink(
         val started = android.os.SystemClock.elapsedRealtime()
         val noise = qt.relayNoiseSession()
         val inbox = Channel<ByteArray>(Channel.UNLIMITED)
+        val c = Conn(noise, inbox)
         val listener = object : WebSocketListener() {
-            override fun onMessage(webSocket: WebSocket, bytes: ByteString) { inbox.trySend(bytes.toByteArray()) }
+            override fun onMessage(webSocket: WebSocket, bytes: ByteString) { c.onFrame(bytes.toByteArray()) }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 Log.w(TAG, "ligacao fechada pelo relay ($code)")
-                inbox.close(IOException("ligacao fechada ($code)")); webSocket.close(1000, null)
+                c.fail(IOException("ligacao fechada ($code)")); webSocket.close(1000, null)
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.w(TAG, "ligacao caiu: ${t.javaClass.simpleName}: ${t.message?.take(120)}")
-                inbox.close(t)
+                c.fail(t)
             }
         }
         val ws = http.newWebSocket(Request.Builder().url(url).build(), listener)
-        val c = Conn(ws, noise, inbox)
+        c.ws = ws
         try {
             // Handshake Noise XX: write, read, write
             withTimeout(HANDSHAKE_MS) {
@@ -181,9 +247,11 @@ class RelayLink(
             // Autenticacao ligada a esta sessao Noise
             val r = roundtrip(c, qt.relayAuthMessage(noise.handshakeHash()))
             if (r !is RelayResponse.Ack) throw PermanentRelayException("autenticacao recusada pelo relay")
+            c.ready = true   // daqui em diante as respostas vao para a fila dos pedidos
             Log.d(TAG, "ligado e autenticado em ${android.os.SystemClock.elapsedRealtime() - started} ms")
             return c
         } catch (e: Exception) {
+            c.dead = true
             runCatching { ws.cancel() }; inbox.close()
             runCatching { noise.close() }   // ligacao falhada: liberta ja a sessao Noise
             throw e
@@ -202,7 +270,7 @@ class RelayLink(
 
     companion object {
         /**
-         * Um so cliente HTTP para todas as ligacoes (a dos pedidos, a de espera e a dos anexos),
+         * Um so cliente HTTP para todas as ligacoes (a do ecra e a do segundo plano),
          * como recomenda o OkHttp: os certificados do sistema so sao preparados uma vez, as
          * threads sao partilhadas e as ligacoes novas reaproveitam a sessao TLS das anteriores.
          * Antes cada RelayLink criava o seu (3 por arranque e 3 por cada regresso a app).

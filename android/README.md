@@ -1,6 +1,6 @@
 # SEALER para Android (Kotlin / Jetpack Compose)
 
-**Versão de testes (0.9.32).** A 0.9.16 foi testada a 20/10/2026 com a app iPhone 0.9.15, sem erros (ver `docs/field-tests.md`); a 0.9.22 foi testada a 22/10/2026 (bloqueio da app, apps recentes e recuperação da conta); a 0.9.31 a 23/10/2026 (pedidos dos testadores e as dez línguas), sem erros.
+**Versão de testes (0.9.45).** A 0.9.16 foi testada a 20/10/2026 com a app iPhone 0.9.15, sem erros (ver `docs/field-tests.md`); a 0.9.22 foi testada a 22/10/2026 (bloqueio da app, apps recentes e recuperação da conta); a 0.9.31 a 23/10/2026 (pedidos dos testadores e as dez línguas), sem erros.
 Toda a criptografia está no Rust (`libqt_ffi.so`); o Kotlin só move bytes e desenha ecrãs.
 No telemóvel a app chama-se **SEALER**. O identificador na Play Store é `sealer.app` (desde a 0.9.0; antes `pt.qt.app`); o código Kotlin continua no pacote `pt.qt.app`.
 
@@ -114,7 +114,7 @@ entram diretamente no campo da mensagem. Antes de enviar há uma pré-visualiza�
 **Qualidade original** (por omissão a foto é reduzida para 1600 px, ~300 KB). Máximo 25 MB.
 
 A imagem é cifrada no telemóvel (chave nova por ficheiro) e segue para o relay em blocos de
-40 KB, por uma segunda ligação, para não atrasar as mensagens. O relay apaga-a quando o outro
+40 KB, em lotes pequenos pela ligação de sempre (as mensagens passam entre lotes). O relay apaga-a quando o outro
 telemóvel a descarrega, ou ao fim de 24 horas. No telemóvel, os ficheiros ficam cifrados e a
 imagem em claro só existe em memória enquanto está no ecrã. Detalhes em
 `docs/protocol-spec.md`, secção 14; limitações em `docs/known-limitations.md`, 36.

@@ -22,7 +22,7 @@ fun signingProp(key: String, env: String): String? = keystoreProps.getProperty(k
 // ou nas variaveis de ambiente QT_RELAY_URL / QT_RELAY_PIN.
 val relayUrl: String = (findProperty("qtRelayUrl") as String?) ?: System.getenv("QT_RELAY_URL") ?: ""
 // Chaves publicas das fichas do video (0006), publicadas fora do relay (site, Cloudflare).
-val fichasKeysUrl: String = (findProperty("qtFichasKeysUrl") as String?) ?: System.getenv("QT_FICHAS_KEYS_URL") ?: "https://sealer.pt/estado.json"
+val fichasKeysUrl: String = (findProperty("qtFichasKeysUrl") as String?) ?: System.getenv("QT_FICHAS_KEYS_URL") ?: "https://sealerapp.com/estado.json"
 val relayPin: String = ((findProperty("qtRelayPin") as String?) ?: System.getenv("QT_RELAY_PIN") ?: "").lowercase()
 
 // Notificacoes (FCM): valores do projeto Firebase, lidos de android/app/google-services.json
@@ -65,8 +65,8 @@ android {
         minSdk = 24            // igual ao `-P 24` do cargo-ndk
         // Android 16. Exigido pela Play Store para apps novas e atualizacoes.
         targetSdk = 36
-        versionCode = 51
-        versionName = "0.9.44"
+        versionCode = 52
+        versionName = "0.9.45"
         // So as 6 linguas da app (0.9.12): sem isto iam tambem as ~80 traducoes das bibliotecas
         // (AndroidX, Firebase, ZXing), que a app nunca mostra. A base (values/) e o portugues.
         @Suppress("DEPRECATION")

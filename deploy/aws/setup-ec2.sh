@@ -467,12 +467,12 @@ if [ "$V_CALL_FICHAS" != 0 ]; then
   fi
 fi
 
-# Chaves publicas das fichas (0006), para o site (https://sealer.pt/estado.json, Cloudflare): as
+# Chaves publicas das fichas (0006), para o site (https://sealerapp.com/estado.json, Cloudflare): as
 # apps so emitem e gastam fichas com a chave do mes que la estiver, e nao com a que o relay diz.
 # So chaves publicas (a semente nunca sai daqui). Vale 24 meses; volta a correr este script antes.
 FICHAS_SITE_FILE="${FICHAS_SITE_FILE:-/home/ubuntu/sealer-estado.json}"
 [ -d "$(dirname "$FICHAS_SITE_FILE")" ] || FICHAS_SITE_FILE=/root/sealer-estado.json
-FICHAS_SITE_URL="${FICHAS_SITE_URL:-https://sealer.pt/estado.json}"
+FICHAS_SITE_URL="${FICHAS_SITE_URL:-https://sealerapp.com/estado.json}"
 FICHAS_SITE=""
 if FICHAS_SEED_PATH=/var/lib/qt/fichas_seed.bin /usr/local/bin/qt-relay chaves-fichas 24 > "$FICHAS_SITE_FILE.tmp" 2>/dev/null; then
   mv "$FICHAS_SITE_FILE.tmp" "$FICHAS_SITE_FILE"

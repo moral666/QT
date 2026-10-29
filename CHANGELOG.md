@@ -6,6 +6,22 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 29 de outubro de 2026: uma só ligação ao relay (apps Android 0.9.45 e iPhone 0.9.32)
+
+- Cada app aberta passa a usar **uma** ligação ao relay em vez de três (pedidos, espera por mensagens e
+  anexos). Cada ligação custa ~40 KB no servidor: a mesma máquina aguenta o triplo das pessoas ligadas.
+- Os pedidos vão em fila pela mesma ligação e o relay responde pela mesma ordem. A espera por mensagens
+  continua: quando sai outro pedido (um envio, um bloco de anexo), o relay acaba a espera, responde com o
+  que houver e trata o pedido a seguir. O relay e o protocolo não mudam; apps antigas e novas funcionam
+  com o mesmo relay.
+- Anexos em lotes de 4 blocos (~160 KB, antes 8): durante um envio grande, uma mensagem espera no máximo
+  um lote. Entre lotes a app continua a receber.
+- Menos tráfego com a app aberta: um só ping de 25 em 25 s em vez de três.
+- Endereços do sealer.pt (desligado) trocados pelo sealerapp.com: chaves das fichas do vídeo
+  (`https://sealerapp.com/estado.json`; sem elas o vídeo pelo relay pausava a partir de novembro), links dos
+  Termos e da Privacidade, email do "Reportar erro de tradução" (`privacidade@sealerapp.com`) e a verificação
+  das chaves no `setup-ec2.sh`.
+
 ### 28 de outubro de 2026: diagnóstico das chamadas e acertos (app Android 0.9.44)
 
 - Diagnóstico para os testers (fase 5c): `CallAudio.diagnostic()` no núcleo dá os números da chamada

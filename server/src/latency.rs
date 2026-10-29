@@ -19,7 +19,7 @@
 //! `WINDOW_MINUTES` minutos, e a ultima media conhecida (`LastReading`), que
 //! fica no ficheiro de estado para o site nunca ficar sem numero. O `relay_server` escreve-o uma vez por minuto em
 //! `RELAY_STATUS_FILE` (um JSON pequeno que o Caddy publica em
-//! `https://<relay>/estado.json` e que o site sealer.pt mostra).
+//! `https://<relay>/estado.json` e que o site sealerapp.com mostra).
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
