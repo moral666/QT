@@ -6,6 +6,15 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 29 de outubro de 2026: travão guardado e menos forks do Redis (só relay)
+
+- `deploy/aws/setup-ec2.sh`: o `RELAY_MAX_CONNECTIONS` fica o que estava em `/etc/qt/relay.env` nas
+  atualizações (10 000 só na primeira instalação), como as fichas. Antes voltava aos 10 000 sempre que o script
+  corria sem a variável. Nos relays está em 25 000.
+- `vm.overcommit_memory = 1`: o fork das reescritas do AOF do Redis deixa de falhar com pouca memória livre.
+- `deploy/redis/qt-redis.conf`: sem cópias RDB (`save ""`, os dados continuam no AOF) e reescrita do AOF aos
+  200% de crescimento (era 100%). Menos forks do Redis; o AOF em disco pode chegar a ~3x os dados.
+
 ### 29 de outubro de 2026: HAProxy afinado depois do teste de carga (só relay)
 
 - `deploy/aws/setup-ec2.sh`: o `maxconn` do HAProxy deixa de ser 40 000 e passa a ser o travão do relay

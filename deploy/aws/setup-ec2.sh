@@ -83,6 +83,9 @@ net.ipv4.tcp_keepalive_time = 300
 net.ipv4.tcp_keepalive_intvl = 30
 net.ipv4.tcp_keepalive_probes = 5
 fs.file-max = 1048576
+# Redis: deixa o fork das reescritas do AOF funcionar com pouca memoria livre (o proprio
+# Redis avisa no arranque se isto estiver desligado). O fork so copia as paginas que mudam.
+vm.overcommit_memory = 1
 EOF
 sysctl -q --system
 
@@ -167,6 +170,12 @@ PREV_NOVAS=""
 case "$PREV_NOVAS" in 0|1) ;; *) PREV_NOVAS=1 ;; esac
 V_NOVAS="${RELAY_NOVAS_CONTAS:-$PREV_NOVAS}"
 case "$V_NOVAS" in 0|1) ;; *) echo "Aviso: RELAY_NOVAS_CONTAS='$V_NOVAS' nao e 0 nem 1; fica $PREV_NOVAS" >&2; V_NOVAS="$PREV_NOVAS" ;; esac
+# Travao de ligacoes em simultaneo: fica o que estava (10 000 so na primeira instalacao).
+PREV_MAX=""
+[ -f "$ENV_FILE" ] && PREV_MAX=$(sed -n 's/^RELAY_MAX_CONNECTIONS=//p' "$ENV_FILE" | tail -n 1)
+case "$PREV_MAX" in ''|*[!0-9]*) PREV_MAX=10000 ;; esac
+V_MAX="${RELAY_MAX_CONNECTIONS:-$PREV_MAX}"
+case "$V_MAX" in ''|*[!0-9]*) echo "Aviso: RELAY_MAX_CONNECTIONS='$V_MAX' nao e um numero; fica $PREV_MAX" >&2; V_MAX="$PREV_MAX" ;; esac
 umask 027
 cat > "$ENV_FILE" <<EOF
 RELAY_BIND_ADDR=127.0.0.1:9443
@@ -178,11 +187,11 @@ RELAY_STATUS_FILE=/var/lib/qt-estado/estado.json
 RELAY_BLOB_MAX_TOTAL_MB=${RELAY_BLOB_MAX_TOTAL_MB:-2048}
 RELAY_BLOB_USER_DAILY_MB=${RELAY_BLOB_USER_DAILY_MB:-1024}
 RELAY_BLOB_MIN_FREE_MB=${RELAY_BLOB_MIN_FREE_MB:-1024}
-# Ligacoes em simultaneo (cada app aberta usa 2). Com o HAProxy, ~40 KB por ligacao:
-# 8000 sem falhas e ~12 000 a funcionar (medido a 18/10/2026, limite foi o router de
-# casa). Travao em 10 000 ate ao teste de 25 000 a partir da AWS.
-# Para mudar: sudo RELAY_MAX_CONNECTIONS=20000 bash setup-ec2.sh
-RELAY_MAX_CONNECTIONS=${RELAY_MAX_CONNECTIONS:-10000}
+# Ligacoes em simultaneo (uma por app aberta desde a 0.9.45). No teste de carga de 29/10/2026,
+# ~42 KB por pessoa ligada (relay, HAProxy e Redis). Travao decidido a 29/10/2026: 25 000 por
+# relay. Fica o que estava nas atualizacoes; para mudar:
+#   sudo RELAY_MAX_CONNECTIONS=20000 bash setup-ec2.sh
+RELAY_MAX_CONNECTIONS=$V_MAX
 # Fichas do video pelo relay (0006): a semente das chaves de cada mes (criada no primeiro
 # arranque; o qt-call-relay so a le) e quantas fichas cada conta recebe por mes.
 # Federacao: TODOS os relays usam a MESMA semente (quem atende usa o relay das chamadas de quem
@@ -390,8 +399,7 @@ install -d -m 700 /etc/haproxy/certs
 #   handshakes; acima do limite as ligacoes novas esperam (nao sao recusadas). Depois de uma
 #   queda, 12 000 pessoas voltam em ~40 s em vez de todas ao mesmo tempo.
 # Para mudar: sudo HAPROXY_MAXCONN=16000 HAPROXY_MAXSSLRATE=400 bash setup-ec2.sh
-V_RELAY_MAX="${RELAY_MAX_CONNECTIONS:-10000}"
-case "$V_RELAY_MAX" in ''|*[!0-9]*) V_RELAY_MAX=10000 ;; esac
+V_RELAY_MAX="$V_MAX"
 V_HA_MAXCONN="${HAPROXY_MAXCONN:-$((V_RELAY_MAX + 3000))}"
 case "$V_HA_MAXCONN" in ''|*[!0-9]*) echo "Aviso: HAPROXY_MAXCONN='$V_HA_MAXCONN' nao e um numero; fica $((V_RELAY_MAX + 3000))" >&2; V_HA_MAXCONN=$((V_RELAY_MAX + 3000)) ;; esac
 V_HA_SSLRATE="${HAPROXY_MAXSSLRATE:-300}"

@@ -238,7 +238,8 @@ Por omissão, o relay aceita até 4 096 ligações (`RELAY_MAX_CONNECTIONS`). O
 serviço `deploy/systemd/qt-relay.service` já sobe o limite de ficheiros abertos
 para 65 536 (`LimitNOFILE`); sem isso, o systemd limitava o relay a cerca de
 1 024 ligações. Para mais de 4 096 ligações em simultâneo, sobe
-`RELAY_MAX_CONNECTIONS` em `/etc/qt/relay.env` (o `setup-ec2.sh` põe 10 000 desde 18/10/2026).
+`RELAY_MAX_CONNECTIONS` em `/etc/qt/relay.env` (o `setup-ec2.sh` põe 10 000 na primeira instalação e mantém o valor nas atualizações; nos relays está em
+25 000 desde 29/10/2026).
 
 ### Na AWS (t3.small, 18/10/2026)
 
