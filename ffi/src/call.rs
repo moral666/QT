@@ -483,7 +483,7 @@ fn decode_addrs(b: &[u8]) -> Option<Vec<SocketAddr>> {
     if n == 0 || n > MAX_P2P_ADDRS || b.len() != 1 + n * ADDR_BYTES {
         return None;
     }
-    b[1..].chunks_exact(ADDR_BYTES).map(decode_addr).collect()
+    b[1..].as_chunks::<ADDR_BYTES>().0.iter().map(|c| decode_addr(&c[..])).collect()
 }
 
 /// A chamada acabou de ficar atendida (de um lado ou do outro): se a regra deixar,
