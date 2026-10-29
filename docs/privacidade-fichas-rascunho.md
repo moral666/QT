@@ -14,7 +14,7 @@ Para a lista "Durante quanto tempo" (valores atuais do código: `FICHAS_ISSUED_T
 
 Para a lista "Quem mais está envolvido" (Cloudflare), se o parágrafo acima for publicado:
 
-> A app consulta também um ficheiro público no nosso site (sealer.pt, alojado na Cloudflare) para confirmar que as fichas são iguais para toda a gente. Esse pedido é igual para todos e não leva o teu ID.
+> A app consulta também um ficheiro público no nosso site (sealerapp.com, alojado na Cloudflare) para confirmar que as fichas são iguais para toda a gente. Esse pedido é igual para todos e não leva o teu ID.
 
 ## Acesso às funções pagas (tirado da política pública no 0008)
 

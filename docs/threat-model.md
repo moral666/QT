@@ -1,6 +1,6 @@
 # Modelo de Ameaças
 
-> Descreve o que o código faz hoje (versão de testes, apps Android e iPhone 0.9.22), o que
+> Descreve o que o código faz hoje (versão de testes, apps Android e iPhone 0.9.50), o que
 > os testes demonstram e, com igual peso, o que **não** está protegido.
 
 ## 1. Ativos
@@ -17,7 +17,8 @@
 | Adversário | Capacidades assumidas |
 |---|---|
 | **Relay comprometido / curioso** | Acesso total ao processo, ao Redis e ao disco do relay; pode registar, atrasar, duplicar, reordenar, descartar ou fabricar envelopes e bundles. |
-| **Atacante passivo na rede** | Vê todo o tráfego cliente↔relay. |
+| **Outro relay da federação** (curioso ou comprometido) | Recebe os pedidos do relay par: onde está uma conta, mensagens e anexos para as contas dele, bundles e partes da cópia de recuperação. Pode mentir sobre onde está uma conta, atrasar ou descartar o que lhe pedem. |
+| **Atacante passivo na rede** | Vê todo o tráfego cliente↔relay e relay↔relay. |
 | **Atacante ativo na rede** | Injeta, repete, reordena, corta ou modifica frames. |
 | **Quem lê o Redis / o armazenamento do relay** | Cópia total do que o relay persiste. |
 | **Quem captura tráfego hoje (harvest-now-decrypt-later)** | Guarda tudo; mais tarde tem um computador quântico capaz de correr Shor. |
@@ -50,7 +51,7 @@ Cada linha indica o mecanismo e **o teste que o demonstra** (corre com
 | Lixo / entradas malformadas | Todas as entradas de rede e disco devolvem erro (sem `unwrap` em caminhos de rede/cripto); limites de tamanho | `sessao_inexistente_e_lixo_nao_fazem_panic`, `limites_e_validacao_de_entrada`, fuzz do estado em `forward_secrecy.rs` |
 | Relay das chamadas liga o vídeo de uma sala a uma conta (teto do vídeo, 0006) | Fichas cegas (VOPRF, RFC 9497, ristretto255-SHA512, crate `voprf`): o emissor só vê elementos aleatórios; o resgate só leva nonce e saída; o relay das chamadas não acede às contas e só guarda um resumo do nonce | `server/tests/fichas_e2e.rs::ficha_aceite_uma_vez_e_o_relay_nao_liga_resgate_a_emissao`, `core::fichas::tests::o_emissor_so_ve_elementos_aleatorios` |
 | Mais vídeo pelo relay do que o teto da conta | Contagem por conta e por mês na emissão (atómica: nunca passa do teto, nem com pedidos ao mesmo tempo); gasto duplo no Redis; fichas forjadas, repetidas ou de outro mês recusadas | `emissao_nunca_passa_do_teto_por_conta_e_por_mes`, `pedidos_ao_mesmo_tempo_nao_passam_do_teto`, `ficha_forjada_de_outro_mes_ou_de_outra_chave_recusada`, `sem_ficha_so_voz_com_ficha_um_bloco_de_video` |
-| Emissor marca uma conta com uma chave só dela (partição de chaves) | Chave de cada mês publicada fora do relay (`https://sealer.pt/estado.json`, Cloudflare). A app verifica a prova DLEQ, recusa a emissão se a chave não for a do site e só gasta fichas se a chave da sala também for essa; sem a chave do site falha fechada (vídeo pelo relay em pausa, voz e direto normais). O mês dito pelo relay só se segue se for o vizinho, a menos de 48 h da viragem (partição pelo mês, com os 24 meses publicados) | `prova_dleq_obrigatoria`, `fichas_de_outro_mes_ou_de_outra_chave_nao_servem`, `ffi::fichas::tests::chave_diferente_da_publicada_na_emissao_e_recusada`, `ffi::fichas::tests::sem_chave_do_site_nada_se_pede`, `call::fichas::tests::chave_da_sala_diferente_da_publicada_nada_se_gasta`, `call::fichas::tests::sem_chave_do_site_falha_fechada`, `call/tests/fichas_e2e.rs::chave_diferente_da_publicada_ou_sem_site_falha_fechada`, `mes_do_relay_so_o_proprio_ou_o_vizinho_na_viragem`, `ffi::fichas::tests::so_meses_plausiveis_vao_para_o_motor` |
+| Emissor marca uma conta com uma chave só dela (partição de chaves) | Chave de cada mês publicada fora do relay (`https://sealerapp.com/estado.json`, Cloudflare). A app verifica a prova DLEQ, recusa a emissão se a chave não for a do site e só gasta fichas se a chave da sala também for essa; sem a chave do site falha fechada (vídeo pelo relay em pausa, voz e direto normais). O mês dito pelo relay só se segue se for o vizinho, a menos de 48 h da viragem (partição pelo mês, com os 24 meses publicados) | `prova_dleq_obrigatoria`, `fichas_de_outro_mes_ou_de_outra_chave_nao_servem`, `ffi::fichas::tests::chave_diferente_da_publicada_na_emissao_e_recusada`, `ffi::fichas::tests::sem_chave_do_site_nada_se_pede`, `call::fichas::tests::chave_da_sala_diferente_da_publicada_nada_se_gasta`, `call::fichas::tests::sem_chave_do_site_falha_fechada`, `call/tests/fichas_e2e.rs::chave_diferente_da_publicada_ou_sem_site_falha_fechada`, `mes_do_relay_so_o_proprio_ou_o_vizinho_na_viragem`, `ffi::fichas::tests::so_meses_plausiveis_vao_para_o_motor` |
 
 ### 3.1 Segurança pós-quântica: o que exatamente se afirma
 
@@ -124,7 +125,19 @@ e depois alimenta a root key do Double Ratchet.
   * Redis em baixo ou sem semente: nenhuma ficha é aceite (vídeo pelo relay em pausa; voz e direto
     normais).
 * **O relay pode censurar, atrasar, descartar ou reordenar** (disponibilidade
-  não é garantida). Não há federação.
+  não é garantida). Na federação, o relay de casa de cada conta pode fazer o mesmo ao que lhe chega do
+  outro relay.
+* **Federação (desde 29/10/2026):** federação fechada (`/etc/qt/federacao.json`): ligação `wss://<par>/fed`
+  com Noise_XX e a chave fixada dos dois lados, e o HAProxy só deixa passar os IPs da lista. O que muda:
+  * O relay par fica a saber que alguém do outro relay procura a conta X (não quem), quando chega uma
+    mensagem do outro relay para uma conta sua (o remetente continua selado) e que anexos ou cópias de
+    recuperação lhe pedem. A cache "a conta está no relay X" fica só em memória (24 h).
+  * O relay de casa põe na fila o que o par entrega sem voltar a verificar quem envia: confia que o par
+    já aplicou os limites. Um relay da lista comprometido pode encher as filas das contas do outro.
+  * Um relay da lista pode dizer que uma conta é sua e desviar os pedidos de bundle dessa conta. As
+    apps continuam a verificar o bundle contra o ID (ver secção 3): não consegue fingir ser a conta, só
+    impedir que lhe cheguem mensagens.
+  * Os dois relays são do mesmo operador e usam a mesma semente das fichas do vídeo.
 * **Spam / abuso:** qualquer conta registada pode enfileirar mensagens para
   qualquer `user_id` registado (limite de 1000 mensagens por fila; desde a 0.9.17
   o relay recusa escritas de contas sem registo). Desde a 0.9.3 há limites por
@@ -186,8 +199,9 @@ e depois alimenta a root key do Double Ratchet.
 | Android Keystore / Secure Enclave do iPhone | Proteger a chave que cifra o storage | Resistir a um dispositivo comprometido |
 | Operador (chave das denúncias e dos banimentos) | Ler as denúncias, banir e emitir medalhas | Ler outras mensagens (não tem como) |
 | Relay + Redis | Entregar o que recebe, quando quiser | Confidencialidade, autenticidade de bundles, ordem, disponibilidade |
+| Relay par da federação | Entregar às suas contas o que o outro relay lhe passa; dizer onde está cada conta | Confidencialidade, quem envia, autenticidade de bundles |
 | Emissor das fichas (relay das mensagens) | Contar e emitir fichas do vídeo | Saber que fichas deu (vê-as cegas); escolher a chave do mês (vem do site) |
-| Site (`sealer.pt/estado.json`, Cloudflare) | Publicar a mesma chave das fichas a toda a gente | - |
+| Site (`sealerapp.com/estado.json`, Cloudflare) | Publicar a mesma chave das fichas a toda a gente | - |
 | Relay das chamadas + `qt-fichas` no Redis | Recusar fichas gastas ou forjadas | Saber de que conta é uma ficha (não tem como) |
 | Rede | Nada | Tudo |
 | Apps Kotlin e Swift | Mover bytes, UI, ciclo de vida, preparar imagens antes de as cifrar | Qualquer criptografia (proibido) |

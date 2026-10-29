@@ -6,6 +6,18 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 29 de outubro de 2026: documentação revista, com a federação em destaque
+
+- README (PT e EN): apps 0.9.50, secção "Federação: dois relays, uma só rede", os dois relays
+  (`relay.sealerapp.com` e `relay-es.sealerapp.com`), uma só ligação por app desde a 0.9.45 e o
+  `setup-ec2.sh` do ramo `p2p-teste`. No README inglês, videochamadas também no iPhone.
+- Esquema da arquitetura (`docs/arquitetura.svg`, `docs/architecture.svg`): dois relays em federação, a
+  ligação fechada entre eles e o site em sealerapp.com.
+- `ROADMAP.md`: federação feita (fases 1 a 4) e o que falta. `docs/known-limitations.md` (14) e
+  `docs/threat-model.md`: o que a federação muda (o relay par, a confiança entre relays, a conta largada).
+- Endereços do sealer.pt trocados pelo sealerapp.com em `docs/google-play.md`, `docs/threat-model.md`,
+  `docs/protocol-spec.md`, `docs/performance.md`, `ios/README.md` e no rascunho das fichas.
+
 ### 29 de outubro de 2026: videochamadas no iPhone (iPhone e Android 0.9.50)
 
 - O iPhone passa a ter videochamadas, como o Android: botão da videochamada na conversa (só para contactos

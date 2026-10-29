@@ -18,8 +18,8 @@ seguir.
   ficheiros até 25 MB, reações, convites e grupos até 10 pessoas (app 0.9.3).
 - **Notificações push com a app fechada** (aviso genérico "Tens mensagens novas";
   desde a 0.9.6 a app decifra em segundo plano, no telemóvel, para as chamadas tocarem).
-- **Relay em `relay.sealer.pt`** (HAProxy com TLS), medido com 8 000 ligações
-  em simultâneo sem falhas.
+- **Relay em `relay.sealerapp.com`** (HAProxy com TLS), medido com 8 000 ligações
+  em simultâneo sem falhas; desde a 0.9.45 cada app usa uma só ligação.
 - **Relay acessível pela internet** (AWS EC2), atrás de TLS (`wss://`), com
   pinning da chave Noise nas apps e o Redis só em `127.0.0.1` com ACL.
 - **Chave da base de dados vinda do Android Keystore / Secure Enclave do iPhone**; o
@@ -91,9 +91,11 @@ seguir.
 
 ## Fase de escala (mais distante, mas desenhada desde o início)
 
-- [ ] **Federação**: vários servidores independentes, em vez de um
-  único, para que a falha ou a manutenção de um nó não pare a rede
-  inteira
+- [x] **Federação** (29/10/2026): federação fechada com dois relays, `estocolmo` e
+  `espanha`, que entregam entre si mensagens, bundles, anexos, cópias de recuperação e
+  chamadas (`docs/protocol-spec.md`, secção 25). O desenho aceita mais relays.
+- [ ] **Federação, a seguir:** mais relays na Europa; mudar uma conta de relay; continuar
+  a receber quando o relay de casa da conta está em baixo (hoje fica à espera que volte)
 - [ ] **Grupos maiores:** os grupos atuais (até 10 pessoas) enviam uma cópia
   cifrada a cada membro; para grupos grandes faz sentido Sender Keys ou MLS
 

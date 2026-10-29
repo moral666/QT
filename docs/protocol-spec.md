@@ -118,9 +118,9 @@ depois Double Ratchet) é verificada no final.
   adequado apenas para testes locais. Em produção, `wss://` deve ser a
   primeira camada de defesa de rede, com o Noise por cima como segunda
   camada de autenticação mútua independente da CA/PKI do TLS.
-- **Padrão Noise_IK**: para ligações servidor-servidor de federação, onde a
-  chave estática do destino já é conhecida antecipadamente, `Noise_IK`
-  permite um handshake com menos round-trips que o `Noise_XX` atual.
+- **Padrão Noise_IK**: a federação (secção 25) usa o mesmo `Noise_XX` das apps,
+  com a chave do par fixada. Como a chave estática do destino já é conhecida,
+  `Noise_IK` pouparia um round-trip em cada ligação entre relays.
 - **Pinning de chave estática Noise (lado cliente)**: o servidor já
   persiste a sua própria chave estática entre reinícios (ver secção 4),
   então a base para pinning já existe do lado servidor. `NoiseHandshake::
@@ -164,8 +164,8 @@ ter registado outra vez, e Bob recebeu-a corretamente.
 
 **Pendente antes de produção:**
 
-- **Federação**: federação fechada entre relays da mesma lista, em curso
-  (fase 1, descoberta e registo único: ver secção 25).
+- **Federação**: feita (29/10/2026), federação fechada entre os relays da mesma
+  lista, fases 1 a 4 (ver secção 25).
 - **Rate limiting / autenticação de registo**: neste momento qualquer
   ligação pode registar um bundle para qualquer `user_id`; falta lógica
   de autenticação (ex.: provar posse da identity key correspondente antes
@@ -1285,7 +1285,7 @@ quando o vídeo começa a ir pelo relay e outra 15 s antes de acabar o bloco.
 **Chaves publicadas fora do relay (ataque de partição de chaves).** Um relay comprometido podia
 dar a cada conta uma chave diferente (na emissão e na sala) e reconhecer a conta no resgate pela
 chave. Por isso a chave pública de cada mês é publicada **fora do relay**, no site:
-`https://sealer.pt/estado.json` (ficheiro estático na Cloudflare, `site/public/estado.json`),
+`https://sealerapp.com/estado.json` (ficheiro estático na Cloudflare, `site/public/estado.json`),
 `{"versao":1,"fichas":{"AAAAMM":"<64 hex>",...}}`, 24 meses a partir do mês do deploy. Gera-o o
 `setup-ec2.sh` (`qt-relay chaves-fichas 24`, só chaves públicas: a semente nunca sai do relay); o
 operador publica-o no site. A app:

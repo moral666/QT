@@ -42,7 +42,13 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
 13. **Metadados visíveis ao relay:** destinatário, instante, IP e o tamanho arredondado
     (desde a 0.9.3 o texto leva enchimento até 256, 1024, 4096 ou 10 240 bytes). Ainda sem
     atraso aleatório (*jitter*).
-14. **Sem federação:** ponto único de falha e de pressão legal.
+14. **Federação pequena e fechada (desde 29/10/2026):** dois relays (Estocolmo e Espanha) entregam
+    mensagens entre si, mas cada conta vive num só. Com o relay de casa em baixo, as contas dele não
+    recebem nem renovam o registo até ele voltar (o que lhes enviam fica na fila de saída de quem
+    envia). Os dois relays são do mesmo operador, por isso a pressão legal continua num só sítio.
+    Cada relay fica a saber que alguém do outro procura uma conta sua (não quem) e quando lhe chega
+    uma mensagem do outro relay. Uma conta registada com um par em baixo e depois largada (porque o
+    outro relay já a tinha) perde as mensagens que estavam na fila do relay que a largou.
 15. **`ws://` nos testes.** Produção: `wss://` + pinning da chave Noise.
 16. **A chave estática Noise do relay está em ficheiro** (0600), sem HSM.
 17. **Redis:** no deploy (`deploy/redis/qt-redis.conf`) escuta só em `127.0.0.1`, com o utilizador

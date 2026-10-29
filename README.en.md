@@ -4,7 +4,7 @@
 
 **SEALER** is a private messenger: no phone number, no email, end-to-end encryption and post-quantum protection. **QT** is the name of the protocol and of this repository.
 
-**Status:** test version, in closed testing. Android app **0.9.46**, iPhone app **0.9.33**, server in production.
+**Status:** test version, in closed testing. Android and iPhone apps **0.9.50**, with two federated relays in the European Union (Stockholm and Spain).
 
 [Ler em português →](README.md)
 
@@ -29,7 +29,7 @@ It is also a working example of "data protection by design", as the GDPR asks: e
 ## What the app does
 
 - **One-to-one and group chats** (up to 10 people, 3 admins), between Android and iPhone, with *Sent / Delivered / Read*.
-- **Encrypted voice calls** on Android and iPhone, also between the two, and **video calls** on Android. On Android they ring with the app closed or the phone locked, with their own ringtone.
+- **Encrypted voice and video calls** on Android and iPhone, also between the two. On Android they ring with the app closed or the phone locked, with their own ringtone.
 - **Photos, GIFs, voice messages and files up to 25 MB.** Each file has its own key and leaves the server once downloaded (or after 24 hours).
 - **Notifications with the app closed**, always generic ("You have new messages"): no name, no text.
 - **Profile photo** only for your contacts, encrypted (the server does not even know it is a photo). It can be changed every 72 hours.
@@ -39,6 +39,7 @@ It is also a working example of "data protection by design", as the GDPR asks: e
 - **App lock** with its own code, fingerprint or face (Face ID on iPhone). After 5 wrong codes the wait goes up to 15 minutes, and changing the phone's clock does not skip it.
 - **Recovery key:** 12 words bring back the ID, contacts, block list and badge on a new phone. The copy is stored encrypted on the server; history and groups are not in it.
 - **Ten languages:** Portuguese, English, French, Spanish, German, Italian, Japanese, Simplified Chinese, Hindi and Arabic (right to left).
+- **Two servers, one network:** your account lives on one of the federated relays, and you talk to people on the other without noticing (see [Federation](#federation-two-relays-one-network)).
 - **Delete your account** from the phone and the server with one tap.
 
 ## How it protects privacy
@@ -53,12 +54,25 @@ It is also a working example of "data protection by design", as the GDPR asks: e
 
 What this does and does not protect against is in [`docs/threat-model.md`](docs/threat-model.md) and [`docs/known-limitations.md`](docs/known-limitations.md) (in Portuguese).
 
+## Federation: two relays, one network
+
+Since 29 Oct 2026 SEALER has **two federated relays**, both in the European Union: `estocolmo` (AWS eu-north-1) and `espanha` (AWS eu-south-2). Each account lives on one relay only, and people on one talk to people on the other as if it were the same server.
+
+- **The ID does not change:** it is still the public key (`qt1:...`). Relays ask each other where each account lives, and an account can only exist on one relay.
+- **The app only talks to its own relay**, over one connection. Messages, keys to start conversations, attachments and the recovery copy travel from relay to relay.
+- **The sender stays sealed:** the destination relay only learns that the message came from the other relay, not from whom.
+- **Closed federation:** only relays on an approved list talk to each other, over `wss://<relay>/fed`, with Noise_XX and the keys pinned on both sides. HAProxy only lets through the IPs of the relays on the list.
+- **Calls across relays:** both apps use the call relay of the caller.
+- **No request logs:** the information "this account is on relay X" is kept in memory only (up to 24 hours), and relays only count how many messages they exchanged.
+
+The design accepts more relays. The relay-to-relay protocol is in section 25 of [`docs/protocol-spec.md`](docs/protocol-spec.md) and the limits in [`docs/known-limitations.md`](docs/known-limitations.md) (14, in Portuguese).
+
 ## Status and next steps
 
 **Tested:**
 
 - The whole Rust core (cryptography, transport, server, storage and the bridge to the apps), with the test suite passing.
-- Server on an AWS EC2 instance in Stockholm, at `wss://relay.sealer.pt`, with Redis only on `127.0.0.1` and protected by an ACL.
+- Two federated relays on AWS: `wss://relay.sealerapp.com` (Stockholm) and `wss://relay-es.sealerapp.com` (Spain), each with Redis only on `127.0.0.1` and protected by an ACL.
 - Signed *release* Android app on three Samsung phones and the emulator.
 - **Android 0.9.16 with iPhone 0.9.15** (20/10/2026), no bugs: adding, deleting and re-adding contacts, QR code, share ID button, all menus, text and voice messages, GIFs, sending files, blocking contacts, deleting chats and voice calls between Androids, between Android and iPhone and between iPhones.
 - **Android 0.9.22** (22/10/2026): app lock, recent apps and account recovery.
@@ -77,7 +91,7 @@ What this does and does not protect against is in [`docs/threat-model.md`](docs/
 ## Architecture
 
 <!-- Generated by site/scripts/architecture_diagram.py (see site/README.md, section 14). -->
-![SEALER architecture: the Android and iPhone apps use the same QT core in Rust and exchange encrypted envelopes through a relay on AWS (HAProxy, Rust relay and Redis). The sealer.pt website is separate, on Cloudflare.](docs/architecture.svg)
+![SEALER architecture: the Android and iPhone apps use the same QT core in Rust and exchange encrypted envelopes through two federated relays on AWS, in Stockholm and in Spain (HAProxy, Rust relay and Redis on each). The sealerapp.com website is separate, on Cloudflare.](docs/architecture.svg)
 
 Both apps use the **same Rust core** through UniFFI. All cryptography lives in Rust; Kotlin and Swift only draw the screens.
 
@@ -85,7 +99,7 @@ Both apps use the **same Rust core** through UniFFI. All cryptography lives in R
 |---|---|
 | `core/` | Starting a session (X3DH and PQXDH) and encrypting each message (Double Ratchet, Sealed Sender) |
 | `transport/` | Connection protection (Noise Protocol over WebSocket) |
-| `server/` | The "postman": delivers messages without reading them or knowing who sent them. Includes the call relay (UDP, anonymous rooms) |
+| `server/` | The "postman": delivers messages without reading them or knowing who sent them, also from relay to relay (federation). Includes the call relay (UDP, anonymous rooms) |
 | `call/` | Call engine: Opus 1.6 with DRED and neural PLC, adaptive jitter buffer |
 | `storage/` | Identity and chats on disk, encrypted (SQLCipher) |
 | `ffi/` | The bridge to Kotlin, Swift and Python: history, outbox, attachments, groups, calls |
@@ -96,7 +110,7 @@ Both apps use the **same Rust core** through UniFFI. All cryptography lives in R
 
 ## Numbers
 
-**Server alone** (2 vCPU machine, no TLS and no real network): 10,000 open connections without failures, about 14 KB per connection, ~3,300 requests per second and 0 % CPU with idle connections. With messages flowing constantly, ~16,900 messages of 200 B per second. With HAProxy and TLS: 8,000 connections without failures, about 40 KB per connection. Details in [`docs/performance.md`](docs/performance.md).
+**Server alone** (2 vCPU machine, no TLS and no real network): 10,000 open connections without failures, about 14 KB per connection, ~3,300 requests per second and 0 % CPU with idle connections. With messages flowing constantly, ~16,900 messages of 200 B per second. With HAProxy and TLS: 8,000 connections without failures, about 40 KB per connection. Since 0.9.45 each app opens a single connection to the relay (it used to be three). Details in [`docs/performance.md`](docs/performance.md).
 
 **Between real phones** (three Samsung phones in Portugal, server in Stockholm, 19 Oct 2026):
 
@@ -107,7 +121,7 @@ Both apps use the **same Rust core** through UniFFI. All cryptography lives in R
 
 The slow messages are for sleeping phones: the notification wakes them up and the message arrives when the app opens.
 
-**Calls:** about 64 ms of network one way between Portugal and Stockholm, and about 35 MB per hour in each direction. In a test with 15 % of packets lost, DRED rebuilt them all. Switching from Wi-Fi to mobile data does not drop the call, and there is a fallback through `wss://relay.sealer.pt/call` for networks that block UDP. Formats in section 18 of [`docs/protocol-spec.md`](docs/protocol-spec.md).
+**Calls:** about 64 ms of network one way between Portugal and Stockholm, and about 35 MB per hour in each direction. In a test with 15 % of packets lost, DRED rebuilt them all. Switching from Wi-Fi to mobile data does not drop the call, and there is a fallback through `wss://relay.sealerapp.com/call` for networks that block UDP. Formats in section 18 of [`docs/protocol-spec.md`](docs/protocol-spec.md).
 
 ## For developers
 
@@ -193,11 +207,11 @@ Step by step in [`ios/README.md`](ios/README.md).
 On a new EC2 instance with Ubuntu 24.04 (Security Group with 22, 80 and 443 TCP, and 443 UDP for calls):
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/moral666/QT/site-sealer/deploy/aws/setup-ec2.sh
+curl -fsSLO https://raw.githubusercontent.com/moral666/QT/p2p-teste/deploy/aws/setup-ec2.sh
 sudo bash setup-ec2.sh
 ```
 
-It installs Redis (only `127.0.0.1`, minimal ACL), the server and the call relay as isolated systemd services and HAProxy with a TLS certificate (certbot), and prints the `wss://` URL and the pinning key for the apps. To update, run the same script: it keeps the Noise key and the Redis password. It builds on the instance and needs disk space (the current server uses 20 GB). Details in [`docs/deploy-wss.md`](docs/deploy-wss.md).
+It installs Redis (only `127.0.0.1`, minimal ACL), the server and the call relay as isolated systemd services and HAProxy with a TLS certificate (certbot), and prints the `wss://` URL and the pinning key for the apps. To update, run the same script: it keeps the Noise key and the Redis password. It builds on the instance and needs disk space (the current server uses 20 GB). Details in [`docs/deploy-wss.md`](docs/deploy-wss.md). To join the relay to the federation: `/etc/qt/federacao.json` on both relays (section 25 of [`docs/protocol-spec.md`](docs/protocol-spec.md)).
 
 ## Documentation
 

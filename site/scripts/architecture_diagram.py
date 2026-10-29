@@ -41,7 +41,7 @@ CONTENT = {
         "svg_title": "Arquitetura da SEALER",
         "eyebrow": "Projeto QT",
         "title": "Arquitetura",
-        "lede": "A cifra acontece nos telemóveis. O relay só guarda e entrega envelopes fechados.",
+        "lede": "A cifra acontece nos telemóveis. Os relays só guardam e trocam envelopes fechados.",
         "phone": "Telemóvel",
         # Camadas: (título, subtítulo ou None, é o núcleo?)
         "android": [
@@ -56,14 +56,15 @@ CONTENT = {
             ("Núcleo QT em Rust", "o mesmo do Android", True),
         ],
         "iphone_key": "Chave local: Secure Enclave",
-        "server": "Servidor · AWS, Estocolmo",
+        "server": "Servidores · AWS, União Europeia",
+        "relay_title": "Relays em federação",
         "relay": [
-            ("HAProxy", "TLS com Let's Encrypt", False),
-            ("Relay em Rust", "envelopes e anexos cifrados", False),
-            ("Redis", "filas e pre-keys, só local", False),
+            ("Relay Estocolmo", "HAProxy · relay em Rust · Redis", False),
+            ("Federação fechada", "Noise_XX, chaves fixadas", True),
+            ("Relay Espanha", "HAProxy · relay em Rust · Redis", False),
         ],
-        "relay_never": "Não vê o conteúdo nem quem envia",
-        "link": "Noise_XX sobre wss://, com a chave do relay fixada nas apps",
+        "relay_never": "Não veem conteúdo nem remetente",
+        "link": "Noise_XX sobre wss://, com as chaves dos relays fixadas nas apps",
         "core_eyebrow": "Em cada telemóvel",
         "core_title": "Núcleo QT em Rust",
         "core_lede": "Toda a criptografia vive aqui, nada é reimplementado nas apps. "
@@ -76,20 +77,21 @@ CONTENT = {
             ("ffi", "Ponte para as apps", "UniFFI para Kotlin, Swift e Python · cifra dos anexos de imagem"),
         ],
         "site_eyebrow": "Fora do caminho das mensagens",
-        "site_title": "Site sealer.pt",
+        "site_title": "Site sealerapp.com",
         "site_sub": "Pasta site/ deste repositório",
         "site_facts": ["Cloudflare, Worker sealer", "Só ficheiros estáticos",
-                       "Sem cookies, CSP estrita", "Não comunica com o relay"],
-        "footer": "SEALER · protocolo QT · versão alpha",
+                       "Sem cookies, CSP estrita", "Só verifica se o relay responde"],
+        "footer": "SEALER · protocolo QT · versão de testes",
         "legend_solid": "mensagens cifradas de ponta a ponta",
         "legend_dashed": "o mesmo núcleo, em detalhe",
         "description": (
             "Duas apps SEALER, Android e iPhone, usam o mesmo núcleo QT em Rust através de ligações UniFFI. "
             "A cifra acontece no núcleo, dentro de cada telemóvel. As apps trocam envelopes cifrados através "
-            "de um relay na AWS, em Estocolmo (HAProxy com TLS, relay em Rust e Redis), por Noise_XX sobre wss "
-            "com a chave do relay fixada nas apps. O relay nunca vê o conteúdo nem quem envia. O núcleo tem "
-            "quatro partes: core, transport, storage e ffi. O site sealer.pt está à parte, na Cloudflare, e "
-            "não comunica com o relay."
+            "de dois relays em federação na AWS, um em Estocolmo e outro em Espanha (HAProxy com TLS, relay em "
+            "Rust e Redis em cada um), por Noise_XX sobre wss com as chaves dos relays fixadas nas apps. Os "
+            "relays ligam-se entre si também por Noise_XX, com as chaves fixadas dos dois lados. Nunca veem o "
+            "conteúdo nem quem envia. O núcleo tem quatro partes: core, transport, storage e ffi. O site "
+            "sealerapp.com está à parte, na Cloudflare, e só verifica se o relay responde."
         ),
     },
     "en": {
@@ -97,7 +99,7 @@ CONTENT = {
         "svg_title": "SEALER architecture",
         "eyebrow": "QT project",
         "title": "Architecture",
-        "lede": "Encryption happens on the phones. The relay only stores and delivers sealed envelopes.",
+        "lede": "Encryption happens on the phones. The relays only store and pass on sealed envelopes.",
         "phone": "Phone",
         "android": [
             ("SEALER app", "Kotlin · Jetpack Compose", False),
@@ -111,14 +113,15 @@ CONTENT = {
             ("QT core in Rust", "the same as on Android", True),
         ],
         "iphone_key": "Local key: Secure Enclave",
-        "server": "Server · AWS, Stockholm",
+        "server": "Servers · AWS, European Union",
+        "relay_title": "Federated relays",
         "relay": [
-            ("HAProxy", "TLS with Let's Encrypt", False),
-            ("Relay in Rust", "encrypted envelopes and files", False),
-            ("Redis", "queues and pre-keys, local only", False),
+            ("Stockholm relay", "HAProxy · Rust relay · Redis", False),
+            ("Closed federation", "Noise_XX, pinned keys", True),
+            ("Spain relay", "HAProxy · Rust relay · Redis", False),
         ],
-        "relay_never": "Never sees content or the sender",
-        "link": "Noise_XX over wss://, with the relay key pinned in the apps",
+        "relay_never": "Never see content or the sender",
+        "link": "Noise_XX over wss://, with the relay keys pinned in the apps",
         "core_eyebrow": "On every phone",
         "core_title": "QT core in Rust",
         "core_lede": "All cryptography lives here; nothing is reimplemented in the apps. "
@@ -130,20 +133,21 @@ CONTENT = {
             ("ffi", "Bridge to the apps", "UniFFI for Kotlin, Swift and Python · image attachment encryption"),
         ],
         "site_eyebrow": "Outside the message path",
-        "site_title": "sealer.pt website",
+        "site_title": "sealerapp.com website",
         "site_sub": "Folder site/ in this repository",
         "site_facts": ["Cloudflare, Worker sealer", "Static files only",
-                       "No cookies, strict CSP", "Never talks to the relay"],
-        "footer": "SEALER · QT protocol · alpha",
+                       "No cookies, strict CSP", "Only checks the relay is up"],
+        "footer": "SEALER · QT protocol · test version",
         "legend_solid": "end-to-end encrypted messages",
         "legend_dashed": "the same core, in detail",
         "description": (
             "Two SEALER apps, Android and iPhone, use the same QT core in Rust through UniFFI bindings. "
-            "Encryption happens in the core, on each phone. The apps exchange encrypted envelopes through a "
-            "relay on AWS in Stockholm (HAProxy with TLS, a Rust relay and Redis), using Noise_XX over wss with "
-            "the relay key pinned in the apps. The relay never sees the content or the sender. The core has "
-            "four parts: core, transport, storage and ffi. The sealer.pt website is separate, on Cloudflare, "
-            "and never talks to the relay."
+            "Encryption happens in the core, on each phone. The apps exchange encrypted envelopes through two "
+            "federated relays on AWS, one in Stockholm and one in Spain (HAProxy with TLS, a Rust relay and Redis "
+            "on each), using Noise_XX over wss with the relay keys pinned in the apps. The relays connect to each "
+            "other with Noise_XX too, with the keys pinned on both sides. They never see the content or the "
+            "sender. The core has four parts: core, transport, storage and ffi. The sealerapp.com website is "
+            "separate, on Cloudflare, and only checks that the relay is up."
         ),
     },
 }
@@ -613,7 +617,7 @@ def build(c):
     # Marca à direita, alinhada pelas linhas de base do título e da frase.
     wordmark_w = text(W - M, 110, "SEALER", "wordmark", anchor="end")
     dot(W - M - wordmark_w - 16, 102, "violet")
-    text(W - M, 144, "sealer.pt", "domain", anchor="end")
+    text(W - M, 144, "sealerapp.com", "domain", anchor="end")
 
     # Linha 1: telemóvel, relay, telemóvel. A altura vem do conteúdo.
     row_y = 176
@@ -624,11 +628,14 @@ def build(c):
     bx = rx + relay_w + gap
     row_h = LAYERS_Y + 3 * LAYER_H + 2 * LAYER_GAP + 18 + 25 + 22
     stack_card(ax, row_y, phone_w, row_h, c["phone"], "violet", "Android", c["android"], "key", c["android_key"], "lilac")
-    stack_card(rx, row_y, relay_w, row_h, c["server"], "cold", "Relay", c["relay"], "lock", c["relay_never"], "cold")
+    stack_card(rx, row_y, relay_w, row_h, c["server"], "cold", c["relay_title"], c["relay"], "lock", c["relay_never"], "cold")
     stack_card(bx, row_y, phone_w, row_h, c["phone"], "violet", "iPhone", c["iphone"], "key", c["iphone_key"], "lilac")
-    mid = row_y + LAYERS_Y + LAYER_H + LAYER_GAP + LAYER_H / 2  # à altura da camada do meio
-    link(ax + phone_w, rx, mid, LILAC, COLD)
-    link(rx + relay_w, bx, mid, COLD, LILAC)
+    # Android liga ao relay de Estocolmo (1.ª camada) e o iPhone ao de Espanha (3.ª camada):
+    # a federação, na camada do meio, junta os dois.
+    first = row_y + LAYERS_Y + LAYER_H / 2
+    last = first + 2 * (LAYER_H + LAYER_GAP)
+    link(ax + phone_w, rx, first, LILAC, COLD)
+    link(rx + relay_w, bx, last, COLD, LILAC)
 
     # Ligação: legenda ao centro
     cap_y = row_y + row_h + 40
