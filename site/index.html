@@ -304,8 +304,9 @@
           </article>
           <article class="tile tile--testes tile--figure" data-cell="2-0" aria-labelledby="t-tempo">
             <p class="tile__label" data-i18n="index.75">Entre telemóveis</p>
-            <!-- Preenchido por src/status.js com o mesmo tempo do marcador de estado (via /api/estado). -->
-            <h3 class="tile__figure" id="t-tempo">…</h3>
+            <!-- Preenchido por src/status.js com o mesmo tempo do marcador de estado (via /api/estado).
+                 data-live e não o id: em ecrãs grandes a grelha repete as janelas em cópias sem ids. -->
+            <h3 class="tile__figure" id="t-tempo" data-live="tempo">…</h3>
             <p class="tile__text" data-i18n="index.76">Quanto demora uma mensagem típica, do telemóvel de quem a envia até ao de quem a recebe. Medição real, atualizada a cada&nbsp;minuto.</p>
           </article>
           <article class="tile tile--testes tile--figure" data-cell="3-4" aria-labelledby="t-cookies">
