@@ -63,6 +63,9 @@ pub struct ServerConfig {
     pub fichas_rate: crate::limits::Rate,
     /// Federacao de relays (`federation.rs`): `None` = relay sozinho.
     pub federacao: Option<Arc<crate::federation::Federacao>>,
+    /// Aceita contas novas (`RELAY_NOVAS_CONTAS=0` desliga: relay cheio, decidido pelo operador).
+    /// As contas que ja tem continuam a renovar o registo.
+    pub novas_contas: bool,
 }
 
 impl Default for ServerConfig {
@@ -88,6 +91,7 @@ impl Default for ServerConfig {
             // Um lote por mes chega; a folga e para quotas maiores (varios lotes) e repeticoes.
             fichas_rate: crate::limits::Rate { burst: 6, per_minute: 2 },
             federacao: None,
+            novas_contas: true,
         }
     }
 }
@@ -448,6 +452,16 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 stats::inc(&STATS.pow_rejected);
                 return err(crate::protocol::POW_REQUIRED);
             }
+            // Relay fechado a contas novas (operador): se a conta ja existir noutro relay, diz
+            // qual (sem reservar nada, para o registo la nao encontrar uma reserva daqui).
+            if nova && !cfg.novas_contas {
+                if let Some(fed) = &cfg.federacao {
+                    if let crate::federation::Onde::Par(n) = fed.onde_esta(me).await {
+                        return err(&crate::protocol::elsewhere(Some(&n)));
+                    }
+                }
+                return err(crate::protocol::NO_NEW_ACCOUNTS);
+            }
             // Federacao: uma conta so existe num relay. So contas novas perguntam aos outros;
             // renovar o bundle (cada vez que a app abre) nao gasta nenhum pedido.
             let mut por_verificar = false;
@@ -455,7 +469,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             if let Some(fed) = fed {
                 match fed.reservar(me).await {
                     crate::federation::Reserva::Livre { por_verificar: pv } => por_verificar = pv,
-                    crate::federation::Reserva::NoutroRelay => return err(crate::protocol::ELSEWHERE),
+                    crate::federation::Reserva::NoutroRelay(n) => return err(&crate::protocol::elsewhere(n.as_deref())),
                     crate::federation::Reserva::Banida => return err(crate::protocol::BANNED),
                 }
             }
@@ -788,6 +802,9 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             if !is_valid_user_id(&user_id) || user_id == me {
                 return err("user_id invalido");
             }
+            if let Some(r) = admin_noutro_relay(store, cfg, &user_id, crate::federation::AdminFed::Banir { id: user_id.clone() }).await {
+                return r;
+            }
             match store.ban(&user_id).await {
                 Ok(()) => {
                     let _ = store.delete_backup(&user_id).await;
@@ -802,16 +819,40 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             if !is_valid_user_id(&user_id) {
                 return err("user_id invalido");
             }
+            // O banimento pode estar em qualquer relay: levanta-se em todos.
+            if let Some(fed) = &cfg.federacao {
+                fed.admin_todos(crate::federation::AdminFed::Desbanir { id: user_id.clone() }).await;
+            }
             match store.unban(&user_id).await {
                 Ok(()) => ServerMessage::Ack,
                 Err(e) => internal(e),
             }
         }
-        ClientMessage::AdminOnline => ServerMessage::Online {
-            users: crate::limits::UserSlot::users_online(Some(me)) as u64,
-        },
+        ClientMessage::AdminOnline => {
+            let mut users = crate::limits::UserSlot::users_online(Some(me)) as u64;
+            // Federacao: a soma de todos os relays que responderem.
+            if let Some(fed) = &cfg.federacao {
+                for r in fed.admin_todos(crate::federation::AdminFed::Online).await {
+                    if let crate::federation::Resposta::Contagem { n } = r {
+                        users += n;
+                    }
+                }
+            }
+            ServerMessage::Online { users }
+        }
         ClientMessage::AdminListBans => match store.list_bans().await {
-            Ok(user_ids) => ServerMessage::Bans { user_ids },
+            Ok(mut user_ids) => {
+                if let Some(fed) = &cfg.federacao {
+                    for r in fed.admin_todos(crate::federation::AdminFed::ListarBanidas).await {
+                        if let crate::federation::Resposta::ListaBanidas { ids } = r {
+                            user_ids.extend(ids.into_iter().filter(|i| is_valid_user_id(i)));
+                        }
+                    }
+                    user_ids.sort();
+                    user_ids.dedup();
+                }
+                ServerMessage::Bans { user_ids }
+            }
             Err(e) => internal(e),
         },
         ClientMessage::BackupPut { lookup, generation, part, parts, data } => {
@@ -894,6 +935,10 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 if let Err(e) = store.set_premium_enforced(on).await {
                     return internal(e);
                 }
+                // O bloqueio vale para todos os relays da federacao.
+                if let Some(fed) = &cfg.federacao {
+                    fed.admin_todos(crate::federation::AdminFed::BloqueioPremium { on }).await;
+                }
             }
             match store.premium_enforced().await {
                 Ok(on) => ServerMessage::PremiumEnforce { on },
@@ -904,13 +949,28 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             if !is_valid_user_id(&user_id) {
                 return err("user_id invalido");
             }
+            let a = crate::federation::AdminFed::Premium { id: user_id.clone(), until_ms };
+            if let Some(r) = admin_noutro_relay(store, cfg, &user_id, a).await {
+                return r;
+            }
             match store.set_premium(&user_id, until_ms).await {
                 Ok(()) => ServerMessage::Ack,
                 Err(e) => internal(e),
             }
         }
         ClientMessage::AdminListPremium => match store.list_premium().await {
-            Ok(entries) => ServerMessage::PremiumList { entries },
+            Ok(mut entries) => {
+                if let Some(fed) = &cfg.federacao {
+                    for r in fed.admin_todos(crate::federation::AdminFed::ListarPremium).await {
+                        if let crate::federation::Resposta::ListaPremium { entries: e } = r {
+                            entries.extend(e.into_iter().filter(|x| is_valid_user_id(&x.user_id)));
+                        }
+                    }
+                    entries.sort_by(|a, b| a.user_id.cmp(&b.user_id));
+                    entries.dedup_by(|a, b| a.user_id == b.user_id);
+                }
+                ServerMessage::PremiumList { entries }
+            }
             Err(e) => internal(e),
         },
         ClientMessage::IssueFichas { epoch, blinded } => issue_fichas(store, me, epoch, &blinded, cfg).await,
@@ -918,11 +978,33 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             if !is_valid_user_id(&user_id) {
                 return err("user_id invalido");
             }
+            let a = crate::federation::AdminFed::QuotaFichas { id: user_id.clone(), per_month };
+            if let Some(r) = admin_noutro_relay(store, cfg, &user_id, a).await {
+                return r;
+            }
             match store.set_fichas_quota(&user_id, per_month).await {
                 Ok(()) => ServerMessage::Ack,
                 Err(e) => internal(e),
             }
         }
+    }
+}
+
+/// Federacao (fase 3): pedido do operador para uma conta que vive noutro relay. `None`: a conta
+/// esta aqui (ou em relay nenhum) e o pedido faz-se localmente, como antes.
+async fn admin_noutro_relay(
+    store: &Store,
+    cfg: &ServerConfig,
+    user_id: &str,
+    a: crate::federation::AdminFed,
+) -> Option<ServerMessage> {
+    let fed = cfg.federacao.as_ref()?;
+    if !matches!(store.is_registered(user_id).await, Ok(false)) {
+        return None;
+    }
+    match fed.admin_conta(user_id, a).await? {
+        true => Some(ServerMessage::Ack),
+        false => Some(err(crate::protocol::FED_UNAVAILABLE)),
     }
 }
 

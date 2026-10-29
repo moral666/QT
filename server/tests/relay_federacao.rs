@@ -75,10 +75,13 @@ impl Lado {
 
 /// Relay das apps deste lado, com esta federacao. Devolve o URL.
 async fn relay(lado: &Lado, fed: Option<Arc<Federacao>>) -> String {
+    relay_com(lado, ServerConfig { federacao: fed, ..fast_cfg() }).await
+}
+
+async fn relay_com(lado: &Lado, cfg: ServerConfig) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let keys = qt_transport::generate_static_keypair().unwrap();
-    let cfg = ServerConfig { federacao: fed, ..fast_cfg() };
     let s = lado.store.clone();
     tokio::spawn(async move {
         loop {
@@ -157,7 +160,7 @@ async fn uma_conta_so_existe_num_relay() {
     let alice = SigningKeyPair::generate();
     ack(registar_em(&ua, &alice).await);
     // A mesma conta (ex.: recuperada com as 12 palavras) noutro relay: recusada.
-    recusa(registar_em(&ub, &alice).await, ELSEWHERE);
+    recusa(registar_em(&ub, &alice).await, &elsewhere(Some("a")));
     assert_eq!(store(&b.prefix).fed_estado(&uid(&alice)).await.unwrap(), Estado::NaoTenho);
     // No relay de casa, renovar continua a funcionar e nao fica nada por verificar.
     ack(registar_em(&ua, &alice).await);
@@ -202,7 +205,7 @@ async fn reserva_ao_mesmo_tempo_nos_dois_relays() {
     let (_a, fa, _ua, _b, fb, _ub) = par_federado().await;
     let id = uid(&SigningKeyPair::generate());
     let (ra, rb) = tokio::join!(fa.reservar(&id), fb.reservar(&id));
-    let livres = [ra, rb].iter().filter(|r| matches!(r, Reserva::Livre { .. })).count();
+    let livres = [ra.clone(), rb.clone()].iter().filter(|r| matches!(r, Reserva::Livre { .. })).count();
     assert!(livres <= 1, "os dois relays nao podem ficar com a conta: {ra:?} {rb:?}");
     fa.libertar(&id);
     fb.libertar(&id);
@@ -244,7 +247,7 @@ async fn par_em_baixo_regista_e_verifica_depois() {
     assert_eq!(sb.fed_estado(&uid(&x)).await.unwrap(), Estado::NaoTenho);
     assert_eq!(sb.fed_estado(&uid(&y)).await.unwrap(), Estado::Tenho);
     assert!(sb.fed_por_verificar(10).await.unwrap().is_empty());
-    recusa(registar_em(&ub, &x).await, ELSEWHERE);
+    recusa(registar_em(&ub, &x).await, &elsewhere(Some("a")));
 }
 
 /// Os dois registaram a mesma conta sem verificar: fica no relay de nome menor ("a").
@@ -449,4 +452,72 @@ async fn relay_do_destinatario_em_baixo_fica_na_outbox() {
     let ua = relay(&a, Some(fa)).await;
     let (_, mut alice) = conta(&ua).await;
     recusa(alice.request(envio(&uid(&SigningKeyPair::generate()), 1)).await.unwrap(), FED_UNAVAILABLE);
+}
+
+// ---------------------------------------------------------------------------
+// Fase 3: relay fechado a contas novas e pedidos do operador
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn relay_sem_contas_novas() {
+    let (a, fa, ua, _b, _fb, _ub) = par_federado().await;
+    let alice = SigningKeyPair::generate();
+    ack(registar_em(&ua, &alice).await);
+    // O mesmo relay "a", agora fechado a contas novas pelo operador.
+    let fechado = relay_com(&a, ServerConfig { federacao: Some(fa.clone()), novas_contas: false, ..fast_cfg() }).await;
+    // Conta nova: recusada (a app tenta o relay seguinte da lista).
+    recusa(registar_em(&fechado, &SigningKeyPair::generate()).await, NO_NEW_ACCOUNTS);
+    // A Alice ja existe: renova normalmente.
+    ack(registar_em(&fechado, &alice).await);
+}
+
+#[tokio::test]
+async fn relay_fechado_diz_onde_esta_a_conta() {
+    let (_a, _fa, ua, b, fb, _ub) = par_federado().await;
+    let alice = SigningKeyPair::generate();
+    ack(registar_em(&ua, &alice).await);
+    let fechado = relay_com(&b, ServerConfig { federacao: Some(fb), novas_contas: false, ..fast_cfg() }).await;
+    recusa(registar_em(&fechado, &alice).await, &elsewhere(Some("a")));
+}
+
+#[tokio::test]
+async fn operador_num_relay_trata_contas_do_outro() {
+    let (a, fa, _ua, b, fb, ub) = par_federado().await;
+    let op = SigningKeyPair::generate();
+    let ua_op = relay_com(&a, ServerConfig { federacao: Some(fa), operator: Some(uid(&op)), ..fast_cfg() }).await;
+    let (bs, mut bob) = conta(&ub).await;
+    let bob_id = uid(&bs);
+    let mut o = ligar(&ua_op, &op).await;
+    // Premium e quota de fichas para o Bob (que esta no relay b), pedidos ao relay a.
+    ack(o.request(ClientMessage::AdminGrantPremium { user_id: bob_id.clone(), until_ms: 4_000_000_000_000 }).await.unwrap());
+    assert_eq!(b.store.premium_until(&bob_id).await.unwrap(), 4_000_000_000_000);
+    ack(o.request(ClientMessage::AdminSetFichasQuota { user_id: bob_id.clone(), per_month: Some(7) }).await.unwrap());
+    assert_eq!(b.store.fichas_quota(&bob_id).await.unwrap(), Some(7));
+    match o.request(ClientMessage::AdminListPremium).await.unwrap() {
+        ServerMessage::PremiumList { entries } => assert!(entries.iter().any(|e| e.user_id == bob_id)),
+        x => panic!("{x:?}"),
+    }
+    // Contas ligadas: as dos dois relays (o Bob esta ligado ao b).
+    match o.request(ClientMessage::AdminOnline).await.unwrap() {
+        ServerMessage::Online { users } => assert!(users >= 1, "{users}"),
+        x => panic!("{x:?}"),
+    }
+    // Bloqueio premium: vale nos dois relays.
+    match o.request(ClientMessage::AdminPremiumEnforce { on: Some(true) }).await.unwrap() {
+        ServerMessage::PremiumEnforce { on } => assert!(on),
+        x => panic!("{x:?}"),
+    }
+    assert!(b.store.premium_enforced().await.unwrap());
+    // Banir o Bob: banido no relay dele (que fecha a ligacao), e aparece na lista.
+    ack(o.request(ClientMessage::AdminBan { user_id: bob_id.clone() }).await.unwrap());
+    assert!(b.store.is_banned(&bob_id).await.unwrap());
+    let _ = bob.fetch_messages().await;
+    match o.request(ClientMessage::AdminListBans).await.unwrap() {
+        ServerMessage::Bans { user_ids } => assert!(user_ids.contains(&bob_id)),
+        x => panic!("{x:?}"),
+    }
+    ack(o.request(ClientMessage::AdminUnban { user_id: bob_id.clone() }).await.unwrap());
+    assert!(!b.store.is_banned(&bob_id).await.unwrap());
+    // fb fica vivo ate ao fim do teste.
+    drop(fb);
 }

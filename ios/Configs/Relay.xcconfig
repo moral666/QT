@@ -3,3 +3,8 @@
 QT_RELAY_URL = wss:/$()/relay.sealerapp.com
 // Chave publica estatica Noise do relay (64 hex), impressa pelo setup-ec2.sh.
 QT_RELAY_PIN = f018d46b67d2437571cefc86827dec0dc3b0fd586bd22c664d3839f6a1c67f1a
+// Federacao (o mesmo que qtRelayName / qtRelaysOutros do Android): nome do relay de cima e os
+// OUTROS relays, por ordem, "nome|wss:/$()/host|pin" separados por ';'. Contas novas ficam no de
+// cima; se ele ja nao aceitar contas novas (decisao do operador), no seguinte.
+QT_RELAY_NAME = estocolmo
+QT_RELAYS_OTHERS =

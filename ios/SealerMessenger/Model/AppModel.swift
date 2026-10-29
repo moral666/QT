@@ -255,8 +255,12 @@ final class AppModel: ObservableObject {
     private func setupClient(_ client: QtClient) async throws {
         qt = client
         guard let ck = contactsKey else { throw SecureStoreError(message: "sem a chave dos contactos") }
-        let url = Config.relayEditable ? (prefs.string(forKey: "relay_url") ?? Config.relayURL) : Config.relayURL
-        let pin = Config.relayEditable ? (prefs.string(forKey: "relay_key") ?? Config.relayPin) : Config.relayPin
+        // Release: o relay da conta, da lista fixa da build (federacao, `Relays`). Debug: editavel.
+        let home = Relays.home(prefs)
+        let url = home.url
+        let pin = home.pin
+        // As ofertas de chamada levam o relay da conta quando nao e o principal (fase 4).
+        try? client.callSetRelay(name: Relays.callName(prefs))
         struct Loaded: Sendable {
             let has: Bool; let publicId: String; let contacts: [Contact]; let contactsBroken: Bool
             let convs: [ConversationSummary]
@@ -634,7 +638,7 @@ final class AppModel: ObservableObject {
         }
         ContactStore.wipe()
         contactsBroken = false
-        for k in ["relay_url", "relay_key", "read_receipts", "push_on", "push_asked", "lock_timeout_ms", "terms_version",
+        for k in ["relay_url", "relay_key", "relay_home", "read_receipts", "push_on", "push_asked", "lock_timeout_ms", "terms_version",
                   "presence", "lock_fails", "lock_until", "lock_wait", "lock_wait_at", "lock_pending",
                   "premium_until", "premium_enforced", "premium_active"] {
             prefs.removeObject(forKey: k)
@@ -710,6 +714,13 @@ final class AppModel: ObservableObject {
     func createIdentity(relayUrl: String, relayKeyHex: String) {
         Task {
             guard let client = qt else { return }
+            // Conta nova: comeca no relay principal (se estiver fechado a contas novas, o
+            // startLink passa ao seguinte da lista).
+            Relays.resetHome(prefs)
+            let h = Relays.home(prefs)
+            ui.relayUrl = h.url
+            ui.relayKeyHex = h.pin
+            try? client.callSetRelay(name: nil)
             if Config.relayEditable && !applyRelay(relayUrl, relayKeyHex) { return }
             do {
                 let me = try await background { try client.createIdentity() }
@@ -759,6 +770,36 @@ final class AppModel: ObservableObject {
         RelayLink(qt: client, url: ui.relayUrl, pinnedRelayKeyHex: ui.relayKeyHex.isEmpty ? nil : ui.relayKeyHex)
     }
 
+    /// Relays ja tentados nesta sessao por estarem fechados a contas novas.
+    private var relaysTried = Set<String>()
+    /// Mudancas de relay nesta sessao (nunca anda aos saltos entre relays sem fim).
+    private var relayMoves = 0
+
+    /// Federacao (fase 3): o relay diz que a conta vive noutro ("conta noutro relay: X", ex.: conta
+    /// recuperada noutro telemovel), ou que ja nao aceita contas novas (tenta o seguinte da lista).
+    /// Guarda o relay da conta e volta a ligar-se a ele. Verdadeiro se mudou.
+    private func moveRelay(_ reason: String) -> Bool {
+        guard relayMoves < 4 else { return false }
+        let current = Relays.home(prefs)
+        let target: RelayInfo?
+        if let name = relayElsewhereName(reason: reason) {
+            target = Relays.byName(name)
+        } else if reason == relayNoNewAccountsReason() {
+            relaysTried.insert(current.name)
+            target = Relays.next(relaysTried)
+        } else {
+            target = nil
+        }
+        guard let target, target.name != current.name, Relays.setHome(prefs, target.name) else { return false }
+        relayMoves += 1
+        log("SealerRelay", "relay da conta: \(target.name)")
+        try? qt?.callSetRelay(name: Relays.callName(prefs))
+        ui.relayUrl = target.url
+        ui.relayKeyHex = target.pin
+        Task { await startLink() }
+        return true
+    }
+
     /// Abre as ligacoes ao relay e comeca a receber. Com `publishBundle`, republica tambem as
     /// chaves publicas (renova os 90 dias no relay).
     private func startLink(publishBundle: Bool = true) async {
@@ -778,6 +819,8 @@ final class AppModel: ObservableObject {
                 let req = try await background { try client.relayRequestRegisterBundle(bundleBytes: try client.publishableBundle()) }
                 let r = try await f.request(req)
                 if case .ack = r {} else { log("SealerRelay", "relay recusou o bundle: \(r.describe)") }
+                // Federacao: a conta vive noutro relay, ou este ja nao aceita contas novas.
+                if case .error(let reason) = r, moveRelay(reason) { return }
             } catch {
                 log("SealerRelay", "bundle: \(safeMessage(error))")
             }
@@ -2252,8 +2295,8 @@ final class AppModel: ObservableObject {
 
     // ================================================================ chamadas de voz
 
-    private func relayPin() -> Data? {
-        let hex = ui.relayKeyHex.trimmingCharacters(in: .whitespaces)
+    private func pinData(_ pinHex: String) -> Data? {
+        let hex = pinHex.trimmingCharacters(in: .whitespaces)
         guard hex.count == 64 else { return nil }
         var out = Data(capacity: 32)
         var i = hex.startIndex
@@ -2267,10 +2310,13 @@ final class AppModel: ObservableObject {
     }
 
     /// Arranca o motor de audio e entra ja na sala do relay das chamadas.
+    /// Federacao (fase 4): os dois telemoveis usam o relay das chamadas de quem liga (vem na
+    /// oferta; sem nome, o principal), mesmo que as contas estejam em relays diferentes.
     private func startCallAudio(_ client: QtClient, _ callId: String) async {
         guard callAudio == nil else { return }
-        guard let pin = relayPin() else { diag("chamada: sem a chave do relay"); return }
-        let url = ui.relayUrl
+        let r = Relays.forCall(prefs, try? client.callRelay(callId: callId))
+        guard let pin = pinData(r.pin) else { diag("chamada: sem a chave do relay"); return }
+        let url = r.url
         do {
             callAudio = try await background { try client.callAudioStart(callId: callId, relayUrl: url, relayPublicKey: pin) }
             diag("motor de audio a correr (\(url))")

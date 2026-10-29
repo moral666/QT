@@ -6,6 +6,17 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 29 de outubro de 2026: federação de relays, fases 3 e 4 (apps Android 0.9.46 e iPhone 0.9.33)
+
+- As apps têm a lista dos relays da federação (o principal e os outros, com as chaves fixadas) e guardam o
+  relay da conta. Contas novas ficam no principal, ou no seguinte se o principal estiver fechado a contas
+  novas (`RELAY_NOVAS_CONTAS=0`). Uma conta recuperada noutro telemóvel volta sozinha ao seu relay.
+- O operador trata premium, quotas e banimentos de contas de qualquer relay a partir de um só.
+- Chamadas entre contas de relays diferentes: as duas apps usam o relay das chamadas de quem liga (o nome vai
+  na oferta, só quando não é o principal). Todos os relays usam a mesma semente das fichas do vídeo.
+- Sem outros relays na build (`qtRelaysOutros` vazio), tudo funciona como antes.
+- Ver `docs/protocol-spec.md`, secções 25.2 e 25.3.
+
 ### 29 de outubro de 2026: federação de relays, fase 2 (só relay)
 
 - Mensagens, bundles, anexos e cópias de recuperação entre contas de relays diferentes: o relay de quem pede

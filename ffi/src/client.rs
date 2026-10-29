@@ -1141,6 +1141,27 @@ pub fn relay_recipient_deleted_reason() -> String {
     "o destinatario apagou a conta".to_string()
 }
 
+/// Federacao (fase 3): o relay recusou o registo porque a conta vive noutro relay
+/// ("conta noutro relay: espanha"). Devolve o nome desse relay (vazio se o relay nao o disse),
+/// ou `None` se o motivo for outro. A app muda para esse relay (da sua lista) e volta a ligar-se.
+#[uniffi::export]
+pub fn relay_elsewhere_name(reason: String) -> Option<String> {
+    let rest = reason.strip_prefix("conta noutro relay")?;
+    if rest.is_empty() {
+        return Some(String::new());
+    }
+    let name = rest.strip_prefix(": ")?;
+    let ok = (1..=32).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    Some(if ok { name.to_string() } else { String::new() })
+}
+
+/// Federacao (fase 3): o relay ja nao aceita contas novas (decisao do operador). A app tenta o
+/// relay seguinte da sua lista.
+#[uniffi::export]
+pub fn relay_no_new_accounts_reason() -> String {
+    "relay sem contas novas".to_string()
+}
+
 /// Motivo do `Error` do relay a um anexo ou chamada de uma conta sem premium, com o bloqueio
 /// ligado pelo operador (0.9.21). A app abre o ecra Premium.
 #[uniffi::export]

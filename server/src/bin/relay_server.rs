@@ -298,6 +298,8 @@ async fn main() {
         operator: load_operator(),
         fichas: load_fichas(&noise_key_path),
         federacao: arrancar_federacao(&store, &static_keys.private).await,
+        // RELAY_NOVAS_CONTAS=0: relay cheio, as apps novas vao para o relay seguinte da lista.
+        novas_contas: !matches!(std::env::var("RELAY_NOVAS_CONTAS").as_deref(), Ok("0") | Ok("false") | Ok("no")),
         fichas_per_month: std::env::var("RELAY_FICHAS_POR_MES")
             .ok()
             .and_then(|v| v.trim().parse().ok())
@@ -310,6 +312,9 @@ async fn main() {
             cfg.fichas_per_month,
             cfg.fichas_per_month as u64 * qt_core::fichas::BLOCK_SECS / 60
         );
+    }
+    if !cfg.novas_contas {
+        println!("Contas novas: fechadas (RELAY_NOVAS_CONTAS=0); as que ja existem continuam");
     }
     println!(
         "Limites: {max_conns} ligacoes, {} por autenticar, {} por conta",
