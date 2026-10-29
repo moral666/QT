@@ -6,6 +6,22 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 29 de outubro de 2026: videochamadas no iPhone (iPhone e Android 0.9.50)
+
+- O iPhone passa a ter videochamadas, como o Android: botão da videochamada na conversa (só para contactos
+  com vídeo), pedido "[Nome] quer mostrar vídeo" (Ver / Ligar a minha câmara / Agora não), trocar câmara,
+  vídeo pelo relay com as fichas anónimas (chaves verificadas no `estado.json` do site) e vídeo direto entre
+  contactos mútuos (teto conforme Wi-Fi ou dados móveis). Câmara e H.264 em hardware (AVFoundation e
+  VideoToolbox); a cifra, os pacotes e o débito continuam no núcleo Rust (feature `video` na build iOS).
+- Ecrã de chamada do iPhone com o desenho do Android: "Sealer" e o tempo no topo, barra de controlos,
+  desligar vermelho, controlos que se escondem com vídeo, ecrã sempre aceso com vídeo e apagado ao ouvido
+  só de voz. Toque longo no tempo: diagnóstico da chamada com "Copiar diagnóstico".
+- iPhone: as chamadas entre contactos mútuos passam a ligar direto (faltava `call_contacts_sync`).
+- iPhone: aviso quando o microfone deixa de funcionar a meio da chamada e, ao recuperar a conta, o que
+  volta e o que não volta.
+- A câmara só fica parada com a app fora do ecrã (a voz continua). Android sem mudanças além da versão.
+- As duas apps voltam a ter o mesmo número de versão (0.9.50; iPhone build 57, igual ao versionCode).
+
 ### 29 de outubro de 2026: relay de Espanha ligado às apps (Android 0.9.47 e iPhone 0.9.34)
 
 - Segundo relay da federação: `espanha` (`wss://relay-es.sealerapp.com`, eu-south-2), com a chave fixada nas

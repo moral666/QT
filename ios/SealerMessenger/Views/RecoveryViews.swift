@@ -167,6 +167,8 @@ struct RestoreScreen: View {
                     if !unknown.isEmpty {
                         Text(s("recovery_unknown_words", unknown.joined(separator: ", "))).foregroundStyle(c.error)
                     }
+                    // O que volta e o que nao volta, antes de recuperar (igual ao Android).
+                    Text(s("recovery_restore_what")).font(.sBodyMedium)
                     Text(s("recovery_restore_warning")).font(.sBodySmall).foregroundStyle(c.onSurfaceVariant)
                     if ui.recoveryBusy {
                         HStack(spacing: 12) { ProgressView(); Text(s("recovery_restoring")) }

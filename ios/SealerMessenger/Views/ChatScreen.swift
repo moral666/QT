@@ -31,6 +31,8 @@ struct ChatScreen: View {
     let group: GroupInfo?
     let onInfo: () -> Void
     let onCall: (Contact) -> Void
+    /// Videochamada (so para contactos que disseram que tem video).
+    var onVideoCall: (Contact) -> Void = { _ in }
 
     @State private var deleteTarget: DeleteTarget?
     @State private var viewing: ChatMessage?
@@ -148,6 +150,9 @@ struct ChatScreen: View {
                 }
             }, actions: {
                 if let contact, !blocked, !invite {
+                    if ui.videoContacts.contains(conversationId) {
+                        TopBarIcon(systemName: "video.fill", label: s("video_call_button")) { onVideoCall(contact) }
+                    }
                     TopBarIcon(systemName: "phone.fill", label: s("t_ligar")) { onCall(contact) }
                 }
                 if let contact {

@@ -257,7 +257,8 @@ actor RelayLink {
     /// Pode repetir-se sem efeito duplicado (leituras, confirmacoes, registos)? Desde a 0.9.23
     /// nao se repetem automaticamente, depois de enviados: mensagens, anexos novos, denuncias e
     /// a espera por mensagens.
-    private static let notRepeatable = ["{\"SendMessage\"", "{\"BlobCreate\"", "{\"SubmitReport\"", "{\"WaitMessages\""]
+    // IssueFichas: repetido, o relay contava o mesmo lote duas vezes no teto do mes.
+    private static let notRepeatable = ["{\"SendMessage\"", "{\"BlobCreate\"", "{\"SubmitReport\"", "{\"WaitMessages\"", "{\"IssueFichas\""]
 
     private static func repeatable(_ bytes: Data) -> Bool {
         let head = String(decoding: bytes.prefix(24), as: UTF8.self)

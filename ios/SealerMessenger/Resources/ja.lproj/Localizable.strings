@@ -30,6 +30,7 @@
 "ios_bio_changed" = "Face ID、Touch ID、またはiPhoneのパスコードが変更されました。アプリのパスコードを使って、クイックロック解除をもう一度オンにしてください。";
 "ios_bio_confirm" = "アプリのパスコードで確認してください。次に、iPhoneがFace ID、Touch ID、またはiPhoneのパスコードを求めます。";
 "ios_bio_unavailable" = "利用できません：このiPhoneにはパスコードが設定されていません。";
+"ios_camera_denied_video" = "カメラへのアクセスがないとビデオをオンにできません。iPhoneの設定で許可できます。";
 "ios_mic_denied_call" = "マイクへのアクセスがないと通話できません。iPhoneの設定でオンにできます。";
 "ios_no_image_to_paste" = "コピーされた画像がありません。";
 "ios_no_image_to_paste_hint" = "GIFキーボードでGIFをタップしてコピーし、「画像またはGIFをペースト」を選んでください。";

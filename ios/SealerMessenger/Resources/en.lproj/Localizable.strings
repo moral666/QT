@@ -30,6 +30,7 @@
 "ios_bio_changed" = "Face ID, Touch ID or the iPhone passcode changed. Use the app code and turn quick unlock on again.";
 "ios_bio_confirm" = "Confirm with your code. Next, the iPhone asks for Face ID, Touch ID or the iPhone passcode.";
 "ios_bio_unavailable" = "Unavailable: this iPhone has no passcode.";
+"ios_camera_denied_video" = "Without access to the camera, video can't be turned on. You can allow it in the iPhone Settings.";
 "ios_mic_denied_call" = "Without microphone access you cannot make calls. You can turn it on in the iPhone Settings.";
 "ios_no_image_to_paste" = "There is no copied image.";
 "ios_no_image_to_paste_hint" = "In the GIF keyboard, tap a GIF to copy it, then choose Paste image or GIF.";

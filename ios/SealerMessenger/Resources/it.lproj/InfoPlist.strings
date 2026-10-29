@@ -1,4 +1,4 @@
 /* Gerado por scripts/strings-ios.py. Nao editar a mao. */
-"NSCameraUsageDescription" = "Per leggere il codice QR di un'altra persona e aggiungerla ai contatti.";
+"NSCameraUsageDescription" = "Per leggere il codice QR di un'altra persona e per le videochiamate.";
 "NSMicrophoneUsageDescription" = "Per le chiamate vocali e i messaggi vocali.";
 "NSFaceIDUsageDescription" = "Per sbloccare SEALER senza digitare il codice.";

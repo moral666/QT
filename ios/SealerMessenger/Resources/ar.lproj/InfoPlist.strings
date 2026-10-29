@@ -1,4 +1,4 @@
 /* Gerado por scripts/strings-ios.py. Nao editar a mao. */
-"NSCameraUsageDescription" = "لمسح رمز QR الخاص بشخص آخر وإضافته إلى جهات الاتصال.";
+"NSCameraUsageDescription" = "لمسح رمز QR الخاص بشخص آخر ولمكالمات الفيديو.";
 "NSMicrophoneUsageDescription" = "للمكالمات الصوتية والرسائل الصوتية.";
 "NSFaceIDUsageDescription" = "لفتح قفل تطبيق SEALER دون كتابة رمز المرور.";

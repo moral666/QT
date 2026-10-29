@@ -29,7 +29,7 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 ## O que a app faz
 
 - **Conversas a dois e em grupo** (até 10 pessoas, 3 administradores), entre Android e iPhone, com *Enviado / Entregue / Visto*.
-- **Chamadas de voz cifradas** no Android e no iPhone, também entre os dois, e **videochamadas** no Android. No Android tocam com a app fechada ou o telemóvel bloqueado, com toque próprio.
+- **Chamadas de voz e videochamadas cifradas** no Android e no iPhone, também entre os dois. No Android tocam com a app fechada ou o telemóvel bloqueado, com toque próprio.
 - **Fotos, GIFs, mensagens de voz e ficheiros até 25 MB.** Cada ficheiro tem uma chave própria e sai do servidor quando é descarregado (ou ao fim de 24 horas).
 - **Notificações com a app fechada**, sempre genéricas ("Tens mensagens novas"): sem nome nem texto.
 - **Foto de perfil** só para os teus contactos, cifrada (o servidor nem sabe que é uma foto). Pode mudar-se de 72 em 72 horas.

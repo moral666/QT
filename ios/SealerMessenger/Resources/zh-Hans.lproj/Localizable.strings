@@ -30,6 +30,7 @@
 "ios_bio_changed" = "面容 ID、触控 ID或iPhone密码已更改。请使用应用密码，并重新开启快速解锁。";
 "ios_bio_confirm" = "请输入应用密码确认。接下来，iPhone会要求验证面容 ID、触控 ID或iPhone密码。";
 "ios_bio_unavailable" = "不可用：此iPhone未设置密码。";
+"ios_camera_denied_video" = "没有摄像头权限，无法打开视频。你可以在iPhone设置中允许。";
 "ios_mic_denied_call" = "没有麦克风权限，无法进行通话。你可以在iPhone设置中开启。";
 "ios_no_image_to_paste" = "没有已复制的图片。";
 "ios_no_image_to_paste_hint" = "在GIF键盘中点击GIF进行复制，然后选择“粘贴图片或GIF”。";

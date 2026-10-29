@@ -19,14 +19,13 @@ legacy-api = []
 # chamadas). Precisa do cmake para compilar o libopus. Android e iPhone (desde a 0.9.13 do iPhone).
 calls = ["pq", "dep:qt_call"]
 # Videochamadas (fase 5): este telemovel diz aos outros que tem video (so assim aparece o
-# botao da camara). So numa build com o ecra do video (Android desde a 5b); o iPhone liga-a
-# quando tiver o ecra.
+# botao da camara). So numa build com o ecra do video (Android desde a 5b, iPhone desde a 0.9.50).
 video = ["calls"]
 # Build Android: SQLCipher+OpenSSL embebidos (sem dependencias do sistema).
 android = ["pq", "calls", "video", "qt_storage/bundled-sqlcipher"]
 # Build iOS: igual ao Android (SQLCipher+OpenSSL embebidos, sem dependencias do sistema),
-# com as chamadas de voz (ainda sem video: nao o anuncia, as chamadas com o Android ficam so de voz).
-ios = ["pq", "calls", "qt_storage/bundled-sqlcipher"]
+# com as chamadas de voz e as videochamadas (desde a 0.9.50).
+ios = ["pq", "calls", "video", "qt_storage/bundled-sqlcipher"]
 
 [lib]
 name = "qt_ffi"
