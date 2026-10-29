@@ -1026,9 +1026,56 @@ p {
   text-transform: uppercase;
 }
 
-.status-pill__tag {
+/* Segunda linha: um ponto por relay (Suécia, Espanha) e os testes fechados. */
+.status-pill__sub {
   grid-row: 2;
   grid-column: 2 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.status-pill__relays {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.status-pill__relays[hidden] {
+  display: none;
+}
+
+.status-relay {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--ice);
+  font: 500 0.75rem / 1 var(--font-text);
+  letter-spacing: 0.01em;
+}
+
+.status-relay__dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: #34d378;
+  box-shadow: 0 0 0.35rem color-mix(in srgb, #34d378 60%, transparent);
+}
+
+.status-relay[data-state="off"] {
+  color: #ffb3b3;
+}
+
+.status-relay[data-state="off"] .status-relay__dot {
+  background: #ff4d4d;
+  box-shadow: none;
+}
+
+.status-pill__relays:not([hidden]) + .status-pill__tag::before {
+  content: "· ";
+}
+
+.status-pill__tag {
   color: var(--mist);
   font: 500 0.75rem / 1 var(--font-text);
   letter-spacing: 0.01em;
@@ -1045,6 +1092,15 @@ p {
 
 .status-pill[data-state="off"] .status-pill__text {
   color: #ffb3b3;
+}
+
+.status-pill[data-state="partial"] .status-pill__dot {
+  --dot: #f5b942;
+}
+
+.status-pill[data-state="partial"] .status-pill__text,
+.status-pill[data-state="partial"] .status-pill__mini {
+  color: #ffd98a;
 }
 
 .status-pill[data-state="checking"] .status-pill__dot {
@@ -1090,7 +1146,8 @@ p {
 
 /* Ecrãs estreitos: não cabem nome, estado e botão lado a lado. O estado passa a ser
    uma segunda linha do nome (por baixo de "SEALER", à direita do logótipo) e a barra
-   mantém a mesma altura. A linha dos testes fica só na frase completa (title). */
+   mantém a mesma altura. A linha dos relays e dos testes fica só na frase completa (title);
+   com um relay em baixo, o estado geral fica amarelo ("parcial"). */
 @media (max-width: 760px) {
   .bar__start .bar__brand span {
     transform: translateY(-0.5rem);
@@ -1117,7 +1174,8 @@ p {
     height: 0.4rem;
   }
 
-  .status-pill__tag {
+  .status-pill__tag,
+  .status-pill__sub {
     display: none;
   }
 
