@@ -7,4 +7,4 @@ QT_RELAY_PIN = f018d46b67d2437571cefc86827dec0dc3b0fd586bd22c664d3839f6a1c67f1a
 // OUTROS relays, por ordem, "nome|wss:/$()/host|pin" separados por ';'. Contas novas ficam no de
 // cima; se ele ja nao aceitar contas novas (decisao do operador), no seguinte.
 QT_RELAY_NAME = estocolmo
-QT_RELAYS_OTHERS =
+QT_RELAYS_OTHERS = espanha|wss:/$()/relay-es.sealerapp.com|375dab0c8ba0157b47fd2a826fbc2d4fb8e9ddfe378ca467d6e615a51365b74d

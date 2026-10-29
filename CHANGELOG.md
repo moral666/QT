@@ -6,6 +6,11 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 29 de outubro de 2026: relay de Espanha ligado às apps (Android 0.9.47 e iPhone 0.9.34)
+
+- Segundo relay da federação: `espanha` (`wss://relay-es.sealerapp.com`, eu-south-2), com a chave fixada nas
+  duas apps (`qtRelaysOutros` / `QT_RELAYS_OTHERS`). O principal continua a ser Estocolmo.
+
 ### 29 de outubro de 2026: federação de relays, fases 3 e 4 (apps Android 0.9.46 e iPhone 0.9.33)
 
 - As apps têm a lista dos relays da federação (o principal e os outros, com as chaves fixadas) e guardam o
