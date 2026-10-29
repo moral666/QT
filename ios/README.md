@@ -87,7 +87,7 @@ QT_ENTITLEMENTS = SealerMessenger/SealerMessenger.entitlements
 
 | | Debug (▶ normal) | Release (Product → Archive) |
 |---|---|---|
-| Relay | editável em "Opções de teste"; por omissão o de produção (`wss://relay.sealer.pt`) | **fixo**: `Configs/Relay.xcconfig` |
+| Relay | editável em "Opções de teste"; por omissão o de produção (`wss://relay.sealerapp.com`) | **fixo**: `Configs/Relay.xcconfig` |
 | `ws://` sem TLS | permitido | recusado (no código e no ATS) |
 | Botão "Relay (teste)" | visível | escondido |
 

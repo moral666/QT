@@ -30,7 +30,7 @@ Em produção, depois de atualizar o relay, um teste pequeno (1 ligação, até 
 guardado se for recusado):
 
 ```
-cargo run --release -p qt_server --example abuso -- --relay wss://relay.sealer.pt --pin <pin> --modo descartaveis
+cargo run --release -p qt_server --example abuso -- --relay wss://relay.sealerapp.com --pin <pin> --modo descartaveis
 ```
 
 ---

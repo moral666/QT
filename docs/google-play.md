@@ -5,8 +5,8 @@ a secção no fim ("Notificações FCM"), que muda algumas respostas.
 
 Endereços que a Play pede:
 
-- Política de privacidade: `https://sealer.pt/privacidade`
-- Apagar a conta (link web): `https://sealer.pt/apagar-conta`
+- Política de privacidade: `https://sealerapp.com/privacidade`
+- Apagar a conta (link web): `https://sealerapp.com/apagar-conta`
 
 ---
 
@@ -25,7 +25,7 @@ da pessoa (a chave pública que o servidor guarda) declara-se.
 | Todos os dados recolhidos são cifrados em trânsito? | **Sim** (TLS mais Noise até ao servidor) |
 | Que métodos de criação de conta a app suporta? | **Outro**: "A conta é um par de chaves criado no telemóvel, sem nome de utilizador, palavra-passe, telefone nem email." |
 | Dás aos utilizadores uma forma de pedir a eliminação dos dados? | **Sim** |
-| URL para apagar a conta | `https://sealer.pt/apagar-conta` |
+| URL para apagar a conta | `https://sealerapp.com/apagar-conta` |
 
 ### Tipos de dados
 
@@ -58,7 +58,7 @@ para que outros possam iniciar uma conversa, e usa o ID para guardar as mensagen
 
 - **Na app:** menu → **Destruir perfil e dados**. Apaga primeiro no servidor (chaves
   públicas e mensagens em espera) e depois tudo do telemóvel.
-- **Na web:** `https://sealer.pt/apagar-conta`. Como não há email nem palavra-passe, a
+- **Na web:** `https://sealerapp.com/apagar-conta`. Como não há email nem palavra-passe, a
   página explica como apagar na app e o que acontece se a app já foi desinstalada (o
   servidor apaga tudo sozinho: mensagens ao fim de 30 dias, chaves públicas ao fim de 90).
 - **O que fica depois de apagar:** durante 30 dias, o servidor lembra-se só de que aquele
@@ -74,10 +74,10 @@ A política da Play aplica-se a conversas 1 a 1. O que exige e onde está:
 - **Bloquear utilizadores:** na conversa, menu ⋮ → Bloquear (também para quem não está nos
   contactos). Lista e desbloqueio em menu → Contactos bloqueados.
 - **Aceitar os termos antes de usar:** ecrã "Antes de começar", com os termos
-  (`https://sealer.pt/termos`) e a política de privacidade.
+  (`https://sealerapp.com/termos`) e a política de privacidade.
 - **Denunciar (desde a 0.9.18):** na conversa, menu ⋮ → Denunciar. A pessoa escolhe o motivo e
   as mensagens a incluir; seguem cifradas para a equipa do Sealer, que pode banir a conta no
-  relay. O contacto fica bloqueado. Também por `privacidade@sealer.pt`. Como as mensagens são
+  relay. O contacto fica bloqueado. Também por `privacidade@sealerapp.com`. Como as mensagens são
   cifradas ponta a ponta, o servidor não analisa conteúdos: só vê o que a pessoa decide denunciar.
 
 ## 4. Criptografia / exportação

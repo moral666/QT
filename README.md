@@ -4,7 +4,7 @@
 
 **SEALER** é um mensageiro privado: sem número de telefone, sem email, com cifra ponta a ponta e proteção pós-quântica. **QT** é o nome do protocolo e deste repositório.
 
-**Estado:** versão de testes, em testes fechados. App Android **0.9.46**, app iPhone **0.9.33**, servidor em produção.
+**Estado:** versão de testes, em testes fechados. Apps Android e iPhone **0.9.50**, com dois relays em federação na União Europeia (Estocolmo e Espanha).
 
 [Read this in English →](README.en.md)
 
@@ -39,6 +39,7 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 - **Bloqueio da app** com código próprio, impressão digital ou rosto (Face ID no iPhone). Depois de 5 códigos errados a espera vai até 15 minutos, e mudar a hora do telemóvel não a salta.
 - **Chave de recuperação:** 12 palavras recuperam o ID, os contactos, os bloqueados e a medalha num telemóvel novo. A cópia fica cifrada no servidor; o histórico e os grupos não vão nela.
 - **Dez línguas:** português, inglês, francês, espanhol, alemão, italiano, japonês, chinês simplificado, hindi e árabe (da direita para a esquerda).
+- **Dois servidores, uma só rede:** a tua conta vive num dos relays da federação e falas com quem está no outro sem dares por isso (ver [Federação](#federação-dois-relays-uma-só-rede)).
 - **Apagar a conta** do telemóvel e do servidor com um toque.
 
 ## Como protege a privacidade
@@ -53,12 +54,25 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 
 O que isto protege e o que não protege está em [`docs/threat-model.md`](docs/threat-model.md) e [`docs/known-limitations.md`](docs/known-limitations.md).
 
+## Federação: dois relays, uma só rede
+
+Desde 29/10/2026 a SEALER tem **dois relays em federação**, os dois na União Europeia: `estocolmo` (AWS eu-north-1) e `espanha` (AWS eu-south-2). Cada conta vive num só relay, e quem está num fala com quem está no outro como se fosse o mesmo servidor.
+
+- **O ID não muda:** continua a ser a chave pública (`qt1:...`). Os relays perguntam uns aos outros onde está cada conta, e uma conta só pode existir num relay.
+- **A app fala só com o seu relay**, por uma ligação. Mensagens, chaves para começar conversas, anexos e a cópia de recuperação seguem de relay para relay.
+- **O remetente continua selado:** o relay de destino só fica a saber que a mensagem veio do outro relay, não de quem.
+- **Federação fechada:** só os relays de uma lista aprovada falam entre si, por `wss://<relay>/fed`, com Noise_XX e as chaves fixadas dos dois lados. O HAProxy só deixa passar os IPs dos relays da lista.
+- **Chamadas entre relays:** as duas apps usam o relay das chamadas de quem liga.
+- **Sem registos dos pedidos:** a informação "esta conta está no relay X" fica só em memória (até 24 horas), e os relays só contam quantas mensagens trocaram.
+
+O desenho aceita mais relays. O protocolo entre relays está na secção 25 de [`docs/protocol-spec.md`](docs/protocol-spec.md) e os limites em [`docs/known-limitations.md`](docs/known-limitations.md) (14).
+
 ## Estado e próximos passos
 
 **Testado:**
 
 - Todo o núcleo em Rust (criptografia, transporte, servidor, armazenamento e ponte para as apps), com a suite de testes a passar.
-- Servidor numa AWS EC2 em Estocolmo, em `wss://relay.sealer.pt`, com o Redis só em `127.0.0.1` e protegido por ACL.
+- Dois relays em federação na AWS: `wss://relay.sealerapp.com` (Estocolmo) e `wss://relay-es.sealerapp.com` (Espanha), cada um com o Redis só em `127.0.0.1` e protegido por ACL.
 - App Android *release* assinada, em três Samsung e no emulador.
 - **Android 0.9.16 com iPhone 0.9.15** (20/10/2026), sem erros: adicionar, apagar e voltar a adicionar contactos, código QR, botão de partilhar o ID, todos os menus, mensagens de texto e de voz, GIFs, envio de ficheiros, bloquear contactos, apagar conversas e chamadas de voz entre Androids, entre Android e iPhone e entre iPhones.
 - **Android 0.9.22** (22/10/2026): bloqueio da app, apps recentes e recuperação da conta.
@@ -77,7 +91,7 @@ O que isto protege e o que não protege está em [`docs/threat-model.md`](docs/t
 ## Arquitetura
 
 <!-- Gerado por site/scripts/architecture_diagram.py (ver site/README.md, secção 14). -->
-![Arquitetura da SEALER: as apps de Android e iPhone usam o mesmo núcleo QT em Rust e trocam envelopes cifrados através de um relay na AWS (HAProxy, relay em Rust e Redis). O site sealer.pt está à parte, na Cloudflare.](docs/arquitetura.svg)
+![Arquitetura da SEALER: as apps de Android e iPhone usam o mesmo núcleo QT em Rust e trocam envelopes cifrados através de dois relays em federação na AWS, em Estocolmo e em Espanha (HAProxy, relay em Rust e Redis em cada um). O site sealerapp.com está à parte, na Cloudflare.](docs/arquitetura.svg)
 
 As duas apps usam o **mesmo núcleo em Rust** através do UniFFI. Toda a criptografia vive no Rust; Kotlin e Swift só fazem o ecrã.
 
@@ -85,7 +99,7 @@ As duas apps usam o **mesmo núcleo em Rust** através do UniFFI. Toda a criptog
 |---|---|
 | `core/` | Começar a sessão (X3DH e PQXDH) e cifrar cada mensagem (Double Ratchet, Sealed Sender) |
 | `transport/` | Proteção da ligação (Noise Protocol sobre WebSocket) |
-| `server/` | O "carteiro": entrega mensagens sem as ler nem saber quem as enviou. Inclui o relay das chamadas (UDP, salas anónimas) |
+| `server/` | O "carteiro": entrega mensagens sem as ler nem saber quem as enviou, também de relay para relay (federação). Inclui o relay das chamadas (UDP, salas anónimas) |
 | `call/` | Motor das chamadas: Opus 1.6 com DRED e PLC neural, jitter buffer adaptativo |
 | `storage/` | Identidade e conversas no disco, cifradas (SQLCipher) |
 | `ffi/` | A ponte para Kotlin, Swift e Python: histórico, fila de saída, anexos, grupos, chamadas |
@@ -96,7 +110,7 @@ As duas apps usam o **mesmo núcleo em Rust** através do UniFFI. Toda a criptog
 
 ## Números
 
-**Servidor sozinho** (máquina de 2 vCPU, sem TLS nem rede real): 10 000 ligações abertas sem falhas, cerca de 14 KB por ligação, ~3 300 pedidos por segundo e 0 % de CPU com as ligações paradas. Com mensagens sempre a circular, ~16 900 mensagens de 200 B por segundo. Com o HAProxy e TLS: 8 000 ligações sem falhas, cerca de 40 KB por ligação. Detalhes em [`docs/performance.md`](docs/performance.md).
+**Servidor sozinho** (máquina de 2 vCPU, sem TLS nem rede real): 10 000 ligações abertas sem falhas, cerca de 14 KB por ligação, ~3 300 pedidos por segundo e 0 % de CPU com as ligações paradas. Com mensagens sempre a circular, ~16 900 mensagens de 200 B por segundo. Com o HAProxy e TLS: 8 000 ligações sem falhas, cerca de 40 KB por ligação. Desde a 0.9.45 cada app abre uma só ligação ao relay (antes eram três). Detalhes em [`docs/performance.md`](docs/performance.md).
 
 **Entre telemóveis reais** (três Samsung em Portugal, servidor em Estocolmo, 19/10/2026):
 
@@ -107,7 +121,7 @@ As duas apps usam o **mesmo núcleo em Rust** através do UniFFI. Toda a criptog
 
 As mensagens lentas são para telemóveis a dormir: a notificação acorda-os e a mensagem chega quando a app abre.
 
-**Chamadas:** cerca de 64 ms de rede num sentido entre Portugal e Estocolmo, e cerca de 35 MB por hora em cada sentido. Num teste com 15 % dos pacotes perdidos, o DRED reconstruiu todos. A passagem do Wi-Fi para os dados móveis não corta a chamada, e há uma reserva por `wss://relay.sealer.pt/call` para redes que bloqueiam UDP. Formatos na secção 18 de [`docs/protocol-spec.md`](docs/protocol-spec.md).
+**Chamadas:** cerca de 64 ms de rede num sentido entre Portugal e Estocolmo, e cerca de 35 MB por hora em cada sentido. Num teste com 15 % dos pacotes perdidos, o DRED reconstruiu todos. A passagem do Wi-Fi para os dados móveis não corta a chamada, e há uma reserva por `wss://relay.sealerapp.com/call` para redes que bloqueiam UDP. Formatos na secção 18 de [`docs/protocol-spec.md`](docs/protocol-spec.md).
 
 ## Para programadores
 
@@ -193,11 +207,11 @@ Passo a passo em [`ios/README.md`](ios/README.md).
 Numa EC2 nova com Ubuntu 24.04 (Security Group com 22, 80 e 443 TCP, e 443 UDP para as chamadas):
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/moral666/QT/site-sealer/deploy/aws/setup-ec2.sh
+curl -fsSLO https://raw.githubusercontent.com/moral666/QT/p2p-teste/deploy/aws/setup-ec2.sh
 sudo bash setup-ec2.sh
 ```
 
-Instala o Redis (só `127.0.0.1`, ACL mínima), o servidor e o relay das chamadas como serviços systemd isolados e o HAProxy com certificado TLS (certbot), e mostra o URL `wss://` e a chave de pinning para as apps. Para atualizar, corre o mesmo script: mantém a chave Noise e a password do Redis. A compilação é feita na instância e precisa de espaço (o servidor atual usa 20 GB). Detalhes em [`docs/deploy-wss.md`](docs/deploy-wss.md).
+Instala o Redis (só `127.0.0.1`, ACL mínima), o servidor e o relay das chamadas como serviços systemd isolados e o HAProxy com certificado TLS (certbot), e mostra o URL `wss://` e a chave de pinning para as apps. Para atualizar, corre o mesmo script: mantém a chave Noise e a password do Redis. A compilação é feita na instância e precisa de espaço (o servidor atual usa 20 GB). Detalhes em [`docs/deploy-wss.md`](docs/deploy-wss.md). Para juntar o relay à federação: `/etc/qt/federacao.json` nos dois relays (secção 25 de [`docs/protocol-spec.md`](docs/protocol-spec.md)).
 
 ## Documentação
 
