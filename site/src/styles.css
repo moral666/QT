@@ -840,6 +840,13 @@ p {
   fill: var(--lilac);
 }
 
+/* Federação: a ligação entre os dois relays é contínua e na cor dos relays. */
+.dia__line--fed {
+  stroke: var(--cold-light);
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+
 .tile--diagram .tile__title {
   margin-top: 0;
 }

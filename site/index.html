@@ -100,7 +100,7 @@
 
         <h1 class="wordmark" id="hero-title" data-i18n="index.3">SEALER</h1>
         <p class="lede" data-i18n="index.4">Mensagens que só tu e quem as recebe conseguem&nbsp;ler.</p>
-        <p class="status" data-i18n="index.5">Para Android e iPhone. Em versão de testes (Android&nbsp;0.9.45, iPhone&nbsp;0.9.30).</p>
+        <p class="status" data-i18n="index.5">Para Android e iPhone. Em versão de testes (Android&nbsp;0.9.50, iPhone&nbsp;0.9.50).</p>
         <p class="more" data-i18n="index.6"><a class="more__link" href="./como-funciona">Vê como funciona <span aria-hidden="true">→</span></a><a class="more__link more__link--ghost" href="./funcionalidades">O que a app faz</a></p>
         <details class="lang"><summary aria-label="Idioma / Language / Langue / Sprache / Lingua / 言語 / 语言 / भाषा / اللغة"><svg class="lang__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9M12 3c-2.5 2.6-3.8 5.6-3.8 9s1.3 6.4 3.8 9" /></svg><span class="lang__current" lang="pt-PT">Português</span></summary><ul class="lang__list"><li><a data-lang="pt" lang="pt-PT" href="?lang=pt">Português</a></li><li><a data-lang="en" lang="en" href="?lang=en">English</a></li><li><a data-lang="fr" lang="fr" href="?lang=fr">Français</a></li><li><a data-lang="es" lang="es" href="?lang=es">Español</a></li><li><a data-lang="de" lang="de" href="?lang=de">Deutsch</a></li><li><a data-lang="it" lang="it" href="?lang=it">Italiano</a></li><li><a data-lang="ja" lang="ja" href="?lang=ja">日本語</a></li><li><a data-lang="zh" lang="zh-Hans" href="?lang=zh">简体中文</a></li><li><a data-lang="hi" lang="hi" href="?lang=hi">हिन्दी</a></li><li><a data-lang="ar" lang="ar" dir="rtl" href="?lang=ar">العربية</a></li></ul></details>
         <p class="hint" aria-hidden="true">
@@ -259,29 +259,33 @@
         <div class="group__tiles">
           <article class="tile tile--arquitetura tile--diagram" data-cell="0-2" aria-labelledby="t-arquitetura">
             <p class="tile__label tile__label--group" data-i18n="index.62">Arquitetura</p>
-            <svg class="dia" viewBox="0 0 240 118" role="img" aria-label="Diagrama: um telemóvel envia ao servidor, que entrega ao outro telemóvel." data-i18n-aria-label="index.@4">
+            <svg class="dia" viewBox="0 0 240 122" role="img" aria-label="Diagrama: um telemóvel envia ao servidor na Suécia, que passa a mensagem ao servidor em Espanha, que a entrega ao outro telemóvel." data-i18n-aria-label="index.@4">
               <defs>
                 <marker id="dia-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                   <path class="dia__arrow" d="M0 0 8 4 0 8z" />
                 </marker>
               </defs>
-              <rect class="dia__box" x="2" y="4" width="92" height="38" rx="12" />
-              <text class="dia__text" x="48" y="28" text-anchor="middle" data-i18n="index.63">Telemóvel</text>
-              <rect class="dia__box" x="146" y="4" width="92" height="38" rx="12" />
-              <text class="dia__text" x="192" y="28" text-anchor="middle" data-i18n="index.64">Telemóvel</text>
-              <rect class="dia__box dia__box--relay" x="70" y="76" width="100" height="38" rx="12" />
-              <text class="dia__text" x="120" y="100" text-anchor="middle" data-i18n="index.65">Servidor</text>
-              <path class="dia__line" d="M48 42 C48 64 70 70 84 76" marker-end="url(#dia-arrow)" />
-              <path class="dia__line" d="M156 76 C170 70 192 64 192 42" marker-end="url(#dia-arrow)" />
+              <!-- Telemóveis em cima; em baixo os dois relays da federação, ligados entre si. -->
+              <rect class="dia__box" x="2" y="4" width="92" height="36" rx="12" />
+              <text class="dia__text" x="48" y="27" text-anchor="middle" data-i18n="index.63">Telemóvel</text>
+              <rect class="dia__box" x="146" y="4" width="92" height="36" rx="12" />
+              <text class="dia__text" x="192" y="27" text-anchor="middle" data-i18n="index.64">Telemóvel</text>
+              <rect class="dia__box dia__box--relay" x="2" y="82" width="92" height="36" rx="12" />
+              <text class="dia__text" x="48" y="105" text-anchor="middle" data-i18n="index.65">Suécia</text>
+              <rect class="dia__box dia__box--relay" x="146" y="82" width="92" height="36" rx="12" />
+              <text class="dia__text" x="192" y="105" text-anchor="middle" data-i18n="index.87">Espanha</text>
+              <path class="dia__line" d="M48 41V79" marker-end="url(#dia-arrow)" />
+              <path class="dia__line dia__line--fed" d="M97 100H143" marker-start="url(#dia-arrow)" marker-end="url(#dia-arrow)" />
+              <path class="dia__line" d="M192 81V43" marker-end="url(#dia-arrow)" />
             </svg>
-            <h3 class="tile__title tile__title--small" id="t-arquitetura" data-i18n="index.66">A cifra acontece nos telemóveis</h3>
-            <p class="tile__text" data-i18n="index.67">O servidor (relay) só guarda e entrega envelopes&nbsp;fechados.</p>
+            <h3 class="tile__title tile__title--small" id="t-arquitetura" data-i18n="index.66">Dois servidores, uma só rede</h3>
+            <p class="tile__text" data-i18n="index.67">A tua conta vive num deles. Para quem está no outro, a mensagem passa entre os dois, sempre&nbsp;fechada.</p>
           </article>
           <article class="tile tile--arquitetura" data-cell="2-4" aria-labelledby="t-relay">
             <p class="tile__label tile__label--group" data-i18n="index.68">Arquitetura</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="7" width="30" height="13" rx="3.5" /><rect x="9" y="27" width="30" height="13" rx="3.5" /><path d="M15 13.5h.01M15 33.5h.01M21 13.5h12M21 33.5h12" /></svg>
-            <h3 class="tile__title" id="t-relay" data-i18n="index.69">Servidor na União Europeia</h3>
-            <p class="tile__text" data-i18n="index.70">O relay corre em Estocolmo, com uma fila de mensagens em Redis. Nunca tem as chaves&nbsp;privadas.</p>
+            <h3 class="tile__title" id="t-relay" data-i18n="index.69">Federação fechada</h3>
+            <p class="tile__text" data-i18n="index.70">Um relay em Estocolmo e outro em Espanha, ligados pelo protocolo Noise com as chaves fixadas dos dois lados. Só entram relays aprovados pela SEALER, e nenhum tem as chaves&nbsp;privadas.</p>
           </article>
         </div>
       </section>
