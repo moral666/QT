@@ -908,3 +908,95 @@ fn decode_entry(bytes: &[u8]) -> Option<QueuedMessage> {
     }
     Some(QueuedMessage { id, sealed_from: bytes[12..end].to_vec(), ciphertext: bytes[end..].to_vec() })
 }
+
+/// Federacao (fase 1, `federation.rs`): o que este relay sabe de uma conta.
+impl Store {
+    fn fed_pv_key(&self, user_id: &str) -> String {
+        format!("{}:fed:pv:{user_id}", self.key_prefix)
+    }
+
+    fn fed_pv_list(&self) -> String {
+        format!("{}:fed:verificar", self.key_prefix)
+    }
+
+    /// Estado de uma conta NESTE relay, para responder a outro relay. Uma ida ao Redis.
+    pub async fn fed_estado(&self, user_id: &str) -> Result<crate::federation::Estado, StoreError> {
+        use crate::federation::Estado;
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        type Linha = (Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
+        let (bundle, pv, ban, deleted): Linha = redis::pipe()
+            .get(format!("{p}:bundle:{user_id}"))
+            .get(self.fed_pv_key(user_id))
+            .get(format!("{p}:ban:{user_id}"))
+            .get(self.deleted_key(user_id))
+            .query_async(&mut conn)
+            .await?;
+        Ok(match (bundle.is_some(), pv.is_some(), ban.is_some(), deleted.is_some()) {
+            (_, _, true, _) => Estado::Banida,
+            (true, true, _, _) => Estado::TenhoPorVerificar,
+            (true, false, _, _) => Estado::Tenho,
+            (false, _, _, true) => Estado::Apagada,
+            _ => Estado::NaoTenho,
+        })
+    }
+
+    /// Conta registada sem resposta de algum relay (opcao A1): fica para verificar
+    /// quando ele voltar. A marca dura o mesmo que o bundle.
+    pub async fn fed_marcar_por_verificar(&self, user_id: &str) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let (key, list) = (self.fed_pv_key(user_id), self.fed_pv_list());
+        redis::pipe()
+            .set(&key, 1u8)
+            .ignore()
+            .expire(&key, BUNDLE_TTL_SECONDS as i64)
+            .ignore()
+            .lrem(&list, 0, user_id)
+            .ignore()
+            .rpush(&list, user_id)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        Ok(())
+    }
+
+    /// As primeiras `max` contas por verificar.
+    pub async fn fed_por_verificar(&self, max: usize) -> Result<Vec<String>, StoreError> {
+        let mut conn = self.connection().await?;
+        Ok(conn.lrange(self.fed_pv_list(), 0, max.max(1) as isize - 1).await?)
+    }
+
+    /// Verificada: nenhum outro relay tem a conta.
+    pub async fn fed_verificado(&self, user_id: &str) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        redis::pipe()
+            .del(self.fed_pv_key(user_id))
+            .ignore()
+            .lrem(self.fed_pv_list(), 0, user_id)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        Ok(())
+    }
+
+    /// A conta ja estava noutro relay: este deixa de a ter (bundle, one-time prekeys e
+    /// campainha). A fila fica (expira sozinha; a fase 2 encaminha-a). Sem marca de conta
+    /// apagada: a conta continua viva, so que no outro relay.
+    pub async fn fed_largar(&self, user_id: &str) -> Result<(), StoreError> {
+        self.set_push_token(user_id, None).await?;
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        redis::pipe()
+            .del(format!("{p}:bundle:{user_id}"))
+            .ignore()
+            .del(format!("{p}:otpk:{user_id}"))
+            .ignore()
+            .del(self.fed_pv_key(user_id))
+            .ignore()
+            .lrem(self.fed_pv_list(), 0, user_id)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        Ok(())
+    }
+}
