@@ -12,15 +12,21 @@
     "run_worker_first": ["/api/*"]
   },
   "vars": {
-    // Relay da SEALER na AWS (o mesmo endereço wss:// da app, escrito com https://).
-    // O marcador de estado no canto do site verifica se este endereço responde.
-    "RELAY_URL": "https://relay.sealer.pt"
+    // Relays da SEALER na AWS, em federação (os mesmos endereços wss:// das apps, escritos com
+    // https://). O marcador de estado no canto do site verifica cada um e mostra um ponto por
+    // relay. Nomes iguais aos das apps (qtRelayName / qtRelaysOutros).
+    "RELAYS": [
+      { "nome": "estocolmo", "url": "https://relay.sealerapp.com" },
+      { "nome": "espanha", "url": "https://relay-es.sealerapp.com" }
+    ],
+    // De que relay vem o tempo "entre telemóveis" (se ainda não tiver medições: o primeiro que tiver).
+    "RELAY_TEMPO": "espanha"
   },
   "routes": [
-    { "pattern": "sealer.pt", "custom_domain": true },
-    { "pattern": "www.sealer.pt", "custom_domain": true }
+    { "pattern": "sealerapp.com", "custom_domain": true },
+    { "pattern": "www.sealerapp.com", "custom_domain": true }
   ],
-  // false: o site só existe em sealer.pt (sem o endereço *.workers.dev da conta).
+  // false: o site só existe em sealerapp.com (sem o endereço *.workers.dev da conta).
   "workers_dev": false,
   "preview_urls": false
 }
