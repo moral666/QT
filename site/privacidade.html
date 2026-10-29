@@ -30,7 +30,7 @@
     </header>
 
     <main class="legal">
-      <p class="legal__label" data-i18n="priv.1">Última atualização: 24 de outubro de 2026</p>
+      <p class="legal__label" data-i18n="priv.1">Última atualização: 29 de outubro de 2026</p>
       <h1 data-i18n="priv.2">Política de privacidade</h1>
       <p class="legal__lede" data-i18n="priv.3">
         Resumindo: não pedimos o teu número de telefone, nem email, nem nome. As tuas mensagens são cifradas no teu
@@ -63,8 +63,10 @@
 
       <h2 data-i18n="priv.12">O que passa pelo nosso servidor</h2>
       <p data-i18n="priv.13">
-        Para as mensagens chegarem a quem não está ligado no momento, passam por um servidor da SEALER (o "relay"),
-        alojado na Amazon Web Services, num centro de dados na Suécia (União Europeia). O servidor trata:
+        Para as mensagens chegarem a quem não está ligado no momento, passam por um servidor da SEALER (o
+        "relay"), alojado na Amazon Web Services. Há dois, ligados entre si em federação: um num centro de dados
+        na Suécia e outro em Espanha, os dois na União Europeia. A tua conta fica só num deles. O servidor
+        trata:
       </p>
       <ul>
         <li data-i18n="priv.14">
@@ -94,6 +96,17 @@
         <li data-i18n="priv.19">
           <strong>O endereço de rede (IP) do teu telemóvel</strong>: é necessário para manter a ligação. Só é usado em
           memória enquanto estás ligado e não fica registado.
+        </li>
+        <li data-i18n="priv.48">
+          <strong>Mensagens entre os dois servidores</strong>: quando escreves a alguém cuja conta está no outro
+          servidor, o teu pergunta ao outro onde está essa conta e entrega-lhe a mensagem já cifrada, por uma
+          ligação cifrada só entre os dois. O servidor de destino fica a saber que alguém do outro servidor
+          procurou aquela conta e que chegou uma mensagem para ela, mas não quem a enviou. O mesmo vale para as
+          chaves públicas que servem para começar uma conversa, para os anexos (ficam no servidor de quem os
+          enviou) e para a cópia de recuperação, que se encontra a partir de qualquer um dos dois. As chamadas
+          que passam pelo servidor usam o servidor das chamadas de quem liga. Os servidores guardam só em
+          memória, até 24 horas, em que servidor está cada conta procurada, e não registam estes pedidos. Só
+          servidores aprovados pela SEALER fazem parte da federação.
         </li>
       </ul>
       <p data-i18n="priv.20">
@@ -128,7 +141,7 @@
 
       <h2 data-i18n="priv.31">Quem mais está envolvido</h2>
       <ul>
-        <li data-i18n="priv.32">Amazon Web Services: aloja o servidor (na Suécia). Só vê dados cifrados e técnicos.</li>
+        <li data-i18n="priv.32">Amazon Web Services: aloja os servidores (na Suécia e em Espanha). Só vê dados cifrados e técnicos.</li>
         <li data-i18n="priv.33">Cloudflare: aloja este site (ver a <a href="./politica-de-cookies">política de cookies</a>).</li>
         <li data-i18n="priv.34">
           Google (Firebase Cloud Messaging): entrega o aviso que acorda o telemóvel quando tens a app fechada. A Google
