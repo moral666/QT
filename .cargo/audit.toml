@@ -1,0 +1,5 @@
+[advisories]
+# crypto-bigint 0.5 (RUSTSEC-2026-0387): so entra pelo voprf (elliptic-curve) e so e usado
+# nas curvas NIST. O Sealer usa Ristretto255 (core/src/fichas.rs): o codigo afetado nao corre.
+# Tirar quando o voprf passar a crypto-bigint >= 0.7.6.
+ignore = ["RUSTSEC-2026-0387"]
