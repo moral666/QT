@@ -193,18 +193,32 @@ final class CallAudioIO: @unchecked Sendable {
     private func watchdog() {
         var last = (rtCounts[0], rtCounts[1])
         var stuckFor = 0
+        var micStuckFor = 0
+        var micLostSent = false
         while running {
             usleep(500_000)
             let now = (rtCounts[0], rtCounts[1])
             let stuck = now.0 == last.0 || now.1 == last.1 || !engine.isRunning
+            let micStuck = now.0 == last.0
             last = now
             stuckFor = stuck ? stuckFor + 1 : 0
+            micStuckFor = micStuck ? micStuckFor + 1 : 0
             if stuckFor >= 3 && restarts < 3 {
                 stuckFor = 0
                 restartQueue.sync { restart(reason: "sem callbacks (micro \(now.0), altifalante \(now.1), motor \(engine.isRunning ? "sim" : "nao"))") }
+            } else if restarts >= 3 && micStuckFor >= 6 && !micLostSent {
+                // Os reinicios acabaram e o microfone continua sem dar nada ha 3 s (outra app ficou
+                // com ele): avisa uma vez (igual ao `onMicLost` do Android). O altifalante continua.
+                micLostSent = true
+                log("SealerCall", "microfone perdido")
+                if let cb = onMicLost { DispatchQueue.main.async { cb() } }
             }
+            if !micStuck { micLostSent = false }
         }
     }
+
+    /// O microfone deixou de dar som e os reinicios nao o recuperaram (chamado na fila principal).
+    var onMicLost: (() -> Void)?
 
     /// Junta as amostras do microfone em blocos de 20 ms a 48 kHz e entrega-os ao Rust.
     private func captureLoop() {

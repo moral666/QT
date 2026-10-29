@@ -30,6 +30,7 @@
 "ios_bio_changed" = "Face ID, Touch ID o el código del iPhone han cambiado. Usa el código de la app y vuelve a activar el desbloqueo rápido.";
 "ios_bio_confirm" = "Confirma con tu código. Después, el iPhone pide Face ID, Touch ID o el código del iPhone.";
 "ios_bio_unavailable" = "No disponible: este iPhone no tiene código.";
+"ios_camera_denied_video" = "Sin acceso a la cámara no se puede activar el vídeo. Puedes permitirlo en los Ajustes del iPhone.";
 "ios_mic_denied_call" = "Sin acceso al micrófono no se pueden hacer llamadas. Puedes activarlo en los Ajustes del iPhone.";
 "ios_no_image_to_paste" = "No hay ninguna imagen copiada.";
 "ios_no_image_to_paste_hint" = "En el teclado de GIF, toca un GIF para copiarlo y luego elige Pegar imagen o GIF.";

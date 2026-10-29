@@ -30,6 +30,7 @@
 "ios_bio_changed" = "Face ID, Touch ID oder der iPhone-Code haben sich geändert. Nutze den App-Code und aktiviere die Schnellentsperrung erneut.";
 "ios_bio_confirm" = "Bestätige mit deinem Code. Danach fragt das iPhone nach Face ID, Touch ID oder dem iPhone-Code.";
 "ios_bio_unavailable" = "Nicht verfügbar: Dieses iPhone hat keinen Code.";
+"ios_camera_denied_video" = "Ohne Zugriff auf die Kamera kann kein Video eingeschaltet werden. Du kannst ihn in den iPhone-Einstellungen erlauben.";
 "ios_mic_denied_call" = "Ohne Mikrofonzugriff sind keine Anrufe möglich. Du kannst ihn in den iPhone-Einstellungen aktivieren.";
 "ios_no_image_to_paste" = "Es wurde kein Bild kopiert.";
 "ios_no_image_to_paste_hint" = "Tippe in der GIF-Tastatur auf ein GIF, um es zu kopieren, und wähle dann Bild oder GIF einfügen.";

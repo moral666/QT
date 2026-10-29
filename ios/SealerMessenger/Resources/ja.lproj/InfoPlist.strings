@@ -1,4 +1,4 @@
 /* Gerado por scripts/strings-ios.py. Nao editar a mao. */
-"NSCameraUsageDescription" = "相手のQRコードを読み取って連絡先に追加するために使用します。";
+"NSCameraUsageDescription" = "相手のQRコードを読み取るため、およびビデオ通話に使用します。";
 "NSMicrophoneUsageDescription" = "音声通話とボイスメッセージに使用します。";
 "NSFaceIDUsageDescription" = "パスコードを入力せずにSEALERのロックを解除するために使用します。";

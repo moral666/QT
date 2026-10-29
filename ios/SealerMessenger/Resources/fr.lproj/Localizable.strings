@@ -30,6 +30,7 @@
 "ios_bio_changed" = "Face ID, Touch ID ou le code de l'iPhone ont changé. Utilisez le code de l'app et réactivez le déverrouillage rapide.";
 "ios_bio_confirm" = "Confirmez avec votre code. Ensuite, l'iPhone demande Face ID, Touch ID ou le code de l'iPhone.";
 "ios_bio_unavailable" = "Indisponible : cet iPhone n'a pas de code.";
+"ios_camera_denied_video" = "Sans accès à la caméra, impossible d'activer la vidéo. Vous pouvez l'autoriser dans les Réglages de l'iPhone.";
 "ios_mic_denied_call" = "Sans accès au micro, impossible de passer des appels. Vous pouvez l'activer dans les Réglages de l'iPhone.";
 "ios_no_image_to_paste" = "Aucune image copiée.";
 "ios_no_image_to_paste_hint" = "Dans le clavier de GIF, touchez un GIF pour le copier, puis choisissez Coller une image ou un GIF.";

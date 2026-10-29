@@ -17,6 +17,7 @@ struct AppRoot: View {
     @State private var showGroupInfo = false
     @State private var showPhoto = false
     @State private var micDenied = false
+    @State private var cameraDenied = false
     /// Chamada minimizada (0.9.29): o resto da app fica usavel e a barra no topo volta a chamada.
     @State private var callMinimized = false
     @Environment(\.openURL) private var openURL
@@ -76,6 +77,10 @@ struct AppRoot: View {
             Button(s("ios_open_settings")) { if let u = URL(string: UIApplication.openSettingsURLString) { openURL(u) } }
             Button(s("t_cancelar"), role: .cancel) {}
         }
+        .alert(s("ios_camera_denied_video"), isPresented: $cameraDenied) {
+            Button(s("ios_open_settings")) { if let u = URL(string: UIApplication.openSettingsURLString) { openURL(u) } }
+            Button(s("t_cancelar"), role: .cancel) {}
+        }
     }
 
     /// A chamada a chegar nunca fica escondida; minimizar so a chamar, a tocar ou atendida.
@@ -99,6 +104,18 @@ struct AppRoot: View {
         }
     }
 
+    /// Video: a camara e pedida so ao ligar a camara numa chamada (uma vez).
+    private func withCamera(_ action: @escaping () -> Void) {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: action()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { ok in
+                Task { @MainActor in if ok { action() } else { cameraDenied = true } }
+            }
+        default: cameraDenied = true
+        }
+    }
+
     @ViewBuilder
     private func screen(_ ui: UiState) -> some View {
         let openGroup = ui.openChatId.flatMap { ui.groupOf($0) }
@@ -107,7 +124,12 @@ struct AppRoot: View {
         } else if let call = ui.call, !ui.locked, !showCallBar(ui) {
             CallScreen(call: call, onAccept: { withMic { model.acceptCall() } }, onHangup: model.hangupCall,
                        onMute: model.toggleMute, onSpeaker: model.toggleSpeaker, diag: model.callDiag,
-                       onMinimize: canMinimize(call) ? { callMinimized = true } : nil)
+                       onMinimize: canMinimize(call) ? { callMinimized = true } : nil,
+                       onCamera: { if call.video.camera { model.toggleCamera() } else { withCamera { model.toggleCamera() } } },
+                       onSwitchCamera: model.switchCamera,
+                       onVideoRespond: { r in if r == .viewAndCamera { withCamera { model.respondVideo(r) } } else { model.respondVideo(r) } },
+                       selfSession: model.selfVideoSession, remoteLayer: model.remoteVideoLayer,
+                       diagnostic: model.callDiagnostic)
         } else if ui.locked {
             LockScreen(ui: ui, onCode: model.unlockWithCode, onBio: model.requestBioUnlock, onWipe: model.wipeLockedData)
         } else if !ui.termsAccepted {
@@ -133,7 +155,8 @@ struct AppRoot: View {
             LoadingScreen().task { model.closeChat() }
         } else if let id = ui.openChatId {
             ChatScreen(model: model, ui: ui, conversationId: id, group: nil, onInfo: {},
-                       onCall: { c in withMic { model.startCall(c) } })
+                       onCall: { c in withMic { model.startCall(c) } },
+                       onVideoCall: { c in withMic { withCamera { model.startCall(c, video: true) } } })
                 .transition(.move(edge: .trailing))
         } else if showRecovery {
             RecoveryScreen(ui: ui, onBack: { showRecovery = false }, onCreate: model.recoveryCreate,

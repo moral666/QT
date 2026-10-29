@@ -526,7 +526,7 @@ fn p2p_send_addrs(client: &QtClient, c: &st::rusqlite::Connection, call: &mut Ca
 }
 
 /// Este telemovel faz video? So a build com a feature `video` o anuncia (a app tem de ter o
-/// ecra do video: o iPhone ainda nao tem). Nos testes desta crate basta o motor (`calls`).
+/// ecra do video: Android desde a 5b, iPhone desde a 0.9.50). Nos testes desta crate basta o motor (`calls`).
 fn video_capable(calls: &Calls) -> bool {
     #[cfg(test)]
     if calls.no_video_caps {

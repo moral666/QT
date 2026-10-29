@@ -18,6 +18,8 @@ enum Config {
     static var relayName: String { let n = plist("QTRelayName"); return n.isEmpty ? "estocolmo" : n }
     static var relaysOthers: String { plist("QTRelaysOthers") }
     static var allowCleartext: Bool { plist("QTAllowCleartext") == "YES" }
+    /// Chaves publicas das fichas do video (fora do relay, no site). Igual ao Android.
+    static var fichasKeysURL: String { let u = plist("QTFichasKeysURL"); return u.isEmpty ? "https://sealerapp.com/estado.json" : u }
     /// Versao instalada (MARKETING_VERSION), so informativa nas Definicoes.
     static var version: String { plist("CFBundleShortVersionString") }
 

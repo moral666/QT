@@ -3,7 +3,7 @@ import CallKit
 import Foundation
 import UIKit
 
-/// Chamadas de voz no ecra do iPhone (CallKit): tocar com a app fechada ou o iPhone
+/// Chamadas de voz e videochamadas no ecra do iPhone (CallKit): tocar com a app fechada ou o iPhone
 /// bloqueado, atender, recusar, silenciar, auricular/Bluetooth. O audio, a cifra e a rede
 /// continuam no Rust (`CallAudio`); aqui so se fala com o sistema.
 ///
@@ -22,7 +22,7 @@ final class CallKitBridge: NSObject, CXProviderDelegate {
 
     private override init() {
         let cfg = CXProviderConfiguration()
-        cfg.supportsVideo = false
+        cfg.supportsVideo = true   // videochamadas desde a 0.9.50
         cfg.maximumCallGroups = 1
         cfg.maximumCallsPerCallGroup = 1
         cfg.supportedHandleTypes = [.generic]
@@ -36,11 +36,11 @@ final class CallKitBridge: NSObject, CXProviderDelegate {
 
     private static let handle = CXHandle(type: .generic, value: "SEALER")
 
-    private static func update(name: String) -> CXCallUpdate {
+    private static func update(name: String, video: Bool) -> CXCallUpdate {
         let u = CXCallUpdate()
         u.remoteHandle = handle
-        u.localizedCallerName = name.isEmpty ? s("t_chamada_sealer") : name
-        u.hasVideo = false
+        u.localizedCallerName = name.isEmpty ? s(video ? "video_call_sealer" : "t_chamada_sealer") : name
+        u.hasVideo = video
         u.supportsHolding = false
         u.supportsGrouping = false
         u.supportsUngrouping = false
@@ -49,25 +49,26 @@ final class CallKitBridge: NSObject, CXProviderDelegate {
     }
 
     /// Chamada a chegar. `done(false)`: o iOS recusou (ex.: "Nao incomodar" ou outra chamada).
-    func reportIncoming(_ uuid: UUID, name: String, done: @escaping (Bool) -> Void = { _ in }) {
-        provider.reportNewIncomingCall(with: uuid, update: Self.update(name: name)) { error in
+    func reportIncoming(_ uuid: UUID, name: String, video: Bool = false, done: @escaping (Bool) -> Void = { _ in }) {
+        provider.reportNewIncomingCall(with: uuid, update: Self.update(name: name, video: video)) { error in
             if let error { log("SealerCall", "CallKit recusou a chamada: \(error.localizedDescription)") }
             done(error == nil)
         }
     }
 
-    func updateName(_ uuid: UUID, name: String) {
-        provider.reportCall(with: uuid, updated: Self.update(name: name))
+    func updateName(_ uuid: UUID, name: String, video: Bool = false) {
+        provider.reportCall(with: uuid, updated: Self.update(name: name, video: video))
     }
 
     /// LIGAR: o sistema mostra a chamada a sair e ativa o audio.
-    func startOutgoing(_ uuid: UUID, name: String) {
+    func startOutgoing(_ uuid: UUID, name: String, video: Bool = false) {
         let action = CXStartCallAction(call: uuid, handle: Self.handle)
         action.contactIdentifier = nil
+        action.isVideo = video
         controller.request(CXTransaction(action: action)) { [weak self] error in
             guard let self else { return }
             if let error { log("SealerCall", "CallKit: ligar falhou: \(error.localizedDescription)"); return }
-            self.provider.reportCall(with: uuid, updated: Self.update(name: name))
+            self.provider.reportCall(with: uuid, updated: Self.update(name: name, video: video))
             self.provider.reportOutgoingCall(with: uuid, startedConnectingAt: Date())
         }
     }

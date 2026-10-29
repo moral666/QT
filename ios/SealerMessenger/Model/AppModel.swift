@@ -88,6 +88,8 @@ struct UiState {
     /// A lista de contactos guardada nao abriu (0.9.23): nada e gravado por cima ate o
     /// utilizador escolher reabrir a app ou comecar uma lista nova.
     var contactsUnreadable = false
+    /// Contactos com video (o botao da videochamada so aparece para eles). Vem do Rust.
+    var videoContacts: Set<String> = []
 
     func groupOf(_ conversationId: String) -> GroupInfo? {
         conversationId.hasPrefix("g:") ? groups.first { $0.conversationId == conversationId } : nil
@@ -114,6 +116,37 @@ struct CallUi: Equatable {
     var muted = false
     var speaker = false
     var endText = ""
+    /// Videochamada (quem liga comecou com a camara ligada): "Videochamada de [Nome]".
+    var videoCall = false
+    var video = VideoUi()
+}
+
+/// Video da chamada (0.9.50, igual ao VideoUi do Android).
+struct VideoUi: Equatable {
+    /// Os dois lados tem video: o botao da camara aparece.
+    var supported = false
+    /// A minha camara ligada.
+    var camera = false
+    var front = true
+    /// Aceitei o video do outro.
+    var accepted = false
+    /// Recusei o pedido atual do outro ("Agora nao").
+    var declined = false
+    var peerCamera = false
+    var peerAccepts = false
+    var peerDeclined = false
+    /// O video do outro parou (pausa por rede, sem fichas ou outra razao): o ecra mostra so a
+    /// foto ou a inicial dele, sem texto.
+    var remoteStalled = false
+    /// Quanto rodar o video do outro (graus, sentido dos ponteiros).
+    var remoteRotation: UInt32 = 0
+
+    /// "[Nome] quer mostrar video": a camara dele ligada e eu ainda nao respondi.
+    var request: Bool { peerCamera && !accepted && !declined }
+    /// "A espera de [Nome]...": a minha camara ligada e ele ainda nao respondeu.
+    var waiting: Bool { camera && !peerAccepts && !peerDeclined }
+    /// O video do outro esta no ecra.
+    var showRemote: Bool { accepted && peerCamera }
 }
 
 /// Versao dos termos de utilizacao: subir quando mudarem, para voltar a pedir a aceitacao.
@@ -182,6 +215,18 @@ final class AppModel: ObservableObject {
     private var pendingRing: (uuid: UUID, at: Double)?
     /// Carregou-se em "Atender" no CallKit antes de a app saber qual era a chamada.
     private var answerRequestedAt: Double = 0
+    // ------------------------------------------------------------- video (0.9.50)
+    /// Camara + codificador, descodificador e o aviso de mudanca de rede.
+    private var videoSender: VideoSender?
+    private var videoReceiver: VideoReceiver?
+    private var videoNet: VideoNet?
+    /// A minha camara esta ligada mas parada porque a app saiu do ecra.
+    private var cameraHeld = false
+    /// A sessao da minha camara (a pre-visualizacao liga-se a ela) e a camada do video do outro.
+    @Published private(set) var selfVideoSession: AVCaptureSession?
+    @Published private(set) var remoteVideoLayer: AVSampleBufferDisplayLayer?
+    /// Pedido das fichas do video, numa hora aleatoria (ver `scheduleFichas`).
+    private var fichasTask: Task<Void, Never>?
 
     private static let pollSeconds: UInt64 = 3
     private static let backgroundGraceSeconds: UInt64 = 25
@@ -199,6 +244,17 @@ final class AppModel: ObservableObject {
     private static let window = 4
     private static let presenceTickSeconds: UInt64 = 60
     private static let endedShowSeconds: Double = 2
+    /// Videochamada para quem afinal nao tem video: a camara desliga-se ao fim disto.
+    private static let noVideoAfterSeconds: Double = 5
+    /// Sem imagens do outro ha mais do que isto: mostra so a foto ou a inicial dele.
+    private static let remoteStallSeconds: Double = 2
+    /// Fichas do video: primeiro pedido entre 30 s e 10 min depois de abrir; depois 1-2 h.
+    private static let fichasFirstMin: Double = 30
+    private static let fichasFirstMax: Double = 600
+    private static let fichasAgain: Double = 3_600
+    private static let fichasTimeout: Double = 20
+    private static let fichasMaxBatches = 3
+    private static let fichasKeysMaxBytes = 64 * 1024
     /// Quanto tempo uma chamada toca (igual ao Rust).
     static let ringSeconds: Double = 45
     private static let answerValidSeconds: Double = 60
@@ -357,6 +413,7 @@ final class AppModel: ObservableObject {
     private func closeLinks() {
         poller?.cancel(); poller = nil
         transferTask?.cancel(); transferTask = nil
+        fichasTask?.cancel(); fichasTask = nil
         let l = link
         link = nil
         Task { await l?.close() }
@@ -380,6 +437,8 @@ final class AppModel: ObservableObject {
         Task { await presenceAnnounce(false) }
         scheduleAutoLock()
         pauseTask?.cancel()
+        // Videochamada: a minha camara pausa em silencio; a voz continua.
+        holdCameraForBackground()
         if ui.call != nil { return }   // chamada: o CallKit mantem a app viva, as ligacoes ficam
         // O iOS da ~30 s para acabar o que estava a meio (envios, "offline", recibos).
         if bgTask == .invalid {
@@ -430,6 +489,7 @@ final class AppModel: ObservableObject {
     func onAppVisible() {
         let wasVisible = visible
         visible = true
+        resumeCameraAfterBackground()
         autoLockTask?.cancel(); autoLockTask = nil
         pauseTask?.cancel(); pauseTask = nil
         endBackgroundTask()
@@ -830,6 +890,7 @@ final class AppModel: ObservableObject {
         // Copia de recuperacao: so se mudou alguma coisa desde a ultima.
         if publishBundle { scheduleBackup() }
         await refreshPremium(client, f)
+        scheduleFichas()
     }
 
     // ================================================================ notificacoes
@@ -896,7 +957,16 @@ final class AppModel: ObservableObject {
         let on = ui.presenceOn
         let ids = ui.contacts.map(\.contactId)
         if let n = try? await background({ try client.presenceConfigure(share: on, contactIds: ids) }), n > 0 { await flushOutbox() }
+        await syncCallContacts(client)
         await syncPhotos(client)
+    }
+
+    /// Diz ao Rust quem sao os contactos: com eles (se me tiverem tambem) a chamada liga direto,
+    /// sem perguntar nada, e so eles recebem o aviso "tenho video" (uma vez). Igual ao Android.
+    private func syncCallContacts(_ client: QtClient) async {
+        let ids = ui.contacts.map(\.contactId)
+        if let n = try? await background({ try client.callContactsSync(contactIds: ids) }), n > 0 { await flushOutbox() }
+        if let v = try? await background({ try client.callVideoContacts() }) { ui.videoContacts = Set(v) }
     }
 
     func setPresence(_ on: Bool) {
@@ -1109,6 +1179,81 @@ final class AppModel: ObservableObject {
         ui.premiumUntil = u
         ui.premium = premiumNow(u, active: active)
         ui.premiumLock = enforced
+    }
+
+    // ================================================================ fichas do video
+
+    /// Fichas do video pelo relay (igual ao Android): o relay das chamadas so passa o video de
+    /// quem as tem (pelo caminho direto nao se gastam). Pedem-se numa hora ALEATORIA depois de a
+    /// app se ligar (e depois mais ou menos de hora a hora), nunca com uma chamada a decorrer nem
+    /// ao comecar uma: assim o relay nao junta o pedido a uma chamada. Nada disto aparece no ecra.
+    private func scheduleFichas() {
+        fichasTask?.cancel()
+        fichasTask = Task { [weak self] in
+            var wait = Double.random(in: Self.fichasFirstMin..<Self.fichasFirstMax)
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                guard !Task.isCancelled, let self, let client = self.qt, let l = self.link else { break }
+                await self.requestFichas(client, l)
+                wait = Self.fichasAgain + Double.random(in: 0..<Self.fichasAgain)
+            }
+        }
+    }
+
+    private func requestFichas(_ client: QtClient, _ l: RelayLink) async {
+        await refreshFichasKeys(client)
+        // Varios lotes seguidos so com uma quota maior; para no primeiro sem nada.
+        for _ in 0..<Self.fichasMaxBatches {
+            if ui.call != nil || pendingRing != nil { return }
+            guard let req = try? await background({ try client.relayRequestFichas() }) else { return }
+            do {
+                let r = try await l.request(req, timeout: Self.fichasTimeout)
+                if case .fichas(let issued) = r {
+                    let n = (try? await background { try client.fichasAccept(issued: issued) }) ?? 0
+                    if n == 0 { return }
+                } else {
+                    // Relay antigo, sem fichas ou conta sem registo: tenta daqui a umas horas.
+                    log("SealerVideo", "fichas: \(r.describe)")
+                    _ = try? await background { try client.fichasRefused() }
+                    return
+                }
+            } catch {
+                // Sem rede ou resposta invalida: tenta outra vez mais tarde.
+                log("SealerVideo", "fichas: \(safeMessage(error))")
+                return
+            }
+        }
+    }
+
+    /// Chaves publicas das fichas de cada mes, publicadas FORA do relay (no site, `estado.json`,
+    /// servido pela Cloudflare). O nucleo so aceita fichas do emissor e so as gasta numa sala se a
+    /// chave for a do site (um relay comprometido nao pode dar uma chave diferente a cada conta).
+    /// Sem rede fica a ultima lista boa; sem lista nenhuma o video pelo relay fica em pausa e a
+    /// voz e o caminho direto continuam.
+    private func refreshFichasKeys(_ client: QtClient) async {
+        guard let body = await Self.fetchSmall(Config.fichasKeysURL, max: Self.fichasKeysMaxBytes) else { return }
+        do {
+            _ = try await background { try client.fichasSetPublishedKeys(json: body) }
+        } catch {
+            log("SealerVideo", "fichas: estado.json invalido (\(safeMessage(error)))")
+        }
+    }
+
+    /// GET de um ficheiro pequeno por HTTPS, sem cookies, cache nem nada da conta (o pedido e
+    /// igual para toda a gente). `nil` se falhar ou passar de `max` bytes.
+    private static func fetchSmall(_ url: String, max: Int) async -> Data? {
+        guard let u = URL(string: url), u.scheme == "https" || (Config.allowCleartext && u.scheme == "http") else { return nil }
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+        cfg.httpShouldSetCookies = false
+        cfg.timeoutIntervalForRequest = 15
+        let session = URLSession(configuration: cfg)
+        defer { session.finishTasksAndInvalidate() }
+        var req = URLRequest(url: u)
+        req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        guard let (data, resp) = try? await session.data(for: req),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200, data.count <= max else { return nil }
+        return data
     }
 
     // ================================================================ chave de recuperacao
@@ -1584,12 +1729,17 @@ final class AppModel: ObservableObject {
         let n = min(max(ui.chatMessages.count, Self.page), Self.refreshMax)
         struct R: Sendable {
             let window: [ChatMessage]?; let invites: [String]; let groups: [GroupInfo]; let online: [String]; let convs: [ConversationSummary]
+            let video: [String]
         }
         guard let r = try? await background({ () -> R in
             R(window: try cid.map { try client.messagesPage(contactId: $0, beforeSeq: nil, limit: UInt32(n)) },
               invites: try client.pendingIntros(), groups: try client.groups(), online: client.presenceOnline(),
-              convs: try client.conversations())
+              convs: try client.conversations(),
+              // Quem anunciou que tem video chega como mensagem: o botao da videochamada aparece.
+              video: (try? client.callVideoContacts()) ?? [])
         }) else { return }
+        let video = Set(r.video)
+        if video != ui.videoContacts { ui.videoContacts = video }
         ui.invites = Set(r.invites)
         ui.groups = r.groups
         let on = Set(r.online)
@@ -2361,6 +2511,9 @@ final class AppModel: ObservableObject {
             io.muted = c.muted
             io.ringback = c.phase == .calling || c.phase == .ringingOut
             if c.speaker { io.setSpeaker(true) }
+            io.onMicLost = { [weak self] in
+                Task { @MainActor in self?.ui.notice = s("call_mic_lost") }
+            }
             callIO = io
         } catch {
             diag("microfone: \(safeMessage(error))")
@@ -2376,6 +2529,8 @@ final class AppModel: ObservableObject {
     }
 
     private func stopCallMedia() {
+        cameraHeld = false
+        stopVideo()
         audioSessionActive = false
         callIO?.stop()
         callIO = nil
@@ -2393,6 +2548,7 @@ final class AppModel: ObservableObject {
                 guard let self, self.ui.call != nil || self.pendingRing != nil, let client = self.qt else { break }
                 await self.handleCallEvents(client)
                 self.expirePendingRing()
+                self.refreshVideoParams()
                 if let st = self.callAudio?.stats() {
                     self.callStatsTick += 1
                     if self.callStatsTick % 5 == 0 {
@@ -2406,23 +2562,28 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// LIGAR a um contacto (o microfone e pedido pelo ecra antes).
-    func startCall(_ contact: Contact) {
+    /// LIGAR a um contacto (o microfone, e a camara na videochamada, sao pedidos pelo ecra antes).
+    /// `video`: videochamada, com a minha camara ligada desde o inicio (o outro so a ve depois
+    /// de atender e aceitar).
+    func startCall(_ contact: Contact, video: Bool = false) {
         guard let client = qt, ui.call == nil, !ui.blocked.contains(contact.contactId) else { return }
         Task {
             if await premiumBlocked() { return }
             guard ui.call == nil else { return }
             do {
                 try await ensureSession(client, contact)
-                let start = try await background { try client.callStart(contactId: contact.contactId) }
+                let id = contact.contactId
+                let start = try await background { try video ? client.callStartVideo(contactId: id) : client.callStart(contactId: id) }
                 callDiag = []
-                diag("a ligar")
-                ui.call = CallUi(callId: start.callId, contactId: contact.contactId, name: contact.nickname, phase: .calling)
+                diag(video ? "videochamada: a ligar" : "a ligar")
+                ui.call = CallUi(callId: start.callId, contactId: contact.contactId, name: contact.nickname, phase: .calling,
+                                 videoCall: video, video: video ? VideoUi(camera: true, accepted: true) : VideoUi())
                 let uuid = UUID()
                 callKitIds[start.callId] = uuid
-                CallKitBridge.shared.startOutgoing(uuid, name: callKitName(contact))
+                CallKitBridge.shared.startOutgoing(uuid, name: callKitName(contact), video: video)
                 await flushOutbox()
                 await startCallAudio(client, start.callId)
+                if video { startSender() }
                 startCallIOIfReady()
                 ensureCallTicker()
             } catch {
@@ -2455,6 +2616,7 @@ final class AppModel: ObservableObject {
                 ui.call = a
                 if let uuid = callKitIds[c.callId] { CallKitBridge.shared.answerFromApp(uuid) }
                 startCallIOIfReady()   // se o CallKit ja ativou o audio
+                await videoOnAnswered(client, c.callId)
                 await handleCallEvents(client)
             } catch {
                 endCallLocal(s("t_a_chamada_ja_nao_esta_disponivel"))
@@ -2549,8 +2711,9 @@ final class AppModel: ObservableObject {
 
     /// Nome no ecra de chamada do iPhone (tambem no ecra bloqueado): nunca com o bloqueio da
     /// app ativo, em nenhum caminho (PushKit, ligacao ao relay ou chamada feita).
+    /// Vazio = o nome generico do CallKit ("Chamada SEALER" ou "Videochamada SEALER").
     private func callKitName(_ contact: Contact) -> String {
-        ui.lockEnabled ? s("t_chamada_sealer") : contact.nickname
+        ui.lockEnabled ? "" : contact.nickname
     }
 
     private func answerRequested() -> Bool {
@@ -2579,17 +2742,19 @@ final class AppModel: ObservableObject {
                 }
                 callDiag = []
                 diag("chamada a chegar")
-                ui.call = CallUi(callId: callId, contactId: contactId, name: contact.nickname, phase: .incoming)
+                // A op "videochamada" chega logo a seguir a oferta (normalmente no mesmo lote).
+                let videoCall = (try? await background { try client.callIsVideo(callId: callId) }) ?? false
+                ui.call = CallUi(callId: callId, contactId: contactId, name: contact.nickname, phase: .incoming, videoCall: videoCall)
                 if let pr = pendingRing {
                     // A chamada que o PushKit ja mostrou no CallKit (sem nome): passa a ter o nome.
                     pendingRing = nil
                     callKitIds[callId] = pr.uuid
-                    CallKitBridge.shared.updateName(pr.uuid, name: callKitName(contact))
+                    CallKitBridge.shared.updateName(pr.uuid, name: callKitName(contact), video: videoCall)
                 } else {
                     let uuid = UUID()
                     callKitIds[callId] = uuid
                     // A mesma regra que pelo PushKit (0.9.23): com o bloqueio da app, sem nome.
-                    CallKitBridge.shared.reportIncoming(uuid, name: callKitName(contact)) { [weak self] ok in
+                    CallKitBridge.shared.reportIncoming(uuid, name: callKitName(contact), video: videoCall) { [weak self] ok in
                         if !ok { Task { @MainActor in self?.hangupCall() } }
                     }
                 }
@@ -2613,6 +2778,7 @@ final class AppModel: ObservableObject {
                     ui.call = c
                     callIO?.ringback = false
                     if let uuid = callKitIds[callId] { CallKitBridge.shared.reportConnected(uuid) }
+                    await videoOnAnswered(client, callId)
                 }
             case .ended(let callId, _, let reason):
                 if let c = ui.call, c.callId == callId, c.phase != .ended {
@@ -2622,13 +2788,240 @@ final class AppModel: ObservableObject {
                     // Acabou antes de chegar ao ecra (so existia o toque do PushKit): para de tocar.
                     endPendingRing(reason: callKitReason(reason, incoming: true))
                 }
-            case .video:
-                // Video (fase 5): so no Android por agora. Esta build nao anuncia video, por
-                // isso o outro lado nunca mostra o botao da camara; nada a fazer aqui.
-                break
+            case .video(let callId, let supported, let peerCamera, let peerAccepts, let peerDeclined):
+                await onVideoEvent(client, callId: callId, supported: supported, peerCamera: peerCamera,
+                                   peerAccepts: peerAccepts, peerDeclined: peerDeclined)
             }
         }
         await flushOutbox()
+    }
+
+    // ---------------------------------------------------------------- video (0.9.50)
+
+    /// O outro lado: tem video, ligou/desligou a camara, aceitou ou recusou o meu.
+    private func onVideoEvent(_ client: QtClient, callId: String, supported: Bool, peerCamera: Bool,
+                              peerAccepts: Bool, peerDeclined: Bool) async {
+        // A tocar: a op "videochamada" pode chegar depois da oferta ("Videochamada de [Nome]").
+        let isVideo = (try? await background { try client.callIsVideo(callId: callId) }) ?? false
+        guard var c = ui.call, c.callId == callId else { return }
+        let v = c.video
+        var nv = v
+        // A camara dele voltou a ligar: e um pedido novo (a minha recusa antiga ja nao vale).
+        if peerCamera && !v.peerCamera { nv.declined = false }
+        nv.supported = supported
+        nv.peerCamera = peerCamera
+        nv.peerAccepts = peerAccepts
+        nv.peerDeclined = peerDeclined
+        let wasVideoCall = c.videoCall
+        c.videoCall = c.videoCall || isVideo
+        c.video = nv
+        ui.call = c
+        // A tocar no ecra do iPhone: passa a "videochamada" (sem voltar a tocar).
+        if c.videoCall && !wasVideoCall && c.phase == .incoming, let uuid = callKitIds[callId], let contact = ui.contact(c.contactId) {
+            CallKitBridge.shared.updateName(uuid, name: callKitName(contact), video: true)
+        }
+        // Recusou ver o meu video: desliga a minha camara (ninguem a ia ver), em silencio.
+        if peerDeclined && v.camera && !v.peerDeclined { await setCamera(false) }
+        syncReceiver()
+    }
+
+    /// O descodificador so corre com o video do outro aceite e no ecra.
+    private func syncReceiver() {
+        guard let v = ui.call?.video, let a = callAudio else { return }
+        if v.showRemote {
+            guard videoReceiver == nil else { return }
+            let r = VideoReceiver(audio: a)
+            r.onRotation = { [weak self] rot in
+                Task { @MainActor in
+                    guard let self, var c = self.ui.call, c.video.remoteRotation != rot else { return }
+                    c.video.remoteRotation = rot
+                    self.ui.call = c
+                }
+            }
+            videoReceiver = r
+            remoteVideoLayer = r.layer
+            r.start()
+        } else if let r = videoReceiver {
+            r.stop()
+            videoReceiver = nil
+            remoteVideoLayer = nil
+        }
+    }
+
+    /// Chamada atendida: o outro lado tem video? E a rede (Wi-Fi ou dados) para o teto.
+    private func videoOnAnswered(_ client: QtClient, _ callId: String) async {
+        let supported = (try? await background { try client.callVideoSupported(callId: callId) }) ?? false
+        if supported, var c = ui.call, c.callId == callId, !c.video.supported {
+            c.video.supported = true
+            ui.call = c
+        }
+        if videoNet == nil {
+            let net = VideoNet()
+            videoNet = net
+            net.start { [weak self] kind in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.diag("rede: \(kind)")
+                    self.callAudio?.setNetwork(kind: kind)
+                }
+            }
+        }
+        syncReceiver()
+    }
+
+    /// De segundo a segundo: videochamada para quem nao tem video, e se o video do outro parou
+    /// (o ecra mostra entao so a foto ou a inicial dele). Nada no ecra diz porque parou.
+    private func refreshVideoParams() {
+        guard let c = ui.call else { return }
+        // Videochamada para quem afinal nao tem video (app antiga): a minha camara desliga-se.
+        if c.videoCall && c.phase == .active && c.video.camera && !c.video.supported &&
+            monotonicSeconds() - c.answeredAt > Self.noVideoAfterSeconds {
+            Task { await setCamera(false) }
+            return
+        }
+        let last = videoReceiver?.lastFrameAt ?? 0
+        let stalled = c.video.showRemote && (last == 0 || monotonicSeconds() - last > Self.remoteStallSeconds)
+        if stalled != c.video.remoteStalled, var cur = ui.call {
+            cur.video.remoteStalled = stalled
+            ui.call = cur
+        }
+    }
+
+    /// Botao da camara (a permissao ja foi pedida pelo ecra). Ligar e um pedido ao outro.
+    func toggleCamera() {
+        guard let c = ui.call, c.phase == .active, c.video.supported else { return }
+        let on = !c.video.camera
+        Task {
+            if on {
+                if await premiumBlocked() { return }
+            }
+            await setCamera(on)
+        }
+    }
+
+    private func setCamera(_ on: Bool) async {
+        guard let client = qt, let c = ui.call else { return }
+        let id = c.callId
+        do {
+            _ = try await background { try client.callVideoSetCamera(callId: id, on: on) }
+        } catch {
+            diag("camara: \(safeMessage(error))")
+            return
+        }
+        if var cur = ui.call, cur.callId == id {
+            if on {
+                // Ligar a minha camara tambem aceita o video dele.
+                cur.video.camera = true
+                cur.video.accepted = true
+                cur.video.declined = false
+                cur.video.peerDeclined = false
+            } else {
+                cur.video.camera = false
+            }
+            ui.call = cur
+        }
+        if on { startSender() } else { stopSender() }
+        syncReceiver()
+        await flushOutbox()
+    }
+
+    /// Resposta ao pedido do outro: ver, ver e ligar a minha camara, ou agora nao.
+    func respondVideo(_ response: VideoResponse) {
+        guard let client = qt, let c = ui.call else { return }
+        let id = c.callId
+        Task {
+            if response == .viewAndCamera {
+                if await premiumBlocked() { return }
+            }
+            do {
+                _ = try await background { try client.callVideoRespond(callId: id, response: response) }
+            } catch {
+                diag("video: \(safeMessage(error))")
+                return
+            }
+            if var cur = ui.call, cur.callId == id {
+                switch response {
+                case .view:
+                    cur.video.accepted = true
+                    cur.video.declined = false
+                case .viewAndCamera:
+                    cur.video.accepted = true
+                    cur.video.declined = false
+                    cur.video.camera = true
+                case .notNow:
+                    cur.video.accepted = false
+                    cur.video.declined = true
+                }
+                ui.call = cur
+            }
+            await flushOutbox()
+            if response == .viewAndCamera { startSender() }
+            syncReceiver()
+        }
+    }
+
+    /// Frontal <-> traseira.
+    func switchCamera() {
+        guard let vs = videoSender, var c = ui.call else { return }
+        vs.switchCamera()
+        c.video.front.toggle()
+        ui.call = c
+    }
+
+    private func startSender() {
+        // A app fora do ecra: a camara so abre quando voltar (`resumeCameraAfterBackground`).
+        guard videoSender == nil, !cameraHeld, let a = callAudio else { return }
+        let vs = VideoSender(audio: a)
+        vs.onError = { [weak self] in
+            Task { @MainActor in self?.ui.notice = s("video_camera_failed") }
+        }
+        videoSender = vs
+        selfVideoSession = vs.session
+        vs.start(front: ui.call?.video.front ?? true)
+    }
+
+    private func stopSender() {
+        guard let vs = videoSender else { return }
+        // Fechada por nos (ex.: segundo plano): uma queda da camara a meio nao e um erro a mostrar.
+        vs.stop()
+        videoSender = nil
+        selfVideoSession = nil
+    }
+
+    /// A app saiu do ecra com a minha camara ligada: a camara fecha e nada sai, sem avisar o
+    /// outro lado (para ele o video para e ve so a minha foto ou a inicial, sem texto). A voz
+    /// continua e o botao fica "ligado". O iOS tambem nao deixa usar a camara fora do ecra.
+    private func holdCameraForBackground() {
+        guard let c = ui.call, c.phase != .ended, c.video.camera, !cameraHeld else { return }
+        cameraHeld = true
+        callAudio?.videoHold(on: true)
+        stopSender()
+    }
+
+    /// A app voltou ao ecra: a camara volta sozinha se continuava ligada.
+    private func resumeCameraAfterBackground() {
+        guard cameraHeld else { return }
+        cameraHeld = false
+        let on = ui.call.map { $0.phase != .ended && $0.video.camera } ?? false
+        callAudio?.videoHold(on: false)
+        if on { startSender() }
+    }
+
+    private func stopVideo() {
+        stopSender()
+        videoReceiver?.stop()
+        videoReceiver = nil
+        remoteVideoLayer = nil
+        videoNet?.stop()
+        videoNet = nil
+    }
+
+    /// Diagnostico da chamada em curso (toque longo no tempo da chamada): os numeros que vem do
+    /// Rust, sem IPs, IDs nem conteudo. Nada sai sozinho: o tester copia e envia se quiser.
+    func callDiagnostic() -> String? {
+        guard let a = callAudio else { return nil }
+        let d = a.diagnostic()
+        return d.isEmpty ? nil : "Sealer \(Config.version) (iOS \(UIDevice.current.systemVersion))\n\(d)"
     }
 
     // ---------------------------------------------------------------- PushKit / CallKit

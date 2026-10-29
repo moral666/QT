@@ -80,17 +80,25 @@ EXTRA = {
     "ios_use_touch_id": ("Usar Touch ID", "Use Touch ID", "Utiliser Touch ID", "Usar Touch ID", "Touch ID verwenden", "Usa Touch ID"),
     "ios_use_passcode": ("Usar o código do iPhone", "Use the iPhone passcode", "Utiliser le code de l'iPhone",
                          "Usar el código del iPhone", "iPhone-Code verwenden", "Usa il codice dell'iPhone"),
+    # Videochamadas (0.9.37): o video_camera_denied do Android fala das definicoes do Android.
+    "ios_camera_denied_video": (
+        "Sem acesso à câmara não é possível ligar o vídeo. Podes ativá-la nas Definições do iPhone.",
+        "Without access to the camera, video can't be turned on. You can allow it in the iPhone Settings.",
+        "Sans accès à la caméra, impossible d'activer la vidéo. Vous pouvez l'autoriser dans les Réglages de l'iPhone.",
+        "Sin acceso a la cámara no se puede activar el vídeo. Puedes permitirlo en los Ajustes del iPhone.",
+        "Ohne Zugriff auf die Kamera kann kein Video eingeschaltet werden. Du kannst ihn in den iPhone-Einstellungen erlauben.",
+        "Senza accesso alla fotocamera non è possibile attivare il video. Puoi consentirlo nelle Impostazioni dell'iPhone."),
 }
 
 # Textos dos pedidos de permissao do iOS (Info.plist).
 PLIST = {
     "NSCameraUsageDescription": (
-        "Para ler o código QR de outra pessoa e adicioná-la aos contactos.",
-        "To scan another person's QR code and add them to your contacts.",
-        "Pour scanner le code QR d'une autre personne et l'ajouter à vos contacts.",
-        "Para leer el código QR de otra persona y añadirla a tus contactos.",
-        "Um den QR-Code einer anderen Person zu scannen und sie zu deinen Kontakten hinzuzufügen.",
-        "Per leggere il codice QR di un'altra persona e aggiungerla ai contatti."),
+        "Para ler o código QR de outra pessoa e para as videochamadas.",
+        "To scan another person's QR code and for video calls.",
+        "Pour scanner le code QR d'une autre personne et pour les appels vidéo.",
+        "Para leer el código QR de otra persona y para las videollamadas.",
+        "Um den QR-Code einer anderen Person zu scannen und für Videoanrufe.",
+        "Per leggere il codice QR di un'altra persona e per le videochiamate."),
     "NSMicrophoneUsageDescription": (
         "Para as chamadas de voz e as mensagens de voz.",
         "For voice calls and voice messages.",
@@ -140,12 +148,16 @@ EXTRA_JA_ZH_HI = {
     "ios_use_face_id": ("Face IDを使用", "使用面容 ID", "Face ID इस्तेमाल करें"),
     "ios_use_touch_id": ("Touch IDを使用", "使用触控 ID", "Touch ID इस्तेमाल करें"),
     "ios_use_passcode": ("iPhoneのパスコードを使用", "使用iPhone密码", "iPhone पासकोड इस्तेमाल करें"),
+    "ios_camera_denied_video": (
+        "カメラへのアクセスがないとビデオをオンにできません。iPhoneの設定で許可できます。",
+        "没有摄像头权限，无法打开视频。你可以在iPhone设置中允许。",
+        "कैमरे की अनुमति के बिना वीडियो चालू नहीं हो सकता। आप इसे iPhone की सेटिंग्ज़ में चालू कर सकते हैं।"),
 }
 PLIST_JA_ZH_HI = {
     "NSCameraUsageDescription": (
-        "相手のQRコードを読み取って連絡先に追加するために使用します。",
-        "用于扫描他人的二维码并将其添加为联系人。",
-        "किसी दूसरे व्यक्ति का QR कोड स्कैन करके उन्हें अपने संपर्कों में जोड़ने के लिए।"),
+        "相手のQRコードを読み取るため、およびビデオ通話に使用します。",
+        "用于扫描他人的二维码以及视频通话。",
+        "किसी दूसरे व्यक्ति का QR कोड स्कैन करने और वीडियो कॉल के लिए।"),
     "NSMicrophoneUsageDescription": (
         "音声通話とボイスメッセージに使用します。",
         "用于语音通话和语音消息。",
@@ -176,9 +188,10 @@ EXTRA_AR = {
     "ios_use_face_id": "استخدام بصمة الوجه",
     "ios_use_touch_id": "استخدام بصمة الإصبع",
     "ios_use_passcode": "استخدام رمز دخول iPhone",
+    "ios_camera_denied_video": "لا يمكن تشغيل الفيديو دون إذن الوصول إلى الكاميرا. يمكنك السماح بذلك من إعدادات iPhone.",
 }
 PLIST_AR = {
-    "NSCameraUsageDescription": "لمسح رمز QR الخاص بشخص آخر وإضافته إلى جهات الاتصال.",
+    "NSCameraUsageDescription": "لمسح رمز QR الخاص بشخص آخر ولمكالمات الفيديو.",
     "NSMicrophoneUsageDescription": "للمكالمات الصوتية والرسائل الصوتية.",
     "NSFaceIDUsageDescription": "لفتح قفل تطبيق SEALER دون كتابة رمز المرور.",
 }

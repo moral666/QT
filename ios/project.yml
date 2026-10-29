@@ -36,6 +36,10 @@ targets:
       - sdk: CallKit.framework
       - sdk: PushKit.framework
       - sdk: AVFAudio.framework
+      - sdk: AVFoundation.framework
+      - sdk: CoreMedia.framework
+      - sdk: VideoToolbox.framework
+      - sdk: Network.framework
       - sdk: LocalAuthentication.framework
     preBuildScripts:
       - name: Verificar nucleo Rust e relay
