@@ -39,6 +39,7 @@ dump.rdb
 *.rdb
 appendonly.aof
 appendonlydir/
+appendonlydir/
 
 # --- iOS ---
 # Gerados pelo scripts/build-ios.sh e pelo xcodegen (reconstroem-se; ver ios/README.md)

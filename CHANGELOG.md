@@ -6,6 +6,14 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 29 de outubro de 2026: Redis do relay só com o AOF
+
+- O perfil de CPU (29/10/2026, 25 000 ligados) mostrou o Redis a gravar o disco de duas maneiras ao mesmo
+  tempo: o AOF e o `dump.rdb` (regras `save` por omissão), cada um com ~5% de CPU.
+- `deploy/redis/qt-redis.conf`: `save ""` (só o AOF, que já era o que o Redis lia ao arrancar) e
+  `auto-aof-rewrite-min-size 256mb` (reescreve o AOF menos vezes). `.gitignore`: `appendonlydir/`.
+- Apps, protocolo e relay sem mudanças. Entra com o `setup-ec2.sh`, que reinicia o Redis.
+
 ### 29 de outubro de 2026: relay com menos memória por ligação
 
 - Teste de carga (2 CPUs, 1,8 GB): o relay aguentava ~21 000 pessoas ligadas antes de ficar sem memória.
