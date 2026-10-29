@@ -64,8 +64,12 @@
             <span class="status-pill__mini" aria-hidden="true">A verificar</span>
             <!-- Tempo da mensagem típica entre telemóveis (envio + entrega, medianas da última hora; relay, via /api/estado). -->
             <span class="status-pill__ms" hidden></span>
-            <!-- Número de testadores: alterar aqui e em TESTING, em src/status.js. -->
-            <span class="status-pill__tag">Testes fechados<span class="status-pill__count"> · 5 pessoas</span></span>
+            <span class="status-pill__sub">
+              <!-- Um ponto por relay (Suécia, Espanha), preenchido por src/status.js. -->
+              <span class="status-pill__relays" hidden></span>
+              <!-- Número de testadores: alterar aqui e em TESTING, em src/status.js. -->
+              <span class="status-pill__tag">Testes fechados<span class="status-pill__count"> · 5 pessoas</span></span>
+            </span>
           </p>
         </div>
         <button class="bar__toggle" id="view-toggle" type="button" aria-pressed="false">Ver em lista</button>
