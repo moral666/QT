@@ -52,7 +52,7 @@ object Lang {
         "ar" to "العربية",
     )
     /** Para onde vao os avisos de erros de traducao (Definicoes > Reportar erro de traducao). */
-    const val REPORT_EMAIL = "privacidade@sealer.pt"
+    const val REPORT_EMAIL = "privacidade@sealerapp.com"
     private const val PREFS = "idioma"
     private const val KEY = "lang"
 

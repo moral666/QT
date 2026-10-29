@@ -85,7 +85,7 @@ impl IssuerKeys {
 }
 
 /// Chaves publicas das fichas de `months` meses a comecar em `from`, para o site
-/// (`https://sealer.pt/estado.json`, fora do relay): `{"versao":1,"fichas":{"AAAAMM":"hex",...}}`.
+/// (`https://sealerapp.com/estado.json`, fora do relay): `{"versao":1,"fichas":{"AAAAMM":"hex",...}}`.
 /// As apps so emitem e gastam fichas cuja chave esteja aqui: um relay comprometido nao
 /// consegue dar a cada conta uma chave diferente (particao de chaves) sem mudar o site.
 pub fn published_keys_json(seed: &[u8; 32], from: u32, months: u32) -> String {

@@ -143,12 +143,10 @@ final class AppModel: ObservableObject {
     /// O ficheiro dos contactos existe mas nao abriu nesta sessao: nao se grava por cima nem
     /// se envia a copia de recuperacao (ver `saveContacts`).
     private var contactsBroken = false
+    /// A ligacao ao relay: uma so para tudo desde a 0.9.32 (pedidos, espera por mensagens e
+    /// anexos; antes eram tres). Os pedidos vao em fila e um envio acaba a espera (ver RelayLink).
     private var link: RelayLink?
     private var poller: Task<Void, Never>?
-    /// Segunda ligacao, so para anexos: um envio grande nao atrasa as mensagens.
-    private var fileLink: RelayLink?
-    /// Terceira ligacao, so para ESPERAR por mensagens (o relay responde quando chega uma).
-    private var waitLink: RelayLink?
     private var transferTask: Task<Void, Never>?
     private var transferKick: AsyncStream<Void>.Continuation?
     private let flushLock = AsyncLock()
@@ -196,7 +194,9 @@ final class AppModel: ObservableObject {
     private static let page = 50
     private static let refreshMax = 200
     private static let chunk: UInt64 = 40 * 1024
-    private static let window = 8
+    /// Blocos em transito ao mesmo tempo (~160 KB; eram 8 ate a 0.9.31). Os anexos partilham a
+    /// ligacao com as mensagens: uma mensagem espera no maximo um lote.
+    private static let window = 4
     private static let presenceTickSeconds: UInt64 = 60
     private static let endedShowSeconds: Double = 2
     /// Quanto tempo uma chamada toca (igual ao Rust).
@@ -353,9 +353,9 @@ final class AppModel: ObservableObject {
     private func closeLinks() {
         poller?.cancel(); poller = nil
         transferTask?.cancel(); transferTask = nil
-        let ls = [link, fileLink, waitLink]
-        link = nil; fileLink = nil; waitLink = nil
-        Task { for l in ls { await l?.close() } }
+        let l = link
+        link = nil
+        Task { await l?.close() }
     }
 
     // ================================================================ bloqueio da app
@@ -437,8 +437,9 @@ final class AppModel: ObservableObject {
             }
         }
         if ui.locked || ui.loading { return }
-        if !wasVisible, let w = waitLink {
+        if !wasVisible, let w = link {
             // Em segundo plano o iOS corta as ligacoes: a espera pendente estaria num socket morto.
+            // O proximo pedido volta a ligar.
             Task { await w.close() }
         }
         resumeLinks()
@@ -766,9 +767,9 @@ final class AppModel: ObservableObject {
         linksPaused = false
         let l = newLink(client)
         link = l
-        let f = newLink(client)
-        fileLink = f
-        waitLink = newLink(client)
+        // Desde a 0.9.32 tudo vai pela mesma ligacao (o bundle e o token seguem a seguir ao
+        // pedido das mensagens, que normalmente sai primeiro).
+        let f = l
         status("A ligar ao relay…")
         poller = Task { [weak self] in await self?.receiveLoop(client) }
         startTransfers()
@@ -810,7 +811,7 @@ final class AppModel: ObservableObject {
 
     /// O iOS deu um token novo (alertas ou VoIP): manda-o ao relay se estiver ligado.
     func pushTokensChanged() {
-        guard let client = qt, let f = fileLink, ui.hasIdentity else { return }
+        guard let client = qt, let f = link, ui.hasIdentity else { return }
         Task { await registerPush(client, f) }
     }
 
@@ -819,7 +820,7 @@ final class AppModel: ObservableObject {
         prefs.set(on, forKey: "push_on")
         ui.pushOn = on
         if on { PushTokens.shared.askPermission() }
-        guard let client = qt, let f = fileLink else { return }
+        guard let client = qt, let f = link else { return }
         Task { await registerPush(client, f) }
     }
 
@@ -1185,7 +1186,7 @@ final class AppModel: ObservableObject {
         backupTask?.cancel()
         backupTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard let self, !Task.isCancelled, let client = self.qt, let l = self.fileLink ?? self.link else { return }
+            guard let self, !Task.isCancelled, let client = self.qt, let l = self.link else { return }
             let contacts = self.ui.contacts.map { BackupContact(nickname: $0.nickname, publicId: $0.publicId) }
             do {
                 let up = try await background { try client.recoveryBackup(contacts: contacts, force: force) }
@@ -1889,7 +1890,7 @@ final class AppModel: ObservableObject {
     /// Envia e descarrega os anexos pendentes. Devolve true se algo falhou e deve ser tentado.
     /// Sem rede, para logo (os outros tambem falhariam); uma recusa so salta esse anexo.
     private func runTransfers() async -> Bool {
-        guard let client = qt, let l = fileLink else { return false }
+        guard let client = qt, let l = link else { return false }
         var retry = false
         let ups = (try? await background { try client.attachmentsPendingUpload() }) ?? []
         for r in ups {
@@ -2120,19 +2121,30 @@ final class AppModel: ObservableObject {
     private func receiveLoop(_ client: QtClient) async {
         var waitBlockedUntil: Double = 0
         var first: [RelayDelivered]?
+        // A ultima espera acabou cedo e vazia porque outro pedido a interrompeu (um envio, um
+        // bloco de anexo...): volta-se logo a esperar, sem perguntar outra vez (a fila estava vazia).
+        var interrupted = false
         while !Task.isCancelled {
-            await pollOnce(first: first)
+            if !interrupted { await pollOnce(first: first) }
             first = nil
-            guard let w = waitLink, monotonicSeconds() >= waitBlockedUntil else {
+            interrupted = false
+            guard let w = link, monotonicSeconds() >= waitBlockedUntil else {
                 try? await Task.sleep(nanoseconds: Self.pollSeconds * 1_000_000_000)
                 continue
             }
             do {
                 let secs = Self.waitSeconds
                 let req = try await background { try client.relayRequestWait(timeoutSecs: secs) }
+                let t0 = monotonicSeconds()
                 switch try await w.request(req, timeout: Self.waitTimeoutSeconds) {
                 case .messages(let msgs):
                     first = msgs.isEmpty ? nil : msgs
+                    // Menos de 1 s e vazia: foi interrompida. Uma pausa curta evita um ciclo
+                    // apertado se algo correr mal (com anexos ha uma interrupcao por lote).
+                    if msgs.isEmpty && monotonicSeconds() - t0 < 1 {
+                        interrupted = true
+                        try? await Task.sleep(nanoseconds: 20_000_000)
+                    }
                 case .error(let reason):
                     if reason == Self.relayUnknownRequest {
                         waitBlockedUntil = monotonicSeconds() + Self.waitRetrySeconds

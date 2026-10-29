@@ -244,16 +244,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val storageKeys = SealerCore.storageKeys(app)
     private val bio = BioUnlock(app)
     @Volatile private var qt: QtClient? = null
+    /**
+     * A ligacao ao relay: uma so para tudo desde a 0.9.45 (pedidos, espera por mensagens e
+     * anexos; antes eram tres). Os pedidos vao em fila e um envio acaba a espera (ver RelayLink).
+     */
     @Volatile private var link: RelayLink? = null
     @Volatile private var poller: Job? = null
-    /** Segunda ligacao ao relay, so para anexos: um envio grande nao atrasa as mensagens. */
-    @Volatile private var fileLink: RelayLink? = null
-    /**
-     * Terceira ligacao, so para ESPERAR por mensagens (relayRequestWait): o relay responde no
-     * instante em que chega uma, em vez de a app perguntar de POLL_MS em POLL_MS. Fica ocupada
-     * durante a espera, por isso nao partilha a ligacao dos envios.
-     */
-    @Volatile private var waitLink: RelayLink? = null
     @Volatile private var transferJob: Job? = null
     /** Pedido das fichas do video (0006), numa hora aleatoria: ver `scheduleFichas`. */
     @Volatile private var fichasJob: Job? = null
@@ -435,10 +431,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         fichasJob = null
         link?.shutdown()
         link = null
-        fileLink?.shutdown()
-        fileLink = null
-        waitLink?.shutdown()
-        waitLink = null
         // Imagens decifradas que estavam em memoria para o ecra, e ficheiros abertos noutra app.
         SealerImages.clearMemory()
         AttachmentCache.clear()
@@ -581,10 +573,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             transferJob = null
             link?.shutdown()
             link = null
-            fileLink?.shutdown()
-            fileLink = null
-            waitLink?.shutdown()
-            waitLink = null
             linksPaused = true
         }
         Log.d(TAG, "segundo plano: ligacoes ao relay fechadas")
@@ -874,16 +862,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val client = qt ?: return
         poller?.cancel()
         link?.shutdown()
-        link = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
+        val l = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
+        link = l
         transferJob?.cancel()
-        fileLink?.shutdown()
-        fileLink = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
-        waitLink?.shutdown()
-        waitLink = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
         status("A ligar ao relay…")
-        // O bundle vai pela ligacao dos anexos (normalmente parada): assim nao passa a frente
-        // do pedido de mensagens na ligacao principal, e as mensagens aparecem mais cedo.
-        val bundleLink = fileLink!!
+        // Desde a 0.9.45 o bundle vai pela mesma ligacao, a seguir ao pedido das mensagens
+        // (o receiveLoop arranca primeiro): normalmente as mensagens continuam a aparecer primeiro.
+        val bundleLink = l
         poller = viewModelScope.launch(Dispatchers.IO) { receiveLoop(client) }
         transferJob = viewModelScope.launch(Dispatchers.IO) {
             var rounds = 0
@@ -954,7 +939,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _ui.update { it.copy(pushOn = on) }
         io {
             val client = qt
-            val l = fileLink
+            val l = link
             if (client != null && l != null) registerPush(client, l)
             if (!on) Push.deleteToken(app)
         }
@@ -1408,7 +1393,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             delay(kotlin.random.Random.nextLong(FICHAS_FIRST_MIN_MS, FICHAS_FIRST_MAX_MS))
             while (isActive) {
                 val client = qt ?: break
-                val l = fileLink ?: link ?: break
+                val l = link ?: break
                 requestFichas(client, l)
                 delay(FICHAS_AGAIN_MS + kotlin.random.Random.nextLong(0L, FICHAS_AGAIN_MS))
             }
@@ -1583,7 +1568,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         backupJob = viewModelScope.launch(Dispatchers.IO) {
             delay(delayMs)
             val client = qt ?: return@launch
-            val l = fileLink ?: link ?: return@launch
+            val l = link ?: return@launch
             try {
                 val contacts = _ui.value.contacts.map { BackupContact(it.nickname, it.publicId) }
                 val up = client.recoveryBackup(contacts, force)
@@ -1768,10 +1753,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             link?.shutdown()
             link = null
             transferJob?.cancel()
-            fileLink?.shutdown()
-            fileLink = null
-            waitLink?.shutdown()
-            waitLink = null
             client.deleteIdentity()          // secure_delete + VACUUM no Rust (e os ficheiros dos anexos)
             Push.deleteToken(getApplication())   // a Google esquece este telemovel (o relay ja apagou o token)
             // Depois apaga os ficheiros e as chaves (incluindo o bloqueio) e abre um armazenamento novo.
@@ -2158,7 +2139,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun runTransfers(): Boolean {
         var retry = false
         val client = qt ?: return false
-        val l = fileLink ?: return false
+        val l = link ?: return false
         for (r in client.attachmentsPendingUpload()) {
             val gid = groupIdOfConversation(r.contactId)
             val beforeSend: suspend () -> Unit
@@ -2386,8 +2367,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Recebe mensagens enquanto a sessao estiver aberta.
      *
-     * Com um relay que suporta entrega imediata, a app fica a espera numa ligacao propria
-     * (waitLink) e o relay responde no instante em que chega uma mensagem (ou ao fim de
+     * Com um relay que suporta entrega imediata, a app fica a espera (na ligacao de sempre:
+     * qualquer outro pedido acaba a espera, ver RelayLink) e o relay responde no instante em que chega uma mensagem (ou ao fim de
      * WAIT_SECONDS, e volta-se a esperar). Um relay antigo responde Error ao pedido de espera:
      * entao volta-se ao metodo antigo, perguntar de POLL_MS em POLL_MS. Sem rede, tambem.
      */
@@ -2397,16 +2378,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // o relay pode ter sido atualizado entretanto (nunca desistir para sempre).
         var waitBlockedUntil = 0L
         var first: List<RelayDelivered>? = null
+        // A ultima espera acabou cedo e vazia porque outro pedido a interrompeu (um envio, um
+        // bloco de anexo...): volta-se logo a esperar, sem perguntar outra vez (a fila estava vazia).
+        var interrupted = false
         while (currentCoroutineContext().isActive) {
-            pollOnce(first)
+            if (!interrupted) pollOnce(first)
             first = null
-            val w = waitLink
+            interrupted = false
+            val w = link
             if (w == null || SystemClock.elapsedRealtime() < waitBlockedUntil) { delay(POLL_MS); continue }
             try {
                 val t0 = SystemClock.elapsedRealtime()
                 when (val r = w.request(client.relayRequestWait(WAIT_SECONDS.toUInt()), WAIT_TIMEOUT_MS)) {
                     is RelayResponse.Messages -> {
                         first = r.messages.ifEmpty { null }
+                        // Menos de 1 s e vazia: foi interrompida. Uma pausa curta evita um ciclo
+                        // apertado se algo correr mal (com anexos ha uma interrupcao por lote).
+                        if (first == null && SystemClock.elapsedRealtime() - t0 < INTERRUPTED_MS) {
+                            interrupted = true
+                            delay(INTERRUPT_PAUSE_MS)
+                        }
                         delivery("")
                         if (first != null) Log.d(TAG, "espera: ${r.messages.size} mensagem(ns) ao fim de ${SystemClock.elapsedRealtime() - t0} ms")
                     }
@@ -3136,6 +3127,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val WAIT_TIMEOUT_MS = 35_000L
         /** Com um relay sem entrega imediata, voltar a tentar a espera ao fim deste tempo. */
         private const val WAIT_RETRY_MS = 5 * 60_000L
+        /** Uma espera vazia que acaba antes disto foi interrompida por outro pedido (0.9.45). */
+        private const val INTERRUPTED_MS = 1_000L
+        /** Pausa antes de voltar a esperar depois de uma interrupcao. */
+        private const val INTERRUPT_PAUSE_MS = 20L
         /** Etiqueta dos registos (adb logcat -s SealerRelay). Nunca regista conteudo nem chaves. */
         private const val TAG = "SealerRelay"
         private const val MY_PHOTO = "\u0000eu"
@@ -3148,8 +3143,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val REFRESH_MAX = 200
         /** Bytes cifrados por bloco de anexo (igual ao Rust e ao relay). */
         private const val CHUNK = 40_960uL
-        /** Blocos em transito ao mesmo tempo (~320 KB). */
-        private const val WINDOW = 8
+        /**
+         * Blocos em transito ao mesmo tempo (~160 KB; eram 8 ate a 0.9.44). Desde a 0.9.45 os
+         * anexos partilham a ligacao com as mensagens: uma mensagem espera no maximo um lote.
+         */
+        private const val WINDOW = 4
         private const val RETRY_MS = 15_000L
         private const val RETRY_MAX_MS = 5 * 60_000L
         /** Recusas seguidas de um anexo antes de ficar como falhado. */

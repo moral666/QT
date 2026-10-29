@@ -206,15 +206,21 @@ Disconnected ─► Connecting ─► NoiseHandshake ─► Authenticating ─�
    se confirmam (senão ficam em fila e são re-entregues indefinidamente).
 8. **Encerrar:** enviar Close (`ws.close(1000, null)`) e descartar a sessão.
    O estado criptográfico persiste no storage, nunca na ligação. Enquanto o
-   Android não a fecha, a app fica à espera de mensagens numa ligação própria
-   (`relayRequestWait`, ver abaixo); notificações push com a app fechada (FCM)
-   estão por fazer.
+   Android não a fecha, a app fica à espera de mensagens (`relayRequestWait`,
+   ver abaixo); com a app fechada acorda pelas notificações push.
 
-   **Entrega imediata:** uma terceira ligação (além da principal e da dos
-   anexos) envia `relayRequestWait(25)` com tempo de resposta de 35 s. O relay
-   responde no instante em que chega uma mensagem (ou vazio ao fim de 25 s);
-   as mensagens recebidas tratam-se como as de `relayRequestFetch` (guardar e
-   só depois `relayRequestAck`, pela ligação principal) e volta-se a esperar.
+   **Uma só ligação (desde a app Android 0.9.45 / iPhone 0.9.32):** os pedidos
+   vão em fila pela mesma ligação, sem esperar pela resposta do anterior, e o
+   relay responde sempre pela mesma ordem (cada resposta é do pedido mais antigo
+   por responder). Antes havia três ligações: principal, anexos e espera.
+
+   **Entrega imediata:** a app envia `relayRequestWait(25)` com tempo de
+   resposta de 35 s. O relay responde no instante em que chega uma mensagem (ou
+   vazio ao fim de 25 s, ou logo que chega outro pedido nessa ligação, que trata
+   a seguir); as mensagens recebidas tratam-se como as de `relayRequestFetch`
+   (guardar e só depois `relayRequestAck`) e volta-se a esperar. Uma espera
+   vazia que acaba em menos de 1 s foi interrompida: volta-se a esperar sem
+   novo `relayRequestFetch`.
    Se o relay responder `Error` com `"mensagem invalida"` (relay antigo), a
    app volta a `relayRequestFetch` de 3 em 3 s. Sem rede, também.
 9. **Rede perdida:** tratar como erro (passo 6). Ao reconectar nada se perde:

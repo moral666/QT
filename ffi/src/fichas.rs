@@ -10,7 +10,7 @@
 //! depois de abrir (e de hora a hora), fora das chamadas; `relay_request_fichas` recusa-se
 //! (`None`) com uma chamada a decorrer.
 //!
-//! CHAVE PUBLICADA (obrigatoria): a app vai buscar ao site (`https://sealer.pt/estado.json`, fora
+//! CHAVE PUBLICADA (obrigatoria): a app vai buscar ao site (`https://sealerapp.com/estado.json`, fora
 //! do relay, publicado no deploy) as chaves das fichas de cada mes e entrega-as aqui
 //! (`fichas_set_published_keys`). Sem a chave deste mes, ou com uma resposta do emissor com outra
 //! chave, nada se pede nem se guarda; na sala, o motor so gasta se a chave do relay for a
@@ -204,7 +204,7 @@ impl QtClient {
         Ok(FichasStatus { epoch, left, due: !in_call && !done && retry_ok && !pending_fresh && published, published })
     }
 
-    /// Chaves das fichas publicadas no site (`https://sealer.pt/estado.json`, os bytes do ficheiro
+    /// Chaves das fichas publicadas no site (`https://sealerapp.com/estado.json`, os bytes do ficheiro
     /// tal como vieram). Substituem as guardadas. Devolve quantos meses tem. Ficheiro invalido:
     /// erro, e ficam as anteriores. A app chama isto antes de pedir fichas (e de hora a hora).
     pub fn fichas_set_published_keys(&self, json: Vec<u8>) -> Result<u32, QtError> {
