@@ -592,6 +592,44 @@
   color: var(--lilac);
 }
 
+/* Federação: mapa da Europa com a mensagem a ir e voltar entre a Suécia e Espanha. Os nomes ficam por
+   cima, nas posições dos dois servidores no mapa. Num mapa, a esquerda e a direita são geografia:
+   em árabe (direita para a esquerda) o mapa e os nomes NÃO ficam ao espelho, por isso aqui usa-se left. */
+.cf-fed-mapa {
+  position: relative;
+  margin: 0.4rem 0 0;
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  overflow: hidden;
+  background: var(--panel-deep);
+}
+.cf-fed-mapa img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.cf-fed-mapa__nome {
+  position: absolute;
+  padding: 0.15rem 0.65rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(13, 15, 25, 0.82);
+  color: var(--ice);
+  font-size: clamp(0.75rem, 0.7rem + 0.3vw, 0.9rem);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.cf-fed-mapa__nome--se {
+  left: 60.2%;
+  top: 26%;
+  transform: translate(-50%, -100%);
+}
+.cf-fed-mapa__nome--es {
+  left: 26.1%;
+  top: 90%;
+  transform: translate(-50%, 0);
+}
+
 /* Medalhas (badges, apps 0.9.16): as cinco moedas da app, em fila; num ecra estreito passam a duas linhas. */
 .cf-badges {
   max-width: 44rem;

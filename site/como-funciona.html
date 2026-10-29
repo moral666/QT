@@ -249,6 +249,17 @@
           cifrada só entre os dois, e o servidor de destino só fica a saber que veio do outro servidor, não de
           quem. As chamadas que passam pelo servidor usam o de quem liga.
         </p>
+        <!-- Mapa com uma mensagem a ir e voltar entre os dois servidores (WebP animado, sem texto: os nomes
+             são texto da página, traduzido). Decorativo: o parágrafo acima já diz o mesmo. Com "reduzir
+             movimento" fica a imagem parada. -->
+        <figure class="cf-fed-mapa" aria-hidden="true">
+          <picture>
+            <source srcset="./federacao/federacao-mapa-parado.webp" media="(prefers-reduced-motion: reduce)" />
+            <img src="./federacao/federacao-mapa.webp" width="900" height="810" loading="lazy" decoding="async" alt="" />
+          </picture>
+          <span class="cf-fed-mapa__nome cf-fed-mapa__nome--se" data-i18n="index.65">Suécia</span>
+          <span class="cf-fed-mapa__nome cf-fed-mapa__nome--es" data-i18n="index.87">Espanha</span>
+        </figure>
       </section>
 
       <p class="cf__back" data-i18n="como.20"><a href="./">Voltar ao início</a></p>
