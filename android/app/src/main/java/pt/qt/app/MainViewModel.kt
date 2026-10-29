@@ -46,6 +46,8 @@ import uniffi.qt_ffi.peerBundleFromRelayBytes
 import uniffi.qt_ffi.presenceHeartbeatMs
 import uniffi.qt_ffi.relayIdOfPublicId
 import uniffi.qt_ffi.relayPremiumRequiredReason
+import uniffi.qt_ffi.relayElsewhereName
+import uniffi.qt_ffi.relayNoNewAccountsReason
 import uniffi.qt_ffi.relayRecipientDeletedReason
 import uniffi.qt_ffi.BackupContact
 
@@ -360,9 +362,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             contactsBroken = true
             emptyList()
         }
-        // Release: relay fixo da build, ignora preferencias antigas. Debug: editavel.
-        val url = if (BuildConfig.RELAY_EDITABLE) prefs.getString("relay_url", null) ?: BuildConfig.RELAY_URL else BuildConfig.RELAY_URL
-        val pin = if (BuildConfig.RELAY_EDITABLE) prefs.getString("relay_key", null) ?: BuildConfig.RELAY_PIN else BuildConfig.RELAY_PIN
+        // Release: o relay da conta, da lista fixa da build (federacao, `Relays`). Debug: editavel.
+        val home = Relays.home(prefs)
+        val url = home.url
+        val pin = home.pin
+        // As ofertas de chamada levam o relay da conta quando nao e o principal (fase 4).
+        runCatching { client.callSetRelay(Relays.callName(prefs)) }
         val has = client.hasIdentity()
         // Tudo lido antes do update: a funcao do update pode correr mais de uma vez (concorrencia).
         val publicId = if (has) client.exportPublicIdentity().publicId else ""
@@ -825,6 +830,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun createIdentity(relayUrl: String, relayKeyHex: String) = io {
         val client = qt ?: return@io
+        // Conta nova: comeca no relay principal (se estiver fechado a contas novas, o startLink
+        // passa ao seguinte da lista).
+        Relays.resetHome(prefs)
+        Relays.home(prefs).let { h -> _ui.update { it.copy(relayUrl = h.url, relayKeyHex = h.pin) } }
+        runCatching { client.callSetRelay(null) }
         saveRelay(relayUrl, relayKeyHex)
         val me = client.createIdentity()
         // Conta nova: "Mostrar quando estou online" comeca desligado (0.9.23). Liga-se no menu.
@@ -899,6 +909,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val r = bundleLink.request(client.relayRequestRegisterBundle(client.publishableBundle()))
                 // Sem avisos de ligacao na app (por agora): so no registo (adb logcat -s SealerRelay).
                 if (r !is RelayResponse.Ack) Log.w(TAG, "relay recusou o bundle: ${r.describe()}")
+                // Federacao: a conta vive noutro relay, ou este ja nao aceita contas novas.
+                if (r is RelayResponse.Error && moveRelay(r.reason)) return
             } catch (e: Exception) {
                 // Sem rede: o receiveLoop mostra o estado da ligacao; volta a publicar no proximo arranque.
             }
@@ -912,6 +924,37 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         scheduleFichas()
         // Presenca: "online" aos contactos (se a app estiver no ecra).
         if (visible) presenceAnnounce(true)
+    }
+
+    /** Relays ja tentados nesta sessao por estarem fechados a contas novas. */
+    private val relaysTried = mutableSetOf<String>()
+    /** Mudancas de relay nesta sessao (nunca anda aos saltos entre relays sem fim). */
+    private var relayMoves = 0
+
+    /**
+     * Federacao (fase 3): o relay diz que a conta vive noutro ("conta noutro relay: X", ex.: conta
+     * recuperada noutro telemovel), ou que ja nao aceita contas novas (tenta o seguinte da lista).
+     * Guarda o relay da conta e volta a ligar-se a ele. Verdadeiro se mudou.
+     */
+    private fun moveRelay(reason: String): Boolean {
+        if (relayMoves >= 4) return false
+        val current = Relays.home(prefs)
+        val elsewhere = relayElsewhereName(reason)
+        val target = when {
+            elsewhere != null -> Relays.byName(elsewhere)
+            reason == relayNoNewAccountsReason() -> {
+                relaysTried.add(current.name)
+                Relays.next(relaysTried)
+            }
+            else -> null
+        } ?: return false
+        if (target.name == current.name || !Relays.setHome(prefs, target.name)) return false
+        relayMoves++
+        Log.i(TAG, "relay da conta: ${target.name}")
+        runCatching { qt?.callSetRelay(Relays.callName(prefs)) }
+        _ui.update { it.copy(relayUrl = target.url, relayKeyHex = target.pin) }
+        io { startLink() }
+        return true
     }
 
     /**
@@ -2511,17 +2554,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------------------------------------------------------- chamadas de voz
 
-    private fun relayPin(): ByteArray? {
-        val hex = _ui.value.relayKeyHex.trim()
+    private fun pinBytes(pinHex: String): ByteArray? {
+        val hex = pinHex.trim()
         if (hex.length != 64) return null
         return ByteArray(32) { i -> hex.substring(i * 2, i * 2 + 2).toInt(16).toByte() }
     }
 
-    /** Arranca o motor de audio e entra ja na sala do relay das chamadas (enquanto toca). */
+    /**
+     * Arranca o motor de audio e entra ja na sala do relay das chamadas (enquanto toca).
+     * Federacao (fase 4): os dois telemoveis usam o relay das chamadas de quem liga (vem na
+     * oferta; sem nome, o principal), mesmo que as contas estejam em relays diferentes.
+     */
     private fun startCallAudio(client: QtClient, callId: String) {
         if (callAudio != null) return
-        val pin = relayPin() ?: run { Log.w(TAG, "chamada: sem a chave do relay"); return }
-        callAudio = client.callAudioStart(callId, _ui.value.relayUrl, pin)
+        val r = Relays.forCall(prefs, runCatching { client.callRelay(callId) }.getOrNull())
+        val pin = pinBytes(r.pin) ?: run { Log.w(TAG, "chamada: sem a chave do relay"); return }
+        callAudio = client.callAudioStart(callId, r.url, pin)
     }
 
     /** Liga o microfone e o altifalante (a chamada foi atendida). */

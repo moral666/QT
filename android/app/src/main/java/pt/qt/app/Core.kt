@@ -137,12 +137,10 @@ object SealerCore {
 
     private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences("qt_prefs", Context.MODE_PRIVATE)
 
-    /** Release: relay fixo da build. Debug: o que estiver nas definicoes. */
-    fun relayUrl(ctx: Context): String =
-        if (BuildConfig.RELAY_EDITABLE) prefs(ctx).getString("relay_url", null) ?: BuildConfig.RELAY_URL else BuildConfig.RELAY_URL
+    /** O relay da conta (federacao: da lista fixa da build, `Relays`). Debug: o das definicoes. */
+    fun relayUrl(ctx: Context): String = Relays.home(prefs(ctx)).url
 
-    fun relayPinHex(ctx: Context): String =
-        if (BuildConfig.RELAY_EDITABLE) prefs(ctx).getString("relay_key", null) ?: BuildConfig.RELAY_PIN else BuildConfig.RELAY_PIN
+    fun relayPinHex(ctx: Context): String = Relays.home(prefs(ctx)).pin
 
     private fun newLink(ctx: Context, c: QtClient) = RelayLink(c, relayUrl(ctx), relayPinHex(ctx).ifBlank { null })
 

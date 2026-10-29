@@ -16,7 +16,7 @@
 //!
 //! Registos: so o nome dos pares e contagens. Nunca IDs de contas.
 
-use crate::protocol::{is_valid_user_id, ServerMessage, UserId, WakeKind};
+use crate::protocol::{is_valid_user_id, PremiumEntry, ServerMessage, UserId, WakeKind};
 use base64::Engine;
 use crate::store::Store;
 use futures_util::future::join_all;
@@ -177,6 +177,27 @@ pub enum Pedido {
     ApagarBlob { blob_id: String },
     /// Uma parte de uma copia de recuperacao. `Copia` ou `SemCopia`.
     LerCopia { lookup: String, part: u32 },
+    // ----- Fase 3: pedidos do operador para contas (ou para todos) noutro relay -----
+    /// O operador so fala com um relay; este passa o pedido ao relay da conta. So relays da
+    /// lista chegam aqui (federacao fechada).
+    Admin { a: AdminFed },
+}
+
+/// Pedidos do operador encaminhados entre relays (fase 3).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AdminFed {
+    Premium { id: UserId, until_ms: u64 },
+    QuotaFichas { id: UserId, per_month: Option<u32> },
+    Banir { id: UserId },
+    Desbanir { id: UserId },
+    /// O bloqueio premium vale para todos os relays.
+    BloqueioPremium { on: bool },
+    /// Contas com a app ligada a este relay. Resposta: `Contagem`.
+    Online,
+    /// Resposta: `ListaPremium`.
+    ListarPremium,
+    /// Resposta: `ListaBanidas`.
+    ListarBanidas,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,6 +229,10 @@ pub enum Resposta {
     /// `data` em base64.
     Copia { part: u32, parts: u32, data: String },
     SemCopia,
+    // ----- Fase 3 -----
+    Contagem { n: u64 },
+    ListaPremium { entries: Vec<PremiumEntry> },
+    ListaBanidas { ids: Vec<UserId> },
 }
 
 /// Resultado de entregar uma mensagem noutro relay.
@@ -281,12 +306,12 @@ struct RespostaN {
 // ---------------------------------------------------------------------------
 
 /// Resultado de reservar uma conta nova nos pares.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reserva {
     /// Pode registar. `por_verificar`: algum par nao respondeu (opcao A1).
     Livre { por_verificar: bool },
-    /// Outro relay ja tem a conta (ou esta a registá-la agora).
-    NoutroRelay,
+    /// Outro relay ja tem a conta (ou esta a registá-la agora): o nome dele, se se sabe.
+    NoutroRelay(Option<String>),
     /// Banida noutro relay.
     Banida,
 }
@@ -442,18 +467,21 @@ impl Federacao {
             let agora = Instant::now();
             r.retain(|_, (_, t)| agora.duration_since(*t) < RESERVA);
             match r.get(id) {
-                Some((Origem::Par(_), _)) => return Reserva::NoutroRelay,
+                Some((Origem::Par(p), _)) => return Reserva::NoutroRelay(Some(p.clone())),
                 _ => {
                     r.insert(id.to_string(), (Origem::Local, agora));
                 }
             }
         }
-        let respostas = join_all(self.pares.iter().map(|p| self.perguntar(p, Pedido::Reservar { id: id.to_string() }))).await;
+        let respostas = join_all(self.pares.iter().map(|p| async move {
+            (p.nome.clone(), self.perguntar(p, Pedido::Reservar { id: id.to_string() }).await)
+        }))
+        .await;
         let mut resultado = Reserva::Livre { por_verificar: false };
-        for r in respostas {
+        for (nome, r) in respostas {
             match r {
                 Some(Resposta::Reserva { banida: true, .. }) => return self.recusar(id, Reserva::Banida),
-                Some(Resposta::Reserva { ok: false, .. }) => resultado = Reserva::NoutroRelay,
+                Some(Resposta::Reserva { ok: false, .. }) => resultado = Reserva::NoutroRelay(Some(nome)),
                 Some(Resposta::Reserva { ok: true, .. }) => {}
                 _ => {
                     if resultado == (Reserva::Livre { por_verificar: false }) {
@@ -462,7 +490,7 @@ impl Federacao {
                 }
             }
         }
-        if resultado == Reserva::NoutroRelay {
+        if matches!(resultado, Reserva::NoutroRelay(_)) {
             return self.recusar(id, resultado);
         }
         resultado
@@ -790,6 +818,59 @@ impl Federacao {
         None
     }
 
+    // ----- Fase 3: operador -----
+
+    /// Pedido do operador para uma conta que nao esta neste relay. `None`: a conta nao esta em
+    /// relay nenhum (o chamador faz localmente, como antes); `Some(false)`: o relay dela nao
+    /// respondeu.
+    pub async fn admin_conta(&self, id: &str, a: AdminFed) -> Option<bool> {
+        let Onde::Par(nome) = self.onde_esta(id).await else { return None };
+        let par = self.par(&nome)?;
+        Some(matches!(self.perguntar(par, Pedido::Admin { a }).await, Some(Resposta::Feito)))
+    }
+
+    /// Pedido do operador para todos os pares; as respostas dos que responderam.
+    pub async fn admin_todos(&self, a: AdminFed) -> Vec<Resposta> {
+        join_all(self.pares.iter().map(|p| self.perguntar(p, Pedido::Admin { a: a.clone() })))
+            .await
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
+    async fn admin_pedido(&self, a: AdminFed) -> Resposta {
+        let feito = |r: Result<(), crate::store::StoreError>| match r {
+            Ok(()) => Resposta::Feito,
+            Err(_) => Resposta::Erro { motivo: "erro interno".into() },
+        };
+        let valido = |id: &str| is_valid_user_id(id);
+        match a {
+            AdminFed::Premium { id, until_ms } if valido(&id) => feito(self.store.set_premium(&id, until_ms).await),
+            AdminFed::QuotaFichas { id, per_month } if valido(&id) => feito(self.store.set_fichas_quota(&id, per_month).await),
+            AdminFed::Banir { id } if valido(&id) => {
+                let r = self.store.ban(&id).await;
+                if r.is_ok() {
+                    let _ = self.store.delete_backup(&id).await;
+                    crate::limits::UserSlot::close_all(&id);
+                    crate::stats::inc(&crate::stats::STATS.bans);
+                }
+                feito(r)
+            }
+            AdminFed::Desbanir { id } if valido(&id) => feito(self.store.unban(&id).await),
+            AdminFed::BloqueioPremium { on } => feito(self.store.set_premium_enforced(on).await),
+            AdminFed::Online => Resposta::Contagem { n: crate::limits::UserSlot::users_online(None) as u64 },
+            AdminFed::ListarPremium => match self.store.list_premium().await {
+                Ok(entries) => Resposta::ListaPremium { entries },
+                Err(_) => Resposta::Erro { motivo: "erro interno".into() },
+            },
+            AdminFed::ListarBanidas => match self.store.list_bans().await {
+                Ok(ids) => Resposta::ListaBanidas { ids },
+                Err(_) => Resposta::Erro { motivo: "erro interno".into() },
+            },
+            _ => Resposta::Erro { motivo: "id invalido".into() },
+        }
+    }
+
     /// Responde a um pedido de um par (ja autenticado como `par`).
     async fn responder(&self, par: &str, p: Pedido) -> Resposta {
         match p {
@@ -812,6 +893,7 @@ impl Federacao {
                 }
                 Resposta::Aqui { estados }
             }
+            Pedido::Admin { a } => self.admin_pedido(a).await,
             Pedido::Entregar { to, sealed_from, ciphertext, silent, wake } => {
                 self.entrega_pedida(to, &sealed_from, &ciphertext, silent, wake).await
             }

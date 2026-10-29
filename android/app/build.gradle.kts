@@ -24,6 +24,11 @@ val relayUrl: String = (findProperty("qtRelayUrl") as String?) ?: System.getenv(
 // Chaves publicas das fichas do video (0006), publicadas fora do relay (site, Cloudflare).
 val fichasKeysUrl: String = (findProperty("qtFichasKeysUrl") as String?) ?: System.getenv("QT_FICHAS_KEYS_URL") ?: "https://sealerapp.com/estado.json"
 val relayPin: String = ((findProperty("qtRelayPin") as String?) ?: System.getenv("QT_RELAY_PIN") ?: "").lowercase()
+// Federacao (fase 3): nome do relay principal (o de cima) e os OUTROS relays da federacao, por
+// ordem, como "nome|wss://...|pin;nome|wss://...|pin". Contas novas ficam no principal; se ele ja
+// nao aceitar contas novas (decisao do operador), no seguinte. Sem outros: so o principal.
+val relayName: String = ((findProperty("qtRelayName") as String?) ?: System.getenv("QT_RELAY_NAME") ?: "estocolmo").trim()
+val relaysOthers: String = ((findProperty("qtRelaysOutros") as String?) ?: System.getenv("QT_RELAYS_OUTROS") ?: "").trim()
 
 // Notificacoes (FCM): valores do projeto Firebase, lidos de android/app/google-services.json
 // (descarregado da consola do Firebase; NAO vai para o git). Sem o plugin google-services:
@@ -65,8 +70,8 @@ android {
         minSdk = 24            // igual ao `-P 24` do cargo-ndk
         // Android 16. Exigido pela Play Store para apps novas e atualizacoes.
         targetSdk = 36
-        versionCode = 52
-        versionName = "0.9.45"
+        versionCode = 53
+        versionName = "0.9.46"
         // So as 6 linguas da app (0.9.12): sem isto iam tambem as ~80 traducoes das bibliotecas
         // (AndroidX, Firebase, ZXing), que a app nunca mostra. A base (values/) e o portugues.
         @Suppress("DEPRECATION")
@@ -118,6 +123,8 @@ android {
             buildConfigField("boolean", "RELAY_EDITABLE", "true")
             buildConfigField("String", "RELAY_URL", "\"${relayUrl.ifBlank { "ws://10.0.2.2:9443" }}\"")
             buildConfigField("String", "RELAY_PIN", "\"$relayPin\"")
+            buildConfigField("String", "RELAY_NAME", "\"$relayName\"")
+            buildConfigField("String", "RELAYS_OTHERS", "\"$relaysOthers\"")
         }
         release {
             buildConfigField("boolean", "ALLOW_CLEARTEXT", "false")
@@ -125,6 +132,8 @@ android {
             buildConfigField("boolean", "RELAY_EDITABLE", "false")
             buildConfigField("String", "RELAY_URL", "\"$relayUrl\"")
             buildConfigField("String", "RELAY_PIN", "\"$relayPin\"")
+            buildConfigField("String", "RELAY_NAME", "\"$relayName\"")
+            buildConfigField("String", "RELAYS_OTHERS", "\"$relaysOthers\"")
             isDebuggable = false
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
@@ -225,6 +234,19 @@ gradle.taskGraph.whenReady {
     }
     if (wantsRelease && !Regex("^[0-9a-f]{64}$").matches(relayPin)) {
         throw GradleException("Release sem pinning: define qtRelayPin=<64 hex da chave publica Noise do relay> em android/gradle.properties (ou QT_RELAY_PIN).")
+    }
+    val nameOk = Regex("^[a-z0-9-]{1,32}$")
+    if (wantsRelease && !nameOk.matches(relayName)) {
+        throw GradleException("qtRelayName invalido (a-z, 0-9 e -, ate 32): $relayName")
+    }
+    if (wantsRelease && relaysOthers.isNotEmpty()) {
+        for (e in relaysOthers.split(';').filter { it.isNotBlank() }) {
+            val p = e.trim().split('|')
+            if (p.size != 3 || !nameOk.matches(p[0].trim()) || !p[1].trim().startsWith("wss://") ||
+                !Regex("^[0-9a-f]{64}$").matches(p[2].trim().lowercase())) {
+                throw GradleException("qtRelaysOutros invalido: cada relay e \"nome|wss://...|<64 hex>\", separados por ';' ($e)")
+            }
+        }
     }
     if (wantsRelease && android.signingConfigs.getByName("release").storeFile == null) {
         throw GradleException(

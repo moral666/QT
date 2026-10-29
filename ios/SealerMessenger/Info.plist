@@ -82,6 +82,10 @@
 	<string>$(QT_RELAY_URL)</string>
 	<key>QTRelayPin</key>
 	<string>$(QT_RELAY_PIN)</string>
+	<key>QTRelayName</key>
+	<string>$(QT_RELAY_NAME)</string>
+	<key>QTRelaysOthers</key>
+	<string>$(QT_RELAYS_OTHERS)</string>
 	<key>QTRelayEditable</key>
 	<string>$(QT_RELAY_EDITABLE)</string>
 	<key>QTAllowCleartext</key>

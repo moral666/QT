@@ -45,7 +45,10 @@
 //!
 //! FORMATO: payload v1, tipo 11; `msg_id` = `call_id` (uma versao antiga da app mostra
 //! "atualiza a app" uma vez por chamada). Corpo: [1 op][16 call_id] e:
-//!   op 1 oferta:   [32 offer_secret][2 pad BE]
+//!   op 1 oferta:   [32 offer_secret][2 pad BE] e, opcional (federacao, fase 4), [1 n][n nome]: o
+//!                  relay das chamadas a usar, o de quem liga. So vai quando quem liga NAO esta no
+//!                  relay principal da lista das apps; sem ele, os dois usam o principal. Uma app
+//!                  antiga ignora uma oferta com nome (so acontece com contas noutro relay).
 //!   op 2 resposta: [32 answer_secret]
 //!   op 3 desligar: [1 motivo] (1 desligou, 2 recusou, 3 ocupado, 4 sem resposta, 5 cancelou)
 //!                  (o 6, "chegou tarde", so existe localmente e nunca e enviado)
@@ -227,6 +230,8 @@ struct Call {
     audio: Option<std::sync::Arc<crate::call_audio::CallAudio>>,
     p2p: P2p,
     video: VideoSig,
+    /// Relay das chamadas desta chamada (federacao): o de quem liga. `None`: o principal.
+    relay: Option<String>,
 }
 
 /// Video desta chamada (ver o inicio do ficheiro).
@@ -291,6 +296,8 @@ impl Call {
 #[derive(Default)]
 pub(crate) struct Calls {
     cur: Option<Call>,
+    /// O meu relay, quando nao e o principal (`call_set_relay`): vai nas minhas ofertas.
+    own_relay: Option<String>,
     events: VecDeque<CallEvent>,
     ended: VecDeque<[u8; 16]>,
     /// So para testes: faz de app antiga (nunca diz que tem video).
@@ -354,6 +361,23 @@ fn encode(op: u8, call_id: &[u8; 16], extra: &[u8]) -> Vec<u8> {
     out.extend_from_slice(call_id);
     out.extend_from_slice(extra);
     out
+}
+
+/// Nome de relay valido: a-z, 0-9 e -, de 1 a 32 (como em `/etc/qt/federacao.json`).
+fn relay_name_ok(n: &[u8]) -> bool {
+    (1..=32).contains(&n.len()) && n.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+}
+
+/// O que vem depois de `[32 offer_secret][2 pad]` na oferta: nada (`Some(None)`) ou
+/// `[1 n][n nome]` (`Some(Some(nome))`). `None`: formato invalido (a oferta e ignorada).
+fn offer_relay(tail: &[u8]) -> Option<Option<String>> {
+    match tail {
+        [] => Some(None),
+        [n, name @ ..] if *n as usize == name.len() && relay_name_ok(name) => {
+            Some(Some(String::from_utf8(name.to_vec()).ok()?))
+        }
+        _ => None,
+    }
 }
 
 /// Uma oferta enviada a `sent_at` ainda pode tocar agora? Um relogio adiantado do
@@ -581,9 +605,10 @@ pub(crate) fn on_call(
 
     match op {
         OP_OFFER => {
-            if rest.len() != 34 || is_current {
+            if rest.len() < 34 || is_current {
                 return Ok(no_change);
             }
+            let Some(relay) = offer_relay(&rest[34..]) else { return Ok(no_change) };
             let offer_secret: [u8; 32] = rest[..32].try_into().map_err(|_| QtError::InvalidEnvelope)?;
             let pad = u16::from_be_bytes([rest[32], rest[33]]);
             if !(MIN_PAD..=MAX_PAD).contains(&(pad as usize)) {
@@ -638,6 +663,7 @@ pub(crate) fn on_call(
                 audio: None,
                 p2p: P2p::default(),
                 video: VideoSig::default(),
+                relay,
             });
             queue(client, c, cid, &encode(OP_RINGING, &call_id, &[]), None)?;
             calls.push(CallEvent::Incoming { call_id: id_hex, contact_id: cid.to_string() });
@@ -832,6 +858,11 @@ impl QtClient {
         let offer_secret = Zeroizing::new(random::<32>()?);
         let mut extra = Zeroizing::new(offer_secret.to_vec());
         extra.extend_from_slice(&DEFAULT_PAD.to_be_bytes());
+        let relay = calls.own_relay.clone();
+        if let Some(n) = &relay {
+            extra.push(n.len() as u8);
+            extra.extend_from_slice(n.as_bytes());
+        }
         let plain = Zeroizing::new(encode(OP_OFFER, &id, &extra));
         let tx = c.unchecked_transaction()?;
         let item = queue(self, &tx, &contact_id, &plain, Some(CallWake::Call))?;
@@ -858,6 +889,7 @@ impl QtClient {
             audio: None,
             p2p: P2p::default(),
             video: video_sig,
+            relay,
         });
         Ok(CallStart { call_id: hex(&id), item })
     }
@@ -953,6 +985,26 @@ impl QtClient {
     }
 
     /// Ha uma chamada a decorrer (a tocar ou atendida)? Devolve o call_id.
+    /// Federacao (fase 4): o relay desta conta, quando NAO e o principal da lista das apps
+    /// (`None` = o principal). Vai nas ofertas: quem recebe usa o relay das chamadas de quem liga.
+    /// Nome: a-z, 0-9 e -, ate 32.
+    pub fn call_set_relay(&self, name: Option<String>) -> Result<(), QtError> {
+        if let Some(n) = &name {
+            if !relay_name_ok(n.as_bytes()) {
+                return Err(bad("relay"));
+            }
+        }
+        crate::client::relock(&self.calls).own_relay = name;
+        Ok(())
+    }
+
+    /// Relay das chamadas a usar nesta chamada: o de quem liga (`None` = o principal da lista).
+    pub fn call_relay(&self, call_id: String) -> Result<Option<String>, QtError> {
+        let id = parse_call_id(&call_id)?;
+        let calls = crate::client::relock(&self.calls);
+        Ok(calls.cur.as_ref().filter(|k| k.id == id).and_then(|k| k.relay.clone()))
+    }
+
     pub fn call_current(&self) -> Result<Option<String>, QtError> {
         let calls = crate::client::relock(&self.calls);
         Ok(calls.cur.as_ref().map(|k| hex(&k.id)))
@@ -1235,6 +1287,19 @@ mod tests {
         let mut bad = b.clone();
         bad[1] = 7;
         assert_eq!(decode_addrs(&bad), None, "familia desconhecida");
+    }
+
+    #[test]
+    fn relay_na_oferta() {
+        assert_eq!(offer_relay(&[]), Some(None));
+        assert_eq!(offer_relay(b"\x07espanha"), Some(Some("espanha".into())));
+        assert_eq!(offer_relay(b"\x08espanha"), None, "tamanho errado");
+        assert_eq!(offer_relay(b"\x07Espanha"), None, "maiusculas");
+        assert_eq!(offer_relay(&[0]), None, "vazio");
+        assert!(relay_name_ok(&[b'a'; 32]) && !relay_name_ok(&[b'a'; 33]));
+        // A oferta com o nome maior cabe no limite do tipo 11.
+        let full = encode(OP_OFFER, &[1; 16], &[[1u8; 34].as_slice(), &[32], &[b'a'; 32]].concat());
+        assert!(full.len() - HDR <= 128, "{}", full.len() - HDR);
     }
 
     #[test]

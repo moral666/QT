@@ -14,6 +14,9 @@ enum Config {
     static var relayURL: String { plist("QTRelayURL") }
     static var relayPin: String { plist("QTRelayPin").lowercased() }
     static var relayEditable: Bool { plist("QTRelayEditable") == "YES" }
+    /// Federacao: nome do relay de cima e os outros ("nome|wss://...|pin;..."), ver `Relays`.
+    static var relayName: String { let n = plist("QTRelayName"); return n.isEmpty ? "estocolmo" : n }
+    static var relaysOthers: String { plist("QTRelaysOthers") }
     static var allowCleartext: Bool { plist("QTAllowCleartext") == "YES" }
     /// Versao instalada (MARKETING_VERSION), so informativa nas Definicoes.
     static var version: String { plist("CFBundleShortVersionString") }

@@ -290,3 +290,46 @@ fn a_mesma_oferta_entregue_duas_vezes_toca_uma_vez() {
     assert!(b.c.receive_sealed(start.item.blob).is_err());
     assert_eq!(b.events().len(), 1);
 }
+
+/// Federacao (fase 4): quem liga de um relay que nao e o principal diz qual e na oferta; quem
+/// recebe usa o relay das chamadas de quem liga. Sem nome, os dois usam o principal.
+#[test]
+fn oferta_com_o_relay_de_quem_liga() {
+    let (a, b) = pair();
+    // Sem relay definido: a oferta e a de sempre.
+    let s = a.c.call_start(b.cid()).unwrap();
+    relay(&a, &b);
+    assert_eq!(a.c.call_relay(s.call_id.clone()).unwrap(), None);
+    assert_eq!(b.c.call_relay(s.call_id.clone()).unwrap(), None);
+    a.c.call_hangup(s.call_id).unwrap();
+    relay(&a, &b);
+    let _ = (a.events(), b.events());
+
+    assert!(a.c.call_set_relay(Some("Espanha".into())).is_err(), "so a-z, 0-9 e -");
+    a.c.call_set_relay(Some("espanha".into())).unwrap();
+    let s = a.c.call_start(b.cid()).unwrap();
+    relay(&a, &b);
+    assert_eq!(b.events(), vec![CallEvent::Incoming { call_id: s.call_id.clone(), contact_id: a.cid() }]);
+    assert_eq!(a.c.call_relay(s.call_id.clone()).unwrap().as_deref(), Some("espanha"));
+    assert_eq!(b.c.call_relay(s.call_id.clone()).unwrap().as_deref(), Some("espanha"));
+    // Atender e falar funciona igual.
+    b.c.call_accept(s.call_id.clone()).unwrap();
+    relay(&b, &a);
+    assert!(a.events().contains(&CallEvent::Answered { call_id: s.call_id.clone() }));
+    // Outra chamada: o relay e o desta, nao fica preso.
+    assert_eq!(b.c.call_relay("00".repeat(16)).unwrap(), None);
+}
+
+#[test]
+fn motivos_da_federacao() {
+    assert_eq!(relay_elsewhere_name("conta noutro relay: espanha".into()).as_deref(), Some("espanha"));
+    assert_eq!(relay_elsewhere_name("conta noutro relay".into()).as_deref(), Some(""));
+    assert_eq!(relay_elsewhere_name("conta noutro relay: ../x".into()).as_deref(), Some(""));
+    assert_eq!(relay_elsewhere_name("destinatario desconhecido".into()), None);
+    assert_eq!(relay_no_new_accounts_reason(), qt_server_no_new_accounts());
+}
+
+/// O mesmo texto que o relay usa (`qt_server::protocol::NO_NEW_ACCOUNTS`).
+fn qt_server_no_new_accounts() -> String {
+    "relay sem contas novas".into()
+}

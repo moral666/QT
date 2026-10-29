@@ -1,6 +1,6 @@
 # SEALER para Android (Kotlin / Jetpack Compose)
 
-**Versão de testes (0.9.45).** A 0.9.16 foi testada a 20/10/2026 com a app iPhone 0.9.15, sem erros (ver `docs/field-tests.md`); a 0.9.22 foi testada a 22/10/2026 (bloqueio da app, apps recentes e recuperação da conta); a 0.9.31 a 23/10/2026 (pedidos dos testadores e as dez línguas), sem erros.
+**Versão de testes (0.9.46).** A 0.9.16 foi testada a 20/10/2026 com a app iPhone 0.9.15, sem erros (ver `docs/field-tests.md`); a 0.9.22 foi testada a 22/10/2026 (bloqueio da app, apps recentes e recuperação da conta); a 0.9.31 a 23/10/2026 (pedidos dos testadores e as dez línguas), sem erros.
 Toda a criptografia está no Rust (`libqt_ffi.so`); o Kotlin só move bytes e desenha ecrãs.
 No telemóvel a app chama-se **SEALER**. O identificador na Play Store é `sealer.app` (desde a 0.9.0; antes `pt.qt.app`); o código Kotlin continua no pacote `pt.qt.app`.
 
@@ -161,6 +161,12 @@ qtRelayUrl=wss://<o-teu-relay>
 qtRelayPin=<chave publica Noise do relay, 64 hex>
 ```
 Nessa build o relay fica fixo: os campos de URL/chave e o botão "Relay" não aparecem.
+
+Federação (relays de uma lista fechada): o de cima é o principal (`qtRelayName`, por omissão
+`estocolmo`) e os outros vão em `qtRelaysOutros`, por ordem, como `nome|wss://...|<64 hex>`, separados
+por `;`. A conta fica no principal; se ele já não aceitar contas novas, no seguinte. Se o relay disser que
+a conta está noutro (por exemplo, recuperada noutro telemóvel), a app passa a falar com esse. Lógica em
+`Relays.kt` (iPhone: `Relays.swift`, `QT_RELAY_NAME` e `QT_RELAYS_OTHERS` em `ios/Configs/Relay.xcconfig`).
 
 Depois: no Android Studio, *Build Variants* → `release` → *Build → Build APK(s)*
 (ou `./gradlew assembleRelease`, se tiveres o wrapper). O APK fica em `app/build/outputs/apk/release/`.

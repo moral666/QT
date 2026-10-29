@@ -253,6 +253,19 @@ pub const RECIPIENT_DELETED: &str = "o destinatario apagou a conta";
 /// (`federation.rs`). A conta continua a existir, so que noutro relay.
 pub const ELSEWHERE: &str = "conta noutro relay";
 
+/// `ELSEWHERE` com o nome do relay da conta (fase 3): "conta noutro relay: espanha". A app tem a
+/// lista dos relays e muda para esse. So chega a quem prova ser a conta (registo assinado).
+pub fn elsewhere(relay: Option<&str>) -> String {
+    match relay {
+        Some(n) => format!("{ELSEWHERE}: {n}"),
+        None => ELSEWHERE.to_string(),
+    }
+}
+
+/// Motivo do `Error` a um registo de conta nova num relay que ja nao aceita contas novas
+/// (`RELAY_NOVAS_CONTAS=0`, decidido pelo operador). A app tenta o relay seguinte da lista.
+pub const NO_NEW_ACCOUNTS: &str = "relay sem contas novas";
+
 /// Motivo do `Error` quando o destinatario esta noutro relay da federacao e esse relay nao
 /// respondeu. A mensagem fica na outbox de quem envia e segue no ciclo seguinte.
 pub const FED_UNAVAILABLE: &str = "relay do destinatario sem resposta, tenta daqui a pouco";

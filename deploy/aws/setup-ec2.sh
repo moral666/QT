@@ -115,6 +115,13 @@ cargo build --release --manifest-path "$SRC/Cargo.toml" -p qt_server --bin relay
 # ---------- 4. Utilizador e binario ----------
 id qt >/dev/null 2>&1 || useradd --system --home /var/lib/qt --shell /usr/sbin/nologin qt
 install -d -o qt -g qt -m 700 /var/lib/qt
+# Federacao: num relay NOVO, a semente das fichas vem de Estocolmo (todos usam a mesma). Copiada a
+# mao para /etc/qt/fichas_seed.bin antes deste script: passa para /var/lib/qt e sai de /etc/qt.
+if [ -f /etc/qt/fichas_seed.bin ] && [ ! -s /var/lib/qt/fichas_seed.bin ]; then
+  install -o qt -g qt -m 600 /etc/qt/fichas_seed.bin /var/lib/qt/fichas_seed.bin
+  rm -f /etc/qt/fichas_seed.bin
+  log "Fichas do video: semente copiada de outro relay"
+fi
 # Estado publico (tempo medio de entrega), servido em /estado.json: so este ficheiro, nada mais.
 install -d -o qt -g qt -m 755 /var/lib/qt-estado
 install -d -o root -g qt -m 750 /etc/qt
@@ -152,6 +159,14 @@ PREV_FICHAS=""
 case "$PREV_FICHAS" in ''|*[!0-9]*) PREV_FICHAS=300 ;; esac
 V_FICHAS="${RELAY_FICHAS_POR_MES:-$PREV_FICHAS}"
 case "$V_FICHAS" in ''|*[!0-9]*) echo "Aviso: RELAY_FICHAS_POR_MES='$V_FICHAS' nao e um numero; fica $PREV_FICHAS" >&2; V_FICHAS="$PREV_FICHAS" ;; esac
+# Federacao (fase 3): contas novas neste relay (1) ou fechado a contas novas (0, relay cheio: as
+# apps novas vao para o relay seguinte da lista). Fica o que estava; para mudar:
+#   sudo RELAY_NOVAS_CONTAS=0 bash setup-ec2.sh
+PREV_NOVAS=""
+[ -f "$ENV_FILE" ] && PREV_NOVAS=$(sed -n 's/^RELAY_NOVAS_CONTAS=//p' "$ENV_FILE" | tail -n 1)
+case "$PREV_NOVAS" in 0|1) ;; *) PREV_NOVAS=1 ;; esac
+V_NOVAS="${RELAY_NOVAS_CONTAS:-$PREV_NOVAS}"
+case "$V_NOVAS" in 0|1) ;; *) echo "Aviso: RELAY_NOVAS_CONTAS='$V_NOVAS' nao e 0 nem 1; fica $PREV_NOVAS" >&2; V_NOVAS="$PREV_NOVAS" ;; esac
 umask 027
 cat > "$ENV_FILE" <<EOF
 RELAY_BIND_ADDR=127.0.0.1:9443
@@ -170,8 +185,12 @@ RELAY_BLOB_MIN_FREE_MB=${RELAY_BLOB_MIN_FREE_MB:-1024}
 RELAY_MAX_CONNECTIONS=${RELAY_MAX_CONNECTIONS:-10000}
 # Fichas do video pelo relay (0006): a semente das chaves de cada mes (criada no primeiro
 # arranque; o qt-call-relay so a le) e quantas fichas cada conta recebe por mes.
+# Federacao: TODOS os relays usam a MESMA semente (quem atende usa o relay das chamadas de quem
+# liga, com fichas pedidas ao seu proprio relay). Num relay novo, copiar a de Estocolmo para
+# /etc/qt/fichas_seed.bin ANTES de correr este script (ele passa-a para /var/lib/qt).
 FICHAS_SEED_PATH=/var/lib/qt/fichas_seed.bin
 RELAY_FICHAS_POR_MES=$V_FICHAS
+RELAY_NOVAS_CONTAS=$V_NOVAS
 EOF
 umask 022
 # Notificacoes com a app fechada: Android (FCM) so se existir /etc/qt/fcm.json (a chave da

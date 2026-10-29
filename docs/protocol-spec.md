@@ -787,7 +787,7 @@ para uma versão antiga mostrar "atualiza a app" uma só vez por chamada. Corpo 
 
 | op | nome | resto | campainha |
 |---|---|---|---|
-| 1 | oferta | `[32 offer_secret][2 pad BE]` | sim, marcada `Call` (desde a 0.9.6) |
+| 1 | oferta | `[32 offer_secret][2 pad BE]` e, opcional, `[1 n][n nome do relay]` (federação, secção 25.3) | sim, marcada `Call` (desde a 0.9.6) |
 | 4 | a tocar | vazio | não (`silent`) |
 | 2 | resposta | `[32 answer_secret]` | não |
 | 3 | desligar | `[1 motivo]`: 1 desligou, 2 recusou, 3 ocupado, 4 sem resposta, 5 cancelou | só "cancelou" e "sem resposta" de quem liga, marcada `CallEnd` (desde a 0.9.6) |
@@ -1387,6 +1387,41 @@ continuam a fazer os mesmos pedidos ao seu relay.
 * Cópia de recuperação: `BackupGet` que não está aqui → `LerCopia { lookup, part }` a todos os pares (o que
   a tem fica em memória 10 min, para as outras partes). `BackupPut` só no relay da conta.
 * Registos: só contagens (`fed_enviadas`, `fed_recebidas`, `fed_pedidos`).
+
+### 25.2 Fase 3: vários relays nas apps
+
+* **Lista na build.** O relay principal (`qtRelayUrl`, `qtRelayPin`, `qtRelayName`; iPhone `QT_RELAY_*`) e os
+  outros da federação (`qtRelaysOutros` / `QT_RELAYS_OTHERS`: `nome|wss://...|pin`, separados por `;`). Todas
+  as chaves fixadas. A app guarda o nome do relay da conta (`relay_home`); sem ele, o principal (todas as contas
+  antigas estão lá). Código: `Relays.kt` e `Relays.swift`.
+* **Contas novas** ficam no principal. Um relay com `RELAY_NOVAS_CONTAS=0` (decisão do operador, por
+  exemplo cheio) recusa contas novas com `Error{"relay sem contas novas"}` (`relay_no_new_accounts_reason`) e
+  a app passa ao relay seguinte da lista. As contas que já lá estão continuam a renovar o registo.
+* **Conta noutro relay.** O registo de uma conta que vive noutro relay (por exemplo, recuperada com as 12
+  palavras num telemóvel novo) dá `Error{"conta noutro relay: <nome>"}` (`relay_elsewhere_name`). Só chega a
+  quem prova ser a conta (registo assinado). A app guarda esse relay e volta a ligar-se a ele. A cópia de
+  recuperação encontra-se em qualquer relay (25.1). No máximo 4 mudanças por sessão.
+* **Operador.** O operador fala com um relay. `AdminGrantPremium`, `AdminSetFichasQuota` e `AdminBan` de uma
+  conta de outro relay vão para o relay dela (pedido `Admin` entre relays); `AdminUnban` e
+  `AdminPremiumEnforce` valem em todos; `AdminOnline`, `AdminListPremium` e `AdminListBans` juntam os de todos.
+  As denúncias ficam no relay de quem denunciou (o operador lista-as em cada relay).
+* **Notificações.** Cada relay precisa de `/etc/qt/fcm.json` e `/etc/qt/apns.json` (a app regista o token no
+  relay da conta).
+
+### 25.3 Fase 4: chamadas entre relays
+
+As duas apps usam o relay das chamadas (`qt-call-relay`) **de quem liga**. A oferta (tipo 11, op 1) leva o
+nome do relay de quem liga (`[1 n][n nome]`, depois do `pad`) só quando esse relay não é o principal; sem
+nome, as duas usam o principal (as ofertas das contas do principal ficam iguais às de antes). Quem atende
+procura o nome na sua lista (URL e chave fixada) e entra na mesma sala desse relay das chamadas (salas
+anónimas, sem conta). `call_set_relay` (o relay desta conta, quando não é o principal) e `call_relay`
+(o relay de uma chamada). Uma app antiga ignora uma oferta com nome.
+
+**Fichas do vídeo.** Todos os relays usam a **mesma semente** (`fichas_seed.bin`, copiada de Estocolmo para
+`/etc/qt/fichas_seed.bin` antes do `setup-ec2.sh` de um relay novo): as fichas pedidas a um relay servem no
+relay das chamadas de outro, e as chaves publicadas no site são as mesmas. Cada relay das chamadas tem o seu
+registo das fichas gastas: uma ficha podia ser gasta uma vez em cada relay (no máximo o dobro da quota, só
+com uma app alterada).
 
 ## Documentos relacionados
 
