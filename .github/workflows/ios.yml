@@ -6,7 +6,7 @@ name: iPhone
 
 on:
   push:
-    branches: [site-sealer, develop, main]
+    branches: [main, develop]
     paths:
       - "ios/**"
       - "ffi/**"

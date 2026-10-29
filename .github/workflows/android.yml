@@ -8,7 +8,7 @@ name: Android
 
 on:
   push:
-    branches: [site-sealer, develop, main]
+    branches: [main, develop]
     paths:
       - "android/**"
       - "ffi/**"
