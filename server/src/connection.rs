@@ -160,8 +160,11 @@ pub async fn handle_connection_with(
         }
     };
     // Conta banida pelo operador: recusada. Se o Redis falhar, deixa entrar (o resto dos
-    // pedidos falha na mesma e uma avaria nao deve fechar o relay a toda a gente).
-    if matches!(store.is_banned(&user_id).await, Ok(true)) {
+    // pedidos falha na mesma e uma avaria nao deve fechar o relay a toda a gente). No mesmo
+    // pedido: a conta tem bundle? (marca da ligacao, para o `SendMessage` nao o verificar
+    // a cada mensagem nem o registo voltar a perguntar se esta banida).
+    let (banned, registered) = store.auth_state(&user_id).await.unwrap_or((false, false));
+    if banned {
         stats::inc(&STATS.auth_failed);
         reply(&mut ws, &mut noise, &err(crate::protocol::BANNED)).await?;
         ws_transport::close_gracefully(&mut ws).await;
@@ -171,18 +174,19 @@ pub async fn handle_connection_with(
     drop(unauthenticated);
     // No maximo `max_connections_per_user` por conta: as mais antigas fecham.
     let (slot, closed) = crate::limits::UserSlot::register(&user_id, cfg.max_connections_per_user);
+    slot.set_registered(registered);
     stats::add(&STATS.closed_oldest, closed as u64);
     reply(&mut ws, &mut noise, &ServerMessage::Ack).await?;
 
     // ---------- Loop principal ----------
     // Pedido que chegou a meio de uma espera (WaitMessages): tratado a seguir.
     let mut pending: Option<Vec<u8>> = None;
-    let mut probe = IdaProbe::default();
+    let mut session = Session { slot: &slot, delivered: Vec::new(), probe: IdaProbe::default() };
     let main_loop = async {
         loop {
             let payload = match pending.take() {
                 Some(p) => p,
-                None => match next_request(&mut ws, &mut noise, cfg.idle_timeout, &mut probe).await {
+                None => match next_request(&mut ws, &mut noise, cfg.idle_timeout, &mut session.probe).await {
                     Some(p) => p,
                     // Fecho normal, timeout de inatividade ou frame invalido: encerra a sessao.
                     None => break,
@@ -191,7 +195,7 @@ pub async fn handle_connection_with(
             let mut sent_message = false;
             let response = match deserialize_client_message(&payload) {
                 Ok(ClientMessage::WaitMessages { user_id: asked, timeout_secs }) => {
-                    match wait_messages(&store, &user_id, &asked, timeout_secs, &mut ws, &mut noise, &mut probe).await {
+                    match wait_messages(&store, &user_id, &asked, timeout_secs, &mut ws, &mut noise, &mut session).await {
                         WaitEnd::Reply(r) => r,
                         WaitEnd::ReplyThen(r, next) => {
                             pending = Some(next);
@@ -202,7 +206,7 @@ pub async fn handle_connection_with(
                 }
                 Ok(m) => {
                     sent_message = matches!(m, ClientMessage::SendMessage { .. });
-                    handle_client_message(&store, &user_id, m, cfg).await
+                    handle_client_message(&store, &user_id, m, cfg, &mut session).await
                 }
                 Err(_) => {
                     stats::inc(&STATS.invalid_requests);
@@ -214,7 +218,7 @@ pub async fn handle_connection_with(
             }
             // Acabou de enviar uma mensagem: mede a ida e volta ate este telemovel.
             if sent_message && matches!(response, ServerMessage::Ack) {
-                if let Some(ping) = probe.start() {
+                if let Some(ping) = session.probe.start() {
                     if ws_transport::send_ping(&mut ws, ping).await.is_err() {
                         break;
                     }
@@ -339,7 +343,7 @@ async fn wait_messages(
     timeout_secs: u64,
     ws: &mut ws_transport::ServerWsStream,
     noise: &mut qt_transport::NoiseTransport,
-    probe: &mut IdaProbe,
+    session: &mut Session<'_>,
 ) -> WaitEnd {
     if user_id != me {
         return WaitEnd::Reply(err("so podes ler a tua propria fila"));
@@ -352,8 +356,8 @@ async fn wait_messages(
     let notified = waiter.notify().notified();
     tokio::pin!(notified);
     notified.as_mut().enable();
-    match store.peek_messages(user_id, MAX_PAGE_BYTES).await {
-        Ok(raw) if !raw.is_empty() || wait.is_zero() => return WaitEnd::Reply(messages(raw)),
+    match store.peek_messages_raw(user_id, MAX_PAGE_BYTES).await {
+        Ok(raw) if !raw.is_empty() || wait.is_zero() => return WaitEnd::Reply(session.page(raw)),
         Ok(_) => {}
         Err(e) => return WaitEnd::Reply(internal(e)),
     }
@@ -367,7 +371,7 @@ async fn wait_messages(
             _ = &mut deadline => break,
             incoming = ws_transport::next_incoming(ws) => match incoming {
                 ws_transport::Incoming::Control => continue,
-                ws_transport::Incoming::Pong(p) => probe.pong(&p),
+                ws_transport::Incoming::Pong(p) => session.probe.pong(&p),
                 ws_transport::Incoming::Data(frame) => match noise.decrypt(&frame) {
                     Ok(p) => {
                         next = Some(p);
@@ -379,13 +383,53 @@ async fn wait_messages(
             },
         }
     }
-    let reply = match store.peek_messages(user_id, MAX_PAGE_BYTES).await {
-        Ok(raw) => messages(raw),
+    let reply = match store.peek_messages_raw(user_id, MAX_PAGE_BYTES).await {
+        Ok(raw) => session.page(raw),
         Err(e) => internal(e),
     };
     match next {
         Some(p) => WaitEnd::ReplyThen(reply, p),
         None => WaitEnd::Reply(reply),
+    }
+}
+
+/// Estado de uma ligacao autenticada usado pelos pedidos.
+struct Session<'a> {
+    slot: &'a crate::limits::UserSlot,
+    /// Entradas (id, bytes como estao no Redis) da ultima pagina entregue: a confirmacao
+    /// apaga-as logo (`Store::ack_known`), sem ler a fila outra vez. Alguns KB, so ate a
+    /// confirmacao ou a pagina seguinte; vazia (sem memoria) quando nao ha nada por confirmar.
+    delivered: Vec<(u64, Vec<u8>)>,
+    /// Medicao do tempo de ida ate este telemovel (`IdaProbe`).
+    probe: IdaProbe,
+}
+
+impl Session<'_> {
+    /// Resposta `Messages` com a pagina, que fica guardada para a confirmacao.
+    fn page(&mut self, page: Vec<(crate::store::QueuedMessage, Vec<u8>)>) -> ServerMessage {
+        self.delivered.clear();
+        let mut msgs = Vec::with_capacity(page.len());
+        for (m, raw) in page {
+            self.delivered.push((m.id, raw));
+            msgs.push(m);
+        }
+        if self.delivered.is_empty() {
+            self.delivered = Vec::new();
+        }
+        messages(msgs)
+    }
+
+    /// A conta desta ligacao tem bundle? Usa a marca da ligacao e so pergunta ao Redis
+    /// (`EXISTS`) quando ela nao esta posta; um sim fica guardado.
+    async fn registered(&self, store: &Store, me: &str) -> Result<bool, StoreError> {
+        if self.slot.registered() {
+            return Ok(true);
+        }
+        let yes = store.is_registered(me).await?;
+        if yes {
+            self.slot.set_registered(true);
+        }
+        Ok(yes)
     }
 }
 
@@ -407,7 +451,13 @@ fn internal(_e: StoreError) -> ServerMessage {
     err("erro interno")
 }
 
-async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg: &ServerConfig) -> ServerMessage {
+async fn handle_client_message(
+    store: &Store,
+    me: &str,
+    msg: ClientMessage,
+    cfg: &ServerConfig,
+    session: &mut Session<'_>,
+) -> ServerMessage {
     match msg {
         ClientMessage::Authenticate { .. } => err("ja autenticado"),
         ClientMessage::RegisterPreKeyBundle { user_id, bundle_bytes, pow, one_time_pre_keys } => {
@@ -435,14 +485,11 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                     return err("one-time prekeys invalidas");
                 }
             }
-            match store.is_banned(me).await {
-                Ok(false) => {}
-                Ok(true) => return err(crate::protocol::BANNED),
-                Err(e) => return internal(e),
-            }
-            // Conta nova (ou que expirou): so com prova de trabalho valida.
-            let nova = match store.get_bundle(me).await {
-                Ok(b) => b.is_none(),
+            // Banida: ja visto na autenticacao (banir fecha as ligacoes da conta, por isso
+            // continua valido). Conta nova (ou que expirou): so com prova de trabalho valida.
+            // A marca da ligacao diz se ja tem bundle; sem ela, um `EXISTS` (sem ler o bundle).
+            let nova = match session.registered(store, me).await {
+                Ok(yes) => !yes,
                 Err(e) => return internal(e),
             };
             if nova
@@ -473,7 +520,8 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                     crate::federation::Reserva::Banida => return err(crate::protocol::BANNED),
                 }
             }
-            let registo = store.register_bundle(user_id, bundle_bytes).await;
+            // Bundle, fim de uma eliminacao anterior e one-time prekeys numa so transacao.
+            let registo = store.register_full(me, bundle_bytes, one_time_pre_keys.as_deref()).await;
             if registo.is_ok() && por_verificar {
                 // Algum relay nao respondeu: fica para verificar quando ele voltar (A1).
                 let _ = store.fed_marcar_por_verificar(me).await;
@@ -482,14 +530,12 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 fed.libertar(me);
             }
             match registo {
-                Ok(()) => {
+                Ok(backup) => {
+                    session.slot.set_registered(true);
                     stats::inc(&STATS.bundles_registered);
-                    // A app abriu: a copia de recuperacao fica mais 90 dias.
-                    let _ = store.renew_backup(me).await;
-                    if let Some(keys) = one_time_pre_keys {
-                        if let Err(e) = store.replace_one_time_prekeys(me, &keys).await {
-                            return internal(e);
-                        }
+                    // A app abriu: a copia de recuperacao (se houver) fica mais 90 dias.
+                    if let Some(lookup) = backup {
+                        let _ = store.renew_backup_of(me, &lookup).await;
                     }
                     ServerMessage::Ack
                 }
@@ -555,13 +601,21 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             let recipient = to.clone();
             // Copias so para a federacao (a fila local consome as originais).
             let fed_copy = cfg.federacao.as_ref().map(|_| (sealed_from.clone(), ciphertext.clone()));
-            let local = store.enqueue_message(me, to, sealed_from, ciphertext).await;
+            // Remetente ja visto com bundle nesta ligacao: nao e verificado outra vez.
+            let sender = match session.slot.registered() {
+                true => crate::store::Sender::Registered,
+                false => crate::store::Sender::Check(me),
+            };
+            let local = store.enqueue(sender, to, sealed_from, ciphertext).await;
+            if local.is_ok() {
+                session.slot.set_registered(true);
+            }
             // Federacao (fase 2): destinatario que nao esta neste relay (ou que apagou a conta
             // AQUI e pode existir noutro). So para quem esta registado neste relay.
             if let (Some(fed), Some((sf, ct)), Err(StoreError::RecipientUnknown | StoreError::RecipientDeleted)) =
                 (&cfg.federacao, &fed_copy, &local)
             {
-                if matches!(local, Err(StoreError::RecipientUnknown)) || matches!(store.is_registered(me).await, Ok(true)) {
+                if matches!(local, Err(StoreError::RecipientUnknown)) || matches!(session.registered(store, me).await, Ok(true)) {
                     match fed.entregar(&recipient, sf, ct, silent, wake).await {
                         crate::federation::Entrega::Entregue => {
                             stats::inc(&STATS.sends);
@@ -613,6 +667,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             }
             match store.delete_account(&user_id).await {
                 Ok(()) => {
+                    crate::limits::UserSlot::forget_registered(&user_id);
                     let _ = store.delete_backup(&user_id).await;
                     let _ = store.set_premium(&user_id, 0).await;
                     stats::inc(&STATS.accounts_deleted);
@@ -631,7 +686,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             // Guardar um token (ate 4 KB, 90 dias) so com conta registada: chaves
             // descartaveis enchiam o Redis. Apagar (token vazio) e sempre permitido.
             if !token.is_empty() {
-                match store.is_registered(me).await {
+                match session.registered(store, me).await {
                     Ok(true) => {}
                     Ok(false) => {
                         stats::inc(&STATS.not_registered);
@@ -652,8 +707,8 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             if user_id != me {
                 return err("so podes ler a tua propria fila");
             }
-            match store.peek_messages(&user_id, MAX_PAGE_BYTES).await {
-                Ok(raw) => messages(raw),
+            match store.peek_messages_raw(&user_id, MAX_PAGE_BYTES).await {
+                Ok(raw) => session.page(raw),
                 Err(e) => internal(e),
             }
         }
@@ -662,8 +717,8 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             if user_id != me {
                 return err("so podes ler a tua propria fila");
             }
-            match store.peek_messages(&user_id, MAX_PAGE_BYTES).await {
-                Ok(raw) => messages(raw),
+            match store.peek_messages_raw(&user_id, MAX_PAGE_BYTES).await {
+                Ok(raw) => session.page(raw),
                 Err(e) => internal(e),
             }
         }
@@ -674,7 +729,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             if ids.len() > MAX_ACK_IDS {
                 return err("demasiados ids");
             }
-            match store.ack_messages_ids(&user_id, &ids).await {
+            match store.ack_known(&user_id, &ids, &mut session.delivered).await {
                 Ok(removed) => {
                     stats::add(&STATS.acked, removed.len() as u64);
                     crate::latency::acked(&removed);
@@ -685,7 +740,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
         }
         // Anexo novo so com conta registada: chaves descartaveis contornavam a quota
         // diaria por conta e enchiam o espaco dos anexos (2 GB) para toda a gente.
-        ClientMessage::BlobCreate { size } => match store.is_registered(me).await {
+        ClientMessage::BlobCreate { size } => match session.registered(store, me).await {
             Ok(false) => {
                 stats::inc(&STATS.not_registered);
                 err(crate::protocol::NOT_REGISTERED)
@@ -758,7 +813,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             if !len_ok || sealed[0] != qt_core::report::VERSION {
                 return err("denuncia invalida");
             }
-            match store.is_registered(me).await {
+            match session.registered(store, me).await {
                 Ok(true) => {}
                 Ok(false) => {
                     stats::inc(&STATS.not_registered);
@@ -871,7 +926,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 stats::inc(&STATS.rate_limited);
                 return err(crate::protocol::RATE_LIMITED);
             }
-            match store.is_registered(me).await {
+            match session.registered(store, me).await {
                 Ok(true) => {}
                 Ok(false) => {
                     stats::inc(&STATS.not_registered);
@@ -973,7 +1028,7 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
             }
             Err(e) => internal(e),
         },
-        ClientMessage::IssueFichas { epoch, blinded } => issue_fichas(store, me, epoch, &blinded, cfg).await,
+        ClientMessage::IssueFichas { epoch, blinded } => issue_fichas(store, me, epoch, &blinded, cfg, session).await,
         ClientMessage::AdminSetFichasQuota { user_id, per_month } => {
             if !is_valid_user_id(&user_id) {
                 return err("user_id invalido");
@@ -1010,7 +1065,14 @@ async fn admin_noutro_relay(
 
 /// Emissao das fichas do video (0006). So conta quantas deu a conta neste mes: nao guarda nem
 /// regista o pedido, a resposta ou a hora (os elementos sao cegos: nao dizem que fichas sao).
-async fn issue_fichas(store: &Store, me: &str, epoch: u32, blinded: &str, cfg: &ServerConfig) -> ServerMessage {
+async fn issue_fichas(
+    store: &Store,
+    me: &str,
+    epoch: u32,
+    blinded: &str,
+    cfg: &ServerConfig,
+    session: &Session<'_>,
+) -> ServerMessage {
     use qt_core::fichas::{current_epoch, ELEMENT_LEN, MAX_BATCH};
     let Some(keys) = cfg.fichas.as_ref() else { return err(crate::protocol::FICHAS_OFF) };
     // base64 de ate MAX_BATCH elementos.
@@ -1021,7 +1083,7 @@ async fn issue_fichas(store: &Store, me: &str, epoch: u32, blinded: &str, cfg: &
         stats::inc(&STATS.rate_limited);
         return err(crate::protocol::RATE_LIMITED);
     }
-    match store.is_registered(me).await {
+    match session.registered(store, me).await {
         Ok(true) => {}
         Ok(false) => {
             stats::inc(&STATS.not_registered);

@@ -207,12 +207,6 @@ impl Store {
         let mut conn = self.connection().await.map_err(|e| release(e.into()))?;
         let day = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() / 86_400).unwrap_or(0);
         let qkey = format!("{}:blobquota:{}:{}", self.key_prefix, owner, day);
-        let total: u64 = conn.incr(&qkey, size).await.map_err(|e| release(e.into()))?;
-        conn.expire::<_, ()>(&qkey, 2 * 86_400).await.map_err(|e| release(e.into()))?;
-        if total > blobs.cfg.max_user_bytes_per_day {
-            let _: Result<u64, _> = conn.decr(&qkey, size).await;
-            return Err(release(BlobError::Quota));
-        }
 
         let id = random_hex16();
         let token = random_hex16();
@@ -224,19 +218,33 @@ impl Store {
             opts.mode(0o600);
         }
         opts.open(blobs.path(&id)).map_err(|e| release(e.into()))?;
+        // Quota do dia e registo do anexo num so pedido ao Redis (antes eram quatro, um a
+        // um). Se a quota passar do limite, desfaz: devolve os bytes ao contador (DECRBY) e
+        // apaga o registo, que ninguem chegou a ver (o id e o token nao sairam daqui).
         let key = self.blob_key(&id);
-        let res: Result<(), redis::RedisError> = async {
-            conn.hset_multiple::<_, _, _, ()>(
-                &key,
-                &[("size", size.to_string()), ("token", token_hash(&token)), ("complete", "0".to_string())],
-            )
-            .await?;
-            conn.expire::<_, ()>(&key, blobs.cfg.ttl.as_secs() as i64).await
-        }
-        .await;
-        if let Err(e) = res {
-            let _ = std::fs::remove_file(blobs.path(&id));
-            return Err(release(e.into()));
+        let res: Result<(u64,), redis::RedisError> = redis::pipe()
+            .incr(&qkey, size)
+            .expire(&qkey, 2 * 86_400)
+            .ignore()
+            .hset_multiple(&key, &[("size", size.to_string()), ("token", token_hash(&token)), ("complete", "0".to_string())])
+            .ignore()
+            .expire(&key, blobs.cfg.ttl.as_secs() as i64)
+            .ignore()
+            .query_async(&mut conn)
+            .await;
+        match res {
+            // Erro do Redis: nao se sabe que comandos correram, por isso o contador nao e
+            // mexido (como antes, quando o EXPIRE falhava depois do INCRBY).
+            Err(e) => {
+                let _ = std::fs::remove_file(blobs.path(&id));
+                return Err(release(e.into()));
+            }
+            Ok((total,)) if total > blobs.cfg.max_user_bytes_per_day => {
+                let _: Result<(), _> = redis::pipe().decr(&qkey, size).ignore().del(&key).ignore().query_async(&mut conn).await;
+                let _ = std::fs::remove_file(blobs.path(&id));
+                return Err(release(BlobError::Quota));
+            }
+            Ok(_) => {}
         }
         Ok((id, token))
     }

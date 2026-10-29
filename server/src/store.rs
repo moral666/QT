@@ -44,6 +44,11 @@ pub const MAX_REPORTS_PER_DAY: u64 = 10;
 /// Denuncias guardadas ao mesmo tempo, no maximo (o operador apaga as tratadas).
 pub const MAX_REPORTS_STORED: usize = 5_000;
 
+/// Ids das mensagens reservados de uma vez (`INCRBY seq`): um pedido ao Redis por cada
+/// `ID_BLOCK` mensagens em vez de um `INCR` por mensagem. Os ids so tem de ser unicos (as
+/// apps so os usam para confirmar); depois de um reinicio fica um buraco, nada mais.
+const ID_BLOCK: u64 = 1000;
+
 /// Entradas lidas do Redis por pedido de mensagens: primeiro estas...
 const PEEK_FIRST: isize = 16;
 /// ...e, se couberem todas na pagina, ate este total (o limite de sempre).
@@ -104,6 +109,8 @@ pub struct Store {
     pub(crate) key_prefix: String,
     /// Anexos no disco (ver `blobs.rs`); `None` = desativados.
     pub(crate) blobs: Option<crate::blobs::Blobs>,
+    /// Bloco de ids reservado no Redis: (proximo, fim exclusivo). Ver `ID_BLOCK`.
+    ids: tokio::sync::Mutex<(u64, u64)>,
 }
 
 impl Store {
@@ -114,7 +121,13 @@ impl Store {
 
     pub fn with_prefix(redis_url: &str, key_prefix: &str) -> Result<Self, StoreError> {
         let client = redis::Client::open(redis_url)?;
-        Ok(Self { client, shared: tokio::sync::OnceCell::new(), key_prefix: key_prefix.to_string(), blobs: None })
+        Ok(Self {
+            client,
+            shared: tokio::sync::OnceCell::new(),
+            key_prefix: key_prefix.to_string(),
+            blobs: None,
+            ids: tokio::sync::Mutex::new((0, 0)),
+        })
     }
 
     /// Ativa os anexos, guardados em `cfg.dir` (criada com permissoes 0700).
@@ -140,6 +153,65 @@ impl Store {
 
     fn deleted_key(&self, user_id: &str) -> String {
         format!("{}:deleted:{}", self.key_prefix, user_id)
+    }
+
+    fn bundle_key(&self, user_id: &str) -> String {
+        format!("{}:bundle:{}", self.key_prefix, user_id)
+    }
+
+    /// Id novo para uma mensagem: do bloco reservado; so quando o bloco acaba vai ao
+    /// Redis (`INCRBY seq ID_BLOCK`). Os ids continuam a crescer: um bloco novo vem
+    /// sempre acima dos anteriores, tambem depois de reiniciar.
+    async fn next_id(&self, conn: &mut redis::aio::ConnectionManager) -> Result<u64, StoreError> {
+        let mut block = self.ids.lock().await;
+        if block.0 >= block.1 {
+            let top: u64 = conn.incr(format!("{}:seq", self.key_prefix), ID_BLOCK).await?;
+            *block = (top + 1 - ID_BLOCK, top + 1);
+        }
+        let id = block.0;
+        block.0 += 1;
+        Ok(id)
+    }
+
+    /// Estado da conta ao autenticar, num so pedido: banida? registada (tem bundle)?
+    /// `EXISTS` em vez de `GET`: nao le o bundle (~1,4 KB) so para saber se existe.
+    pub async fn auth_state(&self, user_id: &str) -> Result<(bool, bool), StoreError> {
+        let mut conn = self.connection().await?;
+        let (ban, registered): (Option<Vec<u8>>, bool) = redis::pipe()
+            .get(format!("{}:ban:{}", self.key_prefix, user_id))
+            .exists(self.bundle_key(user_id))
+            .query_async(&mut conn)
+            .await?;
+        Ok((ban.is_some(), registered))
+    }
+
+    /// Registo completo (`RegisterPreKeyBundle`) numa so transacao (MULTI/EXEC): bundle
+    /// com TTL, desfaz uma eliminacao anterior, troca as one-time prekeys (se vierem) e le
+    /// a ligacao a copia de recuperacao (`bkof`), para a renovar a seguir so se existir.
+    /// Devolve o `lookup` da copia, se houver.
+    pub async fn register_full(
+        &self,
+        user_id: &str,
+        bundle_bytes: Vec<u8>,
+        one_time_pre_keys: Option<&[Vec<u8>]>,
+    ) -> Result<Option<String>, StoreError> {
+        let mut conn = self.connection().await?;
+        let key = self.bundle_key(user_id);
+        let mut pipe = redis::pipe();
+        pipe.atomic();
+        pipe.set(&key, bundle_bytes).ignore();
+        pipe.expire(&key, BUNDLE_TTL_SECONDS as i64).ignore();
+        pipe.del(self.deleted_key(user_id)).ignore();
+        if let Some(keys) = one_time_pre_keys {
+            let otpk = format!("{}:otpk:{}", self.key_prefix, user_id);
+            pipe.del(&otpk).ignore();
+            if !keys.is_empty() {
+                pipe.rpush(&otpk, keys).ignore().expire(&otpk, BUNDLE_TTL_SECONDS as i64).ignore();
+            }
+        }
+        pipe.get(format!("{}:bkof:{user_id}", self.key_prefix));
+        let (lookup,): (Option<String>,) = pipe.query_async(&mut conn).await?;
+        Ok(lookup)
     }
 
     /// Guarda (ou renova) o bundle, com `BUNDLE_TTL_SECONDS`. Publicar um bundle
@@ -291,8 +363,10 @@ impl Store {
 
     /// A conta tem bundle publicado (passou a prova de trabalho e abriu a app nos
     /// ultimos 90 dias)? So estas contas podem escrever no relay alem do registo.
+    /// `EXISTS` em vez de ler o bundle (~1,4 KB) so para saber se existe.
     pub async fn is_registered(&self, user_id: &str) -> Result<bool, StoreError> {
-        Ok(self.get_bundle(user_id).await?.is_some())
+        let mut conn = self.connection().await?;
+        Ok(conn.exists(self.bundle_key(user_id)).await?)
     }
 
     /// Poe uma mensagem na fila de `to`. So entre contas registadas: `from` (quem
@@ -304,68 +378,81 @@ impl Store {
         sealed_from: Vec<u8>,
         ciphertext: Vec<u8>,
     ) -> Result<u64, StoreError> {
-        self.enqueue_inner(Some(from), to, sealed_from, ciphertext).await
+        self.enqueue(Sender::Check(from), to, sealed_from, ciphertext).await
     }
 
     /// Mensagem vinda de outro relay da federacao (`federation.rs`): quem envia esta registado
     /// LA (o outro relay ja verificou e aplicou os limites dele); aqui so o destinatario conta.
     pub async fn enqueue_from_peer(&self, to: UserId, sealed_from: Vec<u8>, ciphertext: Vec<u8>) -> Result<u64, StoreError> {
-        self.enqueue_inner(None, to, sealed_from, ciphertext).await
+        self.enqueue(Sender::Peer, to, sealed_from, ciphertext).await
     }
 
-    async fn enqueue_inner(
+    /// Poe a mensagem na fila numa so ida ao Redis: as verificacoes (conta apagada,
+    /// destinatario e remetente registados, fila cheia) vao no MESMO pedido que a escrita
+    /// (RPUSH + EXPIRE), e se alguma falhar a entrada e retirada a seguir (LREM). Antes eram
+    /// dois pedidos seguidos (verificar, depois escrever) e um `INCR` por mensagem.
+    ///
+    /// Escrever antes de verificar e seguro: uma conta apagada ou desconhecida nao tem
+    /// ninguem a ler a fila, e numa fila cheia a entrada fica depois da posicao 1000, onde a
+    /// entrega (que le no maximo 100) nao chega. Se a fila nao existia, o LREM deixa-a vazia e
+    /// o Redis apaga-a: nao fica nada. Se ja existia (bundle expirado, conta levada para outro
+    /// relay pela federacao, fila cheia), o desfazer repoe o prazo que ela tinha (`TTL` lido no
+    /// mesmo pedido), para uma recusa nunca prolongar a vida de uma fila velha.
+    /// So comandos do ACL do relay: LLEN, EXISTS, TTL, RPUSH, EXPIRE, LREM.
+    pub async fn enqueue(
         &self,
-        from: Option<&str>,
+        from: Sender<'_>,
         to: UserId,
         sealed_from: Vec<u8>,
         ciphertext: Vec<u8>,
     ) -> Result<u64, StoreError> {
         let mut conn = self.connection().await?;
         let key = format!("{}:queue:{}", self.key_prefix, to);
+        let id = self.next_id(&mut conn).await?;
+        let entry = encode_entry(id, &sealed_from, &ciphertext);
+        drop((sealed_from, ciphertext));
 
-        // Duas idas ao Redis em vez de quatro: (verificacoes + id novo) e depois
-        // (guardar + renovar o TTL), cada grupo num so pedido (pipeline). Um id gasto
-        // numa mensagem recusada nao faz falta (os ids so tem de ser unicos).
-        // GET em vez de EXISTS: so comandos permitidos pelo ACL do relay (o bundle
-        // tem ~1,4 KB, lido no mesmo pedido, sem ida extra ao Redis).
-        type Checks = (usize, u64, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
-        let (current_len, id, deleted, to_bundle, from_bundle): Checks = redis::pipe()
-            .llen(&key)
-            .incr(format!("{}:seq", self.key_prefix), 1u64)
-            .get(self.deleted_key(&to))
-            .get(format!("{}:bundle:{}", self.key_prefix, to))
-            // Sem `from` (vinda de outro relay): le o bundle do destinatario outra vez, so para
-            // manter o mesmo pedido; o resultado nao conta.
-            .get(format!("{}:bundle:{}", self.key_prefix, from.unwrap_or(&to)))
-            .query_async(&mut conn)
-            .await?;
+        let mut pipe = redis::pipe();
+        pipe.llen(&key).exists(self.deleted_key(&to)).exists(self.bundle_key(&to)).ttl(&key);
+        if let Sender::Check(f) = from {
+            pipe.exists(self.bundle_key(f));
+        }
+        pipe.rpush(&key, &entry).expire(&key, QUEUE_TTL_SECONDS).ignore();
+        let v: Vec<redis::Value> = pipe.query_async(&mut conn).await?;
+        let at = |i: usize| v.get(i).ok_or_else(|| redis::RedisError::from((redis::ErrorKind::TypeError, "resposta curta")));
+        let len_before: usize = redis::from_redis_value(at(0)?)?;
+        let deleted: bool = redis::from_redis_value(at(1)?)?;
+        let to_registered: bool = redis::from_redis_value(at(2)?)?;
+        let ttl_before: i64 = redis::from_redis_value(at(3)?)?;
+        let (from_registered, len_after): (Option<bool>, usize) = match from {
+            Sender::Check(_) => (Some(redis::from_redis_value(at(4)?)?), redis::from_redis_value(at(5)?)?),
+            _ => (None, redis::from_redis_value(at(4)?)?),
+        };
+
         // Por esta ordem: "apagou a conta" continua a ser a resposta para quem apagou
         // (a app mostra um aviso), mesmo que o bundle ja nao exista.
-        if deleted.is_some() {
-            return Err(StoreError::RecipientDeleted);
+        let refused = if deleted {
+            Some(StoreError::RecipientDeleted)
+        } else if from_registered == Some(false) {
+            Some(StoreError::SenderNotRegistered)
+        } else if !to_registered {
+            Some(StoreError::RecipientUnknown)
+        } else if len_before >= MAX_QUEUED_MESSAGES_PER_USER {
+            Some(StoreError::QueueFull)
+        } else {
+            None
+        };
+        if let Some(e) = refused {
+            let mut undo = redis::pipe();
+            undo.lrem(&key, 1, &entry).ignore();
+            if len_after > 1 && ttl_before > 0 {
+                undo.expire(&key, ttl_before).ignore();
+            }
+            undo.query_async::<_, ()>(&mut conn).await?;
+            return Err(e);
         }
-        if from.is_some() && from_bundle.is_none() {
-            return Err(StoreError::SenderNotRegistered);
-        }
-        if to_bundle.is_none() {
-            return Err(StoreError::RecipientUnknown);
-        }
-        if current_len >= MAX_QUEUED_MESSAGES_PER_USER {
-            return Err(StoreError::QueueFull);
-        }
-
-        let entry = encode_entry(id, &sealed_from, &ciphertext);
-        // Renova o TTL a cada nova mensagem - a fila só expira 30 dias
-        // depois da ÚLTIMA mensagem recebida, não da primeira.
-        redis::pipe()
-            .rpush(&key, entry)
-            .ignore()
-            .expire(&key, QUEUE_TTL_SECONDS)
-            .ignore()
-            .query_async::<_, ()>(&mut conn)
-            .await?;
-
-        // O id (interno da fila) serve so para medir o tempo de entrega (latency.rs).
+        // O id (interno da fila) serve so para confirmar e para medir o tempo de entrega
+        // (latency.rs).
         Ok(id)
     }
 
@@ -377,6 +464,16 @@ impl Store {
         user_id: &str,
         max_bytes: usize,
     ) -> Result<Vec<QueuedMessage>, StoreError> {
+        Ok(self.peek_messages_raw(user_id, max_bytes).await?.into_iter().map(|(m, _)| m).collect())
+    }
+
+    /// Como `peek_messages`, com cada entrada tambem em bruto (como esta no Redis): a
+    /// ligacao guarda-as para a confirmacao apagar sem voltar a ler a fila (`ack_known`).
+    pub async fn peek_messages_raw(
+        &self,
+        user_id: &str,
+        max_bytes: usize,
+    ) -> Result<Vec<(QueuedMessage, Vec<u8>)>, StoreError> {
         let mut conn = self.connection().await?;
         let key = format!("{}:queue:{}", self.key_prefix, user_id);
         let mut out = Vec::new();
@@ -397,7 +494,7 @@ impl Store {
                             return Ok(out);
                         }
                         budget += est;
-                        out.push(m);
+                        out.push((m, raw));
                     }
                     None => {
                         conn.lrem::<_, _, ()>(&key, 1, raw).await?;
@@ -423,6 +520,49 @@ impl Store {
     pub async fn ack_messages(&self, user_id: &str, ids: &[u64]) -> Result<usize, StoreError> {
         Ok(self.ack_messages_ids(user_id, ids).await?.len())
     }
+
+    /// Confirmacao com as entradas que esta ligacao acabou de entregar (`known`, de
+    /// `peek_messages_raw`): LREM pelo valor exato, num so pedido, sem ler a fila antes.
+    /// Os ids que nao estiverem em `known` seguem o caminho de sempre (`ack_messages_ids`).
+    /// As entradas confirmadas saem de `known`. Como no LREM de sempre, duas ligacoes da
+    /// mesma conta a confirmar o mesmo id so o tiram uma vez.
+    pub async fn ack_known(
+        &self,
+        user_id: &str,
+        ids: &[u64],
+        known: &mut Vec<(u64, Vec<u8>)>,
+    ) -> Result<Vec<u64>, StoreError> {
+        let mut seen = std::collections::HashSet::new();
+        let (mut cached, mut rest) = (Vec::new(), Vec::new());
+        for &id in ids {
+            if !seen.insert(id) {
+                continue;
+            }
+            match known.iter().position(|(k, _)| *k == id) {
+                Some(i) => cached.push(known.swap_remove(i)),
+                None => rest.push(id),
+            }
+        }
+        if known.is_empty() {
+            *known = Vec::new();
+        }
+        let mut out = Vec::new();
+        if !cached.is_empty() {
+            let mut conn = self.connection().await?;
+            let key = format!("{}:queue:{}", self.key_prefix, user_id);
+            let mut pipe = redis::pipe();
+            for (_, raw) in &cached {
+                pipe.lrem(&key, 1, raw);
+            }
+            let removed: Vec<usize> = pipe.query_async(&mut conn).await?;
+            out.extend(cached.iter().zip(removed).filter(|(_, n)| *n > 0).map(|((id, _), _)| *id));
+        }
+        if !rest.is_empty() {
+            out.extend(self.ack_messages_ids(user_id, &rest).await?);
+        }
+        Ok(out)
+    }
+
 
     /// Como `ack_messages`, mas devolve os ids que sairam mesmo da fila (para a
     /// medicao do tempo de entrega nao contar ids repetidos ou alheios).
@@ -745,6 +885,14 @@ impl Store {
         let mut conn = self.connection().await?;
         let of_key = format!("{}:bkof:{owner}", self.key_prefix);
         let Some(lookup) = conn.get::<_, Option<String>>(&of_key).await? else { return Ok(()) };
+        self.renew_backup_of(owner, &lookup).await
+    }
+
+    /// Como `renew_backup`, com o `lookup` ja lido (o registo le-o na mesma transacao).
+    pub async fn renew_backup_of(&self, owner: &str, lookup: &str) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let of_key = format!("{}:bkof:{owner}", self.key_prefix);
+        let lookup = lookup.to_string();
         let Some((generation, parts)) = self.bk_head(&mut conn, &lookup).await? else { return Ok(()) };
         let (head_key, own_key) = self.bk_keys(&lookup);
         let mut pipe = redis::pipe();
@@ -783,11 +931,18 @@ impl Store {
     }
 
     /// A acao paga pode seguir: bloqueio desligado, ou premium dentro do prazo.
+    /// Num so pedido: o bloqueio esta ligado? ate quando e premium esta conta?
     pub async fn premium_allows(&self, user_id: &str) -> Result<bool, StoreError> {
-        if !self.premium_enforced().await? {
+        let mut conn = self.connection().await?;
+        let (enforce, until): (Option<String>, Option<String>) = redis::pipe()
+            .get(format!("{}:premium_enforce", self.key_prefix))
+            .get(format!("{}:premium:{user_id}", self.key_prefix))
+            .query_async(&mut conn)
+            .await?;
+        if enforce.as_deref() != Some("1") {
             return Ok(true);
         }
-        Ok(self.premium_until(user_id).await? > now_ms())
+        Ok(until.and_then(|s| s.parse::<u64>().ok()).unwrap_or(0) > now_ms())
     }
 
     pub async fn premium_until(&self, user_id: &str) -> Result<u64, StoreError> {
@@ -902,6 +1057,17 @@ pub struct QueuedMessage {
     pub id: u64,
     pub sealed_from: Vec<u8>,
     pub ciphertext: Vec<u8>,
+}
+
+/// Quem envia uma mensagem (`Store::enqueue`), para as verificacoes da fila.
+#[derive(Debug, Clone, Copy)]
+pub enum Sender<'a> {
+    /// Conta deste relay por verificar: `EXISTS` do bundle no mesmo pedido da escrita.
+    Check(&'a str),
+    /// Conta deste relay ja verificada nesta ligacao (na autenticacao ou no registo).
+    Registered,
+    /// Outro relay da federacao: ja verificou o remetente do lado dele.
+    Peer,
 }
 
 /// Formato: [8 id BE][4 len(sealed_from) BE][sealed_from][ciphertext]

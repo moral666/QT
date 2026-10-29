@@ -14,7 +14,7 @@
 //! cada ligacao autenticada (como `waiters.rs`): nada de novo e guardado nem registado.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
 
@@ -53,6 +53,7 @@ pub fn unauthenticated_now() -> usize {
 struct Entry {
     id: u64,
     close: Arc<Notify>,
+    registered: Arc<AtomicBool>,
 }
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -69,6 +70,11 @@ pub struct UserSlot {
     user_id: String,
     id: u64,
     close: Arc<Notify>,
+    /// A conta tem bundle neste relay (visto na autenticacao ou num registo desta
+    /// ligacao): o `SendMessage` deixa de o verificar a cada mensagem. Apagar a conta ou a
+    /// federacao larga-la limpa a marca em todas as ligacoes da conta (`forget_registered`);
+    /// banir fecha-as (`close_all`). `false` quer dizer "verificar", nao "sem conta".
+    registered: Arc<AtomicBool>,
 }
 
 impl UserSlot {
@@ -77,6 +83,7 @@ impl UserSlot {
     pub fn register(user_id: &str, max: usize) -> (Self, usize) {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let close = Arc::new(Notify::new());
+        let registered = Arc::new(AtomicBool::new(false));
         let closed = with(|m| {
             let list = m.entry(user_id.to_string()).or_default();
             let mut closed = 0;
@@ -86,10 +93,31 @@ impl UserSlot {
                 list.remove(0).close.notify_one();
                 closed += 1;
             }
-            list.push(Entry { id, close: close.clone() });
+            list.push(Entry { id, close: close.clone(), registered: registered.clone() });
             closed
         });
-        (UserSlot { user_id: user_id.to_string(), id, close }, closed)
+        (UserSlot { user_id: user_id.to_string(), id, close, registered }, closed)
+    }
+
+    /// A conta desta ligacao tem bundle (ver o campo `registered`).
+    pub fn registered(&self) -> bool {
+        self.registered.load(Ordering::Acquire)
+    }
+
+    pub fn set_registered(&self, yes: bool) {
+        self.registered.store(yes, Ordering::Release);
+    }
+
+    /// A conta deixou de ter bundle aqui (apagada, ou levada para outro relay): as
+    /// ligacoes dela voltam a verificar no proximo envio.
+    pub fn forget_registered(user_id: &str) {
+        with(|m| {
+            if let Some(list) = m.get(user_id) {
+                for e in list {
+                    e.registered.store(false, Ordering::Release);
+                }
+            }
+        })
     }
 
     /// Fecha todas as ligacoes abertas desta conta (conta banida pelo operador).
