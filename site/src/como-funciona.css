@@ -23,6 +23,8 @@
   margin: 0 auto;
   padding: 1.5rem 0 4rem;
   display: grid;
+  /* A coluna fica com a largura da página (sem isto, a fila dos ecrãs da app alargava-a). */
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.25rem;
 }
 
@@ -543,8 +545,12 @@
 /* Ecras da app (0.9.11): quatro capturas lado a lado; num ecra estreito deslizam na horizontal.
    As margens automaticas do primeiro e do ultimo centram a fila quando cabe. */
 .cf-ecras {
-  max-width: 64rem;
-  margin: 2.5rem auto 0;
+  /* Largura explícita: com só max-width, a fila dos quatro ecrãs (4 x 220 px) obrigava a secção a
+     ~960 px e, nos telemóveis, a página toda ficava mais larga que o ecrã. Assim a fila desliza
+     dentro da secção. */
+  width: min(60rem, 100vw - 2 * var(--gutter));
+  justify-self: center;
+  margin: 2.5rem 0 0;
   text-align: center;
 }
 .cf-ecras h2 {
