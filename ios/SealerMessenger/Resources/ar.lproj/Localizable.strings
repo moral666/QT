@@ -1,11 +1,15 @@
 /* Gerado por scripts/strings-ios.py a partir do Android. Nao editar a mao. */
 "att_daily_limit" = "تم بلوغ الحد اليومي للمرفقات. يُرجى المحاولة غدًا.";
 "att_no_space" = "لا توجد مساحة كافية للمرفقات على الخادم. يُرجى المحاولة لاحقًا.";
+"badge_bughunter" = "Bug Hunter";
 "badge_cofounder" = "Co-founder";
 "badge_contributor" = "Contributor";
 "badge_dev" = "Dev";
 "badge_founder" = "Founder";
+"badge_legacy" = "Legacy";
+"badge_support" = "Support";
 "badge_tester" = "Tester";
+"badge_troll" = "Troll";
 "call_banner_back" = "النقر للعودة إلى المكالمة";
 "call_camera" = "الكاميرا";
 "call_diag_copied" = "تم نسخ التشخيص";

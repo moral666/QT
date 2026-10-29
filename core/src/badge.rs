@@ -1,4 +1,5 @@
-//! Badges (Founder, Co-founder, Dev, Tester, Contributor): certificados assinados pelo
+//! Badges (Founder, Co-founder, Dev, Tester, Contributor, Bug Hunter, Support, Troll e Legacy):
+//! certificados assinados pelo
 //! emissor (o Nuno), sem nada guardado no servidor.
 //!
 //!   * O emissor tem uma chave Ed25519 so dele (fora do servidor e do git). A chave
@@ -28,8 +29,14 @@ pub const BADGE_COFOUNDER: u8 = 2;
 pub const BADGE_DEV: u8 = 3;
 pub const BADGE_TESTER: u8 = 4;
 pub const BADGE_CONTRIBUTOR: u8 = 5;
-/// Maior numero de badge conhecido (os outros sao recusados).
-pub const BADGE_MAX: u8 = BADGE_CONTRIBUTOR;
+pub const BADGE_BUGHUNTER: u8 = 6;
+pub const BADGE_SUPPORT: u8 = 7;
+pub const BADGE_TROLL: u8 = 8;
+/// A Legacy e um escudo a volta da foto (sem aro nem medalha no canto).
+pub const BADGE_LEGACY: u8 = 9;
+/// Maior numero de badge conhecido (os outros sao recusados). As apps antigas (ate a 0.9.50)
+/// conhecem ate ao 5: um certificado com 6 a 9 e recusado e la nao aparece nada.
+pub const BADGE_MAX: u8 = BADGE_LEGACY;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BadgeCert {
@@ -114,6 +121,11 @@ mod tests {
         assert!(verify_with(&issuer, &m).is_none());
         assert!(verify_with(&issuer, &issue(&seed, &who, BADGE_MAX + 1, 0)).is_none());
         assert!(verify_with(&issuer, &c[..CERT_LEN - 1]).is_none());
+        // Os badges novos (6 a 9) sao aceites.
+        for b in [BADGE_BUGHUNTER, BADGE_SUPPORT, BADGE_TROLL, BADGE_LEGACY] {
+            let v = verify_with(&issuer, &issue(&seed, &who, b, 5)).unwrap();
+            assert_eq!(v.badge, b);
+        }
         // Com a chave por preencher (zeros) nada e aceite.
         if ISSUER_PUBLIC_KEY == [0u8; 32] {
             assert!(verify(&c).is_none());

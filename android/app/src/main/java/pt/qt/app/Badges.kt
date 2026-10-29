@@ -10,6 +10,8 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.unit.dp
 
@@ -17,7 +19,10 @@ import androidx.compose.ui.unit.dp
  * Badges (aro colorido a volta da foto). O certificado e verificado no nucleo Rust
  * (`ffi/src/badges.rs`); aqui so se desenha. Um so desenho (`badge_ring`, o aro dourado em
  * tons de cinza) pintado com duas cores, sombra e brilho, para manter o aspeto metalico.
- * Numeros iguais aos do Rust: 0 nenhum, 1 Founder, 2 Co-founder, 3 Dev, 4 Tester, 5 Contributor.
+ * A Legacy e diferente: um escudo prateado a volta da foto (`badge_shield_legacy`), sem aro
+ * nem medalha no canto.
+ * Numeros iguais aos do Rust: 0 nenhum, 1 Founder, 2 Co-founder, 3 Dev, 4 Tester, 5 Contributor,
+ * 6 Bug Hunter, 7 Support, 8 Troll, 9 Legacy.
  */
 object Badges {
     const val NONE = 0
@@ -29,6 +34,9 @@ object Badges {
         3 -> Color(0xFF141414) to Color(0xFF8A8A8A)   // Dev: preto
         4 -> Color(0xFF0A6F9C) to Color(0xFFB5F1FF)   // Tester: ciano
         5 -> Color(0xFF0D5E33) to Color(0xFF7FE3A8)   // Contributor: verde
+        6 -> Color(0xFF8E0E1A) to Color(0xFFFFB0B0)   // Bug Hunter: vermelho
+        7 -> Color(0xFF9A4208) to Color(0xFFFFD2A0)   // Support: laranja
+        8 -> Color(0xFF14287A) to Color(0xFFA9C0FF)   // Troll: azul
         else -> null
     }
 
@@ -38,6 +46,10 @@ object Badges {
         3 -> s(R.string.badge_dev)
         4 -> s(R.string.badge_tester)
         5 -> s(R.string.badge_contributor)
+        6 -> s(R.string.badge_bughunter)
+        7 -> s(R.string.badge_support)
+        8 -> s(R.string.badge_troll)
+        LEGACY -> s(R.string.badge_legacy)
         else -> null
     }
 
@@ -48,8 +60,29 @@ object Badges {
         3 -> R.drawable.badge_coin_dev
         4 -> R.drawable.badge_coin_tester
         5 -> R.drawable.badge_coin_contributor
+        6 -> R.drawable.badge_coin_bughunter
+        7 -> R.drawable.badge_coin_support
+        8 -> R.drawable.badge_coin_troll
         else -> null
     }
+
+    /** Legacy: escudo a volta da foto, em vez do aro e da medalha. */
+    const val LEGACY = 9
+
+    /** Ha alguma coisa a desenhar (aro + medalha, ou o escudo). */
+    fun shows(badge: Int): Boolean = colors(badge) != null || badge == LEGACY
+
+    /**
+     * Escudo: lado do desenho em relacao ao avatar (passa um pouco para fora, sobretudo em
+     * baixo, para a foto nao ficar muito mais pequena do que com o aro).
+     */
+    const val SHIELD = 1.25f
+
+    /** Foto dentro do escudo, em relacao ao avatar (o buraco do desenho tem 59,2% do lado). */
+    const val SHIELD_PHOTO = SHIELD * 0.60f
+
+    /** O centro do buraco esta a 45,2% da altura do desenho: o escudo desce 4,8% do seu lado. */
+    const val SHIELD_DOWN = SHIELD * 0.048f
 
     /** Medalha: 40% do avatar (45% na minha foto do cabecalho). */
     const val COIN = 0.40f
@@ -79,6 +112,19 @@ fun BadgeRing(badge: Int, modifier: Modifier) {
     val (shadow, light) = Badges.colors(badge) ?: return
     val filter = remember(badge) { Badges.filter(shadow, light) }
     Image(painterResource(R.drawable.badge_ring), contentDescription = Badges.name(badge), modifier = modifier, colorFilter = filter)
+}
+
+/**
+ * O escudo da Legacy, centrado no avatar de lado `sizeDp`. Fica maior do que o avatar (passa para
+ * fora sem mudar o tamanho do avatar): `requiredSize` ignora o tamanho que o pai da.
+ */
+@Composable
+fun BadgeShield(sizeDp: Int, modifier: Modifier = Modifier) {
+    Image(
+        painterResource(R.drawable.badge_shield_legacy),
+        contentDescription = Badges.name(Badges.LEGACY),
+        modifier = modifier.offset(y = (sizeDp * Badges.SHIELD_DOWN).dp).requiredSize((sizeDp * Badges.SHIELD).dp),
+    )
 }
 
 /** A medalha do badge (moeda com o simbolo), do tamanho do `modifier`. */

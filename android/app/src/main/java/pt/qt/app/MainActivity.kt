@@ -1143,10 +1143,16 @@ fun Avatar(name: String, seed: String, sizeDp: Int = 48, online: Boolean = false
     val color = palette[(seed.hashCode() and 0x7fffffff) % palette.size]
     val initials = name.trim().split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase() }.ifBlank { "?" }
     val photo = LocalPhotos.current[seed]
-    // Badge: a foto encolhe para caber dentro do aro (o tamanho total fica igual).
+    // Badge: a foto encolhe para caber dentro do aro (o tamanho total fica igual). Na Legacy
+    // fica dentro do escudo, que passa um pouco para fora do avatar.
     val badge = LocalBadges.current[seed] ?: Badges.NONE
     val ringed = Badges.colors(badge) != null
-    val inner = if (ringed) (sizeDp * Badges.INNER).dp else sizeDp.dp
+    val shield = badge == Badges.LEGACY
+    val inner = when {
+        shield -> (sizeDp * Badges.SHIELD_PHOTO).dp
+        ringed -> (sizeDp * Badges.INNER).dp
+        else -> sizeDp.dp
+    }
     Box(Modifier.size(sizeDp.dp)) {
         if (photo != null) {
             Image(photo, contentDescription = name, modifier = Modifier.size(inner).align(Alignment.Center).clip(CircleShape), contentScale = ContentScale.Crop)
@@ -1160,10 +1166,11 @@ fun Avatar(name: String, seed: String, sizeDp: Int = 48, online: Boolean = false
             // Medalha no canto de baixo, a direita, um pouco por fora do aro.
             BadgeCoin(badge, Modifier.align(Alignment.BottomEnd).offset(x = (sizeDp * 0.06f).dp, y = (sizeDp * 0.04f).dp).size((sizeDp * Badges.COIN).dp))
         }
+        if (shield) BadgeShield(sizeDp, Modifier.align(Alignment.Center))
         // Ponto verde: o contacto tem a app aberta agora (presenca). Com medalha vai para cima.
         if (online) {
             Box(
-                Modifier.align(if (ringed) Alignment.TopEnd else Alignment.BottomEnd).size((sizeDp / 4).coerceAtLeast(10).dp)
+                Modifier.align(if (Badges.shows(badge)) Alignment.TopEnd else Alignment.BottomEnd).size((sizeDp / 4).coerceAtLeast(10).dp)
                     .clip(CircleShape).background(MaterialTheme.colorScheme.surface).padding(2.dp)
                     .clip(CircleShape).background(OnlineGreen)
                     .semantics { contentDescription = s(R.string.t_online) },

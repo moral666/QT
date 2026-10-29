@@ -1,6 +1,6 @@
 # Modelo de Ameaças
 
-> Descreve o que o código faz hoje (versão de testes, apps Android e iPhone 0.9.50), o que
+> Descreve o que o código faz hoje (versão de testes, apps Android e iPhone 0.9.51), o que
 > os testes demonstram e, com igual peso, o que **não** está protegido.
 
 ## 1. Ativos

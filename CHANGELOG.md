@@ -6,6 +6,21 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 29 de outubro de 2026: medalhas Bug Hunter, Support, Troll e Legacy (iPhone e Android 0.9.51)
+
+- Quatro medalhas novas: 6 Bug Hunter, 7 Support, 8 Troll e 9 Legacy (`core/src/badge.rs`,
+  `BADGE_MAX` passa a 9). As três primeiras são moedas como as outras, com aro da mesma cor
+  (vermelho, laranja e azul).
+- A Legacy é diferente: um escudo prateado à volta da foto, sem aro nem medalha no canto
+  (`badge_shield_legacy.png` no Android, `BadgeShieldLegacy` no iPhone). O escudo é 1,25 vezes o
+  avatar e passa um pouco para fora (sobretudo em baixo), sem mudar o tamanho do avatar; a foto
+  fica com 75% do avatar (no aro são 84%). O ponto verde de online vai para cima, como com o aro.
+- Apps até à 0.9.50: recusam os números 6 a 9 e não mostram nada (nem erro).
+- Ferramenta do emissor (`server/examples/badge.rs`): `--badge bughunter`, `support`, `troll` e
+  `legacy`. Teste novo em `ffi/tests/badges.rs` (as quatro chegam aos contactos; o 10 é recusado).
+- Site (Como funciona): as quatro na lista das medalhas e uma frase sobre o escudo da Legacy, nas
+  10 línguas (chaves `como.40` a `como.43`).
+
 ### 29 de outubro de 2026: relay com menos idas ao Redis
 
 - O perfil de CPU (29/10/2026, 25 000 ligados) mostrou o vaivém entre o relay e o Redis a custar ~35% do

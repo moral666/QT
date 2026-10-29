@@ -4,7 +4,7 @@
 
 **SEALER** é um mensageiro privado: sem número de telefone, sem email, com cifra ponta a ponta e proteção pós-quântica. **QT** é o nome do protocolo e deste repositório.
 
-**Estado:** versão de testes, em testes fechados. Apps Android e iPhone **0.9.50**, com dois relays em federação na União Europeia (Estocolmo e Espanha).
+**Estado:** versão de testes, em testes fechados. Apps Android e iPhone **0.9.51**, com dois relays em federação na União Europeia (Estocolmo e Espanha).
 
 [Read this in English →](README.en.md)
 
@@ -34,7 +34,7 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 - **Notificações com a app fechada**, sempre genéricas ("Tens mensagens novas"): sem nome nem texto.
 - **Foto de perfil** só para os teus contactos, cifrada (o servidor nem sabe que é uma foto). Pode mudar-se de 72 em 72 horas.
 - **Convites por código QR**, reações, bloquear contactos e "online" só para os contactos.
-- **Medalhas** (Founder, Co-founder, Dev, Tester, Contributor): um aro e uma medalha na foto, com certificado assinado, enviados cifrados só aos contactos.
+- **Medalhas** (Founder, Co-founder, Dev, Tester, Contributor, Bug Hunter, Support, Troll e Legacy): um aro e uma medalha na foto (na Legacy, um escudo à volta da foto), com certificado assinado, enviados cifrados só aos contactos.
 - **Denunciar um contacto:** o motivo e até 20 mensagens seguem cifrados para a equipa da SEALER; o servidor guarda a denúncia sem a ler e sem saber quem a fez, e o contacto fica bloqueado.
 - **Bloqueio da app** com código próprio, impressão digital ou rosto (Face ID no iPhone). Depois de 5 códigos errados a espera vai até 15 minutos, e mudar a hora do telemóvel não a salta.
 - **Chave de recuperação:** 12 palavras recuperam o ID, os contactos, os bloqueados e a medalha num telemóvel novo. A cópia fica cifrada no servidor; o histórico e os grupos não vão nela.

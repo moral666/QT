@@ -330,6 +330,10 @@
     <string name="badge_dev">Dev</string>
     <string name="badge_tester">Tester</string>
     <string name="badge_contributor">Contributor</string>
+    <string name="badge_bughunter">Bug Hunter</string>
+    <string name="badge_support">Support</string>
+    <string name="badge_troll">Troll</string>
+    <string name="badge_legacy">Legacy</string>
     <string name="report">रिपोर्ट करें</string>
     <string name="report_title">%1$s को रिपोर्ट करें?</string>
     <string name="report_explain">आपके चुने हुए मैसेज एन्क्रिप्ट होकर सिर्फ़ Sealer टीम को जाते हैं, आपकी ID के बिना। %1$s को इसकी सूचना नहीं दी जाती और उन्हें ब्लॉक कर दिया जाता है।</string>
