@@ -308,6 +308,9 @@ export function initStatus(el) {
     if (ms) {
       // Fica sempre a última leitura conhecida, mesmo sem mensagens recentes ou com o serviço em baixo.
       const value = totalValue(data);
+      // O quadro "Entre telemóveis" (Testes e números) mostra o mesmo valor, em grande.
+      const tile = document.getElementById('t-tempo');
+      if (tile && value != null) tile.textContent = `\u2066${fmt.format(value)} ms\u2069`;
       if (value != null) {
         ms.hidden = false;
         // Isolado: numa página em árabe fica "250 ms" e não "ms 250".

@@ -256,7 +256,7 @@ As janelas descrevem o QT tal como foi descrito durante o projeto. Confirme este
 - **iPhone** (janelas "Também trancadas no telemóvel", "Núcleo em Rust" e "Ligação ao relay"): confirmado em `ios/README.md`. A app de iPhone usa o mesmo núcleo em Rust, o histórico cifrado (com a chave protegida pelo Secure Enclave) e a chave do relay fixada. A janela "Armazenamento" fala do Android Keystore e do Secure Enclave do iPhone.
 - **Servidor na União Europeia**: o relay está em Estocolmo (eu-north-1). Se mudar de região, atualize a janela.
 - **O que vem a seguir**: lista funcionalidades planeadas para o lançamento. Retire as que deixarem de estar previstas, e mova para outras janelas as que já estiverem feitas.
-- **Números de "Testes e números"**: "5 aparelhos" vem do teste entre 2 Android, 1 emulador, 1 iPhone e 1 Mac. "0,8 s" é o tempo medido até esta página aparecer num telemóvel lento (secção 10). Se a página mudar muito, volte a medir.
+- **Números de "Testes e números"**: "5 aparelhos" vem do teste entre 2 Android, 1 emulador, 1 iPhone e 1 Mac. O quadro "Entre telemóveis" mostra em grande o mesmo tempo do marcador de estado (a mensagem típica, do telemóvel de quem envia ao de quem recebe), preenchido por `src/status.js` a partir de `/api/estado`. Sem resposta, fica "…".
 - **Página "Funcionalidades"** (`funcionalidades.html`, chaves `func.*` em `src/i18n/*.js`): tem de bater certo com as apps. Ao acrescentar ou mudar uma funcionalidade na app, atualize a página e as versões no topo (e a frase das versões no `index.html`, chave `index.5`).
 - **Rodapé e "0 cookies"**: verdade para esta página. Se mais tarde acrescentar analítica, atualize as duas.
 
