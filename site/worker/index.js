@@ -17,8 +17,15 @@
  *   mediana. O site mostra a mediana (a mensagem típica), que umas poucas mensagens lentas
  *   (telemóvel a dormir até chegar a notificação) quase não mexem.
  *
+ *   Desde 29/10/2026 há dois relays em federação (RELAYS em wrangler.jsonc). O worker verifica
+ *   cada um e diz o estado de cada um ("relays"). Os tempos vêm só de um deles (RELAY_TEMPO,
+ *   hoje "espanha"); se esse ainda não tiver nenhuma medição, vêm do primeiro que tiver.
+ *
  *   Resposta: {
- *     "estado": "on" | "off", "verificado": "<data ISO>",
+ *     "estado": "on" | "partial" | "off",  (todos a funcionar | só alguns | nenhum)
+ *     "relays": [{ "nome": "estocolmo", "estado": "on" | "off" }, ...],
+ *     "tempo_relay": "espanha" | null,     (de que relay vêm os tempos)
+ *     "verificado": "<data ISO>",
  *     "envio_media_ms": número | null,     (telemóvel -> servidor; null: sem mensagens recentes)
  *     "envios": número,                    (mensagens medidas)
  *     "ultimo_envio_ms": número | null,    (última média conhecida, mesmo antiga: o site mostra-a sempre)
@@ -57,9 +64,21 @@ async function estado(request, env, ctx) {
   const cached = await cache.match(key);
   if (cached) return cached;
 
-  const [on, delivery] = await Promise.all([relayOnline(env.RELAY_URL), relayDelivery(env.RELAY_URL)]);
+  const relays = relayList(env);
+  const checks = await Promise.all(
+    relays.map(async (r) => {
+      const [on, delivery] = await Promise.all([relayOnline(r.url), relayDelivery(r.url)]);
+      return { nome: r.nome, on, delivery };
+    }),
+  );
+  const upCount = checks.filter((c) => c.on).length;
+  const timing = pickTiming(checks, env.RELAY_TEMPO);
+  const on = timing ? timing.on : false;
+  const delivery = timing ? timing.delivery : null;
   const body = {
-    estado: on ? 'on' : 'off',
+    estado: upCount === checks.length && upCount > 0 ? 'on' : upCount > 0 ? 'partial' : 'off',
+    relays: checks.map((c) => ({ nome: c.nome, estado: c.on ? 'on' : 'off' })),
+    tempo_relay: timing ? timing.nome : null,
     verificado: new Date().toISOString(),
     envio_media_ms: on && delivery ? delivery.idaAvg : null,
     envios: on && delivery ? delivery.idaCount : 0,
@@ -78,6 +97,41 @@ async function estado(request, env, ctx) {
   const response = json(body, 200, `public, max-age=${CACHE_SECONDS}`);
   ctx.waitUntil(cache.put(key, response.clone()));
   return response;
+}
+
+/**
+ * Os relays a verificar: RELAYS (lista de { nome, url }) ou, numa configuração antiga, só
+ * RELAY_URL (com o nome "relay").
+ */
+function relayList(env) {
+  let list = env.RELAYS;
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list);
+    } catch {
+      list = null;
+    }
+  }
+  if (Array.isArray(list)) {
+    const ok = list.filter((r) => r && typeof r.nome === 'string' && typeof r.url === 'string');
+    if (ok.length > 0) return ok;
+  }
+  return env.RELAY_URL ? [{ nome: 'relay', url: env.RELAY_URL }] : [];
+}
+
+/** Tem alguma medição (da última hora ou a última conhecida)? */
+function hasTiming(d) {
+  if (!d) return false;
+  return [d.idaAvg, d.idaMedian, d.lastIda, d.lastIdaMedian, d.avg, d.median, d.lastAvg, d.lastMedian].some(
+    (v) => v != null,
+  );
+}
+
+/** O relay de onde vêm os tempos: o preferido (RELAY_TEMPO) se tiver medições, senão o primeiro que tiver. */
+function pickTiming(checks, preferred) {
+  const pref = checks.find((c) => c.nome === preferred);
+  if (pref && hasTiming(pref.delivery)) return pref;
+  return checks.find((c) => hasTiming(c.delivery)) ?? pref ?? checks[0] ?? null;
 }
 
 /** Tenta abrir uma ligação WebSocket ao relay (pelo Caddy, com TLS) e fecha-a logo. */

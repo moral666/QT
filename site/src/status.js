@@ -2,7 +2,8 @@
  * Marcador de estado do serviço, ao lado do nome SEALER na barra de topo.
  *
  * Pergunta ao próprio site (/api/estado, ver worker/index.js) se o relay da SEALER na AWS
- * está a funcionar. Verde: a funcionar. Vermelho: em baixo. Cinzento: ainda a verificar,
+ * está a funcionar, e cada relay (Suécia e Espanha) tem o seu ponto. Verde: a funcionar.
+ * Amarelo: só parte dos relays a funcionar. Vermelho: em baixo. Cinzento: ainda a verificar,
  * ou sem resposta do site (nesse caso não sabemos o estado do relay, por isso não se pinta
  * de vermelho).
  *
@@ -46,63 +47,95 @@ const TEXT = L({
     checking: { short: 'A verificar serviços', mini: 'A verificar', long: 'A verificar se os serviços da SEALER estão a funcionar' },
     on: { short: 'Serviços online', mini: 'Online', long: 'Os serviços da SEALER estão a funcionar' },
     off: { short: 'Serviços offline', mini: 'Offline', long: 'Os serviços da SEALER estão em baixo de momento' },
+    partial: { short: 'Serviços parciais', mini: 'Parcial', long: 'Parte dos serviços da SEALER está em baixo de momento' },
     unknown: { short: 'Estado desconhecido', mini: 'Sem dados', long: 'Não foi possível saber o estado dos serviços da SEALER' },
   },
   en: {
     checking: { short: 'Checking services', mini: 'Checking', long: 'Checking whether the SEALER services are working' },
     on: { short: 'Services online', mini: 'Online', long: 'The SEALER services are working' },
     off: { short: 'Services offline', mini: 'Offline', long: 'The SEALER services are down at the moment' },
+    partial: { short: 'Partial outage', mini: 'Partial', long: 'Part of the SEALER services is down at the moment' },
     unknown: { short: 'Status unknown', mini: 'No data', long: 'Could not find out the status of the SEALER services' },
   },
   fr: {
     checking: { short: 'Vérification des services', mini: 'Vérification', long: 'Vérification du bon fonctionnement des services de SEALER' },
     on: { short: 'Services en ligne', mini: 'En ligne', long: 'Les services de SEALER fonctionnent' },
     off: { short: 'Services hors ligne', mini: 'Hors ligne', long: 'Les services de SEALER sont indisponibles pour le moment' },
+    partial: { short: 'Panne partielle', mini: 'Partiel', long: 'Une partie des services de SEALER est indisponible pour le moment' },
     unknown: { short: 'État inconnu', mini: 'Pas de données', long: 'Impossible de connaître l’état des services de SEALER' },
   },
   de: {
     checking: { short: 'Dienste werden geprüft', mini: 'Prüfung', long: 'Es wird geprüft, ob die Dienste von SEALER funktionieren' },
     on: { short: 'Dienste online', mini: 'Online', long: 'Die Dienste von SEALER funktionieren' },
     off: { short: 'Dienste offline', mini: 'Offline', long: 'Die Dienste von SEALER sind derzeit nicht erreichbar' },
+    partial: { short: 'Teilweise gestört', mini: 'Teilweise', long: 'Ein Teil der Dienste von SEALER ist derzeit nicht erreichbar' },
     unknown: { short: 'Status unbekannt', mini: 'Keine Daten', long: 'Der Status der Dienste von SEALER konnte nicht ermittelt werden' },
   },
   it: {
     checking: { short: 'Verifica dei servizi', mini: 'Verifica', long: 'Verifica del funzionamento dei servizi di SEALER' },
     on: { short: 'Servizi online', mini: 'Online', long: 'I servizi di SEALER funzionano' },
     off: { short: 'Servizi offline', mini: 'Offline', long: 'I servizi di SEALER sono al momento non disponibili' },
+    partial: { short: 'Disservizio parziale', mini: 'Parziale', long: 'Una parte dei servizi di SEALER è al momento non disponibile' },
     unknown: { short: 'Stato sconosciuto', mini: 'Nessun dato', long: 'Impossibile conoscere lo stato dei servizi di SEALER' },
   },
   es: {
     checking: { short: 'Comprobando servicios', mini: 'Comprobando', long: 'Comprobando si los servicios de SEALER funcionan' },
     on: { short: 'Servicios en línea', mini: 'En línea', long: 'Los servicios de SEALER están funcionando' },
     off: { short: 'Servicios caídos', mini: 'Caídos', long: 'Los servicios de SEALER están caídos en este momento' },
+    partial: { short: 'Caída parcial', mini: 'Parcial', long: 'Parte de los servicios de SEALER está caída en este momento' },
     unknown: { short: 'Estado desconocido', mini: 'Sin datos', long: 'No se ha podido saber el estado de los servicios de SEALER' },
   },
   ja: {
     checking: { short: 'サービスを確認中', mini: '確認中', long: 'SEALERのサービスが動作しているか確認しています' },
     on: { short: 'サービス稼働中', mini: '稼働中', long: 'SEALERのサービスは正常に動作しています' },
     off: { short: 'サービス停止中', mini: '停止中', long: 'SEALERのサービスは現在停止しています' },
+    partial: { short: 'サービス一部停止', mini: '一部停止', long: 'SEALERのサービスの一部が現在停止しています' },
     unknown: { short: '状態不明', mini: 'データなし', long: 'SEALERのサービスの状態を確認できませんでした' },
   },
   zh: {
     checking: { short: '正在检查服务', mini: '检查中', long: '正在检查SEALER的服务是否正常运行' },
     on: { short: '服务在线', mini: '在线', long: 'SEALER的服务运行正常' },
     off: { short: '服务离线', mini: '离线', long: 'SEALER的服务目前已中断' },
+    partial: { short: '部分服务中断', mini: '部分中断', long: 'SEALER的部分服务目前已中断' },
     unknown: { short: '状态未知', mini: '无数据', long: '无法获取SEALER服务的状态' },
   },
   hi: {
     checking: { short: 'सेवाएं जांची जा रही हैं', mini: 'जांच जारी', long: 'जांच की जा रही है कि SEALER की सेवाएं काम कर रही हैं या नहीं' },
     on: { short: 'सेवाएं ऑनलाइन', mini: 'ऑनलाइन', long: 'SEALER की सेवाएं काम कर रही हैं' },
     off: { short: 'सेवाएं ऑफ़लाइन', mini: 'ऑफ़लाइन', long: 'SEALER की सेवाएं अभी बंद हैं' },
+    partial: { short: 'सेवाएं आंशिक रूप से बंद', mini: 'आंशिक', long: 'SEALER की कुछ सेवाएं अभी बंद हैं' },
     unknown: { short: 'स्थिति अज्ञात', mini: 'डेटा नहीं', long: 'SEALER की सेवाओं की स्थिति पता नहीं चल सकी' },
   },
   ar: {
     checking: { short: 'جارٍ فحص الخدمات', mini: 'جارٍ الفحص', long: 'جارٍ التحقق من عمل خدمات SEALER' },
     on: { short: 'الخدمات تعمل', mini: 'تعمل', long: 'خدمات SEALER تعمل' },
     off: { short: 'الخدمات متوقفة', mini: 'متوقفة', long: 'خدمات SEALER متوقفة حاليًا' },
+    partial: { short: 'توقف جزئي', mini: 'جزئي', long: 'جزء من خدمات SEALER متوقف حاليًا' },
     unknown: { short: 'الحالة غير معروفة', mini: 'لا بيانات', long: 'تعذّرت معرفة حالة خدمات SEALER' },
   },
 });
+
+/**
+ * Nome do país de cada relay (o "nome" que vem em /api/estado, igual ao das apps).
+ * Relay novo: acrescentar aqui o país nas dez línguas e o relay em RELAYS (wrangler.jsonc).
+ */
+const RELAY_NAMES = L({
+  pt: { estocolmo: 'Suécia', espanha: 'Espanha' },
+  en: { estocolmo: 'Sweden', espanha: 'Spain' },
+  fr: { estocolmo: 'Suède', espanha: 'Espagne' },
+  es: { estocolmo: 'Suecia', espanha: 'España' },
+  de: { estocolmo: 'Schweden', espanha: 'Spanien' },
+  it: { estocolmo: 'Svezia', espanha: 'Spagna' },
+  ja: { estocolmo: 'スウェーデン', espanha: 'スペイン' },
+  zh: { estocolmo: '瑞典', espanha: '西班牙' },
+  hi: { estocolmo: 'स्वीडन', espanha: 'स्पेन' },
+  ar: { estocolmo: 'السويد', espanha: 'إسبانيا' },
+});
+
+/** Nome a mostrar de um relay; um relay sem nome traduzido fica com o próprio nome. */
+function relayName(nome) {
+  return RELAY_NAMES[nome] ?? nome.charAt(0).toUpperCase() + nome.slice(1);
+}
 
 /**
  * "Há n minutos/horas/dias" em árabe: a palavra muda com o número (2 tem forma própria,
@@ -206,6 +239,8 @@ export function initStatus(el) {
   // Versão curta, só para telemóveis muito estreitos (ver styles.css).
   const mini = el.querySelector('.status-pill__mini');
   const ms = el.querySelector('.status-pill__ms');
+  // Um ponto por relay (Suécia, Espanha), na segunda linha.
+  const relaysEl = el.querySelector('.status-pill__relays');
   const fmt = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
   const tagEl = el.querySelector('.status-pill__tag');
   if (tagEl) tagEl.innerHTML = TAG;
@@ -225,7 +260,7 @@ export function initStatus(el) {
 
   /** Mensagem típica da última hora (só com o serviço a funcionar e as duas partes medidas). */
   function currentValue(data) {
-    if (!data || data.estado !== 'on') return null;
+    if (!data || (data.estado !== 'on' && data.estado !== 'partial')) return null;
     return sum(pick(data.envio_mediana_ms, data.envio_media_ms), pick(data.entrega_mediana_ms, data.entrega_media_ms));
   }
 
@@ -279,8 +314,28 @@ export function initStatus(el) {
         ms.textContent = `\u2066${fmt.format(value)} ms\u2069`;
       }
     }
+    const relays = Array.isArray(data?.relays) ? data.relays.filter((r) => r && typeof r.nome === 'string') : [];
+    if (relaysEl) {
+      relaysEl.replaceChildren(
+        ...relays.map((r) => {
+          const item = document.createElement('span');
+          item.className = 'status-relay';
+          item.dataset.state = r.estado === 'on' ? 'on' : 'off';
+          const dot = document.createElement('span');
+          dot.className = 'status-relay__dot';
+          dot.setAttribute('aria-hidden', 'true');
+          item.append(dot, relayName(r.nome));
+          return item;
+        }),
+      );
+      relaysEl.hidden = relays.length === 0;
+    }
+    // "Suécia: Online. Espanha: Online." (na frase completa, para leitores de ecrã e title).
+    const relaysText = relays
+      .map((r) => `${relayName(r.nome)}: ${TEXT[r.estado === 'on' ? 'on' : 'off'].mini}${W.stop ?? '.'}`)
+      .join(W.sep ?? ' ');
     // Japones e chines: ponto final 。 e sem espacos entre frases; hindi: ponto final ।.
-    const full = `${TEXT[state].long}${W.stop ?? '.'}${totalText(data)}${W.sep ?? ' '}${TESTING}`;
+    const full = `${TEXT[state].long}${W.stop ?? '.'}${relaysText ? (W.sep ?? ' ') + relaysText : ''}${totalText(data)}${W.sep ?? ' '}${TESTING}`;
     el.title = full;
     el.setAttribute('aria-label', full);
   }
@@ -290,7 +345,8 @@ export function initStatus(el) {
       const res = await fetch('/api/estado', { headers: { Accept: 'application/json' } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      show(data.estado === 'on' ? 'on' : data.estado === 'off' ? 'off' : 'unknown', data);
+      const st = data.estado;
+      show(st === 'on' || st === 'partial' || st === 'off' ? st : 'unknown', data);
     } catch {
       show('unknown');
     }
