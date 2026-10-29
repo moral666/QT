@@ -6,6 +6,17 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 29 de outubro de 2026: relay com menos memória por ligação
+
+- Teste de carga (2 CPUs, 1,8 GB): o relay aguentava ~21 000 pessoas ligadas antes de ficar sem memória.
+  O que mais pesava era a biblioteca de WebSocket (tungstenite 0.24): em cada ligação, um bloco fixo de
+  4 KB e o espaço da maior mensagem que já tinha passado (até ~64 KB depois de um anexo), para sempre.
+- Agora usa uma cópia do tungstenite 0.24 (`vendor/tungstenite`, ver `SEALER.md`) que liberta esses
+  buffers quando ficam vazios. Medido com 8 000 ligações, texto e áudios: de 44 KB para 8 KB por ligação
+  parada e de 88 KB para 12 KB depois de tráfego, com as mesmas entregas e tempos.
+- Protocolo e apps sem mudanças. Só ganham os relays atualizados (Estocolmo e Espanha, com
+  `QT_BRANCH=main`).
+
 ### 29 de outubro de 2026: documentação revista, com a federação em destaque
 
 - README (PT e EN): apps 0.9.50, secção "Federação: dois relays, uma só rede", os dois relays

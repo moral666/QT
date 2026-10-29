@@ -18,3 +18,8 @@ codegen-units = 1
 opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
+
+# Memoria por ligacao do relay: tungstenite com os buffers libertados quando vazios
+# (vendor/tungstenite/SEALER.md).
+[patch.crates-io]
+tungstenite = { path = "vendor/tungstenite" }
