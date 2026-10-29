@@ -1065,14 +1065,17 @@ Testes: `ffi/tests/profile.rs`.
 
 ## 20. Badges (desde a app 0.9.14)
 
-Badges: Founder, Co-founder, Dev, Tester e Contributor. Quem tem um badge aparece com um aro
-colorido à volta da foto. O servidor não guarda nada: o badge é um certificado assinado pelo
+Badges: Founder, Co-founder, Dev, Tester, Contributor, Bug Hunter, Support, Troll e Legacy. Quem
+tem um badge aparece com um aro colorido à volta da foto e a medalha no canto; a Legacy é um escudo
+prateado à volta da foto, sem aro nem medalha (desde a 0.9.51). O servidor não guarda nada: o badge é um certificado assinado pelo
 emissor, que segue cifrado como qualquer mensagem.
 
 - **Certificado** (`core/src/badge.rs`, 106 bytes): `[1 versão=1][1 badge][8 emitido_em ms]
   [32 identidade X25519][64 assinatura Ed25519]`. A assinatura (verificação estrita) cobre
   `SEALER-BADGE-v1` seguido dos primeiros 42 bytes. Badges: 0 nenhum, 1 Founder, 2 Co-founder,
-  3 Dev, 4 Tester, 5 Contributor. A chave pública do emissor está fixa no núcleo
+  3 Dev, 4 Tester, 5 Contributor, 6 Bug Hunter, 7 Support, 8 Troll, 9 Legacy (6 a 9 desde a 0.9.51;
+  as apps até à 0.9.50 recusam números acima de 5 e não mostram nada). A chave pública do
+  emissor está fixa no núcleo
   (`ISSUER_PUBLIC_KEY`, igual no Android e no iPhone); a privada fica só com o emissor.
 - **Atribuir:** a ferramenta do emissor (`server/examples/badge.rs`, no computador do operador) tem uma
   identidade própria, abre sessão com a pessoa pelo ID e envia o certificado no tipo 13, dentro do

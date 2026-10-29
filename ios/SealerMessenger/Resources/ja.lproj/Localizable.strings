@@ -1,11 +1,15 @@
 /* Gerado por scripts/strings-ios.py a partir do Android. Nao editar a mao. */
 "att_daily_limit" = "1日の添付ファイルの上限に達しました。明日もう一度お試しください。";
 "att_no_space" = "サーバーの添付ファイル用の容量が不足しています。しばらくしてからお試しください。";
+"badge_bughunter" = "Bug Hunter";
 "badge_cofounder" = "Co-founder";
 "badge_contributor" = "Contributor";
 "badge_dev" = "Dev";
 "badge_founder" = "Founder";
+"badge_legacy" = "Legacy";
+"badge_support" = "Support";
 "badge_tester" = "Tester";
+"badge_troll" = "Troll";
 "call_banner_back" = "タップして通話に戻る";
 "call_camera" = "カメラ";
 "call_diag_copied" = "診断をコピーしました";

@@ -1,11 +1,15 @@
 /* Gerado por scripts/strings-ios.py a partir do Android. Nao editar a mao. */
 "att_daily_limit" = "今日附件已达上限。请明天再试。";
 "att_no_space" = "服务器的附件空间已满。请稍后再试。";
+"badge_bughunter" = "Bug Hunter";
 "badge_cofounder" = "Co-founder";
 "badge_contributor" = "Contributor";
 "badge_dev" = "Dev";
 "badge_founder" = "Founder";
+"badge_legacy" = "Legacy";
+"badge_support" = "Support";
 "badge_tester" = "Tester";
+"badge_troll" = "Troll";
 "call_banner_back" = "点击返回通话";
 "call_camera" = "摄像头";
 "call_diag_copied" = "诊断已复制";

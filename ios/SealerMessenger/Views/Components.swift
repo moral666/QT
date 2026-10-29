@@ -207,11 +207,12 @@ struct MyAvatar: View {
     var body: some View {
         Button(action: action) {
             ZStack(alignment: .bottomTrailing) {
-                // Com badge, o aro do badge substitui o aro claro.
+                // Com badge, o aro do badge substitui o aro claro. A Legacy tem o escudo a volta.
                 let ringed = Badges.colors(ring) != nil
-                let pad = ringed ? size * (1 - Badges.inner) / 2 : 4
+                let shield = ring == Badges.legacy
+                let pad = ringed ? size * (1 - Badges.inner) / 2 : shield ? size * (1 - Badges.shieldPhoto) / 2 : 4
                 ZStack {
-                    if !ringed { Circle().fill(Color.white.opacity(0.22)) }
+                    if !ringed && !shield { Circle().fill(Color.white.opacity(0.22)) }
                     Circle().fill(c.headerAvatar).padding(pad)
                     if let photo {
                         Image(uiImage: photo).resizable().scaledToFill().clipShape(Circle()).padding(pad)
@@ -221,6 +222,7 @@ struct MyAvatar: View {
                     if ringed { BadgeRing(badge: ring, size: size) }
                 }
                 .frame(width: size, height: size)
+                .overlay { if shield { BadgeShield(size: size) } }
                 // A minha medalha: canto de baixo, a esquerda (a engrenagem fica a direita).
                 if ringed {
                     BadgeCoin(badge: ring, size: size * 0.45)
@@ -290,10 +292,12 @@ struct Avatar: View {
     var body: some View {
         let palette = ChatColors.avatarPalette
         let color = palette[Int(javaHashCode(seed) & 0x7fffffff) % palette.count]
-        // Badge: a foto encolhe para caber dentro do aro (o tamanho total fica igual).
+        // Badge: a foto encolhe para caber dentro do aro (o tamanho total fica igual). Na Legacy
+        // fica dentro do escudo, que passa um pouco para fora do avatar.
         let badge = badges[seed] ?? Badges.none
         let ringed = Badges.colors(badge) != nil
-        let inner = ringed ? size * Badges.inner : size
+        let shield = badge == Badges.legacy
+        let inner = ringed ? size * Badges.inner : shield ? size * Badges.shieldPhoto : size
         ZStack(alignment: .bottomTrailing) {
             ZStack {
                 if let photo = photos[seed] {
@@ -308,6 +312,7 @@ struct Avatar: View {
                 if ringed { BadgeRing(badge: badge, size: size) }
             }
             .frame(width: size, height: size)
+            .overlay { if shield { BadgeShield(size: size) } }
             if ringed {
                 // Medalha no canto de baixo, a direita, um pouco por fora do aro.
                 BadgeCoin(badge: badge, size: size * Badges.coinScale)
@@ -319,7 +324,7 @@ struct Avatar: View {
                     .padding(2).background(Circle().fill(c.surface))
                     .accessibilityLabel(s("t_online"))
                     // Com medalha, o ponto verde vai para cima.
-                    .frame(width: size, height: size, alignment: ringed ? .topTrailing : .bottomTrailing)
+                    .frame(width: size, height: size, alignment: Badges.shows(badge) ? .topTrailing : .bottomTrailing)
             }
         }
         .frame(width: size, height: size)

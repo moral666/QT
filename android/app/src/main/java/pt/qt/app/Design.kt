@@ -182,11 +182,13 @@ fun BrandLogo(sizeDp: Int) {
 @Composable
 fun MyAvatar(ui: UiState, badge: ImageVector, label: String, onClick: () -> Unit, sizeDp: Int = 76) {
     val c = LocalChatColors.current
-    // Com badge, o aro do badge substitui o aro claro.
+    // Com badge, o aro do badge substitui o aro claro. A Legacy tem o escudo a volta da foto.
     val ringed = Badges.colors(ui.myBadge) != null
+    val shield = ui.myBadge == Badges.LEGACY
     Box(Modifier.size((sizeDp + 10).dp)) {
         Box(
             (if (ringed) Modifier.size(sizeDp.dp).padding((sizeDp * (1 - Badges.INNER) / 2).dp)
+            else if (shield) Modifier.size(sizeDp.dp).padding((sizeDp * (1 - Badges.SHIELD_PHOTO) / 2).dp)
             else Modifier.size(sizeDp.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.22f)).padding(4.dp))
                 .clip(CircleShape).background(c.headerAvatar).clickable(onClickLabel = label, onClick = onClick),
             contentAlignment = Alignment.Center,
@@ -202,6 +204,10 @@ fun MyAvatar(ui: UiState, badge: ImageVector, label: String, onClick: () -> Unit
             BadgeRing(ui.myBadge, Modifier.size(sizeDp.dp))
             // A minha medalha: canto de baixo, a esquerda (a engrenagem fica a direita).
             BadgeCoin(ui.myBadge, Modifier.align(Alignment.BottomStart).offset(x = (-6).dp, y = 4.dp).size((sizeDp * 0.45f).dp))
+        }
+        if (shield) {
+            // O escudo centrado na foto (a foto esta no canto de cima, a esquerda, desta caixa).
+            Box(Modifier.size(sizeDp.dp), contentAlignment = Alignment.Center) { BadgeShield(sizeDp) }
         }
         IconButton(onClick = onClick, modifier = Modifier.align(Alignment.BottomEnd).offset(x = 6.dp, y = 6.dp).size(44.dp)) {
             Box(

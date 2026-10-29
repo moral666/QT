@@ -332,6 +332,10 @@
     <string name="badge_dev">Dev</string>
     <string name="badge_tester">Tester</string>
     <string name="badge_contributor">Contributor</string>
+    <string name="badge_bughunter">Bug Hunter</string>
+    <string name="badge_support">Support</string>
+    <string name="badge_troll">Troll</string>
+    <string name="badge_legacy">Legacy</string>
     <string name="report">Report</string>
     <string name="report_title">Report %1$s?</string>
     <string name="report_explain">The messages you choose are sent encrypted only to the Sealer team, without your ID. %1$s is not notified and is blocked.</string>

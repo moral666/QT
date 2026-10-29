@@ -8,7 +8,8 @@
 //! cargo run --release -p qt_server --example badge -- chave --key ~/Documentos/badge-emissor.key
 //! ```
 //!
-//! Passo 2, dar um badge (founder, cofounder, dev, tester, contributor) ou tirar (nenhum):
+//! Passo 2, dar um badge (founder, cofounder, dev, tester, contributor, bughunter, support, troll,
+//! legacy) ou tirar (nenhum):
 //!
 //! ```text
 //! cargo run --release -p qt_server --example badge -- dar --key ~/Documentos/badge-emissor.key \
@@ -135,7 +136,11 @@ fn badge_num(name: &str) -> u8 {
         "dev" => badge::BADGE_DEV,
         "tester" => badge::BADGE_TESTER,
         "contributor" => badge::BADGE_CONTRIBUTOR,
-        _ => die("badge desconhecido (founder, cofounder, dev, tester, contributor ou nenhum)"),
+        "bughunter" => badge::BADGE_BUGHUNTER,
+        "support" => badge::BADGE_SUPPORT,
+        "troll" => badge::BADGE_TROLL,
+        "legacy" => badge::BADGE_LEGACY,
+        _ => die("badge desconhecido (founder, cofounder, dev, tester, contributor, bughunter, support, troll, legacy ou nenhum)"),
     }
 }
 

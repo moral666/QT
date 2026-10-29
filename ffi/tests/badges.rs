@@ -1,6 +1,9 @@
 //! Badges (tipo 13): certificado do emissor, so contactos, cifrado, sem nada no relay.
 
-use qt_core::badge::{issue, issuer_public, BADGE_DEV, BADGE_FOUNDER, BADGE_NONE, BADGE_TESTER};
+use qt_core::badge::{
+    issue, issuer_public, BADGE_BUGHUNTER, BADGE_DEV, BADGE_FOUNDER, BADGE_LEGACY, BADGE_NONE,
+    BADGE_SUPPORT, BADGE_TESTER, BADGE_TROLL,
+};
 use qt_ffi::history::*;
 use qt_ffi::*;
 use std::sync::Arc;
@@ -165,4 +168,24 @@ fn apagar_o_contacto_esquece_o_badge() {
     assert_eq!(b.c.badge_of(a.cid()).unwrap(), BADGE_DEV);
     b.c.delete_contact(a.cid()).unwrap();
     assert_eq!(b.c.badge_of(a.cid()).unwrap(), BADGE_NONE);
+}
+
+#[test]
+fn badges_novos_chegam_aos_contactos() {
+    setup();
+    let (a, b) = pair();
+    let nuno = peer("emissor4", 0x76);
+    let mut at = 1_000;
+    for badge in [BADGE_BUGHUNTER, BADGE_SUPPORT, BADGE_TROLL, BADGE_LEGACY] {
+        at += 1_000;
+        grant(&nuno, &a, badge, at);
+        assert_eq!(a.c.badge_mine().unwrap(), badge);
+        assert_eq!(a.c.badge_sync(vec![b.cid()]).unwrap(), 1);
+        relay(&a, &b);
+        assert_eq!(b.c.badge_of(a.cid()).unwrap(), badge);
+    }
+    // Um numero que ninguem conhece (10) e recusado: fica a Legacy.
+    let falso = issue(&SEED, &subject(&a), BADGE_LEGACY + 1, at + 1_000);
+    assert!(nuno.c.badge_deliver(a.cid(), falso).is_err());
+    assert_eq!(a.c.badge_mine().unwrap(), BADGE_LEGACY);
 }

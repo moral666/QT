@@ -4,7 +4,7 @@
 
 **SEALER** is a private messenger: no phone number, no email, end-to-end encryption and post-quantum protection. **QT** is the name of the protocol and of this repository.
 
-**Status:** test version, in closed testing. Android and iPhone apps **0.9.50**, with two federated relays in the European Union (Stockholm and Spain).
+**Status:** test version, in closed testing. Android and iPhone apps **0.9.51**, with two federated relays in the European Union (Stockholm and Spain).
 
 [Ler em português →](README.md)
 
@@ -34,7 +34,7 @@ It is also a working example of "data protection by design", as the GDPR asks: e
 - **Notifications with the app closed**, always generic ("You have new messages"): no name, no text.
 - **Profile photo** only for your contacts, encrypted (the server does not even know it is a photo). It can be changed every 72 hours.
 - **QR code invites**, reactions, blocking contacts and "online" shown only to contacts.
-- **Badges** (Founder, Co-founder, Dev, Tester, Contributor): a ring and a badge on the photo, with a signed certificate, sent encrypted only to contacts.
+- **Badges** (Founder, Co-founder, Dev, Tester, Contributor, Bug Hunter, Support, Troll and Legacy): a ring and a badge on the photo (for Legacy, a shield around the photo), with a signed certificate, sent encrypted only to contacts.
 - **Report a contact:** the reason and up to 20 messages go encrypted to the SEALER team; the server stores the report without reading it or knowing who made it, and the contact is blocked.
 - **App lock** with its own code, fingerprint or face (Face ID on iPhone). After 5 wrong codes the wait goes up to 15 minutes, and changing the phone's clock does not skip it.
 - **Recovery key:** 12 words bring back the ID, contacts, block list and badge on a new phone. The copy is stored encrypted on the server; history and groups are not in it.
