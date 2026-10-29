@@ -89,7 +89,7 @@ pub struct FichasIssued {
 
 fn kv_u32s(c: &st::rusqlite::Connection, key: &str) -> Result<Vec<u32>, QtError> {
     Ok(st::kv_get(c, key)?
-        .map(|v| v.chunks_exact(4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]])).collect())
+        .map(|v| v.as_chunks::<4>().0.iter().map(|b| u32::from_be_bytes(*b)).collect())
         .unwrap_or_default())
 }
 
@@ -97,7 +97,9 @@ fn kv_u32s(c: &st::rusqlite::Connection, key: &str) -> Result<Vec<u32>, QtError>
 pub(crate) fn published_keys(c: &st::rusqlite::Connection) -> Result<Vec<(u32, [u8; 32])>, QtError> {
     Ok(st::kv_get(c, KV_PUBLISHED)?
         .map(|v| {
-            v.chunks_exact(36)
+            v.as_chunks::<36>()
+                .0
+                .iter()
                 .filter_map(|b| Some((u32::from_be_bytes(b[..4].try_into().ok()?), b[4..].try_into().ok()?)))
                 .collect()
         })
