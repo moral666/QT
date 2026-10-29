@@ -6,6 +6,21 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 29 de outubro de 2026: relay com menos idas ao Redis
+
+- O perfil de CPU (29/10/2026, 25 000 ligados) mostrou o vaivém entre o relay e o Redis a custar ~35% do
+  CPU (os dois lados somados): cada mensagem fazia vários pedidos seguidos.
+- Envio (`SendMessage`, e as mensagens vindas de outro relay): um só pedido em vez de dois. As
+  verificações vão junto com a escrita; se alguma falhar, a entrada é retirada e o prazo da fila (se já
+  existia) é reposto. Os ids saem de blocos de 1000 reservados no Redis, em vez de um `INCR` por mensagem.
+- O bundle (~1,4 KB) deixa de ser lido só para saber se existe (`EXISTS`). Quem envia é verificado uma
+  vez por ligação (na autenticação, no mesmo pedido que a verificação de conta banida).
+- Confirmação (`AckMessages`): um pedido em vez de dois, com a página que a ligação acabou de entregar.
+- Registo do bundle: uma transação (bundle, one-time prekeys e cópia de recuperação) em vez de cinco a
+  sete pedidos, sem repetir a verificação de conta banida. Anexo novo (`BlobCreate`) e premium: um pedido
+  cada.
+- ACL do Redis (`deploy/redis/qt-redis.conf`): `+exists +ttl`, só leitura. Apps e protocolo sem mudanças.
+
 ### 29 de outubro de 2026: Redis do relay só com o AOF
 
 - O perfil de CPU (29/10/2026, 25 000 ligados) mostrou o Redis a gravar o disco de duas maneiras ao mesmo

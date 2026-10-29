@@ -656,7 +656,11 @@ impl Federacao {
                 }
             }
             match decisao {
-                Some(true) if self.store.fed_largar(id).await.is_ok() => largadas += 1,
+                Some(true) if self.store.fed_largar(id).await.is_ok() => {
+                    // Sem bundle aqui: as ligacoes da conta voltam a verificar ao enviar.
+                    crate::limits::UserSlot::forget_registered(id);
+                    largadas += 1
+                }
                 Some(false) if self.store.fed_verificado(id).await.is_ok() => verificadas += 1,
                 _ => {}
             }

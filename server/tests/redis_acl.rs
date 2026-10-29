@@ -75,6 +75,27 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     assert_eq!(q.len(), 1);
     assert_eq!(store.ack_messages(&alice, &[q[0].id]).await.unwrap(), 1);
 
+    // 0024 (EXISTS e TTL na lista): estado ao autenticar, envio num so pedido, recusa
+    // desfeita com o prazo da fila reposto, confirmacao com a pagina guardada, registo numa
+    // transacao (MULTI/EXEC) e premium num so pedido.
+    assert_eq!(store.auth_state(&alice).await.unwrap(), (false, true));
+    assert!(store.is_registered(&alice).await.unwrap());
+    store.enqueue(qt_server::store::Sender::Registered, alice.clone(), vec![], vec![3; 10]).await.unwrap();
+    let page = store.peek_messages_raw(&alice, 40_000).await.unwrap();
+    let mut known: Vec<(u64, Vec<u8>)> = page.into_iter().map(|(m, r)| (m.id, r)).collect();
+    let first = known[0].0;
+    assert_eq!(store.ack_known(&alice, &[first], &mut known).await.unwrap(), vec![first]);
+    let bob = "b".repeat(64);
+    store.register_bundle(bob.clone(), vec![1]).await.unwrap();
+    store.enqueue_message(&alice, bob.clone(), vec![], vec![1]).await.unwrap();
+    store.fed_largar(&bob).await.unwrap();
+    assert!(matches!(
+        store.enqueue_message(&alice, bob.clone(), vec![], vec![1]).await,
+        Err(qt_server::store::StoreError::RecipientUnknown)
+    ));
+    assert_eq!(store.register_full(&alice, vec![1, 2, 3], Some(&[vec![4; 36]])).await.unwrap(), None);
+    assert!(store.premium_allows(&alice).await.unwrap());
+
     // One-time prekeys (0.9.3): DEL + RPUSH + EXPIRE numa transacao (MULTI/EXEC), LPOP e LLEN.
     store.replace_one_time_prekeys(&alice, &[vec![1; 36], vec![2; 36]]).await.unwrap();
     assert_eq!(store.count_one_time_prekeys(&alice).await.unwrap(), 2);
