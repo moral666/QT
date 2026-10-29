@@ -61,7 +61,7 @@ Ou a partir do GitHub:
 
 ```bash
 git clone https://github.com/moral666/QT.git && cd QT
-git checkout site-sealer
+git checkout main
 bash compilar-iphone.sh       # Rust para iPhone + simulador, xcodegen e abre o Xcode
 ```
 

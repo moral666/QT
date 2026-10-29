@@ -207,7 +207,7 @@ Step by step in [`ios/README.md`](ios/README.md).
 On a new EC2 instance with Ubuntu 24.04 (Security Group with 22, 80 and 443 TCP, and 443 UDP for calls):
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/moral666/QT/p2p-teste/deploy/aws/setup-ec2.sh
+curl -fsSLO https://raw.githubusercontent.com/moral666/QT/main/deploy/aws/setup-ec2.sh
 sudo bash setup-ec2.sh
 ```
 
