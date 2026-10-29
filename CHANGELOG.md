@@ -6,6 +6,14 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 29 de outubro de 2026: federação de relays, fase 2 (só relay)
+
+- Mensagens, bundles, anexos e cópias de recuperação entre contas de relays diferentes: o relay de quem pede
+  encaminha para o relay de casa da conta. As apps não mudam.
+- O relay de casa só sabe que a mensagem veio do outro relay (sealed sender igual). Relay de casa em baixo:
+  a mensagem fica na outbox da app e segue depois.
+- Ver `docs/protocol-spec.md`, secção 25.1.
+
 ### 29 de outubro de 2026: federação de relays, fase 1 (só relay)
 
 - Relays de uma lista fechada (`/etc/qt/federacao.json`) ligam-se entre si por `wss://<relay>/fed`, com

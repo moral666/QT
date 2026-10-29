@@ -304,6 +304,22 @@ impl Store {
         sealed_from: Vec<u8>,
         ciphertext: Vec<u8>,
     ) -> Result<u64, StoreError> {
+        self.enqueue_inner(Some(from), to, sealed_from, ciphertext).await
+    }
+
+    /// Mensagem vinda de outro relay da federacao (`federation.rs`): quem envia esta registado
+    /// LA (o outro relay ja verificou e aplicou os limites dele); aqui so o destinatario conta.
+    pub async fn enqueue_from_peer(&self, to: UserId, sealed_from: Vec<u8>, ciphertext: Vec<u8>) -> Result<u64, StoreError> {
+        self.enqueue_inner(None, to, sealed_from, ciphertext).await
+    }
+
+    async fn enqueue_inner(
+        &self,
+        from: Option<&str>,
+        to: UserId,
+        sealed_from: Vec<u8>,
+        ciphertext: Vec<u8>,
+    ) -> Result<u64, StoreError> {
         let mut conn = self.connection().await?;
         let key = format!("{}:queue:{}", self.key_prefix, to);
 
@@ -318,7 +334,9 @@ impl Store {
             .incr(format!("{}:seq", self.key_prefix), 1u64)
             .get(self.deleted_key(&to))
             .get(format!("{}:bundle:{}", self.key_prefix, to))
-            .get(format!("{}:bundle:{}", self.key_prefix, from))
+            // Sem `from` (vinda de outro relay): le o bundle do destinatario outra vez, so para
+            // manter o mesmo pedido; o resultado nao conta.
+            .get(format!("{}:bundle:{}", self.key_prefix, from.unwrap_or(&to)))
             .query_async(&mut conn)
             .await?;
         // Por esta ordem: "apagou a conta" continua a ser a resposta para quem apagou
@@ -326,7 +344,7 @@ impl Store {
         if deleted.is_some() {
             return Err(StoreError::RecipientDeleted);
         }
-        if from_bundle.is_none() {
+        if from.is_some() && from_bundle.is_none() {
             return Err(StoreError::SenderNotRegistered);
         }
         if to_bundle.is_none() {

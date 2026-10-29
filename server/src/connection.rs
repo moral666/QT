@@ -505,6 +505,14 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                     ServerMessage::PreKeyBundle { bundle_bytes, one_time_pre_key }
                 }
                 Ok(None) => {
+                    // Federacao (fase 2): a conta pode estar noutro relay.
+                    if let Some(fed) = &cfg.federacao {
+                        if let Some(r) = fed.pedir_bundle(&user_id).await {
+                            stats::inc(&STATS.fed_lookups);
+                            stats::inc(&STATS.bundles_fetched);
+                            return r;
+                        }
+                    }
                     stats::inc(&STATS.bundles_not_found);
                     ServerMessage::PreKeyBundleNotFound
                 }
@@ -531,7 +539,27 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 }
             }
             let recipient = to.clone();
-            match store.enqueue_message(me, to, sealed_from, ciphertext).await {
+            // Copias so para a federacao (a fila local consome as originais).
+            let fed_copy = cfg.federacao.as_ref().map(|_| (sealed_from.clone(), ciphertext.clone()));
+            let local = store.enqueue_message(me, to, sealed_from, ciphertext).await;
+            // Federacao (fase 2): destinatario que nao esta neste relay (ou que apagou a conta
+            // AQUI e pode existir noutro). So para quem esta registado neste relay.
+            if let (Some(fed), Some((sf, ct)), Err(StoreError::RecipientUnknown | StoreError::RecipientDeleted)) =
+                (&cfg.federacao, &fed_copy, &local)
+            {
+                if matches!(local, Err(StoreError::RecipientUnknown)) || matches!(store.is_registered(me).await, Ok(true)) {
+                    match fed.entregar(&recipient, sf, ct, silent, wake).await {
+                        crate::federation::Entrega::Entregue => {
+                            stats::inc(&STATS.sends);
+                            stats::inc(&STATS.fed_out);
+                            return ServerMessage::Ack;
+                        }
+                        crate::federation::Entrega::Recusado(motivo) => return err(&motivo),
+                        crate::federation::Entrega::NaoEsta => {}
+                    }
+                }
+            }
+            match local {
                 Ok(id) => {
                     stats::inc(&STATS.sends);
                     // Tempo de entrega: so conta se o destinatario estava ligado (app
@@ -668,8 +696,13 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 Err(e) => blob_err(e),
             }
         }
+        // Federacao (fase 2): um anexo que nao esta aqui pode estar no relay de quem o enviou.
         ClientMessage::BlobInfo { blob_id } => match store.blob_info(&blob_id).await {
             Ok(s) => ServerMessage::BlobStatus { size: s.size, received: s.received, complete: s.complete },
+            Err(BlobError::NotFound) if cfg.federacao.is_some() => {
+                let fed = cfg.federacao.as_ref().unwrap();
+                fed.info_anexo(&blob_id).await.unwrap_or(ServerMessage::BlobNotFound)
+            }
             Err(e) => blob_err(e),
         },
         ClientMessage::BlobGet { blob_id, offset } => match store.blob_get(&blob_id, offset).await {
@@ -679,12 +712,33 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 }
                 ServerMessage::BlobData { offset, size, data: b64().encode(data) }
             }
+            Err(BlobError::NotFound) if cfg.federacao.is_some() => {
+                let fed = cfg.federacao.as_ref().unwrap();
+                match fed.ler_anexo(&blob_id, offset).await {
+                    Some(r) => {
+                        if offset == 0 {
+                            stats::inc(&STATS.blob_downloads);
+                            stats::inc(&STATS.fed_lookups);
+                        }
+                        r
+                    }
+                    None => ServerMessage::BlobNotFound,
+                }
+            }
             Err(e) => blob_err(e),
         },
-        ClientMessage::BlobDelete { blob_id } => match store.blob_delete(&blob_id).await {
-            Ok(()) => ServerMessage::Ack,
-            Err(e) => blob_err(e),
-        },
+        ClientMessage::BlobDelete { blob_id } => {
+            if let Some(fed) = &cfg.federacao {
+                if matches!(store.blob_info(&blob_id).await, Err(BlobError::NotFound)) {
+                    fed.apagar_anexo(&blob_id).await;
+                    return ServerMessage::Ack;
+                }
+            }
+            match store.blob_delete(&blob_id).await {
+                Ok(()) => ServerMessage::Ack,
+                Err(e) => blob_err(e),
+            }
+        }
         ClientMessage::SubmitReport { sealed } => {
             let len_ok = sealed.len() > 1 + 32 + 16 + 4 && sealed.len() <= qt_core::report::MAX_SEALED;
             if !len_ok || sealed[0] != qt_core::report::VERSION {
@@ -811,7 +865,19 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                     }
                     ServerMessage::BackupPart { part, parts, data: b64().encode(data) }
                 }
-                Ok(None) => ServerMessage::BackupNotFound,
+                Ok(None) => {
+                    // Federacao (fase 2): a copia pode estar no relay da conta.
+                    if let Some(fed) = &cfg.federacao {
+                        if let Some(r) = fed.ler_copia(&lookup, part).await {
+                            if part == 0 {
+                                stats::inc(&STATS.backups_restored);
+                                stats::inc(&STATS.fed_lookups);
+                            }
+                            return r;
+                        }
+                    }
+                    ServerMessage::BackupNotFound
+                }
                 Err(e) => internal(e),
             }
         }

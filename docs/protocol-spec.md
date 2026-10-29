@@ -1367,6 +1367,27 @@ apagada ou banida 60 s (contra IDs inventados); sem resposta de algum par, não 
 **Privacidade.** O par fica a saber que alguém do outro relay procura a conta X (não quem). Sem registos
 de pedidos; os registos do relay só têm o nome dos pares e contagens.
 
+### 25.1 Fase 2: mensagens, bundles, anexos e cópias entre relays
+
+O relay de quem pede encaminha para o relay de casa da conta (descoberto como acima). As apps não mudam:
+continuam a fazer os mesmos pedidos ao seu relay.
+
+* `SendMessage` para uma conta que não está neste relay (`RecipientUnknown`, ou apagada aqui e viva
+  noutro): pedido `Entregar { to, sealed_from, ciphertext, silent, wake }` (binários em base64) →
+  `Feito` ou `Recusado { motivo }`. O relay de casa põe na fila sem verificar quem envia (está registado no
+  outro relay, que já aplicou os limites e o premium), acorda quem está à espera e toca a campainha como
+  num envio local. Só sai de quem está registado no relay local. O relay de casa só sabe que a mensagem veio
+  do outro relay (sealed sender igual). Relay de casa sem resposta:
+  `Error{"relay do destinatario sem resposta, tenta daqui a pouco"}` (fica na outbox da app).
+* `FetchPreKeyBundle` de uma conta de outro relay: `PedirBundle { id }` → `Bundle { bundle, otpk }` (gasta a
+  one-time prekey no relay de casa) ou `SemBundle`.
+* Anexos: ficam no relay de quem os enviou. `BlobInfo`, `BlobGet` e `BlobDelete` de um anexo que não está
+  aqui: `InfoBlob` a todos os pares (o primeiro que o tem fica em memória 24 h), depois `LerBlob { blob_id,
+  offset }` → `BlobDados` (blocos de 40 KB, como as apps) e `ApagarBlob`.
+* Cópia de recuperação: `BackupGet` que não está aqui → `LerCopia { lookup, part }` a todos os pares (o que
+  a tem fica em memória 10 min, para as outras partes). `BackupPut` só no relay da conta.
+* Registos: só contagens (`fed_enviadas`, `fed_recebidas`, `fed_pedidos`).
+
 ## Documentos relacionados
 
 - [`threat-model.md`](threat-model.md): modelo de ameaças formal (quem

@@ -253,6 +253,10 @@ pub const RECIPIENT_DELETED: &str = "o destinatario apagou a conta";
 /// (`federation.rs`). A conta continua a existir, so que noutro relay.
 pub const ELSEWHERE: &str = "conta noutro relay";
 
+/// Motivo do `Error` quando o destinatario esta noutro relay da federacao e esse relay nao
+/// respondeu. A mensagem fica na outbox de quem envia e segue no ciclo seguinte.
+pub const FED_UNAVAILABLE: &str = "relay do destinatario sem resposta, tenta daqui a pouco";
+
 /// Motivo do `Error` a quem envia (mensagem, token de notificacoes, anexo) sem ter
 /// bundle no relay. As apps registam o bundle sempre que abrem; o que ficar por
 /// enviar continua na outbox e segue no ciclo seguinte.

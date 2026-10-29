@@ -29,24 +29,31 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-/// Um lado da federacao: chave, porta do `/fed` e Redis.
+/// Um lado da federacao: chave, porta do `/fed` e Redis (com anexos, numa pasta propria).
 struct Lado {
     nome: String,
     prefix: String,
     chave: qt_transport::NoiseStaticKeyPair,
     porta: u16,
     ouvinte: Option<TcpListener>,
+    store: Arc<Store>,
 }
 
 impl Lado {
     async fn novo(nome: &str) -> Self {
         let ouvinte = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let prefix = prefixo(nome);
+        let mut st = Store::with_prefix("redis://127.0.0.1:6379", &prefix).unwrap();
+        let mut b = qt_server::BlobConfig::new(std::env::temp_dir().join(format!("qt-fed-anexos-{prefix}")));
+        b.min_free_bytes = 0;
+        st.enable_blobs(b).unwrap();
         Lado {
             nome: nome.into(),
-            prefix: prefixo(nome),
+            prefix,
             chave: qt_transport::generate_static_keypair().unwrap(),
             porta: ouvinte.local_addr().unwrap().port(),
             ouvinte: Some(ouvinte),
+            store: Arc::new(st),
         }
     }
 
@@ -62,17 +69,17 @@ impl Lado {
     fn arrancar(&mut self, pares: Vec<ParConfig>) -> Arc<Federacao> {
         let cfg = FedConfig { nome: self.nome.clone(), pares };
         cfg.validar().unwrap();
-        Federacao::arrancar(cfg, store(&self.prefix), self.chave.private.clone(), self.ouvinte.take().unwrap())
+        Federacao::arrancar(cfg, self.store.clone(), self.chave.private.clone(), self.ouvinte.take().unwrap())
     }
 }
 
-/// Relay das apps com esta federacao, no Redis `prefix`. Devolve o URL.
-async fn relay(prefix: &str, fed: Option<Arc<Federacao>>) -> String {
+/// Relay das apps deste lado, com esta federacao. Devolve o URL.
+async fn relay(lado: &Lado, fed: Option<Arc<Federacao>>) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let keys = qt_transport::generate_static_keypair().unwrap();
     let cfg = ServerConfig { federacao: fed, ..fast_cfg() };
-    let s = store(prefix);
+    let s = lado.store.clone();
     tokio::spawn(async move {
         loop {
             let Ok((tcp, _)) = listener.accept().await else { break };
@@ -140,7 +147,7 @@ async fn par_federado() -> (Lado, Arc<Federacao>, String, Lado, Arc<Federacao>, 
     let fb = b.arrancar(vec![pa]);
     esperar_ligado(&fa).await;
     esperar_ligado(&fb).await;
-    let (ua, ub) = (relay(&a.prefix, Some(fa.clone())).await, relay(&b.prefix, Some(fb.clone())).await);
+    let (ua, ub) = (relay(&a, Some(fa.clone())).await, relay(&b, Some(fb.clone())).await);
     (a, fa, ua, b, fb, ub)
 }
 
@@ -211,7 +218,7 @@ async fn par_em_baixo_regista_e_verifica_depois() {
     let ouvinte_a = a.ouvinte.take().unwrap();
     drop(ouvinte_a);
     let fb = b.arrancar(vec![pa]);
-    let ub = relay(&b.prefix, Some(fb.clone())).await;
+    let ub = relay(&b, Some(fb.clone())).await;
     let sb = store(&b.prefix);
 
     // Duas contas novas no b com o a em baixo: as duas ficam por verificar.
@@ -279,4 +286,167 @@ async fn chave_fora_da_lista_ou_pin_errado_nao_liga() {
     // O `b` tem o `a` com outra chave: tambem recusa a ligacao que vem do `a`.
     assert!(!fa.pares()[0].ligado(), "o b recusa a chave verdadeira do a (nao e a da lista dele)");
     assert_eq!(fc.onde_esta(&uid(&SigningKeyPair::generate())).await, Onde::Incerto);
+}
+
+// ---------------------------------------------------------------------------
+// Fase 2: mensagens, bundles, anexos e copias entre relays
+// ---------------------------------------------------------------------------
+
+/// Conta registada (com bundle e one-time prekeys) e ligada ao relay `url`.
+async fn conta(url: &str) -> (SigningKeyPair, RelayClient) {
+    let s = SigningKeyPair::generate();
+    let mut c = ligar(url, &s).await;
+    let pow = qt_core::pow::pow_solve(&s.verifying_key.to_bytes(), qt_core::pow::POW_BITS);
+    let otpks = vec![[[0, 0, 0, 1].as_slice(), &[7u8; 32]].concat(), [[0, 0, 0, 2].as_slice(), &[8u8; 32]].concat()];
+    ack(c
+        .request(ClientMessage::RegisterPreKeyBundle {
+            user_id: uid(&s),
+            bundle_bytes: valid_bundle(&s, 1),
+            pow,
+            one_time_pre_keys: Some(otpks),
+        })
+        .await
+        .unwrap());
+    (s, c)
+}
+
+fn envio(to: &str, n: u8) -> ClientMessage {
+    ClientMessage::SendMessage { to: to.into(), sealed_from: vec![n; 80], ciphertext: vec![n; 2000], silent: false, wake: None }
+}
+
+#[tokio::test]
+async fn mensagens_entre_relays() {
+    let (_a, _fa, ua, _b, _fb, ub) = par_federado().await;
+    let (_, mut alice) = conta(&ua).await;
+    let (bs, mut bob) = conta(&ub).await;
+    let bob_id = uid(&bs);
+    // A Alice (relay a) escreve ao Bob (relay b); o Bob recebe no relay dele, igual.
+    ack(alice.request(envio(&bob_id, 3)).await.unwrap());
+    ack(alice.request(envio(&bob_id, 4)).await.unwrap());
+    let m = bob.fetch_messages().await.unwrap();
+    assert_eq!(m.len(), 2);
+    assert_eq!((m[0].sealed_from.clone(), m[0].ciphertext.len()), (vec![3; 80], 2000));
+    assert_eq!(m[1].ciphertext[0], 4);
+    // E ao contrario, com o Bob ja a espera (entrega imediata no relay b).
+    let alice_id = alice.user_id().to_string();
+    ack(bob.request(envio(&alice_id, 5)).await.unwrap());
+    let r = alice.wait_messages(5).await.unwrap();
+    assert_eq!(r[0].ciphertext[0], 5);
+    // Um ID que nao existe em lado nenhum continua a dar "destinatario desconhecido".
+    recusa(alice.request(envio(&uid(&SigningKeyPair::generate()), 1)).await.unwrap(), RECIPIENT_UNKNOWN);
+}
+
+#[tokio::test]
+async fn bundle_de_conta_de_outro_relay() {
+    let (_a, _fa, ua, b, _fb, ub) = par_federado().await;
+    let (_, mut alice) = conta(&ua).await;
+    let (bs, _bob) = conta(&ub).await;
+    let bob_id = uid(&bs);
+    match alice.request(ClientMessage::FetchPreKeyBundle { user_id: bob_id.clone() }).await.unwrap() {
+        ServerMessage::PreKeyBundle { bundle_bytes, one_time_pre_key } => {
+            assert_eq!(Some(bundle_bytes), b.store.get_bundle(&bob_id).await.unwrap());
+            assert_eq!(one_time_pre_key.unwrap()[..4], [0, 0, 0, 1], "a primeira one-time prekey");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(b.store.count_one_time_prekeys(&bob_id).await.unwrap(), 1, "gasta no relay do Bob");
+    let inventado = uid(&SigningKeyPair::generate());
+    assert!(matches!(
+        alice.request(ClientMessage::FetchPreKeyBundle { user_id: inventado }).await.unwrap(),
+        ServerMessage::PreKeyBundleNotFound
+    ));
+}
+
+#[tokio::test]
+async fn conta_apagada_noutro_relay() {
+    let (_a, _fa, ua, b, _fb, ub) = par_federado().await;
+    let (_, mut alice) = conta(&ua).await;
+    let (bs, _bob) = conta(&ub).await;
+    let bob_id = uid(&bs);
+    ack(alice.request(envio(&bob_id, 1)).await.unwrap());
+    b.store.delete_account(&bob_id).await.unwrap();
+    recusa(alice.request(envio(&bob_id, 2)).await.unwrap(), RECIPIENT_DELETED);
+}
+
+#[tokio::test]
+async fn anexo_enviado_num_relay_descarregado_no_outro() {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let (a, _fa, ua, _b, _fb, ub) = par_federado().await;
+    let (_, mut alice) = conta(&ua).await;
+    let (_, mut bob) = conta(&ub).await;
+    let dados: Vec<u8> = (0..100_000u32).map(|i| (i % 251) as u8).collect();
+    let (id, token) = match alice.request(ClientMessage::BlobCreate { size: dados.len() as u64 }).await.unwrap() {
+        ServerMessage::BlobCreated { blob_id, token } => (blob_id, token),
+        o => panic!("{o:?}"),
+    };
+    let mut off = 0;
+    for bloco in dados.chunks(qt_server::blobs::BLOB_CHUNK) {
+        let r = alice
+            .request(ClientMessage::BlobPut { blob_id: id.clone(), token: token.clone(), offset: off, data: b64.encode(bloco) })
+            .await
+            .unwrap();
+        assert!(matches!(r, ServerMessage::BlobStatus { .. }), "{r:?}");
+        off += bloco.len() as u64;
+    }
+    // O Bob, no relay b, ve e descarrega o anexo que esta no relay a.
+    match bob.request(ClientMessage::BlobInfo { blob_id: id.clone() }).await.unwrap() {
+        ServerMessage::BlobStatus { size, complete, .. } => assert_eq!((size, complete), (100_000, true)),
+        o => panic!("{o:?}"),
+    }
+    let mut lido = Vec::new();
+    while lido.len() < dados.len() {
+        match bob.request(ClientMessage::BlobGet { blob_id: id.clone(), offset: lido.len() as u64 }).await.unwrap() {
+            ServerMessage::BlobData { data, size, .. } => {
+                assert_eq!(size, 100_000);
+                lido.extend(b64.decode(data).unwrap());
+            }
+            o => panic!("{o:?}"),
+        }
+    }
+    assert_eq!(lido, dados);
+    // Apagar no relay b apaga no relay a.
+    ack(bob.request(ClientMessage::BlobDelete { blob_id: id.clone() }).await.unwrap());
+    assert!(a.store.blob_info(&id).await.is_err(), "apagado no relay de quem enviou");
+    assert!(matches!(bob.request(ClientMessage::BlobGet { blob_id: id, offset: 0 }).await.unwrap(), ServerMessage::BlobNotFound));
+}
+
+#[tokio::test]
+async fn copia_de_recuperacao_noutro_relay() {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let (_a, _fa, ua, _b, _fb, ub) = par_federado().await;
+    let (_, mut alice) = conta(&ua).await;
+    let lookup = "ab".repeat(32);
+    ack(alice
+        .request(ClientMessage::BackupPut {
+            lookup: lookup.clone(),
+            generation: "01".repeat(8),
+            part: 0,
+            parts: 1,
+            data: b64.encode([9u8; 500]),
+        })
+        .await
+        .unwrap());
+    // Telemovel novo ligado ao relay b (ainda sem conta): encontra a copia no relay a.
+    let mut novo = ligar(&ub, &SigningKeyPair::generate()).await;
+    match novo.request(ClientMessage::BackupGet { lookup: lookup.clone(), part: 0 }).await.unwrap() {
+        ServerMessage::BackupPart { parts, data, .. } => assert_eq!((parts, b64.decode(data).unwrap()), (1, vec![9u8; 500])),
+        o => panic!("{o:?}"),
+    }
+    assert!(matches!(
+        novo.request(ClientMessage::BackupGet { lookup: "cd".repeat(32), part: 0 }).await.unwrap(),
+        ServerMessage::BackupNotFound
+    ));
+}
+
+#[tokio::test]
+async fn relay_do_destinatario_em_baixo_fica_na_outbox() {
+    let mut a = Lado::novo("a").await;
+    let b = Lado::novo("b").await;
+    // O b esta na lista do a, mas nao esta ligado.
+    let fa = a.arrancar(vec![b.como_par()]);
+    let ua = relay(&a, Some(fa)).await;
+    let (_, mut alice) = conta(&ua).await;
+    recusa(alice.request(envio(&uid(&SigningKeyPair::generate()), 1)).await.unwrap(), FED_UNAVAILABLE);
 }

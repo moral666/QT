@@ -16,7 +16,8 @@
 //!
 //! Registos: so o nome dos pares e contagens. Nunca IDs de contas.
 
-use crate::protocol::{is_valid_user_id, UserId};
+use crate::protocol::{is_valid_user_id, ServerMessage, UserId, WakeKind};
+use base64::Engine;
 use crate::store::Store;
 use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
@@ -50,6 +51,12 @@ const PING: Duration = Duration::from_secs(30);
 const MORTA: Duration = Duration::from_secs(90);
 /// Verificacao das contas registadas com um par em baixo.
 const VERIFICAR_CADA: Duration = Duration::from_secs(60);
+/// "O anexo X esta no relay Y" (fase 2): os anexos apagam-se ao fim de 24 h.
+const CACHE_ANEXO: Duration = Duration::from_secs(24 * 3600);
+/// "A copia de recuperacao X esta no relay Y": so durante uma recuperacao (varias partes).
+const CACHE_COPIA: Duration = Duration::from_secs(600);
+/// Entradas nas caches de anexos e copias, no maximo.
+const CACHE_LOCAL_MAX: usize = 50_000;
 
 // ---------------------------------------------------------------------------
 // Configuracao
@@ -148,6 +155,28 @@ pub enum Pedido {
     OndeEsta { ids: Vec<UserId> },
     /// Conta nova a registar no relay que pergunta. Resposta: `Reserva`.
     Reservar { id: UserId },
+    // ----- Fase 2: o relay de casa da conta responde -----
+    /// Mensagem (ja cifrada, sealed sender) para uma conta deste relay. `sealed_from` e
+    /// `ciphertext` em base64. Resposta: `Feito` ou `Recusado` (motivos de `protocol.rs`).
+    Entregar {
+        to: UserId,
+        sealed_from: String,
+        ciphertext: String,
+        #[serde(default)]
+        silent: bool,
+        #[serde(default)]
+        wake: Option<WakeKind>,
+    },
+    /// Bundle de uma conta deste relay (gasta uma one-time prekey). `Bundle` ou `SemBundle`.
+    PedirBundle { id: UserId },
+    /// Anexo guardado neste relay. `BlobEstado` ou `SemBlob`.
+    InfoBlob { blob_id: String },
+    /// Um bloco de um anexo. `BlobDados`, `SemBlob` ou `Recusado`.
+    LerBlob { blob_id: String, offset: u64 },
+    /// Apaga um anexo (quem recebeu ja o tem). `Feito`.
+    ApagarBlob { blob_id: String },
+    /// Uma parte de uma copia de recuperacao. `Copia` ou `SemCopia`.
+    LerCopia { lookup: String, part: u32 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,6 +190,78 @@ pub enum Resposta {
         banida: bool,
     },
     Erro { motivo: String },
+    // ----- Fase 2 -----
+    Feito,
+    /// Recusado pelo relay de casa (o motivo vai tal e qual para a app).
+    Recusado { motivo: String },
+    /// `bundle` e `otpk` em base64.
+    Bundle {
+        bundle: String,
+        #[serde(default)]
+        otpk: Option<String>,
+    },
+    SemBundle,
+    BlobEstado { size: u64, received: u64, complete: bool },
+    /// `data` em base64.
+    BlobDados { offset: u64, size: u64, data: String },
+    SemBlob,
+    /// `data` em base64.
+    Copia { part: u32, parts: u32, data: String },
+    SemCopia,
+}
+
+/// Resultado de entregar uma mensagem noutro relay.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Entrega {
+    Entregue,
+    /// Nenhum relay tem a conta: fica a resposta do relay local.
+    NaoEsta,
+    /// O relay de casa recusou (ou nao respondeu): este motivo vai para a app.
+    Recusado(String),
+}
+
+fn b64() -> base64::engine::GeneralPurpose {
+    base64::engine::general_purpose::STANDARD
+}
+
+/// Cache "chave -> nome do relay" (anexos, copias), so em memoria.
+struct CacheNomes {
+    mapa: Mutex<HashMap<String, (String, Instant)>>,
+    dura: Duration,
+}
+
+impl CacheNomes {
+    fn new(dura: Duration) -> Self {
+        Self { mapa: Mutex::new(HashMap::new()), dura }
+    }
+
+    fn get(&self, k: &str) -> Option<String> {
+        let mut m = self.mapa.lock().unwrap();
+        match m.get(k) {
+            Some((v, ate)) if Instant::now() < *ate => Some(v.clone()),
+            Some(_) => {
+                m.remove(k);
+                None
+            }
+            None => None,
+        }
+    }
+
+    fn put(&self, k: &str, v: &str) {
+        let mut m = self.mapa.lock().unwrap();
+        if m.len() >= CACHE_LOCAL_MAX {
+            let agora = Instant::now();
+            m.retain(|_, (_, ate)| *ate > agora);
+            if m.len() >= CACHE_LOCAL_MAX {
+                m.clear();
+            }
+        }
+        m.insert(k.to_string(), (v.to_string(), Instant::now() + self.dura));
+    }
+
+    fn forget(&self, k: &str) {
+        self.mapa.lock().unwrap().remove(k);
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -237,6 +338,8 @@ pub struct Federacao {
     store: Arc<Store>,
     reservas: Mutex<HashMap<UserId, (Origem, Instant)>>,
     cache: Mutex<HashMap<UserId, (Onde, Instant)>>,
+    anexos: CacheNomes,
+    copias: CacheNomes,
 }
 
 impl std::fmt::Debug for Federacao {
@@ -274,6 +377,8 @@ impl Federacao {
             store,
             reservas: Mutex::new(HashMap::new()),
             cache: Mutex::new(HashMap::new()),
+            anexos: CacheNomes::new(CACHE_ANEXO),
+            copias: CacheNomes::new(CACHE_COPIA),
         });
         for (par, rx) in fed.pares.iter().cloned().zip(filas) {
             tokio::spawn(manter_ligacao(fed.clone(), par, rx, chave_privada.clone()));
@@ -534,6 +639,157 @@ impl Federacao {
         (verificadas, largadas)
     }
 
+    fn par(&self, nome: &str) -> Option<&Arc<Par>> {
+        self.pares.iter().find(|p| p.nome == nome)
+    }
+
+    // ----- Fase 2: pedidos encaminhados para o relay de casa -----
+
+    /// Mensagem para uma conta que nao esta neste relay. Se o relay de casa disser que ja nao a
+    /// tem (cache antiga), esquece e procura outra vez (uma vez).
+    pub async fn entregar(
+        &self,
+        to: &str,
+        sealed_from: &[u8],
+        ciphertext: &[u8],
+        silent: bool,
+        wake: Option<WakeKind>,
+    ) -> Entrega {
+        for tentativa in 0..2 {
+            let nome = match self.onde_esta(to).await {
+                Onde::Par(n) => n,
+                Onde::Incerto => return Entrega::Recusado(crate::protocol::FED_UNAVAILABLE.into()),
+                _ => return Entrega::NaoEsta,
+            };
+            let Some(par) = self.par(&nome) else { return Entrega::NaoEsta };
+            let pedido = Pedido::Entregar {
+                to: to.to_string(),
+                sealed_from: b64().encode(sealed_from),
+                ciphertext: b64().encode(ciphertext),
+                silent,
+                wake,
+            };
+            match self.perguntar(par, pedido).await {
+                Some(Resposta::Feito) => return Entrega::Entregue,
+                Some(Resposta::Recusado { motivo }) if motivo == crate::protocol::RECIPIENT_UNKNOWN && tentativa == 0 => {
+                    self.esquecer(to);
+                }
+                Some(Resposta::Recusado { motivo }) => {
+                    if motivo == crate::protocol::RECIPIENT_UNKNOWN {
+                        self.esquecer(to);
+                    }
+                    return Entrega::Recusado(motivo);
+                }
+                _ => return Entrega::Recusado(crate::protocol::FED_UNAVAILABLE.into()),
+            }
+        }
+        Entrega::NaoEsta
+    }
+
+    /// Bundle de uma conta de outro relay: `PreKeyBundle`, ou `None` (nenhum relay a tem).
+    pub async fn pedir_bundle(&self, id: &str) -> Option<ServerMessage> {
+        let Onde::Par(nome) = self.onde_esta(id).await else { return None };
+        let par = self.par(&nome)?;
+        match self.perguntar(par, Pedido::PedirBundle { id: id.to_string() }).await? {
+            Resposta::Bundle { bundle, otpk } => {
+                let bundle_bytes = b64().decode(bundle).ok()?;
+                let one_time_pre_key = otpk.and_then(|k| b64().decode(k).ok()).filter(|k| k.len() == crate::protocol::OTPK_LEN);
+                Some(ServerMessage::PreKeyBundle { bundle_bytes, one_time_pre_key })
+            }
+            Resposta::SemBundle => {
+                self.esquecer(id);
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// Que par tem este anexo (pergunta a todos e guarda a resposta). Devolve tambem o estado.
+    async fn par_do_anexo(&self, blob_id: &str) -> Option<(Arc<Par>, Option<Resposta>)> {
+        if let Some(par) = self.anexos.get(blob_id).and_then(|n| self.par(&n).cloned()) {
+            return Some((par, None));
+        }
+        let perguntas = self.pares.iter().map(|par| async move {
+            (par.clone(), self.perguntar(par, Pedido::InfoBlob { blob_id: blob_id.to_string() }).await)
+        });
+        for (par, r) in join_all(perguntas).await {
+            if let Some(r @ Resposta::BlobEstado { .. }) = r {
+                self.anexos.put(blob_id, &par.nome);
+                return Some((par, Some(r)));
+            }
+        }
+        None
+    }
+
+    /// `BlobInfo` de um anexo guardado noutro relay. `None`: nenhum o tem.
+    pub async fn info_anexo(&self, blob_id: &str) -> Option<ServerMessage> {
+        if !crate::blobs::is_valid_blob_id(blob_id) {
+            return None;
+        }
+        let (par, estado) = self.par_do_anexo(blob_id).await?;
+        let estado = match estado {
+            Some(e) => e,
+            None => self.perguntar(&par, Pedido::InfoBlob { blob_id: blob_id.to_string() }).await?,
+        };
+        match estado {
+            Resposta::BlobEstado { size, received, complete } => Some(ServerMessage::BlobStatus { size, received, complete }),
+            _ => {
+                self.anexos.forget(blob_id);
+                None
+            }
+        }
+    }
+
+    /// `BlobGet` de um anexo guardado noutro relay (o relay de quem o enviou).
+    pub async fn ler_anexo(&self, blob_id: &str, offset: u64) -> Option<ServerMessage> {
+        if !crate::blobs::is_valid_blob_id(blob_id) {
+            return None;
+        }
+        let (par, _) = self.par_do_anexo(blob_id).await?;
+        match self.perguntar(&par, Pedido::LerBlob { blob_id: blob_id.to_string(), offset }).await? {
+            Resposta::BlobDados { offset, size, data } => Some(ServerMessage::BlobData { offset, size, data }),
+            Resposta::Recusado { motivo } => Some(ServerMessage::Error { reason: motivo }),
+            _ => {
+                self.anexos.forget(blob_id);
+                None
+            }
+        }
+    }
+
+    /// `BlobDelete` de um anexo de outro relay (quem recebeu ja o tem).
+    pub async fn apagar_anexo(&self, blob_id: &str) {
+        if !crate::blobs::is_valid_blob_id(blob_id) {
+            return;
+        }
+        if let Some((par, _)) = self.par_do_anexo(blob_id).await {
+            let _ = self.perguntar(&par, Pedido::ApagarBlob { blob_id: blob_id.to_string() }).await;
+        }
+        self.anexos.forget(blob_id);
+    }
+
+    /// Parte de uma copia de recuperacao guardada noutro relay (telemovel novo, conta noutro relay).
+    pub async fn ler_copia(&self, lookup: &str, part: u32) -> Option<ServerMessage> {
+        let pedido = || Pedido::LerCopia { lookup: lookup.to_string(), part };
+        let ler = |r: Option<Resposta>| match r {
+            Some(Resposta::Copia { part, parts, data }) => Some(ServerMessage::BackupPart { part, parts, data }),
+            _ => None,
+        };
+        if let Some(par) = self.copias.get(lookup).and_then(|n| self.par(&n).cloned()) {
+            if let Some(m) = ler(self.perguntar(&par, pedido()).await) {
+                return Some(m);
+            }
+            self.copias.forget(lookup);
+        }
+        let perguntas = self.pares.iter().map(|par| async move { (par.nome.clone(), self.perguntar(par, pedido()).await) });
+        for (nome, r) in join_all(perguntas).await {
+            if let Some(m) = ler(r) {
+                self.copias.put(lookup, &nome);
+                return Some(m);
+            }
+        }
+        None
+    }
+
     /// Responde a um pedido de um par (ja autenticado como `par`).
     async fn responder(&self, par: &str, p: Pedido) -> Resposta {
         match p {
@@ -556,6 +812,82 @@ impl Federacao {
                 }
                 Resposta::Aqui { estados }
             }
+            Pedido::Entregar { to, sealed_from, ciphertext, silent, wake } => {
+                self.entrega_pedida(to, &sealed_from, &ciphertext, silent, wake).await
+            }
+            Pedido::PedirBundle { id } => {
+                if !is_valid_user_id(&id) {
+                    return Resposta::SemBundle;
+                }
+                match self.store.get_bundle(&id).await {
+                    Ok(Some(bundle)) => {
+                        let otpk = self.store.pop_one_time_prekey(&id).await.ok().flatten();
+                        Resposta::Bundle { bundle: b64().encode(bundle), otpk: otpk.map(|k| b64().encode(k)) }
+                    }
+                    Ok(None) => Resposta::SemBundle,
+                    Err(_) => Resposta::Erro { motivo: "erro interno".into() },
+                }
+            }
+            Pedido::InfoBlob { blob_id } => match self.store.blob_info(&blob_id).await {
+                Ok(st) => Resposta::BlobEstado { size: st.size, received: st.received, complete: st.complete },
+                Err(_) => Resposta::SemBlob,
+            },
+            Pedido::LerBlob { blob_id, offset } => match self.store.blob_get(&blob_id, offset).await {
+                Ok((size, data)) => Resposta::BlobDados { offset, size, data: b64().encode(data) },
+                Err(crate::blobs::BlobError::NotFound | crate::blobs::BlobError::Disabled) => Resposta::SemBlob,
+                Err(crate::blobs::BlobError::Io(_) | crate::blobs::BlobError::Store(_)) => {
+                    Resposta::Erro { motivo: "erro interno".into() }
+                }
+                Err(e) => Resposta::Recusado { motivo: e.to_string() },
+            },
+            Pedido::ApagarBlob { blob_id } => {
+                let _ = self.store.blob_delete(&blob_id).await;
+                Resposta::Feito
+            }
+            Pedido::LerCopia { lookup, part } => {
+                if !crate::protocol::is_hex_of_len(&lookup, 64) {
+                    return Resposta::SemCopia;
+                }
+                match self.store.backup_get(&lookup, part).await {
+                    Ok(Some((parts, data))) => Resposta::Copia { part, parts, data: b64().encode(data) },
+                    Ok(None) => Resposta::SemCopia,
+                    Err(_) => Resposta::Erro { motivo: "erro interno".into() },
+                }
+            }
+        }
+    }
+
+    /// Mensagem de uma conta de outro relay para uma conta deste: como um `SendMessage` local,
+    /// sem a verificacao de quem envia (esta registado no outro relay, que ja aplicou os limites).
+    async fn entrega_pedida(
+        &self,
+        to: UserId,
+        sealed_from: &str,
+        ciphertext: &str,
+        silent: bool,
+        wake: Option<WakeKind>,
+    ) -> Resposta {
+        use crate::connection::{MAX_CIPHERTEXT, MAX_SEALED_FROM};
+        use crate::store::StoreError;
+        let (Ok(sealed_from), Ok(ciphertext)) = (b64().decode(sealed_from), b64().decode(ciphertext)) else {
+            return Resposta::Recusado { motivo: "mensagem com tamanho invalido".into() };
+        };
+        if !is_valid_user_id(&to) || sealed_from.len() > MAX_SEALED_FROM || ciphertext.is_empty() || ciphertext.len() > MAX_CIPHERTEXT {
+            return Resposta::Recusado { motivo: "mensagem com tamanho invalido".into() };
+        }
+        match self.store.enqueue_from_peer(to.clone(), sealed_from, ciphertext).await {
+            Ok(_) => {
+                crate::stats::inc(&crate::stats::STATS.fed_in);
+                crate::waiters::wake(&to);
+                if !silent || wake.is_some() {
+                    crate::push::after_enqueue(&self.store, &to, wake).await;
+                }
+                Resposta::Feito
+            }
+            Err(StoreError::RecipientDeleted) => Resposta::Recusado { motivo: crate::protocol::RECIPIENT_DELETED.into() },
+            Err(StoreError::RecipientUnknown) => Resposta::Recusado { motivo: crate::protocol::RECIPIENT_UNKNOWN.into() },
+            Err(StoreError::QueueFull) => Resposta::Recusado { motivo: "fila do destinatario cheia".into() },
+            Err(_) => Resposta::Erro { motivo: "erro interno".into() },
         }
     }
 }
