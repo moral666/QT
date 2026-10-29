@@ -482,6 +482,10 @@ async fn pausa_e_volta_sem_perdas_falsas() {
         wait_joined(&b);
         let mut paused_at = None;
         let mut resumed_at = None;
+        // Pacotes que B tinha recebido quando A voltou, e se ja lhe chegaram pacotes novos.
+        let mut packets_at_resume = None;
+        let mut new_packets_seen = false;
+        let mut stalls_at_resume = None;
         let mut after_resume = None;
         let s0b = b.stats();
         video_call(&a, &b, 26, true, false, |s| {
@@ -496,12 +500,26 @@ async fn pausa_e_volta_sem_perdas_falsas() {
             }
             if paused_at.is_some() && p.send && resumed_at.is_none() {
                 resumed_at = Some(s);
-                let v = b.video_stats();
-                after_resume = Some((v.recv.reported, v.recv.expected, a.video_stats().stalls));
+                packets_at_resume = Some(b.video_stats().recv.packets);
+                stalls_at_resume = Some(a.video_stats().stalls);
+            } else if let (Some(n), None) = (packets_at_resume, after_resume) {
+                // Os pacotes perdidos durante o corte (reais, de ANTES de voltar) so entram nas
+                // contas de B no primeiro relatorio (250 ms) depois de lhe chegar um pacote novo:
+                // ate la B nao sabe que faltam. A fotografia e tirada no segundo a seguir a esse
+                // pacote, para essas perdas nao contarem como perdas depois de voltar. Antes era
+                // tirada logo que A voltava e, com a maquina carregada (CI), o buraco caia as
+                // vezes depois dela (~300 pacotes "perdidos" depois de voltar).
+                if new_packets_seen {
+                    let v = b.video_stats();
+                    after_resume = Some((v.recv.reported, v.recv.expected));
+                } else if b.video_stats().recv.packets > n {
+                    new_packets_seen = true;
+                }
             }
         });
         let (va, vb) = (a.video_stats(), b.video_stats());
-        let (p0, e0, st0) = after_resume.expect("devia ter voltado");
+        let (p0, e0) = after_resume.expect("devia ter voltado e o video chegado a B");
+        let st0 = stalls_at_resume.expect("devia ter voltado");
         eprintln!(
             "PAUSA: pausou aos {paused_at:?} s, voltou aos {resumed_at:?} s; depois de voltar {}/{} pacotes, \
              paragens {} -> {}; debito final {} kbit/s",
