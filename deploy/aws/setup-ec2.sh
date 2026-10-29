@@ -380,12 +380,30 @@ systemctl restart qt-estado
 
 install -d -m 700 /etc/haproxy/certs
 
+# Travoes do HAProxy (afinados depois do teste de carga de 29/10/2026, 32 500 pessoas):
+# - maxconn: ligacoes em simultaneo. Era 40 000, muito acima do travao do relay, e no teste
+#   o HAProxy chegou aos 619 MB (~19 KB por ligacao) e ajudou a esgotar a memoria. Fica o
+#   travao do relay mais uma margem de 3000 (chamadas por /call, /estado.json e porta 80),
+#   para o relay ainda conseguir responder "ocupado". Quem vier a mais espera na fila do
+#   sistema e entra quando houver lugar.
+# - maxsslrate: handshakes TLS novos por segundo. Nas entradas em massa o CPU acabava nos
+#   handshakes; acima do limite as ligacoes novas esperam (nao sao recusadas). Depois de uma
+#   queda, 12 000 pessoas voltam em ~40 s em vez de todas ao mesmo tempo.
+# Para mudar: sudo HAPROXY_MAXCONN=16000 HAPROXY_MAXSSLRATE=400 bash setup-ec2.sh
+V_RELAY_MAX="${RELAY_MAX_CONNECTIONS:-10000}"
+case "$V_RELAY_MAX" in ''|*[!0-9]*) V_RELAY_MAX=10000 ;; esac
+V_HA_MAXCONN="${HAPROXY_MAXCONN:-$((V_RELAY_MAX + 3000))}"
+case "$V_HA_MAXCONN" in ''|*[!0-9]*) echo "Aviso: HAPROXY_MAXCONN='$V_HA_MAXCONN' nao e um numero; fica $((V_RELAY_MAX + 3000))" >&2; V_HA_MAXCONN=$((V_RELAY_MAX + 3000)) ;; esac
+V_HA_SSLRATE="${HAPROXY_MAXSSLRATE:-300}"
+case "$V_HA_SSLRATE" in ''|*[!0-9]*) echo "Aviso: HAPROXY_MAXSSLRATE='$V_HA_SSLRATE' nao e um numero; fica 300" >&2; V_HA_SSLRATE=300 ;; esac
+
 # Parte comum: porta 80 (desafio do Let's Encrypt para o certbot em 127.0.0.1:8888; o
 # resto vai para https). Sem "log" em lado nenhum: o HAProxy nao regista nada.
 haproxy_base() {
-cat <<'CFG'
+cat <<CFG
 global
-    maxconn 40000
+    maxconn $V_HA_MAXCONN
+    maxsslrate $V_HA_SSLRATE
     user haproxy
     group haproxy
     ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets
@@ -458,7 +476,7 @@ for D in $DOMAINS; do
   ( umask 077; cat "/etc/letsencrypt/live/$D/fullchain.pem" "/etc/letsencrypt/live/$D/privkey.pem" > "/etc/haproxy/certs/$D.pem" )
 done
 
-log "A configurar o HAProxy para $DOMAINS"
+log "A configurar o HAProxy para $DOMAINS (maxconn $V_HA_MAXCONN, maxsslrate $V_HA_SSLRATE/s)"
 {
 haproxy_base
 cat <<CFG

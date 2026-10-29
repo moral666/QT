@@ -6,6 +6,17 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 29 de outubro de 2026: HAProxy afinado depois do teste de carga (só relay)
+
+- `deploy/aws/setup-ec2.sh`: o `maxconn` do HAProxy deixa de ser 40 000 e passa a ser o travão do relay
+  (`RELAY_MAX_CONNECTIONS`) mais 3000 de margem (13 000 por omissão). No teste de 32 500 pessoas o HAProxy
+  chegou aos 619 MB (~19 KB por ligação) e ajudou a esgotar a memória; agora fica com um teto. Quem vier a
+  mais espera na fila do sistema.
+- Novo `maxsslrate 300`: no máximo 300 handshakes TLS novos por segundo. Acima disso as ligações novas
+  esperam (não são recusadas), o que evita que uma entrada em massa ou uma religação geral depois de uma
+  queda esgotem o CPU.
+- Os dois valores mudam-se com `HAPROXY_MAXCONN` e `HAPROXY_MAXSSLRATE` ao correr o `setup-ec2.sh`.
+
 ### 29 de outubro de 2026: documentação revista, com a federação em destaque
 
 - README (PT e EN): apps 0.9.50, secção "Federação: dois relays, uma só rede", os dois relays
