@@ -57,9 +57,13 @@ class FilePrepTest {
 
     @Test
     fun tamanhoEExtensao() {
-        assertEquals("900 B", formatSize(900))
-        assertEquals("350 KB", formatSize(350L * 1024))
-        assertEquals("2,4 MB", formatSize((2.4 * 1024 * 1024).toLong()))
+        // Desde a 0.9.23 o tamanho comeca com LRM (U+200E): em arabe fica "2,4 MB" e nao "MB 2,4".
+        val lrm = "\u200E"
+        // Sem app (teste na JVM) o tamanho usa o locale do sistema: portugues, com virgula.
+        java.util.Locale.setDefault(java.util.Locale.forLanguageTag("pt-PT"))
+        assertEquals("${lrm}900 B", formatSize(900))
+        assertEquals("${lrm}350 KB", formatSize(350L * 1024))
+        assertEquals("${lrm}2,4 MB", formatSize((2.4 * 1024 * 1024).toLong()))
         assertEquals("PDF", fileExtension("ata.pdf"))
         assertEquals("", fileExtension("sem_extensao"))
         assertEquals("", fileExtension(".oculto"))

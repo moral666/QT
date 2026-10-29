@@ -93,6 +93,8 @@ object Lang {
 
     /** A lingua em que a app esta a mostrar os textos (para datas e numeros). */
     fun locale(): Locale {
+        // Sem app iniciada (testes unitarios na JVM): o locale do sistema.
+        if (res == null && !::app.isInitialized) return Locale.getDefault()
         val l = (res ?: app.resources).configuration.locales[0]
         // Arabe: algarismos ocidentais 0-9 nas datas e tamanhos (decisao do Nuno, 22/10/2026).
         return if (l.language == "ar") Locale.Builder().setLocale(l).setUnicodeLocaleKeyword("nu", "latn").build() else l
