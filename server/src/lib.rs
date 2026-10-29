@@ -17,6 +17,7 @@ pub mod call_relay;
 pub mod fichas;
 pub mod client;
 pub mod connection;
+pub mod federation;
 pub mod latency;
 pub mod limits;
 pub mod protocol;

@@ -171,3 +171,31 @@ async fn registo_das_fichas_gastas_com_o_utilizador_qt_fichas() {
     let r: redis::RedisResult<()> = redis::cmd("SET").arg("fichas:gastas:202610:y").arg(1).query_async(&mut m).await;
     assert!(r.is_err());
 }
+
+/// Federacao (fase 1): o estado das contas, a marca "por verificar" e largar uma conta
+/// so usam comandos da lista (GET, SET, EXPIRE, DEL, RPUSH, LRANGE, LREM).
+#[tokio::test]
+async fn federacao_com_a_lista_de_comandos_de_producao() {
+    use qt_server::federation::Estado;
+    let pw = "cd34".repeat(16);
+    let Some((_redis, port)) = start_redis_with_production_acl(&pw) else { return };
+    let store = Store::new(&format!("redis://qt-relay:{pw}@127.0.0.1:{port}")).unwrap();
+    let id = "b".repeat(64);
+    assert_eq!(store.fed_estado(&id).await.unwrap(), Estado::NaoTenho);
+    store.register_bundle(id.clone(), vec![1]).await.unwrap();
+    store.fed_marcar_por_verificar(&id).await.unwrap();
+    assert_eq!(store.fed_estado(&id).await.unwrap(), Estado::TenhoPorVerificar);
+    assert_eq!(store.fed_por_verificar(10).await.unwrap(), vec![id.clone()]);
+    store.fed_verificado(&id).await.unwrap();
+    assert_eq!(store.fed_estado(&id).await.unwrap(), Estado::Tenho);
+    store.set_push_token(&id, Some("tok-1")).await.unwrap();
+    store.fed_marcar_por_verificar(&id).await.unwrap();
+    store.fed_largar(&id).await.unwrap();
+    assert_eq!(store.fed_estado(&id).await.unwrap(), Estado::NaoTenho);
+    assert_eq!(store.get_push_token(&id).await.unwrap(), None);
+    assert!(store.fed_por_verificar(10).await.unwrap().is_empty());
+    store.delete_account(&id).await.unwrap();
+    assert_eq!(store.fed_estado(&id).await.unwrap(), Estado::Apagada);
+    store.ban(&id).await.unwrap();
+    assert_eq!(store.fed_estado(&id).await.unwrap(), Estado::Banida);
+}

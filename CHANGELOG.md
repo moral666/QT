@@ -6,6 +6,16 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 29 de outubro de 2026: federação de relays, fase 1 (só relay)
+
+- Relays de uma lista fechada (`/etc/qt/federacao.json`) ligam-se entre si por `wss://<relay>/fed`, com
+  Noise e a chave fixada dos dois lados; o HAProxy só deixa entrar os IPs da lista. Sem ficheiro, o relay
+  funciona como antes.
+- Registo único: uma conta nova só se regista se nenhum outro relay a tiver (`Error{"conta noutro relay"}`)
+  nem a tiver banida. Com um relay em baixo regista na mesma e verifica quando ele voltar.
+- Descoberta de contas noutros relays (para a fase 2, mensagens entre relays), com cache só em memória.
+- Apps e protocolo das apps sem mudanças. Ver `docs/protocol-spec.md`, secção 25.
+
 ### 29 de outubro de 2026: uma só ligação ao relay (apps Android 0.9.45 e iPhone 0.9.32)
 
 - Cada app aberta passa a usar **uma** ligação ao relay em vez de três (pedidos, espera por mensagens e

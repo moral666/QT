@@ -111,11 +111,15 @@ fn enforce_redis_url_policy(redis_url: &str) {
 /// do proxy inverso que termina o TLS. Abrir noutra interface exige
 /// QT_ALLOW_PUBLIC_BIND=1 (apenas redes de teste fechadas).
 fn enforce_bind_policy(bind_addr: &str) {
+    enforce_bind_policy_for("RELAY_BIND_ADDR", bind_addr);
+}
+
+fn enforce_bind_policy_for(var: &str, bind_addr: &str) {
     let addr: std::net::SocketAddr = bind_addr
         .parse()
-        .unwrap_or_else(|_| fatal("RELAY_BIND_ADDR invalido (esperado IP:porta, ex.: 127.0.0.1:9443)"));
+        .unwrap_or_else(|_| fatal(&format!("{var} invalido (esperado IP:porta, ex.: 127.0.0.1:9443)")));
     if !addr.ip().is_loopback() && !env_flag("QT_ALLOW_PUBLIC_BIND") {
-        fatal("RELAY_BIND_ADDR nao e loopback: o relay nao tem TLS proprio e tem de ficar atras do proxy (ou QT_ALLOW_PUBLIC_BIND=1 em testes)");
+        fatal(&format!("{var} nao e loopback: o relay nao tem TLS proprio e tem de ficar atras do proxy (ou QT_ALLOW_PUBLIC_BIND=1 em testes)"));
     }
 }
 
@@ -293,6 +297,7 @@ async fn main() {
             .unwrap_or(defaults.max_connections_per_user),
         operator: load_operator(),
         fichas: load_fichas(&noise_key_path),
+        federacao: arrancar_federacao(&store, &static_keys.private).await,
         fichas_per_month: std::env::var("RELAY_FICHAS_POR_MES")
             .ok()
             .and_then(|v| v.trim().parse().ok())
@@ -345,6 +350,32 @@ async fn main() {
             drop(permit);
         });
     }
+}
+
+/// Federacao de relays (`federation.rs`): `RELAY_FED_FILE` (por omissao
+/// `/etc/qt/federacao.json`, fora do git). Sem ficheiro, o relay fica sozinho (como antes).
+/// Os pares ligam-se a `RELAY_FED_BIND` (por omissao 127.0.0.1:9446, atras do HAProxy `/fed`).
+async fn arrancar_federacao(
+    store: &Arc<Store>,
+    chave_privada: &[u8],
+) -> Option<Arc<qt_server::federation::Federacao>> {
+    let path = std::env::var("RELAY_FED_FILE").unwrap_or_else(|_| "/etc/qt/federacao.json".to_string());
+    let cfg = match qt_server::federation::FedConfig::ler(std::path::Path::new(&path)) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            println!("Federacao: desligada (sem {path})");
+            return None;
+        }
+        Err(e) => fatal(&format!("federacao: {e}")),
+    };
+    let bind = std::env::var("RELAY_FED_BIND").unwrap_or_else(|_| "127.0.0.1:9446".to_string());
+    enforce_bind_policy_for("RELAY_FED_BIND", &bind);
+    let ouvinte = TcpListener::bind(&bind)
+        .await
+        .unwrap_or_else(|_| fatal("federacao: nao foi possivel abrir RELAY_FED_BIND (porta ocupada?)"));
+    let pares: Vec<String> = cfg.pares.iter().map(|p| p.nome.clone()).collect();
+    println!("Federacao: este relay e \"{}\", pares: {} (a ouvir em {bind})", cfg.nome, pares.join(", "));
+    Some(qt_server::federation::Federacao::arrancar(cfg, store.clone(), chave_privada.to_vec(), ouvinte))
 }
 
 /// Semente das chaves das fichas do video (0006): `FICHAS_SEED_PATH`, por omissao

@@ -18,7 +18,7 @@
 # e a chave Noise do relay sao mantidas.
 #
 # Antes: Security Group com entrada so em 22 (o teu IP), 80 e 443 TCP, e 443 UDP (chamadas).
-# Nunca 6379/9443/9445.
+# Nunca 6379/9443/9445/9446.
 # =============================================================================
 set -euo pipefail
 
@@ -209,6 +209,33 @@ if [ -f /etc/qt/operator.pub ]; then
   log "Denuncias: operador configurado"
 else
   log "Denuncias: falta /etc/qt/operator.pub (operador desligado)"
+fi
+# Federacao de relays (fase 1, server/src/federation.rs): so com /etc/qt/federacao.json, escrito a
+# mao pelo operador (lista FECHADA: nome deste relay e, de cada par, nome, url wss://.../fed, chave
+# Noise e ip). Sem ficheiro, o relay fica sozinho como antes.
+FED_IPS=""
+rm -f "$DROPIN/federacao.conf"
+if [ -f /etc/qt/federacao.json ]; then
+  chown root:qt /etc/qt/federacao.json
+  chmod 640 /etc/qt/federacao.json
+  FED_IPS=$(python3 - <<'PY'
+import ipaddress, json, sys
+pares = json.load(open("/etc/qt/federacao.json")).get("pares", [])
+ips = [str(ipaddress.ip_address(p["ip"])) for p in pares if p.get("ip")]
+if len(ips) != len(pares):
+    sys.exit("federacao.json: cada par precisa do \"ip\" (o HAProxy so deixa entrar esses)")
+print(" ".join(ips))
+PY
+) || exit 1
+  echo "RELAY_FED_FILE=/etc/qt/federacao.json" >> "$ENV_FILE"
+  if [ -n "$FED_IPS" ]; then
+    mkdir -p "$DROPIN"
+    # O relay so falava com localhost: passa a poder ligar-se aos pares (so a esses IPs).
+    printf '[Service]\nIPAddressAllow=%s\n' "$FED_IPS" > "$DROPIN/federacao.conf"
+  fi
+  log "Federacao: ligada (pares: ${FED_IPS:-nenhum})"
+else
+  log "Federacao: desligada (sem /etc/qt/federacao.json)"
 fi
 rm -f "$DROPIN/fcm.conf"
 if [ "$PUSH_OUT" = 1 ]; then
@@ -426,6 +453,9 @@ frontend https
     stick-table type ipv6 size 100k expire 60s store conn_cur,conn_rate(10s)
     tcp-request connection track-sc0 src
     tcp-request connection reject if { sc0_conn_cur gt 100 } || { sc0_conn_rate gt 100 }
+    # Federacao: /fed so para os IPs dos relays de /etc/qt/federacao.json (os outros: 403).
+    acl fed path /fed
+$(if [ -n "$FED_IPS" ]; then printf '    acl fed_pares src %s\n    http-request deny if fed !fed_pares\n    use_backend fed if fed\n' "$FED_IPS"; else printf '    http-request deny if fed\n'; fi)
     acl estado path /estado.json
     use_backend estado if estado
     # Chamadas de voz quando o UDP esta bloqueado: WebSocket sem conta (qt-call-relay).
@@ -445,6 +475,9 @@ backend chamada
     # substitui o que o cliente mandar: ninguem consegue fingir outro IP.
     http-request set-header X-Forwarded-For %[src]
     server chamada 127.0.0.1:9445 maxconn 4000
+
+backend fed
+    server fed 127.0.0.1:9446 maxconn 16
 CFG
 } > /etc/haproxy/haproxy.cfg
 haproxy -c -q -f /etc/haproxy/haproxy.cfg || { echo "Configuracao do HAProxy invalida"; exit 1; }

@@ -164,8 +164,8 @@ ter registado outra vez, e Bob recebeu-a corretamente.
 
 **Pendente antes de produção:**
 
-- **Federação**: por agora um único servidor. Protocolo servidor-servidor
-  para federação real fica para uma fase posterior.
+- **Federação**: federação fechada entre relays da mesma lista, em curso
+  (fase 1, descoberta e registo único: ver secção 25).
 - **Rate limiting / autenticação de registo**: neste momento qualquer
   ligação pode registar um bundle para qualquer `user_id`; falta lógica
   de autenticação (ex.: provar posse da identity key correspondente antes
@@ -1317,6 +1317,55 @@ que essas versões já tinham; o direto não muda. App nova com um relay antigo:
 `IssueFichas` ou `None`), `fichas_accept(FichasIssued)` (de `RelayResponse::Fichas`; devolve
 quantas ficaram), `fichas_refused` (o relay não emitiu). O resto é automático (`call_audio_start`
 dá a carteira ao motor).
+
+## 25. Federação de relays (fase 1: descoberta e registo único)
+
+Federação **fechada**: só os relays da lista `/etc/qt/federacao.json` (escrita pelo operador, fora do
+git) falam entre si. O ID das contas não muda (a chave Ed25519). As apps continuam a falar só com o seu
+relay, por uma ligação; nesta fase nada muda nas apps nem no protocolo das apps. Código em
+`server/src/federation.rs`, testes em `server/tests/relay_federacao.rs`.
+
+**Lista.** `{"nome": "estocolmo", "pares": [{"nome": "espanha", "url": "wss://relay-es.sealerapp.com/fed",
+"chave": "<chave Noise do par, 64 hex>", "ip": "<IP público do par>"}]}`. Nomes com `a-z`, `0-9` e `-`.
+Sem ficheiro, o relay funciona sozinho, como antes. `RELAY_FED_FILE` muda o caminho e `RELAY_FED_BIND`
+a porta local (por omissão `127.0.0.1:9446`).
+
+**Ligação.** `wss://<par>/fed`, pelo HAProxy (porta 443, sem portas novas), que só deixa passar o `/fed`
+aos IPs da lista (os outros levam 403). Dentro, o mesmo Noise_XX das apps, com a chave fixada dos dois
+lados: quem liga confirma a chave do par; quem recebe só aceita chaves da lista e fecha a ligação a
+qualquer outra. A chave de cada relay é a sua chave Noise de sempre (o pin das apps): trocá-la obriga a
+atualizar a lista nos outros relays. Cada relay abre uma ligação a cada par para as suas perguntas e
+volta a ligar sozinho (espera de 1 s a 60 s); ping de 30 em 30 s, ligação morta ao fim de 90 s sem nada.
+O serviço `qt-relay` só fala com localhost e com os IPs dos pares (drop-in `federacao.conf` do
+`setup-ec2.sh`).
+
+**Pedidos** (JSON dentro do Noise, `{"n": <número>, "p": <pedido>}`, respostas `{"n", "r"}`, pela ordem
+em que ficam prontas):
+* `Ola { nome, versao }`: primeira mensagem de cada ligação, nos dois sentidos; o nome tem de ser o da lista.
+* `OndeEsta { ids }` (até 100) → `Aqui { estados }`, pela mesma ordem: `Tenho`, `TenhoPorVerificar`,
+  `Apagada`, `Banida` ou `NaoTenho`. Cada relay só responde com o que tem no seu Redis.
+* `Reservar { id }` → `Reserva { ok, banida }`: `ok = false` se o par tem a conta, a tem banida
+  (`banida = true`) ou a está a registar (reserva de 60 s, em memória).
+* Até 64 pedidos em curso por par; acima disso `Erro { motivo: "ocupado" }`.
+
+**Registo único.** Uma conta só existe num relay. Só quando uma conta **nova** se regista (sem bundle neste
+relay e com prova de trabalho válida), o relay pede `Reservar` a todos os pares (no máximo 2 s). Se algum
+já a tem: `Error{"conta noutro relay"}`; se está banida noutro relay: `Error{"conta banida"}`. Renovar o
+bundle (cada vez que a app abre) não faz nenhum pedido aos pares.
+
+**Par em baixo ao registar.** A conta regista-se na mesma e fica marcada para verificar
+(`fed:pv:<id>` e a lista `fed:verificar`). De minuto a minuto, quando os pares respondem: se outro relay
+já tinha a conta, este larga-a (bundle, one-time prekeys e campainha; a fila fica e expira sozinha); se os
+dois a registaram sem verificar, fica no relay de nome menor; senão fica verificada. Assim nenhuma conta
+nova falha por um relay estar em baixo.
+
+**Descoberta.** `onde_esta`: primeiro o Redis local, depois a cache, depois os pares. A cache fica **só em
+memória** (nunca no Redis, que vai para as cópias): "a conta está no relay X" 24 h; "nenhum relay a tem",
+apagada ou banida 60 s (contra IDs inventados); sem resposta de algum par, não guarda. Usada pela fase 2
+(mensagens entre relays), que apaga a entrada quando o relay de casa disser que já não tem a conta.
+
+**Privacidade.** O par fica a saber que alguém do outro relay procura a conta X (não quem). Sem registos
+de pedidos; os registos do relay só têm o nome dos pares e contagens.
 
 ## Documentos relacionados
 

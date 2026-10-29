@@ -61,6 +61,8 @@ pub struct ServerConfig {
     pub fichas_per_month: u32,
     /// Pedidos de fichas por conta (`IssueFichas`).
     pub fichas_rate: crate::limits::Rate,
+    /// Federacao de relays (`federation.rs`): `None` = relay sozinho.
+    pub federacao: Option<Arc<crate::federation::Federacao>>,
 }
 
 impl Default for ServerConfig {
@@ -85,6 +87,7 @@ impl Default for ServerConfig {
             fichas_per_month: qt_core::fichas::DEFAULT_PER_MONTH,
             // Um lote por mes chega; a folga e para quotas maiores (varios lotes) e repeticoes.
             fichas_rate: crate::limits::Rate { burst: 6, per_minute: 2 },
+            federacao: None,
         }
     }
 }
@@ -434,19 +437,37 @@ async fn handle_client_message(store: &Store, me: &str, msg: ClientMessage, cfg:
                 Err(e) => return internal(e),
             }
             // Conta nova (ou que expirou): so com prova de trabalho valida.
-            if cfg.require_pow {
-                match store.get_bundle(me).await {
-                    Ok(Some(_)) => {}
-                    Ok(None) => {
-                        if !pow.is_some_and(|n| qt_core::pow::pow_verify(&signing, n, qt_core::pow::POW_BITS)) {
-                            stats::inc(&STATS.pow_rejected);
-                            return err(crate::protocol::POW_REQUIRED);
-                        }
-                    }
-                    Err(e) => return internal(e),
+            let nova = match store.get_bundle(me).await {
+                Ok(b) => b.is_none(),
+                Err(e) => return internal(e),
+            };
+            if nova
+                && cfg.require_pow
+                && !pow.is_some_and(|n| qt_core::pow::pow_verify(&signing, n, qt_core::pow::POW_BITS))
+            {
+                stats::inc(&STATS.pow_rejected);
+                return err(crate::protocol::POW_REQUIRED);
+            }
+            // Federacao: uma conta so existe num relay. So contas novas perguntam aos outros;
+            // renovar o bundle (cada vez que a app abre) nao gasta nenhum pedido.
+            let mut por_verificar = false;
+            let fed = cfg.federacao.as_ref().filter(|_| nova);
+            if let Some(fed) = fed {
+                match fed.reservar(me).await {
+                    crate::federation::Reserva::Livre { por_verificar: pv } => por_verificar = pv,
+                    crate::federation::Reserva::NoutroRelay => return err(crate::protocol::ELSEWHERE),
+                    crate::federation::Reserva::Banida => return err(crate::protocol::BANNED),
                 }
             }
-            match store.register_bundle(user_id, bundle_bytes).await {
+            let registo = store.register_bundle(user_id, bundle_bytes).await;
+            if registo.is_ok() && por_verificar {
+                // Algum relay nao respondeu: fica para verificar quando ele voltar (A1).
+                let _ = store.fed_marcar_por_verificar(me).await;
+            }
+            if let Some(fed) = fed {
+                fed.libertar(me);
+            }
+            match registo {
                 Ok(()) => {
                     stats::inc(&STATS.bundles_registered);
                     // A app abriu: a copia de recuperacao fica mais 90 dias.
