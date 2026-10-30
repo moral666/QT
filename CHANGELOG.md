@@ -6,6 +6,12 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 30 de outubro de 2026: a ferramenta das medalhas mostra porque é que o relay recusou
+
+- `server/examples/badge.rs`: quando o relay recusa o envio, a ferramenta escreve a razão que o relay
+  deu (por exemplo, `[nao enviado: recusado pelo relay: destinatario desconhecido]`). Antes só
+  escrevia "recusado". Apps, relay e Sealer Control sem mudanças.
+
 ### 29 de outubro de 2026: medalhas Bug Hunter, Support, Troll e Legacy (iPhone e Android 0.9.51)
 
 - Quatro medalhas novas: 6 Bug Hunter, 7 Support, 8 Troll e 9 Legacy (`core/src/badge.rs`,

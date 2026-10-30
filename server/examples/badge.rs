@@ -273,7 +273,9 @@ async fn cmd_dar() {
                 "[nao enviado: {}]",
                 match other {
                     Err(e) => e,
-                    Ok(_) => "recusado".into(),
+                    // A razao que o relay deu (antes so dizia "recusado").
+                    Ok(RelayResponse::Error { reason }) => format!("recusado pelo relay: {reason}"),
+                    Ok(_) => "recusado (resposta inesperada do relay)".into(),
                 }
             ),
         }
