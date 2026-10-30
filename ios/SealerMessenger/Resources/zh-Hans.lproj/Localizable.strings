@@ -18,6 +18,12 @@
 "call_diag_title" = "通话诊断";
 "call_mic_lost" = "麦克风已停止工作（可能有其他应用正在使用）。对方已听不到你的声音。";
 "call_minimize" = "最小化";
+"call_route_headphones" = "耳机";
+"call_route_phone" = "手机";
+"call_route_title" = "音频输出";
+"community_empty" = "社区目前还是空的。";
+"community_subtitle" = "拥有 Sealer 徽章的人，显示照片和徽章。";
+"community_title" = "社区";
 "confirm_word" = "删除";
 "confirm_word_alt" = "";
 "contacts_unreadable_new" = "新建列表";

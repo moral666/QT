@@ -424,4 +424,12 @@
     <string name="call_diag_copy">診断をコピー</string>
     <string name="call_diag_copy_last">前回の通話の診断をコピー</string>
     <string name="call_diag_copied">診断をコピーしました</string>
+    <!-- Saida do som da chamada (0.9.52): lista com Bluetooth ou auscultadores. -->
+    <string name="call_route_title">音声の出力先</string>
+    <string name="call_route_phone">スマートフォン</string>
+    <string name="call_route_headphones">ヘッドホン</string>
+    <!-- Comunidade (0.9.52): pessoas com medalha, so foto e medalha. -->
+    <string name="community_title">コミュニティ</string>
+    <string name="community_subtitle">Sealerのバッジを持つ人たち（写真とバッジのみ）。</string>
+    <string name="community_empty">コミュニティはまだ空です。</string>
 </resources>

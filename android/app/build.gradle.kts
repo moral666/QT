@@ -70,8 +70,8 @@ android {
         minSdk = 24            // igual ao `-P 24` do cargo-ndk
         // Android 16. Exigido pela Play Store para apps novas e atualizacoes.
         targetSdk = 36
-        versionCode = 58
-        versionName = "0.9.51"
+        versionCode = 59
+        versionName = "0.9.52"
         // So as 6 linguas da app (0.9.12): sem isto iam tambem as ~80 traducoes das bibliotecas
         // (AndroidX, Firebase, ZXing), que a app nunca mostra. A base (values/) e o portugues.
         @Suppress("DEPRECATION")
@@ -191,6 +191,10 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-gif:2.7.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+    // Chamadas no sistema de chamadas do Android (0.9.52): auricular Bluetooth, carro e chamadas
+    // GSM ao mesmo tempo (ver SystemCalls.kt). Ultima versao estavel (27/08/2025). So e usada
+    // no Android 8+ (API 26); no 7 a app nao lhe toca.
+    implementation("androidx.core:core-telecom:1.0.1")
     // Notificacoes com a app fechada: so o Firebase Cloud Messaging (sem Analytics). Ver Push.kt.
     implementation(platform("com.google.firebase:firebase-bom:35.0.1"))
     implementation("com.google.firebase:firebase-messaging")

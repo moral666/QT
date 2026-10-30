@@ -152,6 +152,11 @@ data class UiState(
     val premiumUntil: Long = 0,
     /** Ecra "Sealer Premium" aberto (por um cadeado ou pelas Definicoes). */
     val showPremium: Boolean = false,
+    /** Ecra Comunidade (0.9.52): pessoas com medalha, so foto e medalha, pela ordem da lista. */
+    val showCommunity: Boolean = false,
+    val community: List<CommunityMemberUi> = emptyList(),
+    /** A falar com o relay (a lista guardada ja esta no ecra). */
+    val communityLoading: Boolean = false,
     /**
      * A lista de contactos guardada nao abriu (0.9.23). Nada e gravado por cima ate o
      * utilizador escolher: reabrir a app (o mais comum) ou comecar uma lista nova.
@@ -183,6 +188,13 @@ data class CallUi(
     val incoming: Boolean = false,
     /** Videochamada (quem liga comecou com a camara ligada): "Videochamada de [Nome]". */
     val videoCall: Boolean = false,
+    /**
+     * Saidas do som que o sistema de chamadas da (0.9.52): telemovel, altifalante, auscultadores,
+     * aparelhos Bluetooth. Vazia: sem o sistema (Android 7), o botao alterna como antes.
+     */
+    val routes: List<AudioRoute> = emptyList(),
+    /** A saida do som agora (`AudioRoute.id`), se vier do sistema. */
+    val route: String? = null,
 )
 
 /** Video da chamada (fase 5b). */
@@ -302,6 +314,44 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Abrir e fechar a camara nunca se cruzam (ecra, ciclo da chamada e segundo plano). */
     private val senderLock = Any()
     private val callSounds = CallSounds(app)
+    /** Atender, desligar, silenciar e saidas do som vindos do sistema de chamadas (auricular, carro). */
+    private val systemCalls = object : SystemCalls.Listener {
+        override fun owns(callId: String): Boolean =
+            _ui.value.call?.let { it.callId == callId && it.phase != CallPhase.ENDED } == true
+
+        override fun onSystemAnswer(callId: String) {
+            val c = _ui.value.call ?: return
+            if (c.callId != callId || c.phase != CallPhase.INCOMING) return
+            // Como o "Atender" da notificacao: a Activity atende (com a permissao do microfone).
+            answerFromNotification()
+            if (!visible) CallNotify.openToAnswer(getApplication())
+        }
+
+        override fun onSystemHangup(callId: String) {
+            // Desligado no sistema (auricular, carro, ou uma chamada GSM atendida por cima): o
+            // outro lado recebe o fim, como ao desligar na app.
+            if (owns(callId)) hangupCall()
+        }
+
+        override fun onSystemMuted(callId: String, muted: Boolean) {
+            val c = _ui.value.call ?: return
+            if (c.callId != callId || c.muted == muted) return
+            callIO?.muted = muted
+            _ui.update { u -> u.call?.let { cur -> if (cur.callId == callId) u.copy(call = cur.copy(muted = muted)) else u } ?: u }
+        }
+
+        override fun onRoutes(callId: String, routes: List<AudioRoute>, current: AudioRoute?) {
+            _ui.update { u ->
+                u.call?.let { cur ->
+                    if (cur.callId != callId) {
+                        u
+                    } else {
+                        u.copy(call = cur.copy(routes = routes, route = current?.id, speaker = current?.kind == RouteKind.SPEAKER))
+                    }
+                } ?: u
+            }
+        }
+    }
     /**
      * O ficheiro dos contactos existe mas nao abriu nesta sessao: nao se grava por cima nem se
      * envia a copia de recuperacao (senao a lista verdadeira perdia-se). Ver [saveContacts].
@@ -317,6 +367,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     init {
         // Este ecra passa a ser o dono do nucleo (um ecra antigo que acabe ja nao o fecha).
         SealerCore.uiOwner = this
+        SystemCalls.listener = systemCalls
         ImagePrep.cleanCache(app)
         io { openStorage() }
         presenceJob = viewModelScope.launch(Dispatchers.IO) { presenceLoop() }
@@ -1057,6 +1108,72 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         refreshPhotos(client)
         refreshBadges(client)
+        submitCommunity(client)
+    }
+
+    // ------------------------------------------------------------------- comunidade (0.9.52)
+
+    /**
+     * Quem tem medalha envia a sua foto para a Comunidade, so quando e preciso (o nucleo decide:
+     * primeira vez, medalha ou foto mudou, ou uma semana sem envio). Sem medalha: nada.
+     */
+    private suspend fun submitCommunity(client: QtClient) {
+        val l = link ?: return
+        try {
+            val req = client.communitySubmitRequest() ?: return
+            val r = l.request(req)
+            if (r is RelayResponse.Ack) client.communitySubmitSent() else Log.w(TAG, "comunidade: ${r.describe()}")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "comunidade: ${e.safeMsg()}")
+        }
+    }
+
+    /**
+     * Abre o ecra Comunidade: mostra logo a lista guardada e so depois pergunta ao relay. Poupa
+     * trafego: primeiro so o numero da lista; igual ao guardado, nada mais desce. Mudou: o indice
+     * e so as fotos novas. Sem lista no relay (ou sem rede), fica a guardada.
+     */
+    fun openCommunity() {
+        _ui.update { it.copy(showCommunity = true, communityLoading = true) }
+        io {
+            val client = qt ?: return@io
+            showCommunity(client)
+            try {
+                val l = link ?: return@io
+                val v = l.request(client.relayRequestCommunityVersion())
+                if (v is RelayResponse.CommunityVersion && v.version != 0uL && v.version != client.communityCachedVersion()) {
+                    val ix = l.request(client.relayRequestCommunityIndex())
+                    if (ix is RelayResponse.CommunityIndex) client.communityApplyIndex(ix.version, ix.data)
+                    showCommunity(client)
+                }
+                // As fotos que faltam (lista nova, ou uma descarga que ficou a meio).
+                var want = client.communityMissingPhotos()
+                var rounds = 0
+                while (want.isNotEmpty() && rounds++ < COMMUNITY_MAX_ROUNDS) {
+                    val r = l.request(client.relayRequestCommunityPhotos(want.take(COMMUNITY_PHOTOS_PER_REQUEST)))
+                    if (r !is RelayResponse.CommunityPhotos || r.photos.isEmpty()) break
+                    for (p in r.photos) client.communityPutPhoto(p.hash, p.data)
+                    want = client.communityMissingPhotos()
+                }
+                showCommunity(client)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "comunidade: ${e.safeMsg()}")
+            } finally {
+                _ui.update { it.copy(communityLoading = false) }
+            }
+        }
+    }
+
+    fun closeCommunity() = _ui.update { it.copy(showCommunity = false, community = emptyList()) }
+
+    private fun showCommunity(client: QtClient) {
+        val members = runCatching { client.communityMembers() }.getOrDefault(emptyList())
+            .map { CommunityMemberUi(it.badge.toInt(), it.photo?.let { p -> ProfilePhoto.decode(p) }) }
+        _ui.update { if (it.showCommunity) it.copy(community = members) else it }
     }
 
     /** Badges (o meu e os dos contactos), ja verificados pelo nucleo. */
@@ -2577,8 +2694,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (callIO != null) return
         val a = callAudio ?: return
         val app = getApplication<Application>()
+        // No sistema de chamadas (Android 8+): o modo de chamada e a saida do som sao dele.
+        val managed = _ui.value.call?.let { SystemCalls.manages(it.callId) } == true
         try {
-            callIO = CallAudioIO(app, a).also {
+            callIO = CallAudioIO(app, a, managed).also {
                 it.onMicLost = { _ui.update { u -> u.copy(notice = s(R.string.call_mic_lost)) } }
                 it.start()
                 it.muted = _ui.value.call?.muted == true
@@ -2587,17 +2706,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         } catch (e: Exception) {
             callIO = null
-            callSounds.leaveRoute()
+            if (!managed) callSounds.leaveRoute()
             error(s(R.string.t_nao_foi_possivel_usar_o_microfone_2, e.safeMsg()))
         }
     }
 
-    private fun stopCallMedia() {
+    /** Para tudo o que a chamada usa. `how`: como acabou, para o sistema de chamadas. */
+    private fun stopCallMedia(how: CallEnd = CallEnd.LOCAL) {
+        val endingId = _ui.value.call?.takeIf { it.phase != CallPhase.ENDED }?.callId
         cameraHeld = false
         stopVideo()
         callSounds.stop()
         // Sem CallAudioIO (ninguem atendeu ou o microfone falhou) nao ha quem devolva o som ao normal.
-        callIO?.stop() ?: callSounds.leaveRoute()
+        // No sistema de chamadas e ele que o devolve (SystemCalls.end, mais abaixo).
+        val managed = endingId != null && SystemCalls.manages(endingId)
+        callIO?.stop() ?: run { if (!managed) callSounds.leaveRoute() }
         callIO = null
         callAudio?.stop()
         // Depois do `stop` o Rust guarda o resumo final da chamada (so com o diagnostico ligado).
@@ -2616,6 +2739,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val app = getApplication<Application>()
         CallService.stop(app)
         CallNotify.clear(app)
+        // Depois do audio parado: o sistema devolve o som do telemovel ao normal. O microfone do
+        // sistema nunca fica silenciado depois da chamada.
+        if (managed && _ui.value.call?.muted == true) SystemCalls.setMuted(app, endingId!!, false)
+        SystemCalls.end(endingId, how)
     }
 
     private var callStatsTick = 0
@@ -2661,22 +2788,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val client = qt ?: return@io
         if (_ui.value.call != null) return@io
         if (contact.contactId in _ui.value.blocked) return@io
+        // A chamada entra no sistema de chamadas ANTES de sair (0.9.52). Recusada (o telemovel
+        // esta noutra chamada): nada sai e aparece o erro de sempre.
+        val sysKey = SystemCalls.newKey()
+        val sys = SystemCalls.outgoing(getApplication(), sysKey, if (_ui.value.lockEnabled) null else contact.nickname, video)
+        if (sys == false) {
+            error(s(R.string.t_nao_foi_possivel_ligar, s(R.string.t_ocupado_noutra_chamada)))
+            return@io
+        }
         try {
             ensureSession(client, contact)
             val start = if (video) client.callStartVideo(contact.contactId) else client.callStart(contact.contactId)
             val v = if (video) VideoUi(camera = true, accepted = true) else VideoUi()
             _ui.update { it.copy(call = CallUi(start.callId, contact.contactId, contact.nickname, CallPhase.CALLING, video = v, videoCall = video)) }
+            SystemCalls.bind(sysKey, start.callId)
             CallControl.hangup = { hangupCall() }
             // "tuu... tuu" logo ao ligar (como no iPhone). Antes so comecava com o aviso "a tocar"
             // do outro telemovel, que nao chega com o bloqueio da app ligado nem sem rede (0.9.29).
-            callSounds.ringback()
+            callSounds.ringback(managed = sys == true)
             flushOutbox()
             startCallAudio(client, start.callId)
             if (video) startSender()
             CallService.start(getApplication(), camera = video && !cameraHeld, video = video)
             ensureCallTicker()
         } catch (e: Exception) {
-            stopCallMedia()
+            stopCallMedia(CallEnd.ERROR)
+            SystemCalls.end(sysKey, CallEnd.ERROR)
             _ui.update { it.copy(call = null) }
             error(s(R.string.t_nao_foi_possivel_ligar, e.safeMsg()))
         }
@@ -2693,13 +2830,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             client.callAccept(c.callId)
             flushOutbox()
             startCallAudio(client, c.callId)
+            // O sistema de chamadas fica com o som (modo de chamada, Bluetooth) antes do microfone.
+            SystemCalls.answer(c.callId)
             CallService.start(getApplication(), camera = false, video = c.videoCall)
-            _ui.update { it.copy(call = c.copy(phase = CallPhase.ACTIVE, answeredAt = SystemClock.elapsedRealtime())) }
+            // O estado de agora (as saidas do som podem ter mudado ao atender).
+            _ui.update { u ->
+                u.call?.let { cur ->
+                    if (cur.callId == c.callId) u.copy(call = cur.copy(phase = CallPhase.ACTIVE, answeredAt = SystemClock.elapsedRealtime())) else u
+                } ?: u
+            }
             startCallIO()
             videoOnAnswered(client, c.callId)
             handleCallEvents(client)
         } catch (e: Exception) {
-            endCallLocal(s(R.string.t_a_chamada_ja_nao_esta_disponivel))
+            endCallLocal(s(R.string.t_a_chamada_ja_nao_esta_disponivel), CallEnd.ERROR)
         }
     }
 
@@ -2713,7 +2857,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             Log.w(TAG, "desligar: ${e.safeMsg()}")
         }
-        endCallLocal(if (c.phase == CallPhase.INCOMING) s(R.string.t_chamada_recusada) else s(R.string.t_chamada_terminada))
+        if (c.phase == CallPhase.INCOMING) {
+            endCallLocal(s(R.string.t_chamada_recusada), CallEnd.REJECTED)
+        } else {
+            endCallLocal(s(R.string.t_chamada_terminada), CallEnd.LOCAL)
+        }
     }
 
     /** Diagnostico da chamada em curso (painel dos testers); `null` sem chamada ou desligado. */
@@ -2725,10 +2873,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val m = !c.muted
         callIO?.muted = m
         _ui.update { it.copy(call = c.copy(muted = m)) }
+        // O carro e o auricular ficam a saber (so com a chamada no sistema de chamadas).
+        SystemCalls.setMuted(getApplication(), c.callId, m)
     }
 
     fun toggleSpeaker() {
         val c = _ui.value.call ?: return
+        // No sistema de chamadas: altifalante <-> telemovel pelas saidas dele (com Bluetooth ou
+        // auscultadores o ecra mostra a lista, ver setAudioRoute).
+        if (c.routes.isNotEmpty() && SystemCalls.manages(c.callId)) {
+            val current = c.routes.firstOrNull { it.id == c.route }
+            c.routes.toggleTarget(current)?.let { SystemCalls.setRoute(c.callId, it.id) }
+            return
+        }
         val on = !c.speaker
         // Antes de atender ainda nao ha microfone/altifalante da chamada: muda a saida do toque
         // (0.9.30; antes o botao so mudava o texto).
@@ -2737,10 +2894,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _ui.update { it.copy(call = c.copy(speaker = on)) }
     }
 
-    /** A chamada acabou: para o audio e mostra o motivo durante uns segundos. */
-    private fun endCallLocal(text: String) {
+    /** Saida do som escolhida na lista (telemovel, altifalante, auscultadores, Bluetooth). */
+    fun setAudioRoute(routeId: String) {
         val c = _ui.value.call ?: return
-        stopCallMedia()
+        if (c.routes.none { it.id == routeId }) return
+        SystemCalls.setRoute(c.callId, routeId)
+    }
+
+    /** A chamada acabou: para o audio e mostra o motivo durante uns segundos. */
+    private fun endCallLocal(text: String, how: CallEnd = CallEnd.LOCAL) {
+        val c = _ui.value.call ?: return
+        stopCallMedia(how)
         _ui.update { it.copy(call = c.copy(phase = CallPhase.ENDED, endText = text), answerNow = null) }
         // O bloqueio automatico que ficou adiado por causa da chamada.
         if (lockAfterCall) {
@@ -2768,6 +2932,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         CallEndReason.EXPIRED -> s(R.string.t_chamada_perdida)
     }
 
+    /** Como acabou (do outro lado ou pelo Rust), para o sistema de chamadas. */
+    private fun endCause(reason: CallEndReason, incoming: Boolean): CallEnd = when (reason) {
+        CallEndReason.HANGUP -> CallEnd.REMOTE
+        CallEndReason.REJECTED -> CallEnd.REJECTED
+        CallEndReason.BUSY -> CallEnd.BUSY
+        CallEndReason.NO_ANSWER -> if (incoming) CallEnd.MISSED else CallEnd.REMOTE
+        CallEndReason.CANCELLED -> if (incoming) CallEnd.MISSED else CallEnd.CANCELED
+        CallEndReason.EXPIRED -> if (incoming) CallEnd.MISSED else CallEnd.REMOTE
+    }
+
     /**
      * Uma chamada a tocar no segundo plano (app fechada, ver SealerCore) passa para o ecra.
      * Com o bloqueio da app nao se sabia qual era: aparece quando chegar a oferta (pollOnce).
@@ -2781,14 +2955,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Entretanto acabou (desligou, ou passou o tempo): fica so como perdida.
         if (runCatching { client.callCurrent() }.getOrNull() != id) {
             SealerCore.clearAnswer()
+            SystemCalls.end(r.sysKey, CallEnd.MISSED)
             return
         }
         // Nome: o do segundo plano, ou o dos contactos (com o bloqueio da app ele nao o sabia).
         val name = r.name ?: _ui.value.contacts.firstOrNull { it.contactId == r.contactId }?.nickname.orEmpty()
         val videoCall = r.video || runCatching { client.callIsVideo(id) }.getOrDefault(false)
         _ui.update { it.copy(call = CallUi(id, r.contactId.orEmpty(), name, CallPhase.INCOMING, incoming = true, videoCall = videoCall)) }
+        // A mesma entrada no sistema de chamadas que o segundo plano criou (uma so por chamada).
+        SystemCalls.incoming(getApplication(), r.sysKey, id, if (_ui.value.lockEnabled) null else name, videoCall)
+        SystemCalls.refresh(id)
         CallControl.hangup = { hangupCall() }
-        if (!SealerCore.answerRequested(id)) callSounds.ringIncoming()
+        if (!SealerCore.answerRequested(id) && !r.quiet) callSounds.ringIncoming()
         runCatching { startCallAudio(client, id) }
         ensureCallTicker()
         checkAutoAnswer()
@@ -2834,11 +3012,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         runCatching { client.callHangup(ev.callId) }
                         continue
                     }
+                    // Com o bloqueio da app tocou sem se saber qual era e foi recusada no auricular
+                    // ou no carro antes de a oferta se decifrar: e esta, recusa tambem.
+                    if (SystemCalls.consumeDeclinedUnbound()) {
+                        runCatching { client.callHangup(ev.callId) }
+                        continue
+                    }
                     // A op "videochamada" chega logo a seguir a oferta (normalmente no mesmo lote).
                     val videoCall = runCatching { client.callIsVideo(ev.callId) }.getOrDefault(false)
                     _ui.update { it.copy(call = CallUi(ev.callId, ev.contactId, contact.nickname, CallPhase.INCOMING, incoming = true, videoCall = videoCall)) }
+                    // Ja noutra chamada (GSM ou outra app): sem o toque alto por cima da conversa.
+                    val quiet = SystemCalls.phoneBusy(app)
+                    SystemCalls.incoming(app, null, ev.callId, if (_ui.value.lockEnabled) null else contact.nickname, videoCall)
+                    SystemCalls.refresh(ev.callId)
                     CallControl.hangup = { hangupCall() }
-                    callSounds.ringIncoming()
+                    if (!quiet && !SealerCore.answerRequested(ev.callId)) callSounds.ringIncoming()
                     // Fora do ecra: notificacao de ecra inteiro (sem som: o toque e o de cima).
                     // Com o bloqueio da app, sem nome (a mesma regra que com a app fechada).
                     if (!visible) CallNotify.ringing(app, if (_ui.value.lockEnabled) null else contact.nickname, sound = false, video = videoCall)
@@ -2858,7 +3046,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     if (c != null && c.callId == ev.callId && c.phase != CallPhase.ACTIVE && c.phase != CallPhase.INCOMING) {
                         // O modo de chamada e a saida escolhida passam para o CallAudioIO.
                         callSounds.stop(keepRoute = true)
-                        _ui.update { it.copy(call = c.copy(phase = CallPhase.ACTIVE, answeredAt = SystemClock.elapsedRealtime())) }
+                        _ui.update { u ->
+                            u.call?.let { cur ->
+                                if (cur.callId == c.callId) u.copy(call = cur.copy(phase = CallPhase.ACTIVE, answeredAt = SystemClock.elapsedRealtime())) else u
+                            } ?: u
+                        }
+                        SystemCalls.setActive(c.callId)
                         startCallIO()
                         videoOnAnswered(client, c.callId)
                     }
@@ -2866,7 +3059,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 is CallEvent.Ended -> {
                     val c = _ui.value.call
                     if (c != null && c.callId == ev.callId && c.phase != CallPhase.ENDED) {
-                        endCallLocal(endText(ev.reason, c.phase == CallPhase.INCOMING))
+                        val incoming = c.phase == CallPhase.INCOMING
+                        endCallLocal(endText(ev.reason, incoming), endCause(ev.reason, c.incoming))
                     }
                 }
                 is CallEvent.Video -> onVideoEvent(ev)
@@ -3139,6 +3333,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         val owner = SealerCore.uiOwner === this
         if (owner) SealerCore.uiOwner = null
+        if (SystemCalls.listener === systemCalls) SystemCalls.listener = null
         // Chamada a meio: o outro lado e avisado ("desligou") antes de fechar o nucleo.
         val c = _ui.value.call
         val client = qt
@@ -3150,6 +3345,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val PREF_PREMIUM_ENFORCED = "premium_enforced"
+        /** Fotos da Comunidade pedidas de uma vez, e voltas no maximo por abertura do ecra. */
+        private const val COMMUNITY_PHOTOS_PER_REQUEST = 20
+        private const val COMMUNITY_MAX_ROUNDS = 60
         private const val PREF_LOCK_PENDING = "lock_pending"
         private const val PREF_PREMIUM_ACTIVE = "premium_active"
         private const val PREMIUM_TIMEOUT_MS = 4_000L

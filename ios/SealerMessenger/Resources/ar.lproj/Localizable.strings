@@ -18,6 +18,12 @@
 "call_diag_title" = "تشخيص المكالمة";
 "call_mic_lost" = "توقف الميكروفون عن العمل (ربما يستخدمه تطبيق آخر). لم يعد الطرف الآخر يسمعك.";
 "call_minimize" = "تصغير";
+"call_route_headphones" = "سماعات الرأس";
+"call_route_phone" = "الهاتف";
+"call_route_title" = "مخرج الصوت";
+"community_empty" = "المجتمع لا يزال فارغًا.";
+"community_subtitle" = "الأشخاص الذين لديهم شارة في Sealer، مع صورتهم وشارتهم.";
+"community_title" = "المجتمع";
 "confirm_word" = "حذف";
 "confirm_word_alt" = "حدف,DELETE";
 "contacts_unreadable_new" = "بدء قائمة جديدة";

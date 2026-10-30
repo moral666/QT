@@ -85,6 +85,11 @@ struct UiState {
     /// Premium dado pelo relay: ate quando (ms); 0 = nao.
     var premiumUntil: Int64 = 0
     var showPremium = false
+    /// Comunidade (0.9.52): pessoas com medalha, so foto e medalha, pela ordem da lista.
+    var showCommunity = false
+    var community: [CommunityMemberUi] = []
+    /// A falar com o relay (a lista guardada ja esta no ecra).
+    var communityLoading = false
     /// A lista de contactos guardada nao abriu (0.9.23): nada e gravado por cima ate o
     /// utilizador escolher reabrir a app ou comecar uma lista nova.
     var contactsUnreadable = false
@@ -1003,6 +1008,77 @@ final class AppModel: ObservableObject {
         if let n = try? await background({ try client.badgeSync(contactIds: ids) }), n > 0 { await flushOutbox() }
         await refreshPhotos(client)
         await refreshBadges(client)
+        await submitCommunity(client)
+    }
+
+    // ================================================================ comunidade (0.9.52)
+
+    /// Quem tem medalha envia a sua foto para a Comunidade, so quando e preciso (o nucleo decide:
+    /// primeira vez, medalha ou foto mudou, ou uma semana sem envio). Sem medalha: nada.
+    private func submitCommunity(_ client: QtClient) async {
+        guard let l = link,
+              let req = try? await background({ try client.communitySubmitRequest() }) else { return }
+        do {
+            let r = try await l.request(req)
+            if case .ack = r { _ = try? await background { try client.communitySubmitSent() } }
+            else { log("SealerRelay", "comunidade: \(r.describe)") }
+        } catch {
+            log("SealerRelay", "comunidade: sem resposta")
+        }
+    }
+
+    /// Abre o ecra Comunidade: mostra logo a lista guardada e so depois pergunta ao relay. Poupa
+    /// trafego: primeiro so o numero da lista; igual ao guardado, nada mais desce. Mudou: o indice
+    /// e so as fotos novas. Sem lista no relay (ou sem rede), fica a guardada.
+    func openCommunity() {
+        ui.showCommunity = true
+        ui.communityLoading = true
+        guard let client = qt else { ui.communityLoading = false; return }
+        Task {
+            await showCommunity(client)
+            defer { ui.communityLoading = false }
+            guard let l = link else { return }
+            do {
+                let vreq = try await background { try client.relayRequestCommunityVersion() }
+                if case .communityVersion(let v) = try await l.request(vreq),
+                   v != 0, v != (try? await background({ try client.communityCachedVersion() })) {
+                    let ireq = try await background { try client.relayRequestCommunityIndex() }
+                    if case .communityIndex(let version, let data) = try await l.request(ireq) {
+                        _ = try? await background { try client.communityApplyIndex(version: version, data: data) }
+                    }
+                    await showCommunity(client)
+                }
+                // As fotos que faltam (lista nova, ou uma descarga que ficou a meio).
+                var want = (try? await background { try client.communityMissingPhotos() }) ?? []
+                var rounds = 0
+                while !want.isEmpty && rounds < 60 {
+                    rounds += 1
+                    let batch = Array(want.prefix(20))
+                    let preq = try await background { try client.relayRequestCommunityPhotos(hashes: batch) }
+                    guard case .communityPhotos(let photos) = try await l.request(preq), !photos.isEmpty else { break }
+                    try await background {
+                        for p in photos { _ = try client.communityPutPhoto(hash: p.hash, data: p.data) }
+                    }
+                    want = (try? await background { try client.communityMissingPhotos() }) ?? []
+                }
+                await showCommunity(client)
+            } catch {
+                log("SealerRelay", "comunidade: sem resposta")
+            }
+        }
+    }
+
+    func closeCommunity() {
+        ui.showCommunity = false
+        ui.community = []
+    }
+
+    private func showCommunity(_ client: QtClient) async {
+        let raw = (try? await background { try client.communityMembers() }) ?? []
+        guard ui.showCommunity else { return }
+        ui.community = raw.enumerated().map { i, m in
+            CommunityMemberUi(id: i, badge: Int(m.badge), photo: m.photo.flatMap { ProfilePhoto.decode($0) })
+        }
     }
 
     /// Badges (o meu e os dos contactos), ja verificados pelo nucleo.

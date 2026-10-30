@@ -41,6 +41,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -148,6 +150,8 @@ fun CallScreen(
     onHangup: () -> Unit,
     onMute: () -> Unit,
     onSpeaker: () -> Unit,
+    /** Saida do som escolhida na lista (com Bluetooth ou auscultadores, 0.9.52). */
+    onRoute: (String) -> Unit = {},
     /** Minimizar (volta-se pela barra no topo da app); `null` = sem botao (a chegar, terminada). */
     onMinimize: (() -> Unit)? = null,
     /** Video (`null` = sem video neste ecra). Desde a 0.9.42 tambem por cima do bloqueio do telemovel. */
@@ -298,6 +302,7 @@ fun CallScreen(
                                 camera = if (videoAllowed && v.supported && onCamera != null) touched(onCamera) else null,
                                 onMute = touched(onMute),
                                 onSpeaker = touched(onSpeaker),
+                                onRoute = { id -> touches++; onRoute(id) },
                                 onSwitchCamera = touched(onSwitchCamera),
                             )
                             Spacer(Modifier.height(20.dp))
@@ -400,8 +405,11 @@ private fun CallTopBar(onMinimize: (() -> Unit)?, time: String?, tint: Color, on
 
 /**
  * Barra flutuante com os botoes redondos: microfone (silenciar), altifalante (ouvido ou
- * altifalante, nunca os auscultadores), camara (ligar/desligar) e trocar camara. `camera` nulo:
- * sem os dois botoes da camara (o outro lado nao tem video).
+ * altifalante), camara (ligar/desligar) e trocar camara. `camera` nulo: sem os dois botoes da
+ * camara (o outro lado nao tem video).
+ *
+ * Com Bluetooth ou auscultadores (0.9.52, sistema de chamadas): o mesmo botao abre uma lista
+ * curta (Telemovel / Altifalante / o nome do aparelho Bluetooth).
  */
 @Composable
 private fun ControlBar(
@@ -410,6 +418,7 @@ private fun ControlBar(
     camera: (() -> Unit)?,
     onMute: () -> Unit,
     onSpeaker: () -> Unit,
+    onRoute: (String) -> Unit,
     onSwitchCamera: () -> Unit,
 ) {
     val v = call.video
@@ -422,7 +431,11 @@ private fun ControlBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ToggleRound(if (call.muted) MicOffIcon else MicIcon, s(R.string.t_silenciar), on = call.muted, onClick = onMute)
-        ToggleRound(SpeakerIcon, s(R.string.t_altifalante), on = call.speaker, onClick = onSpeaker)
+        if (call.routes.needsMenu()) {
+            RouteRound(call, onRoute)
+        } else {
+            ToggleRound(SpeakerIcon, s(R.string.t_altifalante), on = call.speaker, onClick = onSpeaker)
+        }
         if (camera != null) {
             ToggleRound(if (v.camera) VideoCallIcon else VideoOffIcon, s(R.string.call_camera), on = v.camera, onClick = camera)
             ActionRound(SwitchCameraIcon, s(R.string.video_switch), enabled = v.camera, onClick = onSwitchCamera)
@@ -443,6 +456,44 @@ private fun ToggleRound(icon: ImageVector, label: String, on: Boolean, onClick: 
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = null, tint = if (on) ICON_ON else Color.White, modifier = Modifier.size(26.dp))
+    }
+}
+
+/**
+ * Botao do som com Bluetooth ou auscultadores: abre a lista das saidas, com a de agora marcada.
+ * Fica "ligado" (fundo branco) fora do telemovel, como o altifalante.
+ */
+@Composable
+private fun RouteRound(call: CallUi, onRoute: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val current = call.routes.firstOrNull { it.id == call.route }
+    val on = current != null && current.kind != RouteKind.PHONE
+    val label = s(R.string.call_route_title) + (current?.let { ": ${it.name}" } ?: "")
+    Box {
+        Box(
+            Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(if (on) Color.White else ROUND_IDLE)
+                .clickable(role = Role.Button, onClick = { open = true })
+                .semantics { contentDescription = label },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(SpeakerIcon, contentDescription = null, tint = if (on) ICON_ON else Color.White, modifier = Modifier.size(26.dp))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for (r in call.routes.menuOrder()) {
+                val chosen = r.id == call.route
+                DropdownMenuItem(
+                    text = { Text(r.name, fontWeight = if (chosen) FontWeight.Bold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    trailingIcon = if (chosen) ({ Text("✓", fontWeight = FontWeight.Bold) }) else null,
+                    onClick = {
+                        open = false
+                        if (!chosen) onRoute(r.id)
+                    },
+                )
+            }
+        }
     }
 }
 

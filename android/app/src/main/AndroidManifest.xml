@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- O Core-Telecom (sistema de chamadas) so e chamado no Android 8+ (SystemCalls.supported):
+         se a biblioteca pedir um minSdk acima de 24, a app continua a instalar no Android 7. -->
+    <uses-sdk tools:overrideLibrary="androidx.core.telecom" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Mensagens de voz (ate 10 s): pedida so quando se carrega no microfone. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -12,8 +16,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Desde a 0.9.42 (0010) o servico da chamada e tambem do tipo "phoneCall" (chamada em curso):
-         o Android 14+ pede esta permissao e a MANAGE_OWN_CALLS (normal, dada ao instalar; a app
-         nao usa o Telecom nem mexe nas chamadas do telemovel). -->
+         o Android 14+ pede esta permissao e a MANAGE_OWN_CALLS (normal, dada ao instalar).
+         Desde a 0.9.52 a MANAGE_OWN_CALLS tambem serve o sistema de chamadas (Telecom, chamadas
+         "self-managed", Android 8+, ver SystemCalls.kt): auricular Bluetooth, carro e chamadas GSM
+         ao mesmo tempo. A app so gere as SUAS chamadas: nao le nem mexe nas chamadas do telemovel
+         e nada entra no registo de chamadas. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
     <!-- Ecra apagado ao encostar ao ouvido, so nas chamadas de voz (sensor de proximidade). -->

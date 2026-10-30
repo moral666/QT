@@ -56,6 +56,12 @@ seguir.
   antes de atender, chamada minimizada com a app usável, copiar as 12 palavras, links que só abrem
   depois de confirmar o site (sem pré-visualização, por privacidade), medalhas e fotos que voltam
   a quem recuperou a conta, menu Idioma que desliza.
+- **Chamadas do Android no sistema de chamadas do telemóvel** (0.9.52, Core-Telecom): auricular
+  Bluetooth, carro e chamadas GSM ao mesmo tempo, como o CallKit no iPhone, sem nada no registo de
+  chamadas do telemóvel.
+- **Comunidade** (0.9.52, Android e iPhone): as pessoas com medalha, só com foto e medalha (sem
+  nome nem ID), atualizada uma vez por semana no Sealer Control, cifrada nos dois relays e
+  descarregada só quando se abre o ecrã.
 
 ## A seguir: tornar isto usável no dia a dia
 
@@ -66,8 +72,8 @@ seguir.
 - [x] **Chamadas no iPhone** (CallKit), entre iPhones e entre Android e iPhone. Testado a
   20/10/2026 com Android 0.9.16 e iPhone 0.9.15, junto com contactos, QR, mensagens de texto
   e voz, GIFs, ficheiros, bloquear e apagar conversas: sem erros.
-- [ ] **No Android, a integração com o sistema de chamadas** (auricular Bluetooth, carro,
-  chamada normal ao mesmo tempo).
+- [x] **No Android, a integração com o sistema de chamadas** (auricular Bluetooth, carro,
+  chamada normal ao mesmo tempo), app 0.9.52. Falta o teste nos telemóveis.
 - [ ] **Infraestrutura de produção:** backups e alertas do servidor.
 - [ ] **Distribuição:** Google Play e App Store (TestFlight).
 

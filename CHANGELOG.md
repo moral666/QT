@@ -6,6 +6,62 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 30 de outubro de 2026: Comunidade, a lista das pessoas com medalha (Android e iPhone 0.9.52, Sealer Control 2.2)
+
+- Ecrã novo **Comunidade** nas duas apps (Definições): todas as pessoas com medalha, incluindo a
+  Troll e a Legacy, só com a foto e a medalha (sem nome, sem iniciais e sem ID), com o aro ou o
+  escudo como nos contactos. Ordem: por medalha e, dentro de cada uma, por ordem de entrada. Sem
+  foto, o avatar por omissão com a medalha. Strings novas nas 10 línguas (`community_title`,
+  `community_subtitle`, `community_empty`).
+- Envio automático da foto (só quem tem medalha): a miniatura dos contactos, com o certificado da
+  medalha, autenticada com a chave de identidade da conta e selada para a chave do operador como
+  as denúncias. Só quando é preciso: primeira vez, medalha ou foto nova (tirar a foto também) e,
+  sem mudanças, no máximo uma vez por semana. Um certificado copiado de outra pessoa é recusado.
+- Relay: `CommunitySubmit` (até 3 por conta e por dia, sem o ID de quem enviou, 30 dias),
+  `CommunityVersion`, `CommunityIndex` e `CommunityPhotos` para as apps, e pedidos do operador
+  para recolher, apagar e publicar. A lista (índice e fotos) fica 8 dias, com os comandos do Redis
+  que o ACL já permitia. Apps antigas sem mudanças.
+- Tráfego: as apps só pedem a lista ao abrir o ecrã, primeiro só o número; com o número igual não
+  desce mais nada, e com uma lista nova só descem as fotos novas. Sem lista no relay, mostram a
+  última guardada.
+- Núcleo: `core/src/community.rs` (envio, índice assinado com a chave das medalhas e cifrado,
+  fotos identificadas pelo hash) e `ffi/src/community.rs`. Ferramenta do operador
+  `server/examples/comunidade.rs` (recolher e publicar, nos dois relays, com estado local cifrado);
+  a ferramenta `badge` passa a escrever o registo das medalhas entregues (`<db>.registo`), para uma
+  medalha retirada sair da lista.
+- Sealer Control 2.2: página Comunidade com "Atualizar Comunidade", "Não mostrar" por membro e
+  "Publicar lista" (repositório sealer-control, patch à parte).
+- Site: política de privacidade (quem tem medalha aparece com foto e medalha, sem nome nem ID) e
+  "Como funciona", nas 10 línguas. `docs/protocol-spec.md` (secção 26) e `docs/threat-model.md`
+  (a chave da lista vai dentro das apps: aceite).
+- iPhone: versão 0.9.52 (build 59), igual ao Android.
+
+### 30 de outubro de 2026: chamadas do Android no sistema de chamadas do telemóvel (Android 0.9.52)
+
+- As chamadas de voz e as videochamadas do Android entram no sistema de chamadas do telemóvel
+  (Jetpack Core-Telecom 1.0.1, chamadas "self-managed"), como o CallKit no iPhone. Android 8 ou
+  mais recente; no Android 7 fica tudo como antes.
+- Auricular Bluetooth e carro: o som vai para lá e os botões atendem, recusam e desligam. O nome
+  mostrado ao sistema, ao carro e ao Bluetooth é a alcunha do contacto; com o bloqueio da app,
+  ou sem nome, "Chamada SEALER" / "Videochamada SEALER". Silenciar na app ou no carro fica igual
+  nos dois lados.
+- Chamada normal ao mesmo tempo: atender uma chamada GSM durante uma chamada Sealer termina a do
+  Sealer dos dois lados (sem chamadas em espera, como no iPhone). Uma chamada Sealer que chega
+  durante uma GSM aparece sem o toque alto por cima da conversa. Ligar a partir do Sealer
+  durante uma GSM mostra o erro de sempre ("Não foi possível ligar: Ocupado noutra chamada").
+- Privacidade: nada entra no registo de chamadas do telemóvel; o endereço dado ao sistema é
+  sempre "sealer:SEALER", nunca o ID do contacto.
+- Saída do som: sem Bluetooth, o botão do altifalante fica igual. Com Bluetooth ou auscultadores,
+  o mesmo botão abre uma lista curta (Telemóvel, Altifalante, o nome do aparelho). Strings novas
+  nas 10 línguas (`call_route_title`, `call_route_phone`, `call_route_headphones`).
+- Código: `SystemCalls.kt` (novo) entre o `MainViewModel` / `SealerCore` e o Telecom;
+  `CallRoutes.kt` (lógica das saídas, com testes em `CallRoutesTest`). Com a chamada no sistema,
+  o modo de chamada, o foco e a saída do som são do Telecom (`CallAudioIO` e o "tuu... tuu" já
+  não mexem neles). O toque próprio, a notificação de ecrã inteiro e o `CallService` continuam.
+- Com a app fechada, atender no auricular ou no carro abre a app para atender, como o "Atender"
+  da notificação (o microfone precisa da app no ecrã).
+- Relay e protocolo sem mudanças.
+
 ### 30 de outubro de 2026: a ferramenta das medalhas mostra porque é que o relay recusou
 
 - `server/examples/badge.rs`: quando o relay recusa o envio, a ferramenta escreve a razão que o relay

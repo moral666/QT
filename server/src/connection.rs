@@ -831,7 +831,66 @@ async fn handle_client_message(
                 Err(e) => internal(e),
             }
         }
+        // ----- Comunidade (0.9.52) -----
+        ClientMessage::CommunitySubmit { sealed } => {
+            let Ok(sealed) = b64().decode(&sealed) else { return err("envio invalido") };
+            let len_ok = sealed.len() > 1 + 32 + 16 + 4 && sealed.len() <= qt_core::community::MAX_SUBMISSION;
+            if !len_ok || sealed[0] != qt_core::report::VERSION {
+                return err("envio invalido");
+            }
+            match session.registered(store, me).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    stats::inc(&STATS.not_registered);
+                    return err(crate::protocol::NOT_REGISTERED);
+                }
+                Err(e) => return internal(e),
+            }
+            match store.submit_community(me, sealed).await {
+                Ok(_) => ServerMessage::Ack,
+                Err(StoreError::CommunityLimit) => err(crate::protocol::COMMUNITY_LIMIT),
+                Err(StoreError::CommunityFull) => err("demasiados envios, tenta mais tarde"),
+                Err(e) => internal(e),
+            }
+        }
+        ClientMessage::CommunityVersion => match store.community_version().await {
+            Ok(version) => ServerMessage::CommunityVersion { version },
+            Err(e) => internal(e),
+        },
+        ClientMessage::CommunityIndex => match store.community_index().await {
+            Ok(Some((version, data))) => ServerMessage::CommunityIndex { version, data: b64().encode(data) },
+            Ok(None) => ServerMessage::CommunityNone,
+            Err(e) => internal(e),
+        },
+        ClientMessage::CommunityPhotos { hashes } => {
+            if hashes.len() > crate::protocol::MAX_COMMUNITY_PHOTOS_PER_REQUEST
+                || !hashes.iter().all(|h| crate::protocol::is_hex_of_len(h, 64))
+            {
+                return err("pedido invalido");
+            }
+            let mut photos = Vec::new();
+            let mut budget = 0usize;
+            for h in hashes {
+                let data = match store.community_photo(&h).await {
+                    Ok(Some(d)) => b64().encode(d),
+                    Ok(None) => continue,
+                    Err(e) => return internal(e),
+                };
+                // Uma pagina por resposta: a app pede as que faltarem a seguir.
+                if !photos.is_empty() && budget + data.len() + 96 > MAX_PAGE_BYTES {
+                    break;
+                }
+                budget += data.len() + 96;
+                photos.push(crate::protocol::CommunityPhoto { hash: h, data });
+            }
+            ServerMessage::CommunityPhotos { photos }
+        }
         ClientMessage::AdminListReports { .. }
+        | ClientMessage::AdminListCommunity { .. }
+        | ClientMessage::AdminDeleteCommunity { .. }
+        | ClientMessage::AdminCommunityKeep { .. }
+        | ClientMessage::AdminCommunityPhoto { .. }
+        | ClientMessage::AdminCommunityPublish { .. }
         | ClientMessage::AdminGrantPremium { .. }
         | ClientMessage::AdminListPremium
         | ClientMessage::AdminPremiumEnforce { .. }
@@ -853,6 +912,56 @@ async fn handle_client_message(
             Ok(()) => ServerMessage::Ack,
             Err(e) => internal(e),
         },
+        ClientMessage::AdminListCommunity { after } => match store.list_community(after, MAX_PAGE_BYTES).await {
+            Ok((items, more)) => ServerMessage::CommunitySubmissions {
+                items: items
+                    .into_iter()
+                    .map(|(id, received_at_ms, sealed)| crate::protocol::StoredSubmission {
+                        id,
+                        received_at_ms,
+                        sealed: b64().encode(sealed),
+                    })
+                    .collect(),
+                more,
+            },
+            Err(e) => internal(e),
+        },
+        ClientMessage::AdminDeleteCommunity { id } => match store.delete_community(id).await {
+            Ok(()) => ServerMessage::Ack,
+            Err(e) => internal(e),
+        },
+        ClientMessage::AdminCommunityKeep { hashes } => {
+            if hashes.len() > crate::protocol::MAX_COMMUNITY_KEEP
+                || !hashes.iter().all(|h| crate::protocol::is_hex_of_len(h, 64))
+            {
+                return err("pedido invalido");
+            }
+            match store.community_keep(&hashes).await {
+                Ok(hashes) => ServerMessage::CommunityMissing { hashes },
+                Err(e) => internal(e),
+            }
+        }
+        ClientMessage::AdminCommunityPhoto { hash, data } => {
+            let Ok(data) = b64().decode(&data) else { return err("foto invalida") };
+            let hex: String = qt_core::community::photo_hash(&data).iter().map(|b| format!("{b:02x}")).collect();
+            if data.len() > qt_core::community::MAX_PHOTO_BLOB || hex != hash {
+                return err("foto invalida");
+            }
+            match store.community_put_photo(&hash, data).await {
+                Ok(()) => ServerMessage::Ack,
+                Err(e) => internal(e),
+            }
+        }
+        ClientMessage::AdminCommunityPublish { version, index } => {
+            let Ok(index) = b64().decode(&index) else { return err("lista invalida") };
+            if version == 0 || index.is_empty() || index.len() > qt_core::community::MAX_INDEX_BLOB {
+                return err("lista invalida");
+            }
+            match store.community_publish(version, index).await {
+                Ok(()) => ServerMessage::Ack,
+                Err(e) => internal(e),
+            }
+        }
         ClientMessage::AdminBan { user_id } => {
             if !is_valid_user_id(&user_id) || user_id == me {
                 return err("user_id invalido");

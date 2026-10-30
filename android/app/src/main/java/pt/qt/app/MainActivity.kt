@@ -548,6 +548,7 @@ fun AppRoot(
                 onHangup = vm::hangupCall,
                 onMute = vm::toggleMute,
                 onSpeaker = vm::toggleSpeaker,
+                onRoute = vm::setAudioRoute,
                 onMinimize = if (canMinimize) ({ callMinimized = true }) else null,
                 // Desligar a camara nao precisa de permissao; ligar sim.
                 onCamera = { if (call.video.camera) vm.toggleCamera() else withCamera { vm.toggleCamera() } },
@@ -568,6 +569,10 @@ fun AppRoot(
         ui.showPremium -> {
             BackHandler { vm.closePremium() }
             PremiumScreen(ui, onBack = vm::closePremium)
+        }
+        ui.showCommunity -> {
+            BackHandler { vm.closeCommunity() }
+            CommunityScreen(ui, onBack = vm::closeCommunity)
         }
         openGroup != null && showGroupInfo -> {
             BackHandler { showGroupInfo = false }
@@ -655,6 +660,7 @@ fun AppRoot(
                 onLockSettings = { showLockSettings = true }, onLockNow = vm::lockNow,
                 onRecovery = { showRecovery = true },
                 onPremium = vm::openPremium,
+                onCommunity = vm::openCommunity,
                 onUnblock = vm::unblockContact,
                 onPresence = vm::setPresence,
                 onReadReceipts = vm::setReadReceipts,
@@ -821,6 +827,7 @@ private fun CallOverLock(
             onHangup = vm::hangupCall,
             onMute = vm::toggleMute,
             onSpeaker = vm::toggleSpeaker,
+            onRoute = vm::setAudioRoute,
             onCamera = { if (call.video.camera) vm.toggleCamera() else withCamera { vm.toggleCamera() } },
             onSwitchCamera = vm::switchCamera,
             onVideoRespond = { r -> if (r == VideoResponse.VIEW_AND_CAMERA) withCamera { vm.respondVideo(r) } else vm.respondVideo(r) },

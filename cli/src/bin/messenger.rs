@@ -225,6 +225,11 @@ fn describe(r: &RelayResponse) -> String {
         RelayResponse::Premium { .. } => "Premium".into(),
         // Fichas do video: a CLI nao faz chamadas.
         RelayResponse::Fichas { .. } => "Fichas".into(),
+        // Comunidade (0.9.52): so as apps a mostram.
+        RelayResponse::CommunityVersion { .. }
+        | RelayResponse::CommunityIndex { .. }
+        | RelayResponse::CommunityNone
+        | RelayResponse::CommunityPhotos { .. } => "Comunidade".into(),
     }
 }
 

@@ -424,4 +424,12 @@
     <string name="call_diag_copy">复制诊断</string>
     <string name="call_diag_copy_last">复制上次通话的诊断</string>
     <string name="call_diag_copied">诊断已复制</string>
+    <!-- Saida do som da chamada (0.9.52): lista com Bluetooth ou auscultadores. -->
+    <string name="call_route_title">音频输出</string>
+    <string name="call_route_phone">手机</string>
+    <string name="call_route_headphones">耳机</string>
+    <!-- Comunidade (0.9.52): pessoas com medalha, so foto e medalha. -->
+    <string name="community_title">社区</string>
+    <string name="community_subtitle">拥有 Sealer 徽章的人，显示照片和徽章。</string>
+    <string name="community_empty">社区目前还是空的。</string>
 </resources>

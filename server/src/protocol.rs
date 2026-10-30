@@ -186,6 +186,55 @@ pub enum ClientMessage {
     /// diferentes, nao ligacoes; sem o operador). So o numero, contado em memoria.
     /// Resposta: `Online`. Relays antigos respondem `Error`.
     AdminOnline,
+
+    // ----- Comunidade (0.9.52, ver `qt_core::community`). Relays antigos respondem `Error`. -----
+    /// Foto da Comunidade de quem tem medalha, ja selada pela app para a chave do operador
+    /// (base64). Guardada como as denuncias: bytes opacos, SEM o ID de quem enviou, ate
+    /// `store::COMMUNITY_SUB_TTL_SECONDS`. Ate `store::MAX_COMMUNITY_SUBMITS_PER_DAY` por conta e
+    /// por dia. So contas registadas. Resposta: `Ack`.
+    CommunitySubmit { sealed: String },
+    /// Numero da lista atual. Resposta: `CommunityVersion` (0 = sem lista).
+    CommunityVersion,
+    /// O indice da lista (cifrado). Resposta: `CommunityIndex` ou `CommunityNone`.
+    CommunityIndex,
+    /// Fotos da lista pelo hash (64 hex), ate `MAX_COMMUNITY_PHOTOS_PER_REQUEST`. Resposta:
+    /// `CommunityPhotos` com as que cabem numa pagina (pedir as outras a seguir); as que o
+    /// relay nao tem nao vem.
+    CommunityPhotos { hashes: Vec<String> },
+    /// OPERADOR: envios guardados com id maior do que `after`. Resposta: `CommunitySubmissions`.
+    AdminListCommunity { after: u64 },
+    /// OPERADOR: apaga um envio ja tratado. Resposta: `Ack`.
+    AdminDeleteCommunity { id: u64 },
+    /// OPERADOR: as fotos da lista nova que o relay ja tem ficam mais 8 dias. Resposta:
+    /// `CommunityMissing` com as que faltam (enviar com `AdminCommunityPhoto`).
+    AdminCommunityKeep { hashes: Vec<String> },
+    /// OPERADOR: uma foto da lista (cifrada, base64); `hash` = SHA-256 dos bytes. `Ack`.
+    AdminCommunityPhoto { hash: String, data: String },
+    /// OPERADOR: a lista nova (indice cifrado e assinado, base64), com o numero `version`.
+    /// Fica `store::COMMUNITY_TTL_SECONDS` (8 dias). Resposta: `Ack`.
+    AdminCommunityPublish { version: u64, index: String },
+}
+
+/// Fotos pedidas de uma vez (`CommunityPhotos`), no maximo.
+pub const MAX_COMMUNITY_PHOTOS_PER_REQUEST: usize = 20;
+/// Hashes por `AdminCommunityKeep`, no maximo.
+pub const MAX_COMMUNITY_KEEP: usize = 200;
+/// Motivo do `Error` quando uma conta passa o limite diario de envios da Comunidade.
+pub const COMMUNITY_LIMIT: &str = "limite de envios da comunidade, tenta amanha";
+
+/// Envio da Comunidade guardado no relay (bytes opacos em base64, selados para o operador).
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct StoredSubmission {
+    pub id: u64,
+    pub received_at_ms: u64,
+    pub sealed: String,
+}
+
+/// Uma foto da lista (cifrada, base64).
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct CommunityPhoto {
+    pub hash: String,
+    pub data: String,
 }
 
 /// Uma conta com premium (lista do operador).
@@ -350,6 +399,18 @@ pub enum ServerMessage {
     Fichas { epoch: u32, public_key: String, evaluated: String, proof: String, granted: u32, remaining: u32, per_month: u32 },
     /// Resposta a `AdminOnline`.
     Online { users: u64 },
+    /// Resposta a `CommunityVersion` (0 = sem lista).
+    CommunityVersion { version: u64 },
+    /// Resposta a `CommunityIndex`: o indice cifrado (base64) e o seu numero.
+    CommunityIndex { version: u64, data: String },
+    /// Nao ha lista (nunca houve ou passaram os 8 dias).
+    CommunityNone,
+    /// Resposta a `CommunityPhotos`.
+    CommunityPhotos { photos: Vec<CommunityPhoto> },
+    /// Resposta a `AdminListCommunity` (`more = true`: repetir com o ultimo id recebido).
+    CommunitySubmissions { items: Vec<StoredSubmission>, more: bool },
+    /// Resposta a `AdminCommunityKeep`: as fotos que o relay nao tem.
+    CommunityMissing { hashes: Vec<String> },
 }
 
 pub fn serialize_client_message(msg: &ClientMessage) -> Vec<u8> {

@@ -1426,6 +1426,69 @@ relay das chamadas de outro, e as chaves publicadas no site são as mesmas. Cada
 registo das fichas gastas: uma ficha podia ser gasta uma vez em cada relay (no máximo o dobro da quota, só
 com uma app alterada).
 
+## 26. Comunidade (desde a app 0.9.52)
+
+Ecrã novo nas apps (nas Definições) com todas as pessoas que têm medalha. Cada membro aparece **só
+com a foto e a medalha**: sem nome, sem iniciais e sem ID. Ordem: por medalha (Founder, Co-founder,
+Dev, …, Legacy, como os números) e, dentro de cada medalha, por ordem de entrada. Sem foto, o
+avatar por omissão com a medalha. Código: `core/src/community.rs`, `ffi/src/community.rs`,
+`server/examples/comunidade.rs` e o Sealer Control (página Comunidade).
+
+- **Quem entra:** quem tem uma medalha válida (todas, incluindo a Troll e a Legacy), sem ter de
+  aceitar nada. O operador pode marcar "não mostrar" por membro no Sealer Control. Uma medalha
+  retirada (certificado `nenhum` no registo da ferramenta `badge`, ver abaixo) sai na atualização
+  seguinte.
+- **Envio da foto (app):** a miniatura dos contactos (WebP ou JPEG, até 9 973 bytes) ou "sem foto",
+  com o certificado da medalha (106 bytes, §20) e a hora. Conteúdo:
+  `[SEALER-COMMUNITY-SUB-v1][certificado][8 enviada_em ms BE][1 tem_foto][foto][32 HMAC]`.
+  O HMAC-SHA256 cobre tudo o que vem antes, com a chave HKDF-SHA256(DH(identidade X25519 da conta,
+  chave pública das denúncias), sal `SEALER-COMMUNITY`, info `SEALER-COMMUNITY-AUTH-v1` ‖
+  identidade ‖ chave das denúncias). Só quem tem a chave privada da identidade do certificado o
+  faz; o certificado sozinho (que os contactos recebem) não chega. O conteúdo é selado como uma
+  denúncia (§21) para a chave das denúncias. A app envia só quando é preciso: a primeira vez com
+  a medalha (ou num telemóvel novo), quando a medalha ou a foto mudam (tirar a foto também) e, sem
+  mudanças, no máximo uma vez por semana.
+- **Relay, envios:** `CommunitySubmit { sealed }` (base64). Só contas registadas; até 3 por conta e
+  por dia (`COMMUNITY_LIMIT`); até 2 000 guardados. Fica `{p}:csub:{id}` = `[8 recebido_em ms]
+  [envio]` com TTL de 30 dias, sem o ID de quem enviou (como as denúncias; o contador diário
+  `{p}:csubday:{conta}:{dia}` não diz qual envio é de quem).
+- **Operador:** `AdminListCommunity { after }` → `CommunitySubmissions { items, more }`,
+  `AdminDeleteCommunity { id }`, `AdminCommunityKeep { hashes }` (até 200; renova 8 dias às fotos
+  que já lá estão) → `CommunityMissing { hashes }`, `AdminCommunityPhoto { hash, data }` (o relay
+  confere que `hash` = SHA-256 de `data`) e `AdminCommunityPublish { version, index }`. Só a chave
+  do operador (os outros recebem "so o operador").
+- **Atualização semanal** (Sealer Control → Atualizar Comunidade → Publicar lista): a ferramenta
+  `comunidade` recolhe os envios dos dois relays, abre-os com a semente do operador e confere o
+  certificado (chave do emissor), o HMAC e o registo das medalhas (`<db>.registo`, uma linha JSON
+  por medalha entregue, escrito pela ferramenta `badge` desde a 0.9.52). Os recusados são apagados
+  logo. Os válidos ficam num estado local cifrado com uma chave derivada da semente do operador
+  (`community-state`), nunca na AWS. Depois monta a lista, assina-a com a chave das medalhas,
+  cifra-a e envia a mesma lista, com as fotos que faltam, aos dois relays; só então apaga os
+  envios tratados. A mesma foto mantém a mesma foto cifrada (e o mesmo hash) de semana para semana.
+- **Índice:** em claro `[1 versão=1][8 número BE][8 criado_em ms BE][2 membros BE]` e, por membro,
+  `[1 medalha][1 tem_foto][32 hash da foto se tem_foto]`, já pela ordem da lista; segue-se a
+  assinatura Ed25519 (chave das medalhas, `ISSUER_PUBLIC_KEY`) sobre `SEALER-COMMUNITY-INDEX-v1` ‖
+  claro. Tudo cifrado com ChaCha20-Poly1305: `[1 versão][12 nonce][cifrado]`, AAD
+  `SEALER-COMMUNITY-LIST-v1`, chave `COMMUNITY_KEY` (dentro das apps). Até 1 000 membros.
+- **Fotos:** `[1 versão][12 nonce][ChaCha20-Poly1305 da foto]`, AAD `SEALER-COMMUNITY-PHOTO-v1`,
+  chave `COMMUNITY_KEY`; identificadas pelo SHA-256 dos bytes cifrados (o índice assinado tem o
+  hash: uma foto trocada é recusada).
+- **Relay, lista:** `{p}:cver`, `{p}:cindex` e `{p}:cphoto:{hash}`, todos com TTL de 8 dias (uma
+  semana e um dia de folga). `CommunityVersion` → `CommunityVersion { version }` (0 = sem lista);
+  `CommunityIndex` → `CommunityIndex { version, data }` ou `CommunityNone`; `CommunityPhotos {
+  hashes }` (até 20) → `CommunityPhotos { photos }` com as que cabem numa página. Qualquer conta
+  autenticada pode ler. Comandos do Redis: só os que o ACL já permitia.
+- **Tráfego (app):** nada em segundo plano nem ao arrancar. Ao abrir o ecrã, a app mostra a lista
+  guardada e pede só o número; igual ao guardado, nada mais desce. Se mudou, pede o índice, confere
+  a assinatura e o número (nunca aceita um número mais baixo), apaga as fotos de quem saiu e pede
+  só as fotos que ainda não tem. Tudo fica na base de dados cifrada da app. Sem lista no relay, a
+  app mostra a última que guardou.
+- **Apps antigas** (até à 0.9.51) não enviam nem pedem nada disto; o relay novo continua a
+  responder-lhes como antes.
+
+Testes: `core/src/community.rs`, `ffi/tests/community.rs`, `server/tests/relay_community.rs` e
+`server/tests/redis_acl.rs`; no Sealer Control, `tests/test_logic.py`.
+
 ## Documentos relacionados
 
 - [`threat-model.md`](threat-model.md): modelo de ameaças formal (quem

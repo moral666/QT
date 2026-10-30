@@ -167,6 +167,21 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     assert_eq!(store.fichas_quota(&alice).await.unwrap(), Some(600));
     store.set_fichas_quota(&alice, None).await.unwrap();
     assert_eq!(store.fichas_quota(&alice).await.unwrap(), None);
+
+    // Comunidade (0.9.52): envios como as denuncias e a lista com GET, SET, EXPIRE e MULTI/EXEC.
+    let id = store.submit_community(&alice, vec![2; 100]).await.unwrap();
+    let (subs, more) = store.list_community(0, 40_000).await.unwrap();
+    assert_eq!((subs.len(), more, subs[0].0), (1, false, id));
+    store.delete_community(id).await.unwrap();
+    assert!(store.list_community(0, 40_000).await.unwrap().0.is_empty());
+    let h = "cd".repeat(32);
+    assert_eq!(store.community_keep(&[h.clone()]).await.unwrap(), vec![h.clone()]);
+    store.community_put_photo(&h, vec![8; 50]).await.unwrap();
+    assert!(store.community_keep(&[h.clone()]).await.unwrap().is_empty());
+    store.community_publish(7, vec![9; 40]).await.unwrap();
+    assert_eq!(store.community_version().await.unwrap(), 7);
+    assert_eq!(store.community_index().await.unwrap(), Some((7, vec![9; 40])));
+    assert_eq!(store.community_photo(&h).await.unwrap(), Some(vec![8; 50]));
     let _ = std::fs::remove_dir_all(dir);
 }
 
