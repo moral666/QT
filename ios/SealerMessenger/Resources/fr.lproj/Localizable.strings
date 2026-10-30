@@ -18,6 +18,12 @@
 "call_diag_title" = "Diagnostic de l'appel";
 "call_mic_lost" = "Le micro ne fonctionne plus (une autre app l'utilise peut-être). Votre correspondant ne vous entend plus.";
 "call_minimize" = "Réduire";
+"call_route_headphones" = "Écouteurs";
+"call_route_phone" = "Téléphone";
+"call_route_title" = "Sortie audio";
+"community_empty" = "La Communauté est encore vide.";
+"community_subtitle" = "Les personnes qui ont un badge Sealer, avec leur photo et leur badge.";
+"community_title" = "Communauté";
 "confirm_word" = "SUPPRIMER";
 "confirm_word_alt" = "";
 "contacts_unreadable_new" = "Nouvelle liste";

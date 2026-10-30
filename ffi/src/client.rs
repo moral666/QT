@@ -1040,6 +1040,14 @@ pub enum RelayResponse {
     Premium { until_ms: u64, enforced: bool, active: Option<bool> },
     /// Fichas do video (0006), resposta a `relay_request_fichas`: passar a `fichas_accept`.
     Fichas { issued: crate::fichas::FichasIssued },
+    /// Comunidade (0.9.52): numero da lista no relay (0 = nenhuma).
+    CommunityVersion { version: u64 },
+    /// Comunidade: o indice cifrado (passar a `community_apply_index`).
+    CommunityIndex { version: u64, data: Vec<u8> },
+    /// Comunidade: o relay nao tem lista (mostrar a guardada).
+    CommunityNone,
+    /// Comunidade: fotos pedidas (guardar com `community_put_photo`).
+    CommunityPhotos { photos: Vec<crate::community::CommunityPhotoBlob> },
 }
 
 #[derive(serde::Deserialize)]
@@ -1074,6 +1082,16 @@ enum WireServerMsg {
         active: Option<bool>,
     },
     Fichas { epoch: u32, public_key: String, evaluated: String, proof: String, granted: u32, remaining: u32, per_month: u32 },
+    CommunityVersion { version: u64 },
+    CommunityIndex { version: u64, data: String },
+    CommunityNone,
+    CommunityPhotos { photos: Vec<WireCommunityPhoto> },
+}
+
+#[derive(serde::Deserialize)]
+struct WireCommunityPhoto {
+    hash: String,
+    data: String,
 }
 
 /// Interpreta uma resposta do relay (ja decifrada pelo Noise).
@@ -1130,6 +1148,28 @@ pub fn relay_parse_response(bytes: Vec<u8>) -> Result<RelayResponse, QtError> {
                 return Err(QtError::InvalidEnvelope);
             }
             RelayResponse::Fichas { issued: crate::fichas::FichasIssued { epoch, public_key, evaluated, proof, granted, remaining, per_month } }
+        }
+        WireServerMsg::CommunityVersion { version } => RelayResponse::CommunityVersion { version },
+        WireServerMsg::CommunityIndex { version, data } => {
+            use base64::Engine;
+            let data = base64::engine::general_purpose::STANDARD.decode(data).map_err(|_| QtError::InvalidEnvelope)?;
+            if data.len() > qt_core::community::MAX_INDEX_BLOB {
+                return Err(QtError::InvalidEnvelope);
+            }
+            RelayResponse::CommunityIndex { version, data }
+        }
+        WireServerMsg::CommunityNone => RelayResponse::CommunityNone,
+        WireServerMsg::CommunityPhotos { photos } => {
+            use base64::Engine;
+            let mut out = Vec::with_capacity(photos.len());
+            for p in photos {
+                let data = base64::engine::general_purpose::STANDARD.decode(p.data).map_err(|_| QtError::InvalidEnvelope)?;
+                if data.len() > qt_core::community::MAX_PHOTO_BLOB {
+                    return Err(QtError::InvalidEnvelope);
+                }
+                out.push(crate::community::CommunityPhotoBlob { hash: p.hash, data });
+            }
+            RelayResponse::CommunityPhotos { photos: out }
         }
     })
 }

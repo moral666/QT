@@ -341,6 +341,7 @@ fun ProfileSettingsScreen(
     onLockNow: () -> Unit,
     onRecovery: () -> Unit,
     onPremium: () -> Unit,
+    onCommunity: () -> Unit,
     onUnblock: (String) -> Unit,
     onPresence: (Boolean) -> Unit,
     onReadReceipts: (Boolean) -> Unit,
@@ -378,6 +379,7 @@ fun ProfileSettingsScreen(
             SettingsRow(Icons.Filled.AccountBox, s(R.string.t_o_meu_id), onClick = onMyId)
             SettingsRow(Icons.Filled.Refresh, s(R.string.recovery_title), onClick = onRecovery)
             SettingsRow(Icons.Filled.Star, if (ui.premium) s(R.string.premium_title_on) else s(R.string.premium_title), onClick = onPremium)
+            SettingsRow(Icons.Filled.Person, s(R.string.community_title), onClick = onCommunity)
             SettingsRow(Icons.Filled.Lock, s(R.string.t_bloqueio_da_app), onClick = onLockSettings, divider = ui.lockEnabled || ui.blocked.isNotEmpty())
             if (ui.lockEnabled) {
                 SettingsRow(Icons.Filled.Lock, s(R.string.t_bloquear_agora), onClick = onLockNow, divider = ui.blocked.isNotEmpty())

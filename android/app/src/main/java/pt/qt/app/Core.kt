@@ -108,13 +108,16 @@ object SealerCore {
             contactsKeyRef = null
             c
         }
-        synchronized(ringLock) {
+        val r = synchronized(ringLock) {
+            val cur = ringing
             ringJob?.cancel()
             ringJob = null
             ringing = null
             answerCallId = null
             answerRequestedAt = 0L
+            cur
         }
+        r?.let { SystemCalls.end(it.sysKey, CallEnd.MISSED) }
         old?.close()
     }
 
@@ -175,6 +178,11 @@ object SealerCore {
     class Ringing(val callId: String?, val contactId: String?, val name: String?, video: Boolean = false) {
         @Volatile var video: Boolean = video
             internal set
+        /** A mesma chamada no sistema de chamadas do Android (SystemCalls), tambem quando o ecra fica com ela. */
+        val sysKey: String = SystemCalls.newKey()
+        /** O telemovel estava noutra chamada ao comecar a tocar: sem o toque alto (canal sem som). */
+        @Volatile var quiet: Boolean = false
+            internal set
     }
 
     private val ringLock = Any()
@@ -203,12 +211,15 @@ object SealerCore {
     val intentToken: String = java.util.UUID.randomUUID().toString()
 
     private fun startRinging(ctx: Context, r: Ringing) {
+        // Ja noutra chamada (GSM ou outra app): mostra-se sem o toque alto por cima da conversa.
+        r.quiet = SystemCalls.phoneBusy(ctx)
         synchronized(ringLock) {
             ringJob?.cancel()
             ringing = r
             ringJob = scope.launch { watchRinging(ctx, r) }
         }
-        CallNotify.ringing(ctx, r.name, sound = true, video = r.video, kindKnown = r.callId != null)
+        SystemCalls.incoming(ctx, r.sysKey, r.callId, r.name, r.video)
+        CallNotify.ringing(ctx, r.name, sound = !r.quiet, video = r.video, kindKnown = r.callId != null)
     }
 
     /** A chamada a tocar afinal e uma videochamada: troca o aviso (sem voltar a tocar do inicio). */
@@ -217,7 +228,7 @@ object SealerCore {
         synchronized(ringLock) {
             if (ringing !== r || r.video) return
             r.video = true
-            CallNotify.ringing(ctx, r.name, sound = true, video = true, update = true)
+            CallNotify.ringing(ctx, r.name, sound = !r.quiet, video = true, update = true)
         }
     }
 
@@ -230,6 +241,7 @@ object SealerCore {
         }
         clearAnswer()
         CallNotify.clear(ctx)
+        SystemCalls.end(r.sysKey, CallEnd.MISSED)
         if (missed) CallNotify.missed(ctx, r.name)
     }
 
@@ -257,6 +269,7 @@ object SealerCore {
         }
         clearAnswer()
         CallNotify.clear(ctx)
+        SystemCalls.end(r.sysKey, CallEnd.REJECTED)
         // Com o bloqueio da app nao ha como avisar quem liga: para de tocar e ele fica "sem resposta".
         val id = r.callId ?: return
         val c = client ?: return
@@ -318,6 +331,7 @@ object SealerCore {
      */
     fun hangupInBackground(ctx: Context, c: QtClient, callId: String, closeAfter: Boolean) {
         val app = ctx.applicationContext
+        SystemCalls.end(callId, CallEnd.LOCAL)
         scope.launch {
             withTimeoutOrNull(8_000L) {
                 try {
@@ -333,6 +347,26 @@ object SealerCore {
             // Entretanto abriu-se outro ecra: o nucleo fica para ele.
             if (closeAfter && uiOwner == null) close()
         }
+    }
+
+    /**
+     * Atender vindo do sistema de chamadas (auricular, carro) sem o ecra com a chamada: como o
+     * "Atender" da notificacao. `callId` null: bloqueio da app, ainda nao se sabe qual e.
+     */
+    fun answerFromSystem(ctx: Context, key: String, callId: String?) {
+        val r = ringing
+        answerCallId = callId ?: r?.takeIf { it.sysKey == key }?.callId
+        answerRequestedAt = SystemClock.elapsedRealtime()
+        // A tocar aqui: o toque para (a app abre e atende assim que tiver a chamada).
+        if (r != null && r.sysKey == key) CallNotify.ringing(ctx, r.name, sound = false, video = r.video, kindKnown = r.callId != null, update = true)
+        CallNotify.openToAnswer(ctx)
+    }
+
+    /** Recusar vindo do sistema de chamadas (auricular, carro) com a chamada a tocar aqui. */
+    fun declineFromSystem(ctx: Context, key: String) {
+        val r = ringing ?: return
+        if (r.sysKey != key) return
+        scope.launch { declineRinging(ctx.applicationContext) }
     }
 
     /** O Firebase deu um token novo: manda-o ao relay se a base de dados estiver aberta. */

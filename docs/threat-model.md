@@ -177,6 +177,16 @@ e depois alimenta a root key do Double Ratchet.
   escrever), mas falta o caso em que quem apagou o contacto recebe primeiro
   (ver `known-limitations.md`, 10). Uma reinstalação da app gera uma
   identidade nova.
+* **Comunidade (0.9.52):** a lista (índice e fotos) é cifrada com uma chave que vai dentro das
+  apps (`COMMUNITY_KEY`). Protege a lista no armazenamento da AWS e de quem não tem o Sealer, mas
+  **não de quem instala a app**: qualquer pessoa com a app (ou com a chave tirada dela) pode ver
+  as fotos e as medalhas de quem tem medalha. Isto está aceite (decisão do Nuno): a lista mostra
+  só foto e medalha, sem nome nem ID, e é o mesmo que qualquer utilizador vê no ecrã. A
+  autenticidade não depende desta chave: o índice é assinado com a chave das medalhas, que nunca
+  sai do PC do operador. O relay vê o número da lista, quando cada conta a pede e quantas fotos
+  pede, e que contas enviaram uma foto (só pelo contador diário, sem ligar a conta ao envio).
+  Quem tem uma foto de perfil igual nos contactos e na Comunidade pode ser reconhecido por um
+  contacto que já a conhece; por isso entram só pessoas com medalha, que o Nuno avisa fora da app.
 * **Verificação de identidade fora de banda:** o QT Public ID tem de ser
   trocado por um canal autêntico (pessoalmente, o código QR resolve isto). As
   apps mostram um *safety number* de 60 dígitos para comparar por outro

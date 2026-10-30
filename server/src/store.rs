@@ -44,6 +44,16 @@ pub const MAX_REPORTS_PER_DAY: u64 = 10;
 /// Denuncias guardadas ao mesmo tempo, no maximo (o operador apaga as tratadas).
 pub const MAX_REPORTS_STORED: usize = 5_000;
 
+/// Comunidade (0.9.52): a lista (indice e fotos) fica 8 dias: a atualizacao e semanal e um dia
+/// de folga evita que a lista desapareca se a atualizacao se atrasar umas horas.
+pub const COMMUNITY_TTL_SECONDS: u64 = 60 * 60 * 24 * 8;
+/// Envios da Comunidade (fotos seladas para o operador): 30 dias, como as denuncias.
+pub const COMMUNITY_SUB_TTL_SECONDS: u64 = 60 * 60 * 24 * 30;
+/// Envios por conta e por dia (a app envia so quando a foto ou a medalha muda).
+pub const MAX_COMMUNITY_SUBMITS_PER_DAY: u64 = 3;
+/// Envios guardados ao mesmo tempo, no maximo (o operador apaga os tratados).
+pub const MAX_COMMUNITY_STORED: usize = 2_000;
+
 /// Ids das mensagens reservados de uma vez (`INCRBY seq`): um pedido ao Redis por cada
 /// `ID_BLOCK` mensagens em vez de um `INCR` por mensagem. Os ids so tem de ser unicos (as
 /// apps so os usam para confirmar); depois de um reinicio fica um buraco, nada mais.
@@ -76,6 +86,12 @@ pub enum StoreError {
     /// Ha `MAX_REPORTS_STORED` denuncias por tratar.
     #[error("demasiadas denuncias guardadas")]
     ReportsFull,
+    /// A conta ja fez `MAX_COMMUNITY_SUBMITS_PER_DAY` envios da Comunidade hoje.
+    #[error("limite diario de envios da comunidade")]
+    CommunityLimit,
+    /// Ha `MAX_COMMUNITY_STORED` envios por tratar.
+    #[error("demasiados envios da comunidade guardados")]
+    CommunityFull,
     /// A copia de recuperacao pertence a outra conta.
     #[error("copia de outra conta")]
     BackupNotOwner,
@@ -609,6 +625,169 @@ impl Store {
         }
         let removed: Vec<usize> = pipe.query_async(&mut conn).await?;
         Ok(order.into_iter().zip(removed).filter(|(_, n)| *n > 0).map(|(id, _)| id).collect())
+    }
+}
+
+// ------------------------------------------------------------ comunidade (0.9.52)
+//
+// Chaves (so comandos que o ACL do relay ja permitia):
+//   {p}:csub:{id}               [8 recebido_em ms BE][envio selado], TTL 30 dias
+//   {p}:csubs                   lista dos ids (os que expiraram saem ao listar)
+//   {p}:csub_seq                contador dos ids
+//   {p}:csubday:{conta}:{dia}   envios de hoje desta conta (TTL 2 dias). Como nas denuncias,
+//                               e o unico sitio com a conta, e nao diz qual envio e dela.
+//   {p}:cver                    numero da lista atual, TTL 8 dias
+//   {p}:cindex                  indice cifrado, TTL 8 dias
+//   {p}:cphoto:{hash}           foto cifrada, TTL 8 dias (renovado em cada lista que a usa;
+//                               as que saem da lista expiram sozinhas)
+impl Store {
+    /// Guarda um envio da Comunidade (bytes opacos). Devolve o id.
+    pub async fn submit_community(&self, sender: &str, sealed: Vec<u8>) -> Result<u64, StoreError> {
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        let day_key = format!("{p}:csubday:{sender}:{}", today());
+        let (count, stored): (u64, usize) = redis::pipe()
+            .incr(&day_key, 1u64)
+            .expire(&day_key, 2 * 86_400)
+            .ignore()
+            .llen(format!("{p}:csubs"))
+            .query_async(&mut conn)
+            .await?;
+        if count > MAX_COMMUNITY_SUBMITS_PER_DAY {
+            return Err(StoreError::CommunityLimit);
+        }
+        if stored >= MAX_COMMUNITY_STORED {
+            return Err(StoreError::CommunityFull);
+        }
+        let id: u64 = conn.incr(format!("{p}:csub_seq"), 1u64).await?;
+        let key = format!("{p}:csub:{id}");
+        let mut value = now_ms().to_be_bytes().to_vec();
+        value.extend_from_slice(&sealed);
+        redis::pipe()
+            .set(&key, value)
+            .ignore()
+            .expire(&key, COMMUNITY_SUB_TTL_SECONDS as i64)
+            .ignore()
+            .rpush(format!("{p}:csubs"), id)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        Ok(id)
+    }
+
+    /// Envios com id maior do que `after`, ate `max_bytes` estimados. `more`: ha mais.
+    pub async fn list_community(
+        &self,
+        after: u64,
+        max_bytes: usize,
+    ) -> Result<(Vec<(u64, u64, Vec<u8>)>, bool), StoreError> {
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        let list = format!("{p}:csubs");
+        let ids: Vec<u64> = conn.lrange(&list, 0, -1).await?;
+        let mut out = Vec::new();
+        let mut budget = 0usize;
+        for id in ids.into_iter().filter(|id| *id > after) {
+            let raw: Option<Vec<u8>> = conn.get(format!("{p}:csub:{id}")).await?;
+            let Some(raw) = raw.filter(|r| r.len() > 8) else {
+                conn.lrem::<_, _, ()>(&list, 0, id).await?;
+                continue;
+            };
+            let est = raw.len().div_ceil(3) * 4 + 96; // base64 + JSON
+            if !out.is_empty() && budget + est > max_bytes {
+                return Ok((out, true));
+            }
+            budget += est;
+            let at = u64::from_be_bytes(raw[..8].try_into().unwrap_or_default());
+            out.push((id, at, raw[8..].to_vec()));
+        }
+        Ok((out, false))
+    }
+
+    pub async fn delete_community(&self, id: u64) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        redis::pipe()
+            .del(format!("{p}:csub:{id}"))
+            .ignore()
+            .lrem(format!("{p}:csubs"), 0, id)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        Ok(())
+    }
+
+    /// Numero da lista atual (0 = sem lista).
+    pub async fn community_version(&self) -> Result<u64, StoreError> {
+        let mut conn = self.connection().await?;
+        let v: Option<u64> = conn.get(format!("{}:cver", self.key_prefix)).await?;
+        Ok(v.unwrap_or(0))
+    }
+
+    /// O indice atual e o seu numero (`None` = sem lista).
+    pub async fn community_index(&self) -> Result<Option<(u64, Vec<u8>)>, StoreError> {
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        let (v, data): (Option<u64>, Option<Vec<u8>>) =
+            redis::pipe().get(format!("{p}:cver")).get(format!("{p}:cindex")).query_async(&mut conn).await?;
+        Ok(match (v, data) {
+            (Some(v), Some(d)) if v > 0 && !d.is_empty() => Some((v, d)),
+            _ => None,
+        })
+    }
+
+    /// Uma foto da lista (`None` = nao ha).
+    pub async fn community_photo(&self, hash: &str) -> Result<Option<Vec<u8>>, StoreError> {
+        let mut conn = self.connection().await?;
+        Ok(conn.get(format!("{}:cphoto:{hash}", self.key_prefix)).await?)
+    }
+
+    /// Mais 8 dias para estas fotos. Devolve as que o relay nao tem.
+    pub async fn community_keep(&self, hashes: &[String]) -> Result<Vec<String>, StoreError> {
+        if hashes.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        let mut pipe = redis::pipe();
+        for h in hashes {
+            pipe.expire(format!("{p}:cphoto:{h}"), COMMUNITY_TTL_SECONDS as i64);
+        }
+        let kept: Vec<bool> = pipe.query_async(&mut conn).await?;
+        Ok(hashes.iter().zip(kept).filter(|(_, k)| !k).map(|(h, _)| h.clone()).collect())
+    }
+
+    pub async fn community_put_photo(&self, hash: &str, data: Vec<u8>) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let key = format!("{}:cphoto:{hash}", self.key_prefix);
+        redis::pipe()
+            .set(&key, data)
+            .ignore()
+            .expire(&key, COMMUNITY_TTL_SECONDS as i64)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        Ok(())
+    }
+
+    /// A lista nova: indice e numero juntos (uma transacao), 8 dias.
+    pub async fn community_publish(&self, version: u64, index: Vec<u8>) -> Result<(), StoreError> {
+        let mut conn = self.connection().await?;
+        let p = &self.key_prefix;
+        let ttl = COMMUNITY_TTL_SECONDS as i64;
+        redis::pipe()
+            .atomic()
+            .set(format!("{p}:cindex"), index)
+            .ignore()
+            .expire(format!("{p}:cindex"), ttl)
+            .ignore()
+            .set(format!("{p}:cver"), version)
+            .ignore()
+            .expire(format!("{p}:cver"), ttl)
+            .ignore()
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        Ok(())
     }
 }
 

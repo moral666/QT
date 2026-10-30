@@ -18,6 +18,12 @@
 "call_diag_title" = "कॉल निदान";
 "call_mic_lost" = "माइक्रोफ़ोन ने काम करना बंद कर दिया (हो सकता है कोई दूसरा ऐप इसका इस्तेमाल कर रहा हो)। सामने वाले को अब आपकी आवाज़ सुनाई नहीं दे रही है।";
 "call_minimize" = "छोटा करें";
+"call_route_headphones" = "हेडफ़ोन";
+"call_route_phone" = "फ़ोन";
+"call_route_title" = "ऑडियो आउटपुट";
+"community_empty" = "कम्युनिटी अभी खाली है।";
+"community_subtitle" = "Sealer बैज वाले लोग, उनकी फ़ोटो और बैज के साथ।";
+"community_title" = "कम्युनिटी";
 "confirm_word" = "हटाएं";
 "confirm_word_alt" = "हटायें,हटाये,हटाए,DELETE";
 "contacts_unreadable_new" = "नई लिस्ट शुरू करें";

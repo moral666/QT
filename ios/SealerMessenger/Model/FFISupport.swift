@@ -8,6 +8,8 @@ extension NoiseSession: @unchecked Sendable {}
 extension ChatMessage: @unchecked Sendable {}
 extension ConversationSummary: @unchecked Sendable {}
 extension OutboxItem: @unchecked Sendable {}
+extension CommunityMember: @unchecked Sendable {}
+extension CommunityPhotoBlob: @unchecked Sendable {}
 extension RelayResponse: @unchecked Sendable {}
 extension RelayDelivered: @unchecked Sendable {}
 extension ReceiveResult: @unchecked Sendable {}
@@ -81,6 +83,10 @@ extension RelayResponse {
         case .backupNotFound: return "BackupNotFound"
         case .premium: return "Premium"
         case .fichas: return "Fichas"
+        case .communityVersion: return "CommunityVersion"
+        case .communityIndex: return "CommunityIndex"
+        case .communityNone: return "CommunityNone"
+        case .communityPhotos: return "CommunityPhotos"
         }
     }
 }

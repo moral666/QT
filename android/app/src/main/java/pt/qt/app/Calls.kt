@@ -58,8 +58,12 @@ private const val TAG = "SealerCall"
  * A fonte VOICE_COMMUNICATION liga o cancelamento de eco e de ruido do proprio telemovel
  * (e ainda se pedem os efeitos explicitamente, quando existem). A saida e de voz
  * (USAGE_VOICE_COMMUNICATION): auricular por omissao, altifalante a pedido.
+ *
+ * `managed` (0.9.52): a chamada esta no sistema de chamadas do Android (SystemCalls). O modo de
+ * chamada, o foco do audio e o caminho do som (auricular, altifalante, Bluetooth) sao do Telecom:
+ * aqui nao se mexe neles, so se espera pelo modo de chamada antes de criar o microfone.
  */
-class CallAudioIO(ctx: Context, private val audio: CallAudio) {
+class CallAudioIO(private val ctx: Context, private val audio: CallAudio, private val managed: Boolean = false) {
     private val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     @Volatile private var running = false
     @Volatile var muted = false
@@ -80,8 +84,13 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
         val frame = callFrameBytes().toInt()
         // Modo de chamada e foco ANTES de criar o microfone e o altifalante: mudar o modo
         // depois reencaminha o audio a meio e em muitos telemoveis o microfone para ~0,5 s.
-        am.mode = AudioManager.MODE_IN_COMMUNICATION
-        requestFocus()
+        // No sistema de chamadas e o Telecom que os poe: so se espera pelo modo.
+        if (managed) {
+            SystemCalls.awaitCommMode(ctx)
+        } else {
+            am.mode = AudioManager.MODE_IN_COMMUNICATION
+            requestFocus()
+        }
         val minRec = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         // 200 ms de folga: se a thread do microfone se atrasar, as amostras ficam a espera
         // em vez de se perderem (nao acrescenta atraso, le-se assim que ha 20 ms).
@@ -91,14 +100,12 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minRec, frame * 10),
             )
         } catch (e: Exception) {
-            am.mode = AudioManager.MODE_NORMAL
-            abandonFocus()
+            leaveMode()
             throw e
         }
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release()
-            am.mode = AudioManager.MODE_NORMAL
-            abandonFocus()
+            leaveMode()
             throw IllegalStateException("microfone indisponivel")
         }
         val minTrack = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -122,8 +129,7 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
                 .build()
         } catch (e: Exception) {
             rec.release()
-            am.mode = AudioManager.MODE_NORMAL
-            abandonFocus()
+            leaveMode()
             throw e
         }
         if (AcousticEchoCanceler.isAvailable()) aec = AcousticEchoCanceler.create(rec.audioSessionId)?.apply { setEnabled(true) }
@@ -181,8 +187,17 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
         }
     }
 
-    /** Altifalante (true) ou auricular (false). */
-    fun setSpeaker(on: Boolean) = CallRoute.speaker(am, on)
+    /** Altifalante (true) ou auricular (false). No sistema de chamadas a saida e escolhida por la. */
+    fun setSpeaker(on: Boolean) {
+        if (!managed) CallRoute.speaker(am, on)
+    }
+
+    /** Fora do modo de chamada (so sem o sistema de chamadas: com ele e o Telecom que o faz). */
+    private fun leaveMode() {
+        if (managed) return
+        am.mode = AudioManager.MODE_NORMAL
+        abandonFocus()
+    }
 
     private fun requestFocus() {
         if (Build.VERSION.SDK_INT >= 26) {
@@ -215,8 +230,7 @@ class CallAudioIO(ctx: Context, private val audio: CallAudio) {
         ns?.release()
         ns = null
         runCatching { setSpeaker(false) }
-        abandonFocus()
-        am.mode = AudioManager.MODE_NORMAL
+        leaveMode()
     }
 
     private fun abandonFocus() {
@@ -297,10 +311,13 @@ class CallSounds(private val ctx: Context) {
      * "tuu... tuu" de quem liga. Desde a 0.9.30 o telemovel entra logo em modo de chamada: o toque
      * sai pelo auricular (ou pelo altifalante, se `speaker`) e o botao do altifalante ja funciona
      * antes de atender. As outras apps baixam o som, como numa chamada normal.
+     *
+     * `managed` (0.9.52): a chamada esta no sistema de chamadas, que ja pos o modo de chamada e
+     * escolheu a saida (ex.: o auricular Bluetooth). Aqui so toca o "tuu... tuu".
      */
-    fun ringback(speaker: Boolean = false) {
+    fun ringback(speaker: Boolean = false, managed: Boolean = false) {
         stop(keepRoute = true)
-        runCatching {
+        if (!managed) runCatching {
             am.mode = AudioManager.MODE_IN_COMMUNICATION
             routed = true
             requestFocus()
@@ -334,6 +351,8 @@ class CallSounds(private val ctx: Context) {
 
     /** Som do telemovel de volta ao normal (auricular desligado, fora do modo de chamada). */
     fun leaveRoute() {
+        // Numa chamada GSM o modo e dela: mexer-lhe cortava o som dessa chamada (0.9.52).
+        if (am.mode == AudioManager.MODE_IN_CALL) return
         runCatching { CallRoute.speaker(am, false) }
         runCatching { am.mode = AudioManager.MODE_NORMAL }
     }
@@ -617,12 +636,25 @@ object CallNotify {
         )
     }
 
-    private fun activityIntent(ctx: Context, action: String, code: Int): PendingIntent {
-        val i = Intent(ctx, MainActivity::class.java)
+    /** Abre a app com uma acao da chamada (so as notificacoes e o sistema de chamadas da app). */
+    fun activityLaunch(ctx: Context, action: String): Intent =
+        Intent(ctx, MainActivity::class.java)
             .setAction(action)
             .putExtra(EXTRA_TOKEN, SealerCore.intentToken)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        return PendingIntent.getActivity(ctx, code, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+    private fun activityIntent(ctx: Context, action: String, code: Int): PendingIntent =
+        PendingIntent.getActivity(ctx, code, activityLaunch(ctx, action), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+    /**
+     * Atendeu-se no sistema (auricular, carro) com a app fora do ecra: abre a app para atender,
+     * como o "Atender" da notificacao (o microfone e o servico da chamada precisam dela no ecra).
+     * O Android pode nao deixar abrir de fora do ecra; o "Atender" fica guardado e a app atende
+     * assim que for aberta (a notificacao de ecra inteiro continua la).
+     */
+    fun openToAnswer(ctx: Context) {
+        runCatching { ctx.startActivity(activityLaunch(ctx, ACTION_ANSWER)) }
+            .onFailure { Log.w(TAG, "abrir para atender: ${it.javaClass.simpleName}") }
     }
 
     /**

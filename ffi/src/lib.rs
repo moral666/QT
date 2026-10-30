@@ -38,6 +38,7 @@ pub mod profile;
 pub mod recovery;
 pub mod report;
 pub mod badges;
+pub mod community;
 pub mod history;
 #[cfg(feature = "pq")]
 pub use client::*;

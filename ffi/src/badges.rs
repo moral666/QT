@@ -69,11 +69,21 @@ pub fn set_test_issuer(public_key: [u8; 32]) {
 }
 
 fn verify(cert: &[u8]) -> Option<BadgeCert> {
+    qb::verify_with(&issuer_key(), cert)
+}
+
+/// Chave publica do emissor (a fixa; nos testes de debug, a de `set_test_issuer`). Tambem
+/// assina a lista da Comunidade.
+pub(crate) fn issuer_key() -> [u8; 32] {
     #[cfg(debug_assertions)]
     if let Some(k) = TEST_ISSUER.get() {
-        return qb::verify_with(k, cert);
+        return *k;
     }
-    qb::verify(cert)
+    qb::ISSUER_PUBLIC_KEY
+}
+
+pub(crate) fn verify_cert(cert: &[u8]) -> Option<BadgeCert> {
+    verify(cert)
 }
 
 fn get_i64(c: &st::rusqlite::Connection, key: &str) -> Result<Option<i64>, QtError> {

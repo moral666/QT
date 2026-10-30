@@ -424,4 +424,12 @@
     <string name="call_diag_copy">निदान कॉपी करें</string>
     <string name="call_diag_copy_last">पिछली कॉल का निदान कॉपी करें</string>
     <string name="call_diag_copied">निदान कॉपी हो गया</string>
+    <!-- Saida do som da chamada (0.9.52): lista com Bluetooth ou auscultadores. -->
+    <string name="call_route_title">ऑडियो आउटपुट</string>
+    <string name="call_route_phone">फ़ोन</string>
+    <string name="call_route_headphones">हेडफ़ोन</string>
+    <!-- Comunidade (0.9.52): pessoas com medalha, so foto e medalha. -->
+    <string name="community_title">कम्युनिटी</string>
+    <string name="community_subtitle">Sealer बैज वाले लोग, उनकी फ़ोटो और बैज के साथ।</string>
+    <string name="community_empty">कम्युनिटी अभी खाली है।</string>
 </resources>

@@ -18,6 +18,12 @@
 "call_diag_title" = "通話の診断";
 "call_mic_lost" = "マイクが使えなくなりました（ほかのアプリが使用している可能性があります）。相手にはあなたの声が聞こえていません。";
 "call_minimize" = "最小化";
+"call_route_headphones" = "ヘッドホン";
+"call_route_phone" = "スマートフォン";
+"call_route_title" = "音声の出力先";
+"community_empty" = "コミュニティはまだ空です。";
+"community_subtitle" = "Sealerのバッジを持つ人たち（写真とバッジのみ）。";
+"community_title" = "コミュニティ";
 "confirm_word" = "削除";
 "confirm_word_alt" = "さくじょ";
 "contacts_unreadable_new" = "新しいリストを始める";

@@ -424,4 +424,12 @@
     <string name="call_diag_copy">نسخ التشخيص</string>
     <string name="call_diag_copy_last">نسخ تشخيص آخر مكالمة</string>
     <string name="call_diag_copied">تم نسخ التشخيص</string>
+    <!-- Saida do som da chamada (0.9.52): lista com Bluetooth ou auscultadores. -->
+    <string name="call_route_title">مخرج الصوت</string>
+    <string name="call_route_phone">الهاتف</string>
+    <string name="call_route_headphones">سماعات الرأس</string>
+    <!-- Comunidade (0.9.52): pessoas com medalha, so foto e medalha. -->
+    <string name="community_title">المجتمع</string>
+    <string name="community_subtitle">الأشخاص الذين لديهم شارة في Sealer، مع صورتهم وشارتهم.</string>
+    <string name="community_empty">المجتمع لا يزال فارغًا.</string>
 </resources>

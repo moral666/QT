@@ -82,7 +82,8 @@ O desenho aceita mais relays. O protocolo entre relays está na secção 25 de [
 **A seguir:**
 
 
-- No Android, a integração com o sistema de chamadas (Bluetooth, carro).
+- No Android, testar nos telemóveis a integração com o sistema de chamadas (Bluetooth, carro, chamada normal ao mesmo tempo), feita na 0.9.52.
+- Testar nos telemóveis a Comunidade (as pessoas com medalha, só com foto e medalha), feita na 0.9.52 nas duas apps.
 - Distribuição pela Google Play e pela App Store (hoje a app é instalada à mão pelos testadores). Já preparado: [`docs/google-play.md`](docs/google-play.md).
 - Servidor de produção com backups e alertas.
 

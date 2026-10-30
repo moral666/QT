@@ -426,4 +426,12 @@
     <string name="call_diag_copy">Copy diagnostics</string>
     <string name="call_diag_copy_last">Copy last call diagnostics</string>
     <string name="call_diag_copied">Diagnostics copied</string>
+    <!-- Saida do som da chamada (0.9.52): lista com Bluetooth ou auscultadores. -->
+    <string name="call_route_title">Audio output</string>
+    <string name="call_route_phone">Phone</string>
+    <string name="call_route_headphones">Headphones</string>
+    <!-- Comunidade (0.9.52): pessoas com medalha, so foto e medalha. -->
+    <string name="community_title">Community</string>
+    <string name="community_subtitle">People with a Sealer badge, shown with their photo and badge.</string>
+    <string name="community_empty">The Community is still empty.</string>
 </resources>

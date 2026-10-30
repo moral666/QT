@@ -140,6 +140,8 @@ struct AppRoot: View {
             SetupScreen(ui: ui, onCreate: model.createIdentity, onRestore: { showRestore = true })
         } else if ui.showPremium {
             PremiumScreen(ui: ui, onBack: model.closePremium)
+        } else if ui.showCommunity {
+            CommunityScreen(ui: ui, onBack: model.closeCommunity)
         } else if let g = openGroup, showGroupInfo {
             GroupInfoScreen(ui: ui, group: g, onBack: { showGroupInfo = false },
                             onUpdate: { name, members in model.updateGroup(g.groupId, name: name, members: members) },
@@ -181,6 +183,7 @@ struct AppRoot: View {
                 onLockSettings: { showLockSettings = true }, onLockNow: model.lockNow,
                 onRecovery: { showRecovery = true },
                 onPremium: model.openPremium,
+                onCommunity: model.openCommunity,
                 onUnblock: model.unblockContact, onPresence: model.setPresence, onReadReceipts: model.setReadReceipts,
                 onPush: model.setPush,
                 onLanguage: { if let u = URL(string: UIApplication.openSettingsURLString) { openURL(u) } },

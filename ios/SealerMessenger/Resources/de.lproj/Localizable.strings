@@ -18,6 +18,12 @@
 "call_diag_title" = "Anrufdiagnose";
 "call_mic_lost" = "Das Mikrofon funktioniert nicht mehr (vielleicht nutzt es eine andere App). Die andere Person hört dich nicht mehr.";
 "call_minimize" = "Minimieren";
+"call_route_headphones" = "Kopfhörer";
+"call_route_phone" = "Telefon";
+"call_route_title" = "Audioausgabe";
+"community_empty" = "Die Community ist noch leer.";
+"community_subtitle" = "Personen mit einem Sealer-Abzeichen, mit Foto und Abzeichen.";
+"community_title" = "Community";
 "confirm_word" = "LÖSCHEN";
 "confirm_word_alt" = "";
 "contacts_unreadable_new" = "Neue Liste beginnen";

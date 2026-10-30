@@ -51,6 +51,11 @@ const KV_PHOTO: &str = "profile:photo:";
 /// Quando aceitei a ultima foto deste contacto (hora local, ms).
 const KV_PHOTO_AT: &str = "profile:photo_at:";
 
+/// A minha foto (a Comunidade envia esta mesma miniatura).
+pub(crate) fn my_photo(c: &st::rusqlite::Connection) -> Result<Option<Vec<u8>>, QtError> {
+    Ok(st::kv_get(c, KV_MY_PHOTO)?)
+}
+
 fn get_i64(c: &st::rusqlite::Connection, key: &str) -> Result<Option<i64>, QtError> {
     Ok(st::kv_get(c, key)?.and_then(|v| v.try_into().ok()).map(i64::from_be_bytes))
 }

@@ -19,6 +19,10 @@
 //! A ferramenta tem uma identidade propria (`--db`, por omissao badge-emissor.db) e envia o
 //! certificado a pessoa pelo relay, cifrado, como uma mensagem normal. A app guarda-o e
 //! envia-o aos seus contactos. O relay nao sabe que e um badge e nao guarda nada.
+//!
+//! Registo (0.9.52): cada badge entregue fica numa linha de `<db>.registo`, ao lado da base de
+//! dados (so neste PC). A ferramenta `comunidade` usa-o para saber se um badge foi retirado ou
+//! substituido depois (o certificado antigo continua valido, so o registo o sabe).
 
 use futures_util::{SinkExt, StreamExt};
 use qt_core::badge;
@@ -226,7 +230,7 @@ async fn cmd_dar() {
             k
         }
     };
-    let qt = QtClient::open(db, db_key).unwrap_or_else(|e| die(&format!("base de dados: {e}")));
+    let qt = QtClient::open(db.clone(), db_key).unwrap_or_else(|e| die(&format!("base de dados: {e}")));
     if !qt.has_identity().unwrap_or(false) {
         qt.create_identity().unwrap_or_else(|e| die(&e.to_string()));
     }
@@ -283,11 +287,33 @@ async fn cmd_dar() {
     if sent == 0 {
         die("nada foi entregue ao relay; tenta outra vez");
     }
+    registar(&db, &cid, &user, num, now);
     println!(
         "Feito: {} para {}… (chega quando a app abrir).",
         arg("--badge").unwrap_or_default(),
         &cid[..12]
     );
+}
+
+/// Uma linha JSON por badge entregue (ver o cabecalho): membro, ID, badge e data.
+fn registar(db: &str, cid: &str, user: &str, num: u8, issued_at: i64) {
+    use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::OpenOptionsExt;
+    let path = format!("{db}.registo");
+    let mut o = std::fs::OpenOptions::new();
+    o.create(true).append(true);
+    #[cfg(unix)]
+    o.mode(0o600);
+    let line = format!(
+        "{{\"membro\":\"{cid}\",\"id\":\"{}\",\"badge\":{num},\"emitido_em_ms\":{issued_at}}}\n",
+        user.trim().to_lowercase()
+    );
+    match o.open(&path).and_then(|mut f| f.write_all(line.as_bytes())) {
+        Ok(()) => {}
+        // O badge ja foi entregue: so avisa (a Comunidade ainda o aceita pelo certificado).
+        Err(e) => eprintln!("AVISO: nao foi possivel escrever o registo {path}: {e}"),
+    }
 }
 
 #[tokio::main]

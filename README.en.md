@@ -82,7 +82,8 @@ The design accepts more relays. The relay-to-relay protocol is in section 25 of 
 **Next:**
 
 
-- On Android, integration with the system call service (Bluetooth, car).
+- On Android, testing on real phones the integration with the system call service (Bluetooth, car, a regular call at the same time), done in 0.9.52.
+- Testing on real phones the Community (people with a badge, shown only with their photo and badge), done in 0.9.52 in both apps.
 - Distribution through Google Play and the App Store (today testers install the app by hand). Already prepared: [`docs/google-play.md`](docs/google-play.md).
 - Production server with backups and alerts.
 
