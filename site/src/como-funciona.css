@@ -23,6 +23,7 @@
   margin: 0 auto;
   padding: 1.5rem 0 4rem;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.25rem;
 }
 
@@ -540,9 +541,25 @@
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 
+/* Mapa animado da federacao (Estocolmo e Espanha), por baixo do texto. */
+.cf-federacao__video {
+  display: block;
+  width: min(440px, 100%);
+  height: auto;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  border-radius: 20px;
+  background: #0d0a1c;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cf-federacao__video { display: none; }
+}
+
 /* Ecras da app (0.9.11): quatro capturas lado a lado; num ecra estreito deslizam na horizontal.
    As margens automaticas do primeiro e do ultimo centram a fila quando cabe. */
 .cf-ecras {
+  width: 100%;
   max-width: 64rem;
   margin: 2.5rem auto 0;
   text-align: center;
