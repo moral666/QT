@@ -387,6 +387,14 @@ impl CallAudio {
             e.p2p_set_peer(peer);
         }
     }
+
+    /// Pacotes recebidos do outro lado ate agora (audio e imagens). O audio nunca para (sem DTX:
+    /// o silencio e o microfone desligado tambem enviam), por isso um numero que nao muda quer
+    /// dizer que o outro deixou de estar la. `None`: o motor ja parou.
+    pub(crate) fn heard(&self) -> Option<u64> {
+        let e = self.engine()?;
+        Some(e.stats().received + e.video_stats().recv.frames)
+    }
 }
 
 #[uniffi::export]

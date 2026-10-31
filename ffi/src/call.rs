@@ -312,6 +312,14 @@ impl Calls {
         self.cur.is_some()
     }
 
+    /// O nucleo vai fechar: o motor da chamada para (ver `Drop for QtClient`).
+    #[cfg(feature = "calls")]
+    pub(crate) fn stop_media(&self) {
+        if let Some(a) = self.cur.as_ref().and_then(|k| k.audio.as_ref()) {
+            a.stop();
+        }
+    }
+
     /// Ja ha motor para a chamada `id`?
     #[cfg(feature = "calls")]
     pub(crate) fn has_engine(&self, id: &[u8; 16]) -> bool {

@@ -224,6 +224,20 @@ pub struct QtClient {
     pub(crate) ephemeral_signing: Mutex<Option<SigningKeyPair>>,
 }
 
+/// Fechar o nucleo (a app fecha a base de dados) para tambem o audio e o video das chamadas, a
+/// dois e de grupo. Sem o nucleo nao ha sinalizacao (nem "desligar" nem "sai"), e um motor que
+/// ficasse a correr continuava a enviar o microfone (e a camara) aos outros, sem ecra nenhum
+/// para desligar.
+impl Drop for QtClient {
+    fn drop(&mut self) {
+        #[cfg(feature = "calls")]
+        {
+            self.calls.get_mut().unwrap_or_else(|e| e.into_inner()).stop_media();
+            self.group_calls.get_mut().unwrap_or_else(|e| e.into_inner()).stop_media();
+        }
+    }
+}
+
 pub(crate) fn parse_public_id(id: &str) -> Result<([u8; 32], [u8; 32]), QtError> {
     // Maiusculas ("QT1:ABC...", como no QR) sao o mesmo ID (0.9.23). As apps guardam-no em
     // minusculas, para o contactId ser igual ao do nucleo.

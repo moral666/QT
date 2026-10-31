@@ -6,6 +6,34 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 31 de outubro de 2026: correções das chamadas de grupo e do deploy (Android e iPhone 0.9.68, build 68)
+
+- **Fechar a app a meio de uma chamada de grupo (Android):** o microfone, a câmara e o serviço da
+  chamada param logo e o "sai" chega aos outros em segundo plano, antes de fechar o núcleo (como o
+  "desligou" das chamadas a dois). Antes a captura continuava sem ecrã nenhum para desligar. O
+  "Desligar" da notificação passa a servir também as chamadas de grupo. No núcleo, fechar a base
+  de dados (`Drop` do `QtClient`) pára os motores de todas as chamadas, a dois e de grupo. iPhone:
+  o bloqueio já não fecha a base de dados durante uma chamada de grupo.
+- **"Ocupado" depois de um convite de grupo em segundo plano:** o toque de grupo só expirava quando
+  o ecrã perguntava, e com a app fechada as chamadas a dois (e os convites novos) davam "ocupado"
+  até abrir a app. Agora um toque fora de prazo acaba sozinho (chamada perdida).
+- **Quem sai sem avisar** (sem rede, sem bateria, app fechada à força) deixa a chamada de grupo ao
+  fim de 60 s sem nada chegar dele, como se tivesse enviado "sai"; o mesmo para uma perna sem
+  resposta. Quem sai deixa também a mistura do som, o vídeo e "quem fala".
+- A oferta de perna só é aceite de membros do grupo (como o convite e o "entrei"). Não se entra
+  numa chamada de grupo durante uma chamada a dois.
+- **Deploy (`deploy/aws/setup-ec2.sh`):** o ramo por omissão passa a `main`. Os limites do
+  `relay.env` (`RELAY_MAX_CONNECTIONS` e os três dos anexos) ficam nas atualizações (10 000 ligações
+  só na primeira instalação; o travão decidido é 25 000 por relay, uma ligação por app). Voltam as
+  afinações do teste de carga de 29/10 que se tinham perdido: `maxconn` do HAProxy = travão do relay
+  + 3000 (global e backend do relay) e `maxsslrate 300`, ajustáveis com `HAPROXY_MAXCONN` e
+  `HAPROXY_MAXSSLRATE` e mostrados no registo; `vm.overcommit_memory = 1` no sysctl; no Redis,
+  `auto-aof-rewrite-percentage 200` (com o `save ""` e o `auto-aof-rewrite-min-size 256mb` que já
+  havia).
+- Testes novos em `ffi/src/group_call.rs`: toque de grupo esquecido não deixa ocupado, quem
+  desaparece sai da chamada, fechar o núcleo pára o microfone, oferta de quem não é do grupo
+  ignorada, não se entra no grupo durante uma chamada a dois.
+
 ### 31 de outubro de 2026: nomes e ligações nas chamadas de grupo (Android e iPhone 0.9.67)
 
 - Membros do grupo que não são contactos um do outro (e nunca escreveram no grupo) não tinham

@@ -4,7 +4,8 @@
  *   grelha + início    o logótipo, o nome e a frase ao centro, sobre a grelha escurecida;
  *   grelha + explorar  ao primeiro arrasto, roda, tecla ou toque, o logótipo sai de cena e
  *                      a grelha fica em primeiro plano; o nome passa para o canto;
- *   lista              as mesmas janelas em texto corrido, com scroll normal (#lista).
+ *   lista              as mesmas janelas em texto corrido, com scroll normal. É o modo por
+ *                      omissão; a grelha abre com #grelha (o #lista antigo continua a dar a lista).
  *
  * As classes vão para <html>: mode-grid ou mode-list, e is-exploring.
  * O modo inicial é escolhido por um script mínimo no <head> do index.html,
@@ -55,7 +56,7 @@ export function initLayout({ setLogoActive }) {
     setLogoActive(true);
     window.scrollTo(0, 0);
     if (updateHash) {
-      const url = next === 'list' ? '#lista' : location.pathname + location.search;
+      const url = next === 'grid' ? '#grelha' : location.pathname + location.search;
       history.replaceState(null, '', url);
     }
   }
@@ -99,7 +100,7 @@ export function initLayout({ setLogoActive }) {
   });
 
   window.addEventListener('hashchange', () => {
-    setMode(location.hash === '#lista' ? 'list' : 'grid', { updateHash: false });
+    setMode(location.hash === '#grelha' ? 'grid' : 'list', { updateHash: false });
   });
 
   setMode(mode, { updateHash: false });

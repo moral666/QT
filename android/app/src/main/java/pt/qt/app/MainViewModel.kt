@@ -3280,8 +3280,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val c = _ui.value.call
         val client = qt
         val endCall = client != null && c != null && c.phase != CallPhase.ENDED
-        closeSession(closeCore = owner && !endCall)
-        if (endCall) SealerCore.hangupInBackground(getApplication(), client!!, c!!.callId, closeAfter = owner)
+        // Chamada de grupo a meio: o microfone e a camara param ja e o "sai" vai aos outros em
+        // segundo plano, antes de fechar o nucleo. Antes nada disto acontecia: a captura continuava
+        // a enviar sem ecra nenhum para desligar (o botao da notificacao so servia as chamadas a dois).
+        val groupCallId = groupCalls.closeForScreenGone()
+        val endGroup = client != null && groupCallId != null
+        closeSession(closeCore = owner && !endCall && !endGroup)
+        if (endCall) SealerCore.hangupInBackground(getApplication(), client!!, c!!.callId, closeAfter = owner && !endGroup)
+        if (endGroup) SealerCore.leaveGroupCallInBackground(getApplication(), client!!, groupCallId!!, closeAfter = owner)
         pendingBioKey?.fill(0)
     }
 
