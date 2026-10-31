@@ -48,7 +48,8 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     envia). Os dois relays são do mesmo operador, por isso a pressão legal continua num só sítio.
     Cada relay fica a saber que alguém do outro procura uma conta sua (não quem) e quando lhe chega
     uma mensagem do outro relay. Uma conta registada com um par em baixo e depois largada (porque o
-    outro relay já a tinha) perde as mensagens que estavam na fila do relay que a largou.
+    outro relay já a tinha) perde as mensagens que estavam na fila do relay que a largou. Desde a
+    0.9.69, as contas novas ficam no relay que responde mais depressa (ver 48).
 15. **`ws://` nos testes.** Produção: `wss://` + pinning da chave Noise.
 16. **A chave estática Noise do relay está em ficheiro** (0600), sem HSM.
 17. **Redis:** no deploy (`deploy/redis/qt-redis.conf`) escuta só em `127.0.0.1`, com o utilizador
@@ -56,11 +57,17 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     máquina). As filas são ciphertext, mas quem chegar ao Redis pode apagar ou atrasar mensagens.
 18. **Mensagens de texto ≤ 10 000 bytes** (JSON dentro de um frame Noise de 64 KiB).
     Imagens e GIFs ate 25 MiB seguem por outro caminho (ver 36).
-46. **Vídeo das chamadas só pela ligação direta (desde a 0.9.53).** Só há vídeo entre contactos
+46. **Vídeo das chamadas a dois só pela ligação direta (desde a 0.9.53).** Só há vídeo entre contactos
     mútuos e quando os dois telemóveis se conseguem ligar diretamente. Em redes que não o deixam
     (algumas operadoras móveis, redes de empresas ou públicas que fecham o UDP), ou com quem não é
     contacto mútuo, a chamada continua só com voz pelo relay e o vídeo fica em pausa, sem aviso no
     ecrã. Não há reserva de vídeo pelo servidor (nem TURN).
+48. **Conta nova no relay mais rápido (desde a 0.9.69): a recuperação não mede sempre.** Na
+    recuperação com as 12 palavras, a app começa no relay guardado (num telemóvel novo, o
+    principal) e só mede os relays quando esse relay responde "sem contas novas". O relay responde
+    da mesma forma a uma conta que existe e a uma criada nesse momento, por isso, se o relay
+    principal aceitar contas novas, uma conta recuperada que já não exista fica criada nele, sem
+    medir. Hoje o principal (Estocolmo) está fechado a contas novas, e isto não acontece.
 
 ## Android / app
 19. ~~**`build-android.sh` não foi executado**~~ (resolvido): é o script usado para as APKs
@@ -176,3 +183,8 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     textos legais vale a versão portuguesa. Erros de tradução: Definições → "Reportar erro de
     tradução", ou o link no fim das páginas do site traduzido. O árabe é a única língua escrita da
     direita para a esquerda; os ecrãs foram adaptados.
+47. **Chamadas de grupo (desde a 0.9.62).** Com a app fechada, uma chamada de grupo não toca (só
+    as chamadas a dois). No iPhone, as chamadas de grupo ainda não usam o CallKit. Quem fica 60 s
+    sem rede sai da chamada (pode voltar a entrar enquanto ela decorre). Se duas pessoas entrarem
+    ao mesmo tempo quando já há 4 na chamada, as duas entram e algumas pessoas não se ouvem umas às
+    outras. É raro.

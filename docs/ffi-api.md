@@ -1,117 +1,134 @@
-# Referência da API FFI (`QtClient`, UniFFI)
+# Referência da API FFI (`qt_ffi`, UniFFI)
 
-Crate `qt_ffi`: `ffi/src/client.rs` (identidade, sessões, relay),
-`ffi/src/history.rs` (histórico e fila de saída), `ffi/src/attachments.rs`
-(imagens e GIFs) e `ffi/src/applock.rs` (bloqueio da app). Tipos: `bytes`,
-`string`, `records`, `enums` e erros; nenhuma estrutura interna do Rust é
-exposta. Nomes Kotlin e Swift em camelCase (`createIdentity`, `startSession`, …).
-Todas as chamadas são síncronas e *thread-safe* (correr fora da thread da interface).
+Índice da API que as apps Android e iPhone usam (0.9.69). O crate `qt_ffi` expõe só `bytes`,
+`string`, records, enums e erros; nenhuma estrutura interna do Rust passa para as apps. Em Kotlin
+e Swift os nomes ficam em camelCase (`create_identity` → `createIdentity`). As chamadas são
+síncronas e *thread-safe*: as apps correm-nas fora da thread da interface.
 
-## Objeto `QtClient`: identidade, sessões e relay
+Quase tudo é um método do objeto `QtClient`, dividido por ficheiros em `ffi/src/`. Os formatos
+estão em [`protocol-spec.md`](protocol-spec.md) (a secção indicada em cada parte).
 
-| Método | Descrição |
+**Features do crate:** `pq` (por omissão: `QtClient` com PQXDH), `calls` (chamadas de voz e de
+grupo, motor `qt_call`), `video` (videochamadas) e `legacy-api` (API antiga com chaves em bytes,
+só para testes; nunca nas builds das apps). As apps compilam com `pq,calls,video`.
+
+## `client.rs`: identidade, sessões e relay (§8 a §11)
+
+| Método | O que faz |
 |---|---|
-| `QtClient.open(path, storageKey: 32 bytes)` | Abre/cria o storage SQLCipher com chave binária. `storageKey` é apagado da memória Rust após o uso. Erro `InvalidInput("storage_key")` se ≠ 32 bytes; `Storage` se a chave estiver errada ou o ficheiro corrompido. Os anexos ficam em `<path>.anexos/`. |
-| `hasIdentity()` | Existe identidade? |
-| `createIdentity() → PublicIdentity` | Gera identidade (X25519+Ed25519), signed pre-key e prekey ML-KEM-768. `IdentityExists` se já houver. |
-| `exportPublicIdentity() → PublicIdentity` | Só dados públicos. |
-| `deleteIdentity()` | Apaga identidade, prekeys, sessões, histórico, chave Noise e a pasta dos anexos (`secure_delete` + `VACUUM`). |
-| `generatePrekeyBundle(count) → PublishedBundle` | Gera `count` (≤ 500) one-time prekeys novas com ids nunca reutilizados e devolve o bundle público. As privadas ficam no storage. |
-| `publishableBundle() → bytes` | Bundle binário v3 (1349 bytes, sem one-time prekeys) para registar no relay. |
-| `startSession(publicId, PeerBundle) → contactId` | Verifica o bundle contra o QT Public ID e a assinatura; executa PQXDH (X25519 + ML-KEM-768) e cria a sessão Double Ratchet. Os dois lados partilham o mesmo segredo; a app nunca o vê. |
-| `hasSession(contactId)` / `deleteSession(contactId)` | |
-| `safetyNumber(peerPublicId) → string` | 60 dígitos para comparar com o contacto por outro canal ("Verificar segurança"). |
-| `encrypt(contactId, plaintext) → envelope` | Cifra e **avança e persiste** o ratchet atomicamente. Plaintext ≤ 10 000 bytes. |
-| `decrypt(contactId, envelope) → plaintext` | Rejeita replay (`Replay`) e corrupção; uma falha **não** altera o estado. Cria a sessão no 1.º envelope de um contacto novo. |
-| `encryptSealed(contactId, plaintext) → blob` | Como `encrypt`, com a identidade do remetente numa caixa selada para o destinatário. |
-| `decryptSealed(blob) → SealedDecrypted{contactId, plaintext}` | Abre a caixa, identifica o remetente, decifra. |
-| `relayNoiseSession() → NoiseSession` | Sessão Noise (iniciador) com a chave estática Noise do dispositivo (guardada no storage). |
-| `relayUserId()` | Caixa de correio no relay (`hex(signing_public)`). |
-| `relayAuthMessage(handshakeHash)` | 1.ª mensagem de cada ligação ao relay (assinatura ligada ao handshake). |
-| `relayRequestRegisterBundle / FetchBundle / Send / Fetch / Ack` | Constroem os pedidos ao relay (bytes a cifrar com o `NoiseSession`). Confirmar (`Ack`) só depois de processar cada mensagem. |
+| `QtClient.open(path, storageKey)` | Abre ou cria o SQLCipher com a chave binária de 32 bytes (apagada da memória do Rust depois do uso). Os anexos ficam em `<path>.anexos/`. |
+| `hasIdentity()` / `createIdentity()` / `exportPublicIdentity()` / `deleteIdentity()` | Identidade X25519 + Ed25519, signed pre-key e prekey ML-KEM-768. Apagar leva tudo: chaves, sessões, histórico e anexos. |
+| `generatePrekeyBundle(count)` / `publishableBundle()` | One-time prekeys novas (≤ 500) e o bundle v4 (1361 bytes) para o relay. |
+| `startSession(publicId, PeerBundle)` / `hasSession` / `deleteSession` | Verifica o bundle contra o QT Public ID e a assinatura e faz o PQXDH. |
+| `safetyNumber(peerPublicId)` | 60 dígitos para comparar fora de banda. |
+| `encrypt` / `decrypt` / `encryptSealed` / `decryptSealed` | Cifra e decifra com o Double Ratchet (com o remetente selado nas `*Sealed`). As apps usam-nas só através do histórico. |
+| `relayNoiseSession()` / `relayUserId()` / `relayAuthMessage(hash)` | Sessão Noise com a chave estática do telemóvel, caixa no relay e a 1.ª mensagem de cada ligação (assinatura ligada ao handshake). |
+| `relayRequestRegisterBundle` / `FetchBundle` / `Send` / `SendItem` / `Fetch` / `Wait` / `Ack` | Pedidos ao relay (bytes a cifrar com o `NoiseSession`). `Wait` espera até 25 s por mensagens. Confirmar (`Ack`) só depois de guardar cada mensagem. |
+| `relayRequestDeleteAccount()` / `relayRequestPushToken(token)` | Apagar a conta no relay; token das notificações com a app fechada. |
 
-As apps usam `encrypt*`/`decrypt*` só através das funções de histórico abaixo,
-que fazem a cifra e a gravação na mesma transação.
+Funções livres: `relayParseResponse(bytes)`, `peerBundleFromRelayBytes(bytes)`,
+`relayIdOfPublicId(publicId)`, `relayRecipientDeletedReason()`, `relayElsewhereName(reason)` e
+`relayNoNewAccountsReason()` (federação: conta noutro relay, relay sem contas novas).
 
-## Histórico e fila de saída
+## `relay_choice.rs`: relay de uma conta nova (desde a 0.9.69, §25.2)
 
-| Método | Descrição |
+| Função | O que faz |
 |---|---|
-| `sendText(contactId, text) → OutboxItem` | Numa só transação: avança o ratchet, guarda a mensagem como "por enviar" e põe o envelope selado na fila de saída. A app envia `item.blob` ao relay e, quando ele confirmar, chama `outboxSent(item.outboxId)`. |
-| `outbox() → [OutboxItem]` | Tudo o que o relay ainda não confirmou, pela ordem de criação (reenviar depois de falhas ou reinícios). |
-| `outboxSent(outboxId)` | O relay confirmou: sai da fila e a mensagem passa a "Enviada". |
-| `receiveSealed(blob) → ReceiveResult` | Decifra, guarda e agenda o recibo "entregue", numa transação. Só confirmar ao relay depois de devolver Ok (ou um erro definitivo como `Replay`). |
-| `prepareDeliveryReceipts() → u32` | Junta os recibos "entregue" pendentes (um envelope por contacto) na fila de saída. Chamar depois de processar um lote. |
-| `markConversationRead(contactId, sendReadReceipt) → u32` | Marca as recebidas como lidas e, se `sendReadReceipt`, põe o recibo "vista" na fila (é o interruptor "Notificações" das apps). |
-| `messagesPage(contactId, beforeSeq?, limit)` | Página do histórico, da mais recente para a mais antiga. |
-| `messagesAfter(contactId, afterSeq)` | Mensagens mais recentes que `afterSeq`. |
-| `message(contactId, messageId) → ChatMessage?` | Estado atual de uma mensagem. |
-| `conversations() → [ConversationSummary]` | Lista de conversas (última mensagem + por ler), a mais recente primeiro. |
-| `deleteConversation(contactId)` | Apaga as mensagens, o que estava por enviar e os anexos desta conversa; a sessão mantém-se. |
-| `deleteContact(contactId)` | Apaga também a sessão cifrada e os metadados do contacto; os registos anti-replay passam a hashes anónimos. Se o contacto voltar a ser adicionado, começa uma sessão nova. |
+| `relayOrderForNewAccount(relays, timeoutMs)` | Mede só a ligação TCP a cada relay da lista (sem TLS nem pedidos) e devolve os nomes do mais rápido para o mais lento; os que não respondem ficam no fim. Bloqueia até `timeoutMs` (no máximo 10 s). |
+| `relayNextForNewAccount(order, tried)` | O primeiro dessa ordem que ainda não respondeu "sem contas novas". |
 
-## Imagens e GIFs (anexos)
+## `history.rs`: histórico, fila de saída e contactos (§12, §13)
 
-Formato e fluxo em `protocol-spec.md`, secção 14. A app usa uma segunda
-ligação ao relay só para os ficheiros.
-
-| Método | Descrição |
+| Método | O que faz |
 |---|---|
-| `attachmentCreate(contactId, sourcePath, mime, width, height) → ChatMessage` | Cifra o ficheiro temporário (já comprimido pela app; JPEG, PNG, GIF ou WebP, até 25 MiB) com uma chave nova. A mensagem fica no histórico como "a enviar". |
-| `attachmentsPendingUpload()` / `attachmentsPendingDownload() → [AttachmentRef]` | Anexos por enviar / por descarregar (retomar depois de falhas). |
-| `attachmentBlobId(contactId, messageId) → string?` | `None` = ainda sem espaço reservado no relay. |
-| `blobCreateRequest(…)` → depois `attachmentSetBlob(…, blobId, token)` | Reservar espaço no relay e guardar o id e o token devolvidos (`BlobCreated`). |
-| `blobInfoRequest(…)` | Quantos bytes o relay já tem (para retomar). |
-| `blobPutRequest(…, offset)` | O bloco cifrado que começa em `offset` (múltiplo de 40 KiB). |
-| `attachmentUploaded(…) → OutboxItem` | O relay tem o ficheiro inteiro: envia a mensagem com a chave (cifrada pelo Double Ratchet) pela fila de saída. |
-| `blobGetRequest(…, offset)` / `attachmentWriteChunk(…, offset, data) → u64` | Descarregar um bloco (`BlobData`) e guardá-lo; devolve os bytes já no telemóvel. |
-| `attachmentDownloadedBytes(…) → u64` | Bytes já descarregados (para retomar). |
-| `attachmentDownloadFinished(…) → ChatMessage` | Verifica o ficheiro inteiro (todos os blocos, a ordem e o fim): fica "pronto" ou "falhou" (e é apagado). |
-| `blobDeleteRequest(…)` | Pedir ao relay que apague o ficheiro, depois de descarregado e verificado. |
-| `attachmentFailed(…, expired) → ChatMessage` | O envio ou a descarga falhou de vez (`expired`: o relay já não tem o ficheiro). |
-| `attachmentRead(contactId, messageId) → bytes` | A imagem em claro, só para mostrar (em memória, nunca escrita em disco). |
+| `sendText(contactId, text)` / `react(contactId, messageId, emoji)` | Numa transação: avança o ratchet, guarda e põe o envelope selado na fila de saída. |
+| `outbox()` / `outboxSent(id)` / `outboxDrop(id)` | O que o relay ainda não confirmou; confirmado; retirado sem enviar (o destinatário apagou a conta). |
+| `receiveSealed(blob)` | Decifra, guarda e agenda o recibo "entregue". Só confirmar ao relay depois de devolver Ok. |
+| `prepareDeliveryReceipts()` / `markConversationRead(contactId, sendReadReceipt)` | Recibos "entregue" e "vista". |
+| `messagesPage` / `messagesAfter` / `message` / `conversations()` | Leitura do histórico e da lista de conversas. |
+| `deleteConversation` / `deleteContact` / `deleteContactNotify` | Apagar mensagens, ou também a sessão (com o aviso "sessão terminada" ao outro lado). |
+| `sessionsToRestart()` | Contactos que terminaram a sessão e com quem é preciso abrir uma nova. |
+| `blockContact` / `unblockContact` / `isBlocked` / `blockedContacts()` | Bloquear: as mensagens desse contacto são descartadas ao chegar. |
+| `pendingIntro` / `pendingIntros()` / `dismissIntro` | Convites de quem escreveu sem estar nos contactos. |
 
-## Funções livres
+## `attachments.rs`: fotos, GIFs, voz e ficheiros (§14)
 
-`relayParseResponse(bytes) → RelayResponse` · `peerBundleFromRelayBytes(bytes) → PeerBundle` · `relayIdOfPublicId(publicId) → string`.
+`attachmentCreate` (imagens e GIFs) e `attachmentCreateFile` (qualquer ficheiro até 25 MiB)
+cifram o ficheiro com uma chave nova. Envio: `blobCreateRequest` → `attachmentSetBlob` →
+`blobInfoRequest` / `blobPutRequest` (blocos de 40 KiB, retoma) → `attachmentUploaded` (a
+mensagem com a chave vai pela fila de saída). Receção: `blobGetRequest` →
+`attachmentWriteChunk` → `attachmentDownloadFinished` (verifica tudo) → `blobDeleteRequest`.
+Também `attachmentsPendingUpload` / `PendingDownload`, `attachmentBlobId`,
+`attachmentDownloadedBytes`, `attachmentFailed` e `attachmentRead` (em memória, nunca em disco).
 
-Bloqueio da app: `appLockWrap(code, storageKey) → bytes` (cifra a chave do
-storage com o código, Argon2id, sal e nonce novos em cada chamada) ·
-`appLockUnwrap(code, blob) → storageKey` (código errado ou dados alterados:
-`Crypto`) · `appLockMinCodeLen()`.
+## `groups.rs`: grupos (até 10 pessoas, §15)
+
+`groupCreate`, `groups()`, `group`, `groupUpdate` (só administradores), `groupLeave`,
+`groupDelete`, `groupMembersNeedingSession` (abrir sessões antes de enviar), `groupSendText`,
+`groupAttachmentUploaded`, `groupReact`, `groupMessagesPage` e `groupIdOfConversation`.
+
+## `call.rs` e `call_audio.rs`: chamadas a dois (§18)
+
+| Método | O que faz |
+|---|---|
+| `callStart` / `callStartVideo` / `callAccept` / `callHangup` | Ligar (voz ou vídeo), atender, desligar, recusar ou cancelar. A sinalização vai pela fila de saída. |
+| `callEvents()` | Eventos desde a última chamada (toca, atendida, terminou, pedido de vídeo…). Chamar depois de cada lote de `receiveSealed` e de segundo a segundo durante a chamada. |
+| `callCurrent()` / `callIsVideo` / `callVideoSupported` / `callVideoContacts()` | Estado da chamada e a quem se pode fazer videochamada. |
+| `callVideoSetCamera(on)` / `callVideoRespond(resposta)` | Ligar ou desligar a câmara e responder ao pedido de vídeo do outro lado. |
+| `callContactsSync(contactIds)` | A lista de contactos da app (decide a ligação direta entre contactos mútuos) e o anúncio "tenho vídeo". |
+| `callSetRelay` / `callRelay()` | Federação: o relay da conta e o relay das chamadas desta chamada. |
+| `callJoinPacket` / `callJoinOk` / `callSeal` / `callOpen` | Sala no relay das chamadas e cifra dos pacotes de áudio (todos do mesmo tamanho). |
+
+`callAudioStart(…) → CallAudio` arranca o motor (Opus 1.6 com DRED, jitter buffer). O objeto
+`CallAudio`: `pushCapture` / `pullPlayback` (20 ms, `callFrameBytes()`), `videoParams`,
+`videoPush`, `videoPull`, `videoRequestKeyframe`, `videoHold`, `videoSetEncodeLimit`,
+`videoSetDecodeLimit`, `setNetwork`, `stats`, `active`, `stop` e `diagnostic` (números para os
+testers, sem IPs nem IDs).
+
+## `group_call.rs`: chamadas de grupo (até 5 pessoas, desde a 0.9.62, §27)
+
+| Método | O que faz |
+|---|---|
+| `groupCallNoticeAccepted()` / `groupCallAcceptNotice()` | O aviso das chamadas de grupo, mostrado uma vez antes da primeira. Sem "Aceitar" não se liga nem se entra. |
+| `groupCallStart(groupId, video)` / `groupCallJoin` / `groupCallLeave` | Ligar a um grupo, entrar na chamada que está a tocar, sair ou recusar. |
+| `groupCallOngoing(groupId)` / `groupCallRejoin` | A chamada a decorrer num grupo em que não estou, e entrar depois (0.9.65). |
+| `groupCallSetName(callId, name)` | O meu nome nesta chamada, até 32 caracteres (0.9.67). |
+| `groupCallSetCamera(on)` | Ligar ou desligar a minha câmara. |
+| `groupCallEvents()` | Eventos desde a última vez. Chamar depois de cada lote de `receiveSealed` e de segundo a segundo durante a chamada. |
+| `groupCallCurrent()` / `groupCallGroup` / `groupCallIsVideo` / `groupCallParticipants` | Estado da chamada e quem está nela. |
+
+`groupCallAudioStart(…) → GroupAudio` arranca o áudio e o vídeo da chamada. O objeto
+`GroupAudio`: `pushCapture` / `pullPlayback` (a mistura de todos), `speaker()` (quem fala, para
+o quadrado grande), `meSpeaking()`, `videoParams`, `videoPush`, `videoPull(contactId)`,
+`videoRequestKeyframe`, `videoHold`, `videoSetEncodeLimit`, `videoSetDecodeLimit`, `setNetwork` e
+`diagnostic` / `diagnosticOf` (números para os testers, sem IPs nem IDs).
+
+## Outros módulos
+
+| Ficheiro | Métodos | Secção |
+|---|---|---|
+| `presence.rs` | `presenceConfigure`, `presenceAnnounce`, `presenceHeartbeat`, `presenceOnline`; livre: `presenceHeartbeatMs()` | §16 |
+| `profile.rs` | `profilePhotoSet`, `profilePhotoRemove`, `profilePhotoSync`, `profilePhotoMine`, `profilePhotoNextChangeMs`, `profilePhotoOf` | §19 |
+| `badges.rs` | `badgeSync`, `badgeMine`, `badgeOf`, `badgeDeliver` (só para a ferramenta das medalhas) | §20 |
+| `report.rs` | `relayRequestReport`; livre: `reportsAvailable()` | §21 |
+| `recovery.rs` | `recoveryEnabled`, `recoveryEnable`, `recoveryWords`, `recoveryDisable`, `recoveryBackup`, `recoveryBackupSent`, `recoveryPrepare`, `recoveryRestore`, `relayRequestBackupGet`, `relayRequestBackupDelete`; livre: `recoveryIsWord(word)` | §22 |
+| `community.rs` | `communitySubmitRequest`, `communitySubmitSent`, `relayRequestCommunityVersion` / `Index` / `Photos`, `communityCachedVersion`, `communityApplyIndex`, `communityMissingPhotos`, `communityPutPhoto`, `communityMembers` | §26 |
+| `applock.rs` | Livres: `appLockWrap(code, storageKey)` (Argon2id, sal e nonce novos), `appLockUnwrap(code, blob)`, `appLockMinCodeLen()` | |
 
 ## Objeto `NoiseSession`
 
-`writeStep()`, `readStep(msg)`, `isFinished()`, `handshakeHash()`,
-`remoteStaticPublicKey()`, `encrypt(pt)`, `decrypt(ct)`. Uma sessão por
-ligação; nunca reutilizar após erro.
+`writeStep()`, `readStep(msg)`, `isFinished()`, `handshakeHash()`, `remoteStaticPublicKey()`,
+`encrypt(pt)`, `decrypt(ct)`. Uma sessão por ligação; nunca reutilizar depois de um erro.
 
-## Records / enums
+## Erros
 
-`PublicIdentity{identityPublic, signingPublic, relayId, publicId}` ·
-`PublishedBundle` · `PeerBundle` · `OneTimePreKeyPublic{id, public}` ·
-`SealedDecrypted` · `RelayDelivered{id, sealedFrom, ciphertext}` ·
-`RelayResponse{Ack | Bundle | BundleNotFound | Messages | Error | BlobCreated | BlobStatus | BlobData | BlobNotFound}` ·
-`ChatMessage{seq, messageId, contactId, outgoing, text, sentAtMs, localAtMs, status, attachment?}` ·
-`MessageStatus{Pending | Sent | Delivered | Read | Received | ReadByMe}` ·
-`ConversationSummary{contactId, lastMessage, unread}` ·
-`OutboxItem{outboxId, contactId, blob}` ·
-`ReceiveResult{NewMessage | StatusChanged | NoChange}` ·
-`AttachmentInfo{mime, size, width, height, state, transferSize}` ·
-`AttachmentState{Uploading | Downloading | Ready | Failed | Expired}` ·
-`AttachmentRef{contactId, messageId}` ·
-`QtError` (ver `android-integration.md` §5).
-
-## Formatos
-
-* **QT Public ID:** `"qt1:" + hex(identity_public[32] ‖ signing_public[32])`.
-* **Bundle v3:** `[3][identity 32][signing 32][signed_pre_key 32][assinatura 64][pq_id 4 BE][ML-KEM pub 1184]`; a assinatura Ed25519 cobre a identidade X25519, a signed pre-key e a chave ML-KEM (a v1 só cobria a signed pre-key e permitia a um relay trocar a chave ML-KEM; a v2 não ligava a identidade X25519). Detalhe em `protocol-spec.md` §9.
-* **Envelope v2 / selado / relay:** ver `protocol-spec.md` §10 e §11.
-* **Anexos:** ver `protocol-spec.md` §14.
+`QtError` (ver [`android-integration.md`](android-integration.md) §5). Os erros de entrada
+dizem o campo (`InvalidInput { field }`), por exemplo `storage_key`, `palavras`,
+`group_call_full` ou `call_busy`.
 
 ## Garantias de segurança da API
 
-A app **nunca** recebe: chaves privadas, chain/root/message keys, chaves DH do
-ratchet, o segredo PQXDH, estados serializados do ratchet, a chave estática
-Noise nem as chaves dos anexos. A API antiga (`legacy-api`) que expunha chaves
-**não** é compilada nas builds Android e iOS.
+A app **nunca** recebe: chaves privadas, chain, root ou message keys, chaves DH do ratchet, o
+segredo PQXDH, estados serializados do ratchet, a chave estática Noise, as chaves dos anexos nem as
+chaves das chamadas. A API antiga (`legacy-api`), que expunha chaves, **não** é compilada nas
+builds Android e iPhone.
