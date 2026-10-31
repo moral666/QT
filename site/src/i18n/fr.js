@@ -98,7 +98,6 @@ export default {
   'como.@1': 'Étape précédente',
   'como.@2': 'Étape suivante',
   'como.@3': 'Choisir l’étape',
-  'como.@4': 'Écran d’un appel vocal dans SEALER : durée, chiffré de bout en bout, et les boutons Muet, Haut-parleur et Raccrocher.',
   'como.1': 'Comment voyage un message',
   'como.2': 'En 5 étapes simples, ce qui se passe quand tu appuies sur envoyer.',
   'como.3': 'Serveur SEALER',

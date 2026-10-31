@@ -98,7 +98,6 @@ export default {
   'como.@1': 'Passo precedente',
   'como.@2': 'Passo successivo',
   'como.@3': 'Scegli il passo',
-  'como.@4': 'Schermata di una chiamata vocale in SEALER: durata, cifrata end-to-end, e i pulsanti Muto, Altoparlante e Riaggancia.',
   'como.1': 'Come viaggia un messaggio',
   'como.2': 'In 5 semplici passi, cosa succede quando tocchi invia.',
   'como.3': 'Server di SEALER',

@@ -98,7 +98,6 @@ export default {
   'como.@1': 'Previous step',
   'como.@2': 'Next step',
   'como.@3': 'Choose step',
-  'como.@4': 'A voice call screen in SEALER: timer, end-to-end encrypted, and the Mute, Speaker and Hang up buttons.',
   'como.1': 'How a message travels',
   'como.2': 'In 5 simple steps, what happens when you tap send.',
   'como.3': 'SEALER server',

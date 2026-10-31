@@ -98,7 +98,6 @@ export default {
   'como.@1': 'Vorheriger Schritt',
   'como.@2': 'Nächster Schritt',
   'como.@3': 'Schritt wählen',
-  'como.@4': 'Bildschirm eines Sprachanrufs in SEALER: Dauer, Ende-zu-Ende-verschlüsselt, und die Tasten Stumm, Lautsprecher und Auflegen.',
   'como.1': 'Wie eine Nachricht reist',
   'como.2': 'In 5 einfachen Schritten: was passiert, wenn du auf Senden tippst.',
   'como.3': 'SEALER-Server',
