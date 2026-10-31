@@ -446,7 +446,8 @@ final class AppModel: ObservableObject {
 
     /// Bloqueia ja (so se o bloqueio estiver ativo).
     func lockNow() {
-        guard ui.lockEnabled, !ui.locked, ui.call == nil else { return }
+        // Durante uma chamada (a dois ou de grupo) nao se fecha a base de dados: a chamada precisa dela.
+        guard ui.lockEnabled, !ui.locked, ui.call == nil, groupCalls.ui == nil else { return }
         closeSession()
         showLocked()
     }

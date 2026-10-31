@@ -350,6 +350,30 @@ object SealerCore {
     }
 
     /**
+     * O ecra acabou a meio de uma chamada de grupo (ex.: a app foi fechada nos recentes): o "sai"
+     * vai para os outros participantes (senao ficavam com um quadrado parado), e so depois fecha o
+     * nucleo ([closeAfter]). O microfone e a camara ja pararam (`GroupCallController.closeForScreenGone`).
+     */
+    fun leaveGroupCallInBackground(ctx: Context, c: QtClient, callId: String, closeAfter: Boolean) {
+        val app = ctx.applicationContext
+        scope.launch {
+            withTimeoutOrNull(8_000L) {
+                try {
+                    c.groupCallLeave(callId)
+                    val l = newLink(app, c)
+                    try { flush(app, c, l) } finally { l.shutdown() }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "sair da chamada de grupo: ${e.javaClass.simpleName}")
+                }
+            }
+            // Entretanto abriu-se outro ecra: o nucleo fica para ele.
+            if (closeAfter && uiOwner == null) close()
+        }
+    }
+
+    /**
      * Atender vindo do sistema de chamadas (auricular, carro) sem o ecra com a chamada: como o
      * "Atender" da notificacao. `callId` null: bloqueio da app, ainda nao se sabe qual e.
      */

@@ -206,6 +206,23 @@ class GroupCallController(
         end()
     }
 
+    /** "Desligar" na notificacao da chamada (o servico chama [CallControl.hangup]). */
+    private val hangupFromNotification: () -> Unit = { leave() }
+
+    /**
+     * O ecra (ViewModel) vai fechar a meio da chamada de grupo (ex.: a app foi fechada nos
+     * recentes): o microfone, a camara, os descodificadores e o servico param ja. Devolve a
+     * chamada, para o "sai" ir aos outros em segundo plano (`SealerCore.leaveGroupCallInBackground`).
+     * `null`: nao havia chamada de grupo.
+     */
+    fun closeForScreenGone(): String? {
+        val g = _ui.value ?: return null
+        ticker?.cancel()
+        ticker = null
+        end()
+        return g.callId
+    }
+
     fun toggleMute() {
         val m = !(_ui.value?.muted ?: return)
         io?.muted = m
@@ -345,6 +362,8 @@ class GroupCallController(
         stopNet = VideoNet.watch(app) { k -> audio?.setNetwork(k) }
         val g = _ui.value
         CallService.start(app, camera = g?.camera == true, video = g?.video == true)
+        // O "Desligar" da notificacao tambem sai da chamada de grupo (antes nao fazia nada).
+        CallControl.hangup = hangupFromNotification
         try {
             io = CallAudioIO(app, a.pipe()).also {
                 it.start()
@@ -449,6 +468,7 @@ class GroupCallController(
             a.destroy()
         }
         audio = null
+        if (CallControl.hangup === hangupFromNotification) CallControl.hangup = null
         CallService.stop(app)
         _ui.value = null
     }

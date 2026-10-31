@@ -7,7 +7,7 @@
 #   Certificado: Let's Encrypt pelo certbot (renovacao automatica).
 #
 # Uso, na EC2:
-#   curl -fsSLO https://raw.githubusercontent.com/moral666/QT/security-hardening/deploy/aws/setup-ec2.sh
+#   curl -fsSLO https://raw.githubusercontent.com/moral666/QT/main/deploy/aws/setup-ec2.sh
 #   sudo bash setup-ec2.sh                 # nome automatico: <ip-com-hifenes>.sslip.io
 #   sudo bash setup-ec2.sh relay.exemplo.pt   # ou um dominio teu ja apontado para o IP
 #   sudo bash setup-ec2.sh relay.exemplo.pt 1-2-3-4.sslip.io   # varios nomes ao mesmo tempo
@@ -24,7 +24,8 @@
 set -euo pipefail
 
 REPO="https://github.com/moral666/QT.git"
-BRANCH="${QT_BRANCH:-security-hardening}"
+# O ramo security-hardening ja nao existe no GitHub (desde 29/10/2026 so ha o main).
+BRANCH="${QT_BRANCH:-main}"
 SRC=/opt/qt-src
 ENV_FILE=/etc/qt/relay.env
 
@@ -84,6 +85,9 @@ net.ipv4.tcp_keepalive_time = 300
 net.ipv4.tcp_keepalive_intvl = 30
 net.ipv4.tcp_keepalive_probes = 5
 fs.file-max = 1048576
+# Redis: deixa o fork das reescritas do AOF funcionar com pouca memoria livre (o proprio
+# Redis avisa no arranque se isto estiver desligado). O fork so copia as paginas que mudam.
+vm.overcommit_memory = 1
 EOF
 sysctl -q --system
 
@@ -145,6 +149,24 @@ PREV_NOVAS=""
 case "$PREV_NOVAS" in 0|1) ;; *) PREV_NOVAS=1 ;; esac
 V_NOVAS="${RELAY_NOVAS_CONTAS:-$PREV_NOVAS}"
 case "$V_NOVAS" in 0|1) ;; *) echo "Aviso: RELAY_NOVAS_CONTAS='$V_NOVAS' nao e 0 nem 1; fica $PREV_NOVAS" >&2; V_NOVAS="$PREV_NOVAS" ;; esac
+# Os limites que ja estavam no relay.env ficam ao voltar a correr o script (como o
+# RELAY_NOVAS_CONTAS); so mudam se forem passados ao script. Antes voltavam sempre a omissao:
+# atualizar o codigo repunha, sem aviso, o teto de ligacoes em 10 000.
+env_val() {
+  local name="$1" def="$2" v prev=""
+  [ -f "$ENV_FILE" ] && prev=$(sed -n "s/^$name=//p" "$ENV_FILE" | tail -n 1)
+  case "$prev" in ''|*[!0-9]*) prev="$def" ;; esac
+  v="${!name:-}"
+  case "$v" in
+    '') v="$prev" ;;
+    *[!0-9]*) echo "Aviso: $name='$v' nao e um numero; fica $prev" >&2; v="$prev" ;;
+  esac
+  printf '%s' "$v"
+}
+V_MAX_CONNECTIONS=$(env_val RELAY_MAX_CONNECTIONS 10000)
+V_BLOB_TOTAL=$(env_val RELAY_BLOB_MAX_TOTAL_MB 2048)
+V_BLOB_DAILY=$(env_val RELAY_BLOB_USER_DAILY_MB 1024)
+V_BLOB_FREE=$(env_val RELAY_BLOB_MIN_FREE_MB 1024)
 umask 027
 cat > "$ENV_FILE" <<EOF
 RELAY_BIND_ADDR=127.0.0.1:9443
@@ -153,14 +175,14 @@ NOISE_KEY_PATH=/var/lib/qt/relay_noise_key.bin
 # Tempo medio de entrega (anonimo), publicado em /estado.json para o site.
 RELAY_STATUS_FILE=/var/lib/qt-estado/estado.json
 # Imagens/GIFs (ja cifrados pelas apps) em /var/lib/qt/anexos, apagados ao fim de 24 h.
-RELAY_BLOB_MAX_TOTAL_MB=${RELAY_BLOB_MAX_TOTAL_MB:-2048}
-RELAY_BLOB_USER_DAILY_MB=${RELAY_BLOB_USER_DAILY_MB:-1024}
-RELAY_BLOB_MIN_FREE_MB=${RELAY_BLOB_MIN_FREE_MB:-1024}
-# Ligacoes em simultaneo (cada app aberta usa 2). Com o HAProxy, ~40 KB por ligacao:
-# 8000 sem falhas e ~12 000 a funcionar (medido a 18/10/2026, limite foi o router de
-# casa). Travao em 10 000 ate ao teste de 25 000 a partir da AWS.
-# Para mudar: sudo RELAY_MAX_CONNECTIONS=20000 bash setup-ec2.sh
-RELAY_MAX_CONNECTIONS=${RELAY_MAX_CONNECTIONS:-10000}
+RELAY_BLOB_MAX_TOTAL_MB=$V_BLOB_TOTAL
+RELAY_BLOB_USER_DAILY_MB=$V_BLOB_DAILY
+RELAY_BLOB_MIN_FREE_MB=$V_BLOB_FREE
+# Ligacoes em simultaneo (uma por app aberta desde a 0.9.45). No teste de carga de 29/10/2026,
+# ~42 KB por pessoa ligada (relay, HAProxy e Redis). Travao decidido a 29/10/2026: 25 000 por
+# relay. 10 000 so na primeira instalacao; nas atualizacoes fica o que estava. Para mudar:
+#   sudo RELAY_MAX_CONNECTIONS=25000 bash setup-ec2.sh
+RELAY_MAX_CONNECTIONS=$V_MAX_CONNECTIONS
 RELAY_NOVAS_CONTAS=$V_NOVAS
 EOF
 umask 022
@@ -331,12 +353,29 @@ systemctl restart qt-estado
 
 install -d -m 700 /etc/haproxy/certs
 
+# Travoes do HAProxy (afinados depois do teste de carga de 29/10/2026, 32 500 pessoas):
+# - maxconn: ligacoes em simultaneo, no global e no backend do relay. Era 40 000, muito acima
+#   do travao do relay, e no teste o HAProxy chegou aos 619 MB (~19 KB por ligacao) e ajudou a
+#   esgotar a memoria. Fica o travao do relay mais uma margem de 3000 (chamadas por /call,
+#   /estado.json e porta 80), para o relay ainda conseguir responder "ocupado". Quem vier a
+#   mais espera na fila do sistema e entra quando houver lugar.
+# - maxsslrate: handshakes TLS novos por segundo. Nas entradas em massa o CPU acabava nos
+#   handshakes; acima do limite as ligacoes novas esperam (nao sao recusadas). Depois de uma
+#   queda, 25 000 pessoas voltam em ~85 s em vez de todas ao mesmo tempo.
+# Seguem o travao do relay a cada corrida. Para mudar (so nesta corrida):
+#   sudo HAPROXY_MAXCONN=30000 HAPROXY_MAXSSLRATE=400 bash setup-ec2.sh
+V_HA_MAXCONN="${HAPROXY_MAXCONN:-$((V_MAX_CONNECTIONS + 3000))}"
+case "$V_HA_MAXCONN" in ''|*[!0-9]*) echo "Aviso: HAPROXY_MAXCONN='$V_HA_MAXCONN' nao e um numero; fica $((V_MAX_CONNECTIONS + 3000))" >&2; V_HA_MAXCONN=$((V_MAX_CONNECTIONS + 3000)) ;; esac
+V_HA_SSLRATE="${HAPROXY_MAXSSLRATE:-300}"
+case "$V_HA_SSLRATE" in ''|*[!0-9]*) echo "Aviso: HAPROXY_MAXSSLRATE='$V_HA_SSLRATE' nao e um numero; fica 300" >&2; V_HA_SSLRATE=300 ;; esac
+
 # Parte comum: porta 80 (desafio do Let's Encrypt para o certbot em 127.0.0.1:8888; o
 # resto vai para https). Sem "log" em lado nenhum: o HAProxy nao regista nada.
 haproxy_base() {
-cat <<'CFG'
+cat <<CFG
 global
-    maxconn 40000
+    maxconn $V_HA_MAXCONN
+    maxsslrate $V_HA_SSLRATE
     user haproxy
     group haproxy
     ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets
@@ -409,7 +448,7 @@ for D in $DOMAINS; do
   ( umask 077; cat "/etc/letsencrypt/live/$D/fullchain.pem" "/etc/letsencrypt/live/$D/privkey.pem" > "/etc/haproxy/certs/$D.pem" )
 done
 
-log "A configurar o HAProxy para $DOMAINS"
+log "A configurar o HAProxy para $DOMAINS (maxconn $V_HA_MAXCONN, maxsslrate $V_HA_SSLRATE/s)"
 {
 haproxy_base
 cat <<CFG
@@ -434,7 +473,7 @@ $(if [ -n "$FED_IPS" ]; then printf '    acl fed_pares src %s\n    http-request 
     default_backend relay
 
 backend relay
-    server relay 127.0.0.1:9443 maxconn 40000
+    server relay 127.0.0.1:9443 maxconn $V_HA_MAXCONN
 
 backend estado
     http-response set-header Cache-Control no-store

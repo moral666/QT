@@ -67,6 +67,12 @@ pub(crate) const MAX_BODY: usize = 192;
 const KV_NOTICE: &str = "gcall:notice";
 const MAX_EVENTS: usize = 64;
 const MAX_ENDED: usize = 16;
+/// Quem saiu sem avisar (telemovel sem rede ou sem bateria, app fechada a forca): uma perna sem
+/// nada do outro lado ha tanto tempo (ou oferecida e sem resposta), ou alguem que disse "entrei"
+/// e a perna nunca chegou, sai da chamada como se tivesse enviado "sai". Antes ficava la ate ao
+/// fim (ocupava um dos 5 lugares e o meu audio continuava a ir para ele, pelo relay).
+#[cfg(feature = "calls")]
+const LEG_SILENT_MS: i64 = 60_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum GroupCallEndReason {
@@ -143,6 +149,11 @@ struct Leg {
     peer_name: Option<String>,
     #[cfg(feature = "calls")]
     audio: Option<Arc<crate::call_audio::CallAudio>>,
+    /// Pacotes recebidos dele (`CallAudio::heard`) e quando esse numero mudou pela ultima vez.
+    #[cfg(feature = "calls")]
+    heard: u64,
+    #[cfg(feature = "calls")]
+    heard_at: i64,
 }
 
 struct GroupCall {
@@ -157,6 +168,8 @@ struct GroupCall {
     camera: bool,
     /// O meu nome nesta chamada (vai a cada perna quando tem chaves).
     my_name: Option<String>,
+    /// Estao na chamada mas ainda sem perna comigo (era a vez deles de oferecer): desde quando.
+    waiting: BTreeMap<String, i64>,
 }
 
 #[derive(Default)]
@@ -169,6 +182,9 @@ pub(crate) struct GroupCalls {
     known: BTreeMap<[u8; 16], (String, BTreeSet<String>, bool, i64)>,
     #[cfg(feature = "calls")]
     audio: Option<Arc<GroupAudio>>,
+    /// So nos testes: outro prazo para `LEG_SILENT_MS`.
+    #[cfg(all(test, feature = "calls"))]
+    leg_timeout: Option<i64>,
 }
 
 impl GroupCalls {
@@ -176,9 +192,26 @@ impl GroupCalls {
         self.cur.as_ref().is_some_and(|g| g.state == State::Joined)
     }
 
-    /// Ha uma chamada de grupo (a tocar ou dentro)?
-    pub(crate) fn cur_any(&self) -> bool {
+    /// Ha uma chamada de grupo (a tocar ou dentro)? Um toque que ja passou do prazo acaba aqui
+    /// (chamada perdida): com a app em segundo plano ninguem chama `group_call_events`, e um
+    /// convite recebido assim deixava o telemovel "ocupado" para as chamadas a dois ate o ecra
+    /// abrir.
+    pub(crate) fn cur_any(&mut self) -> bool {
+        expire(self);
         self.cur.is_some()
+    }
+
+    /// O nucleo vai fechar: o audio e o video do grupo param (ver `Drop for QtClient`).
+    #[cfg(feature = "calls")]
+    pub(crate) fn stop_media(&self) {
+        if let Some(a) = &self.audio {
+            a.stop();
+        }
+        if let Some(g) = &self.cur {
+            for leg in g.legs.values() {
+                leg.stop();
+            }
+        }
     }
 
     fn push(&mut self, e: GroupCallEvent) {
@@ -366,6 +399,10 @@ impl Leg {
             peer_name: None,
             #[cfg(feature = "calls")]
             audio: None,
+            #[cfg(feature = "calls")]
+            heard: 0,
+            #[cfg(feature = "calls")]
+            heard_at: now_ms(),
         }
     }
 
@@ -446,6 +483,9 @@ pub(crate) fn on_group_call(client: &QtClient, c: &st::rusqlite::Connection, cid
         (calls.in_call(), calls.own_relay.clone())
     };
     let mut gc = crate::client::relock(&client.group_calls);
+    // Um toque antigo (recebido em segundo plano, sem `group_call_events`) acaba antes de
+    // decidir: senao um convite novo dava "ocupado".
+    expire(&mut gc);
     if gc.ended.contains(&id) {
         return Ok(no_change);
     }
@@ -523,6 +563,7 @@ pub(crate) fn on_group_call(client: &QtClient, c: &st::rusqlite::Connection, cid
                 legs: BTreeMap::new(),
                 camera: false,
                 my_name: None,
+                waiting: BTreeMap::new(),
             });
             gc.push(GroupCallEvent::Incoming { call_id: hex(&id), group_id: gid, from: cid.to_string(), video });
             Ok(no_change)
@@ -549,8 +590,14 @@ pub(crate) fn on_group_call(client: &QtClient, c: &st::rusqlite::Connection, cid
                 #[cfg(not(feature = "calls"))]
                 drop(leg);
             }
+            let ringing_alone = g.state == State::Ringing && g.present.is_empty();
+            // A perna sai tambem do audio do grupo (mistura, video e quem fala).
+            #[cfg(feature = "calls")]
+            if let Some(a) = &gc.audio {
+                a.remove_leg(cid);
+            }
             // A tocar e ja nao ha ninguem na chamada: para de tocar (chamada perdida).
-            if g.state == State::Ringing && g.present.is_empty() {
+            if ringing_alone {
                 gc.end(GroupCallEndReason::Missed);
             } else {
                 gc.changed();
@@ -563,7 +610,12 @@ pub(crate) fn on_group_call(client: &QtClient, c: &st::rusqlite::Connection, cid
             }
             let Some(relay) = relay_tail(&rest[50..]) else { return Ok(no_change) };
             let Some(g) = gc.cur.as_mut() else { return Ok(no_change) };
-            let (_, me) = members(c, &g.group)?.unwrap_or_default();
+            let Some((others, me)) = members(c, &g.group)? else { return Ok(no_change) };
+            // So de membros do grupo, como o convite e o "entrei": quem sabe o id da chamada mas
+            // nao e do grupo (ex.: tirado do grupo a meio) nao entra na malha nem fica com o meu IP.
+            if !others.iter().any(|o| o == cid) {
+                return Ok(no_change);
+            }
             // Oferece sempre o id menor; so com a chamada aceite e com lugar.
             if g.state != State::Joined || cid >= me.as_str() || (!g.legs.contains_key(cid) && g.legs.len() + 1 >= MAX_GROUP_CALL) {
                 return Ok(no_change);
@@ -704,6 +756,60 @@ fn start_leg_engine(gc: &mut GroupCalls, audio: &Arc<GroupAudio>, peer: &str) {
     a.video_authorize(camera, leg.peer_camera);
     audio.add_leg(peer, a.clone());
     leg.audio = Some(a);
+    // O prazo de `LEG_SILENT_MS` conta a partir de agora (antes nao havia nada para ouvir).
+    leg.heard_at = now_ms();
+}
+
+/// Quem saiu sem avisar (`LEG_SILENT_MS`) sai da chamada, como com "sai". So com o motor de
+/// audio: e ele que diz se ainda chega alguma coisa do outro lado.
+#[cfg(feature = "calls")]
+fn drop_silent(gc: &mut GroupCalls) {
+    let now = now_ms();
+    #[cfg(test)]
+    let timeout = gc.leg_timeout.unwrap_or(LEG_SILENT_MS);
+    #[cfg(not(test))]
+    let timeout = LEG_SILENT_MS;
+    let Some(g) = gc.cur.as_mut() else { return };
+    if g.state != State::Joined {
+        return;
+    }
+    let mut gone = Vec::new();
+    for (peer, leg) in g.legs.iter_mut() {
+        // Sem motor (a app ainda nao arrancou o audio): ainda nao ha nada para ouvir.
+        let Some(a) = &leg.audio else { continue };
+        if let Some(n) = a.heard() {
+            if n != leg.heard {
+                leg.heard = n;
+                leg.heard_at = now;
+            }
+        }
+        if now - leg.heard_at > timeout {
+            gone.push(peer.clone());
+        }
+    }
+    // Disse "entrei" e era ele a oferecer a perna, mas ela nunca chegou.
+    let waiting: Vec<String> = g.present.iter().filter(|p| !g.legs.contains_key(*p)).cloned().collect();
+    g.waiting.retain(|p, _| waiting.contains(p));
+    for p in waiting {
+        let since = *g.waiting.entry(p.clone()).or_insert(now);
+        if now - since > timeout {
+            gone.push(p);
+        }
+    }
+    if gone.is_empty() {
+        return;
+    }
+    for p in &gone {
+        g.present.remove(p);
+        g.waiting.remove(p);
+        if let Some(leg) = g.legs.remove(p) {
+            leg.stop();
+        }
+        if let Some(a) = &gc.audio {
+            a.remove_leg(p);
+        }
+    }
+    gc.changed();
 }
 
 /// Expira o toque (sem ninguem a atender em 45 s, como nas chamadas a dois).
@@ -767,6 +873,7 @@ impl QtClient {
             legs: BTreeMap::new(),
             camera: video,
             my_name: None,
+            waiting: BTreeMap::new(),
         });
         Ok(GroupCallStart { call_id: hex(&id), items })
     }
@@ -801,6 +908,7 @@ impl QtClient {
                 legs: BTreeMap::new(),
                 camera: false,
                 my_name: None,
+                waiting: BTreeMap::new(),
             });
         }
         self.group_call_join(call_id)
@@ -813,7 +921,14 @@ impl QtClient {
         if !notice_accepted(&c)? {
             return Err(bad("group_call_notice"));
         }
-        let own_relay = crate::client::relock(&self.calls).own_relay.clone();
+        // Uma chamada de cada vez: com uma chamada a dois (a tocar ou atendida) nao se entra.
+        let (one_to_one, own_relay) = {
+            let calls = crate::client::relock(&self.calls);
+            (calls.in_call(), calls.own_relay.clone())
+        };
+        if one_to_one {
+            return Err(bad("call_busy"));
+        }
         let mut gc = crate::client::relock(&self.group_calls);
         expire(&mut gc);
         let g = match gc.cur.as_mut() {
@@ -940,6 +1055,8 @@ impl QtClient {
         let c = self.lock()?;
         let mut gc = crate::client::relock(&self.group_calls);
         expire(&mut gc);
+        #[cfg(feature = "calls")]
+        drop_silent(&mut gc);
         #[cfg(feature = "calls")]
         if let Some(g) = gc.cur.as_mut() {
             let tx = c.unchecked_transaction()?;
@@ -1076,6 +1193,23 @@ impl GroupAudio {
         let mut legs = crate::client::relock(&self.legs);
         legs.retain(|(p, _)| p != peer);
         legs.push((peer.to_string(), a));
+    }
+
+    /// `peer` saiu: a perna para e deixa de contar para a mistura, o video e quem fala.
+    fn remove_leg(&self, peer: &str) {
+        let removed = {
+            let mut legs = crate::client::relock(&self.legs);
+            legs.iter().position(|(p, _)| p == peer).map(|i| legs.remove(i).1)
+        };
+        if let Some(a) = removed {
+            a.stop();
+        }
+        let mut s = crate::client::relock(&self.st);
+        s.levels.remove(peer);
+        if s.speaker.as_deref() == Some(peer) {
+            s.speaker = None;
+            s.speaker_at = None;
+        }
     }
 
     fn leg(&self, peer: &str) -> Option<Arc<crate::call_audio::CallAudio>> {
@@ -1352,6 +1486,199 @@ mod tests {
     }
 }
 
+/// Toques e convites sem motores de audio (correm tambem sem a feature `calls`).
+#[cfg(test)]
+mod ring_tests {
+    use super::*;
+    use crate::call::CallEvent;
+    use crate::client::{peer_bundle_from_relay_bytes, PublicIdentity};
+
+    struct Peer {
+        c: Arc<QtClient>,
+        id: PublicIdentity,
+    }
+
+    fn peer(name: &str) -> Peer {
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let path = format!("/tmp/qt_gring_{name}_{}_{n}.sqlite", std::process::id());
+        let _ = std::fs::remove_file(&path);
+        let c = QtClient::open(path, vec![0x60 + n as u8; 32]).unwrap();
+        let id = c.create_identity().unwrap();
+        Peer { c, id }
+    }
+
+    fn cid(p: &Peer) -> String {
+        hex(&p.id.identity_public)
+    }
+
+    fn flush(from: &Peer, all: &[&Peer]) {
+        for item in from.c.outbox().unwrap() {
+            if let Some(to) = all.iter().find(|p| cid(p) == item.contact_id) {
+                to.c.receive_sealed(item.blob.clone()).unwrap();
+            }
+            from.c.outbox_sent(item.outbox_id.clone()).unwrap();
+        }
+    }
+
+    fn connect(a: &Peer, b: &Peer) {
+        let bundle = peer_bundle_from_relay_bytes(b.c.publishable_bundle().unwrap()).unwrap();
+        a.c.start_session(b.id.public_id.clone(), bundle).unwrap();
+        a.c.send_text(cid(b), "ola".into()).unwrap();
+        flush(a, &[b]);
+        b.c.send_text(cid(a), "ola!".into()).unwrap();
+        flush(b, &[a]);
+    }
+
+    /// Um convite de grupo chega com a app em segundo plano: ninguem chama
+    /// `group_call_events`, o toque passa do prazo e o telemovel tem de deixar de estar
+    /// "ocupado" (antes, as chamadas a dois e os convites novos davam "ocupado" ate o ecra abrir).
+    #[test]
+    fn toque_de_grupo_esquecido_nao_deixa_ocupado() {
+        let peers: Vec<Peer> = (0..3).map(|i| peer(&format!("r{i}"))).collect();
+        for i in 0..3 {
+            for j in i + 1..3 {
+                connect(&peers[i], &peers[j]);
+            }
+        }
+        let members = peers[1..].iter().map(|p| p.id.public_id.clone()).collect();
+        let gid = peers[0].c.group_create("Amigos".into(), members).unwrap().group_id;
+        let all: Vec<&Peer> = peers.iter().collect();
+        for p in &all {
+            flush(p, &all);
+        }
+        for p in &peers {
+            p.c.group_call_accept_notice().unwrap();
+        }
+        // A liga ao grupo; B recebe o convite em segundo plano (so `receive_sealed`).
+        peers[0].c.group_call_start(gid.clone(), false).unwrap();
+        flush(&peers[0], &all);
+        assert!(peers[1].c.group_call_current().unwrap().is_some(), "o convite chegou a B");
+        // O toque passa do prazo sem ninguem perguntar.
+        crate::client::relock(&peers[1].c.group_calls).cur.as_mut().unwrap().since -= crate::call::RING_TIMEOUT_MS + 1;
+        // C liga a B (chamada a dois): tem de tocar em B, nao "ocupado".
+        let call = peers[2].c.call_start(cid(&peers[1])).unwrap();
+        flush(&peers[2], &all);
+        let ev = peers[1].c.call_events().unwrap();
+        assert!(
+            ev.iter().any(|e| matches!(e, CallEvent::Incoming { call_id, .. } if *call_id == call.call_id)),
+            "a chamada de C toca em B: {ev:?}"
+        );
+        assert_eq!(peers[1].c.group_call_current().unwrap(), None, "o toque de grupo acabou (perdida)");
+        peers[1].c.call_hangup(call.call_id.clone()).unwrap();
+        flush(&peers[1], &all);
+        let first = peers[0].c.group_call_current().unwrap().unwrap();
+        peers[0].c.group_call_leave(first).unwrap();
+        flush(&peers[0], &all);
+        for p in &peers {
+            let _ = p.c.group_call_events().unwrap();
+        }
+
+        // O mesmo com um convite de grupo novo durante um toque de grupo esquecido: A liga (X), C
+        // recusa, o toque de B passa do prazo sem ninguem perguntar e C liga outra vez (Y).
+        let x = peers[0].c.group_call_start(gid.clone(), false).unwrap();
+        flush(&peers[0], &all);
+        let _ = peers[2].c.group_call_events().unwrap();
+        peers[2].c.group_call_leave(x.call_id.clone()).unwrap();
+        flush(&peers[2], &all);
+        crate::client::relock(&peers[1].c.group_calls).cur.as_mut().unwrap().since -= crate::call::RING_TIMEOUT_MS + 1;
+        let y = peers[2].c.group_call_start(gid, false).unwrap();
+        flush(&peers[2], &all);
+        let ev = peers[1].c.group_call_events().unwrap();
+        assert!(
+            ev.iter().any(|e| matches!(e, GroupCallEvent::Incoming { call_id, .. } if *call_id == y.call_id)),
+            "o convite novo toca em B: {ev:?}"
+        );
+        assert!(
+            !ev.iter().any(|e| matches!(e, GroupCallEvent::Ended { call_id, reason: GroupCallEndReason::Busy, .. } if *call_id == y.call_id)),
+            "sem \"ocupado\": {ev:?}"
+        );
+    }
+
+    /// Alguem que nao e do grupo mas sabe o id da chamada (ex.: tirado do grupo a meio, ou a
+    /// quem um membro o passou) e tem sessao com um participante: a oferta de perna dele e
+    /// ignorada (antes entrava na malha, ouvia e ficava com o IP desse participante).
+    #[test]
+    fn oferta_de_perna_de_quem_nao_e_do_grupo_e_ignorada() {
+        let peers: Vec<Peer> = (0..3).map(|i| peer(&format!("m{i}"))).collect();
+        for i in 0..3 {
+            for j in i + 1..3 {
+                connect(&peers[i], &peers[j]);
+            }
+        }
+        // O intruso tem de ter um id menor do que alguem do grupo (so o id menor oferece).
+        let top = peers.iter().map(cid).max().unwrap();
+        let intruder = loop {
+            let x = peer("intruso");
+            if cid(&x) < top {
+                break x;
+            }
+        };
+        let victim = peers.iter().find(|p| cid(p) == top).unwrap();
+        connect(&intruder, victim);
+        let members = peers[1..].iter().map(|p| p.id.public_id.clone()).collect();
+        let gid = peers[0].c.group_create("Amigos".into(), members).unwrap().group_id;
+        let all: Vec<&Peer> = peers.iter().collect();
+        for p in &all {
+            flush(p, &all);
+        }
+        for p in &peers {
+            p.c.group_call_accept_notice().unwrap();
+        }
+        let start = peers[0].c.group_call_start(gid, false).unwrap();
+        flush(&peers[0], &all);
+        for p in &peers[1..] {
+            p.c.group_call_join(start.call_id.clone()).unwrap();
+            flush(p, &all);
+        }
+        for p in &all {
+            flush(p, &all);
+        }
+        // O intruso oferece uma perna ao participante com o id maior.
+        let id: [u8; 16] = unhex(&start.call_id).unwrap().try_into().unwrap();
+        let mut extra = vec![9u8; 16 + 32];
+        extra.extend_from_slice(&crate::call::DEFAULT_PAD.to_be_bytes());
+        {
+            let conn = intruder.c.lock().unwrap();
+            queue(&intruder.c, &conn, &top, &encode(OP_LEG_OFFER, &id, &extra), None).unwrap();
+        }
+        flush(&intruder, &[victim]);
+        let parts = victim.c.group_call_participants(start.call_id.clone()).unwrap();
+        assert!(!parts.iter().any(|p| p.contact_id == cid(&intruder)), "o intruso nao entra: {parts:?}");
+        assert_eq!(parts.len(), 2, "so os outros dois membros");
+    }
+
+    /// A chamada de grupo toca em B; B liga entretanto a C (chamada a dois) e depois tenta
+    /// atender a de grupo: nao pode (antes ficava com as duas chamadas ao mesmo tempo).
+    #[test]
+    fn nao_se_entra_no_grupo_durante_uma_chamada_a_dois() {
+        let peers: Vec<Peer> = (0..3).map(|i| peer(&format!("d{i}"))).collect();
+        for i in 0..3 {
+            for j in i + 1..3 {
+                connect(&peers[i], &peers[j]);
+            }
+        }
+        let members = peers[1..].iter().map(|p| p.id.public_id.clone()).collect();
+        let gid = peers[0].c.group_create("Amigos".into(), members).unwrap().group_id;
+        let all: Vec<&Peer> = peers.iter().collect();
+        for p in &all {
+            flush(p, &all);
+        }
+        for p in &peers {
+            p.c.group_call_accept_notice().unwrap();
+        }
+        let start = peers[0].c.group_call_start(gid, false).unwrap();
+        flush(&peers[0], &all);
+        assert!(peers[1].c.group_call_current().unwrap().is_some(), "toca em B");
+        peers[1].c.call_start(cid(&peers[2])).unwrap();
+        assert!(
+            matches!(peers[1].c.group_call_join(start.call_id.clone()), Err(QtError::InvalidInput { .. })),
+            "B ja esta numa chamada a dois"
+        );
+        assert_eq!(peers[0].c.group_call_participants(start.call_id).unwrap().len(), 0, "B nao entrou");
+    }
+}
+
 /// Chamadas de grupo com telemoveis reais (QtClient + motores), sem relay: o audio e o video
 /// so podem passar pelos caminhos diretos (127.0.0.1).
 #[cfg(all(test, feature = "calls"))]
@@ -1602,6 +1929,121 @@ mod mesh_tests {
         }
         let ev = peers[5].c.group_call_events().unwrap();
         assert!(ev.iter().any(|e| matches!(e, GroupCallEvent::Ended { reason: GroupCallEndReason::Missed, .. })), "{ev:?}");
+    }
+
+    /// C desaparece a meio (sem rede, sem bateria, app fechada a forca): o "sai" nunca chega. A e
+    /// B deixam de o ter na chamada ao fim do prazo, e a perna entre A e B fica (a voz continua).
+    #[test]
+    fn quem_desaparece_sem_avisar_sai_da_chamada() {
+        let (peers, gid) = group(3);
+        let all: Vec<&Peer> = peers.iter().collect();
+        let start = peers[0].c.group_call_start(gid, false).unwrap();
+        let call = start.call_id.clone();
+        let mut auds = vec![audio(&peers[0], &call)];
+        flush_all(&all);
+        for p in &peers[1..] {
+            let id = incoming(p).unwrap();
+            p.c.group_call_join(id.clone()).unwrap();
+            auds.push(audio(p, &id));
+            flush_all(&all);
+        }
+        let ok = run(&all, 20, || {
+            peers.iter().zip(&auds).all(|(p, a)| {
+                let parts = p.c.group_call_participants(call.clone()).unwrap();
+                parts.len() == 2 && parts.iter().all(|x| x.connected && a.direct(x.contact_id.clone()))
+            })
+        });
+        assert!(ok, "malha de 3 com ligacao direta em todas as pernas");
+        // Os tres a falar um pouco (como na app, onde o microfone nunca para).
+        let talk = |who: &[Arc<GroupAudio>], ps: &[&Peer], i: usize| {
+            for a in who {
+                a.push_capture(tone(i)).unwrap();
+                let _ = a.pull_playback();
+            }
+            for p in ps {
+                p.c.group_call_events().unwrap();
+            }
+            flush_all(ps);
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        for i in 0..50 {
+            talk(&auds, &all, i);
+        }
+        for p in &peers[..2] {
+            crate::client::relock(&p.c.group_calls).leg_timeout = Some(2_000);
+        }
+        // C desaparece: o motor dele para e o "sai" nunca e enviado.
+        auds[2].stop();
+        let t = Instant::now();
+        let mut i = 0;
+        let gone = loop {
+            talk(&auds[..2], &all[..2], i);
+            i += 1;
+            let only_ab = peers[..2].iter().all(|p| {
+                let parts = p.c.group_call_participants(call.clone()).unwrap();
+                parts.len() == 1 && parts[0].connected
+            });
+            if only_ab || t.elapsed() > Duration::from_secs(10) {
+                break only_ab;
+            }
+        };
+        assert!(gone, "A e B deixam de ter C e continuam ligados um ao outro");
+        assert!(t.elapsed() >= Duration::from_secs(2), "so depois do prazo");
+        // A perna de C saiu tambem do audio do grupo; a de B continua.
+        assert!(auds[0].diagnostic_of(peers[2].cid()).is_empty());
+        assert!(!auds[0].diagnostic_of(peers[1].cid()).is_empty());
+        let ev = peers[0].c.group_call_events().unwrap();
+        assert!(!ev.iter().any(|e| matches!(e, GroupCallEvent::Ended { .. })), "a chamada continua para A: {ev:?}");
+        for p in &peers[..2] {
+            p.c.group_call_leave(call.clone()).unwrap();
+        }
+    }
+
+    /// O nucleo fecha a meio da chamada de grupo (a app fecha a base de dados, por exemplo ao ser
+    /// fechada nos recentes) sem a app parar a captura: o microfone deixa de chegar aos outros.
+    #[test]
+    fn fechar_o_nucleo_para_o_microfone() {
+        let (mut peers, gid) = group(2);
+        let start = peers[0].c.group_call_start(gid, false).unwrap();
+        let call = start.call_id.clone();
+        let a0 = audio(&peers[0], &call);
+        flush_all(&peers.iter().collect::<Vec<_>>());
+        let id = incoming(&peers[1]).unwrap();
+        peers[1].c.group_call_join(id.clone()).unwrap();
+        let a1 = audio(&peers[1], &id);
+        let ok = run(&peers.iter().collect::<Vec<_>>(), 20, || {
+            let parts = peers[0].c.group_call_participants(call.clone()).unwrap();
+            parts.len() == 1 && parts[0].connected && a0.direct(parts[0].contact_id.clone())
+        });
+        assert!(ok, "A e B ligados pelo direto");
+        // B fala e A ouve (`ms` de audio; devolve os frames com som do lado de A).
+        let speak = |from: usize, ms: u64| {
+            let t = Instant::now();
+            let mut loud = 0;
+            while t.elapsed() < Duration::from_millis(ms) {
+                a1.push_capture(tone(from)).unwrap();
+                a0.push_capture(vec![0; 1920]).unwrap();
+                if rms(&a0.pull_playback()) > 1000.0 {
+                    loud += 1;
+                }
+                let _ = a1.pull_playback();
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            loud
+        };
+        // Pacotes que chegaram a A vindos de B.
+        let b_cid = peers[1].cid();
+        let from_b = || a0.leg(&b_cid).and_then(|l| l.heard()).unwrap_or(0);
+        assert!(speak(0, 2_000) > 30, "A ouve B");
+        assert!(from_b() > 50);
+        // O nucleo de B fecha; a app (aqui o teste) continua a dar o microfone ao audio do grupo.
+        drop(peers.pop());
+        let _ = speak(100, 300);
+        let before = from_b();
+        let _ = speak(200, 2_000);
+        assert_eq!(from_b(), before, "nada do microfone de B chega a A");
+        assert!(!a1.video_push(vec![7; 1500], true, 0, 0), "nem imagens");
+        peers[0].c.group_call_leave(call).unwrap();
     }
 
     #[test]
