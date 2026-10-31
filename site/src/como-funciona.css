@@ -520,17 +520,10 @@
   margin: 0 0 1.2rem;
   line-height: 1.55;
 }
-.cf-chamadas img {
-  display: block;
-  width: min(260px, 70vw);
-  height: auto;
-  margin: 0 auto;
-  border-radius: 24px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
-}
-
-/* Mapa animado da federacao (Estocolmo e Espanha), por baixo do texto. */
-.cf-federacao__video {
+/* Animacoes por baixo do texto: as chamadas de grupo e o mapa da federacao (Estocolmo e
+   Espanha). Com "reduzir movimento" fica a imagem parada em vez do video. */
+.cf-video,
+.cf-video-still {
   display: block;
   width: min(440px, 100%);
   height: auto;
@@ -540,8 +533,10 @@
   background: #0d0a1c;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
+.cf-video-still { display: none; }
 @media (prefers-reduced-motion: reduce) {
-  .cf-federacao__video { display: none; }
+  .cf-video { display: none; }
+  .cf-video-still { display: block; }
 }
 
 /* Ecras da app (0.9.11): quatro capturas lado a lado; num ecra estreito deslizam na horizontal.

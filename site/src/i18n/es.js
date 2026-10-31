@@ -98,7 +98,6 @@ export default {
   'como.@1': 'Paso anterior',
   'como.@2': 'Paso siguiente',
   'como.@3': 'Elegir paso',
-  'como.@4': 'Pantalla de una llamada de voz en SEALER: contador, cifrada de extremo a extremo y los botones Silenciar, Altavoz y Colgar.',
   'como.1': 'Cómo viaja un mensaje',
   'como.2': 'En 5 pasos sencillos, lo que ocurre cuando pulsas enviar.',
   'como.3': 'Servidor SEALER',

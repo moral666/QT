@@ -159,6 +159,15 @@ function markSwitcher() {
   }
 }
 
+/** Da direita para a esquerda: as animações espelhadas (`data-rtl-src`, `data-rtl-poster`). */
+function useRtlMedia() {
+  if (!RTL.has(lang)) return;
+  for (const el of document.querySelectorAll('[data-rtl-src]')) {
+    if (el.dataset.rtlPoster) el.poster = el.dataset.rtlPoster;
+    el.src = el.dataset.rtlSrc;
+  }
+}
+
 /** Traduz a página (chamar uma vez, no arranque de cada página). */
 let pending = null;
 export function translatePage() {
@@ -172,6 +181,7 @@ async function run() {
   markSwitcher();
   closeLangMenuOutside();
   keepLangInLinks();
+  useRtlMedia();
   if (lang === 'pt') return;
   addReportLine();
   try {
