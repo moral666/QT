@@ -122,21 +122,6 @@
   line-height: 1.55;
 }
 
-/* Mapa animado da federacao (Estocolmo e Espanha), por baixo do texto do cartao. */
-.fx-card__video {
-  display: block;
-  width: 100%;
-  aspect-ratio: 1;
-  margin-top: 0.9rem;
-  border-radius: 0.75rem;
-  border: 1px solid var(--line);
-  background: #0d0a1c;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .fx-card__video { display: none; }
-}
-
 .fx__more {
   margin: 3.5rem 0 0;
 }
