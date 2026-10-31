@@ -895,11 +895,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun createIdentity() = io {
         val client = qt ?: return@io
-        // Conta nova: comeca no relay principal (se estiver fechado a contas novas, o startLink
-        // passa ao seguinte da lista).
-        Relays.resetHome(prefs)
+        // Conta nova: comeca no relay que responde mais depressa (0.9.69; se estiver fechado a
+        // contas novas, o startLink passa ao seguinte dessa ordem). Nada disto aparece no ecra.
+        relaysTried.clear()
+        val first = Relays.nextForNewAccount(newAccountOrder(), emptySet()) ?: Relays.main
+        Relays.setHome(prefs, first.name)
+        Log.i(TAG, "conta nova: a registar em ${first.name}")
         Relays.home(prefs).let { h -> _ui.update { it.copy(relayUrl = h.url, relayKeyHex = h.pin) } }
-        runCatching { client.callSetRelay(null) }
+        runCatching { client.callSetRelay(Relays.callName(prefs)) }
         val me = client.createIdentity()
         // Conta nova: "Mostrar quando estou online" comeca desligado (0.9.23). Liga-se no menu.
         // Quem ja tinha conta fica como estava.
@@ -978,6 +981,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Relays ja tentados nesta sessao por estarem fechados a contas novas. */
     private val relaysTried = mutableSetOf<String>()
+
+    /**
+     * Conta nova (0.9.69): a ordem dos relays medida pelo nucleo, so quando e precisa (ao criar a
+     * conta, ou quando o relay responde "sem contas novas", ex.: na recuperacao de uma conta que ja
+     * nao existe). Uma vez por sessao; as contas que ja existem nunca medem nem mudam por isto.
+     */
+    @Volatile private var measuredOrder: List<String>? = null
+    private fun newAccountOrder(): List<String> = measuredOrder ?: run {
+        val t0 = SystemClock.elapsedRealtime()
+        Relays.newAccountOrder().also {
+            measuredOrder = it
+            // So na build debug (o R8 tira o Log.i da release): a ordem medida, sem enderecos.
+            Log.i(TAG, "conta nova: ordem dos relays ${it.joinToString()} (${SystemClock.elapsedRealtime() - t0} ms)")
+        }
+    }
     /** Mudancas de relay nesta sessao (nunca anda aos saltos entre relays sem fim). */
     private var relayMoves = 0
 
@@ -994,7 +1012,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             elsewhere != null -> Relays.byName(elsewhere)
             reason == relayNoNewAccountsReason() -> {
                 relaysTried.add(current.name)
-                Relays.next(relaysTried)
+                Relays.nextForNewAccount(newAccountOrder(), relaysTried)
             }
             else -> null
         } ?: return false

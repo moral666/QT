@@ -6,6 +6,24 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 31 de outubro de 2026: conta nova no relay mais próximo (Android e iPhone 0.9.69, build 69)
+
+- Ao criar uma conta, a app regista-se no relay da lista que responde mais depressa (Estocolmo ou
+  Espanha), em vez de começar sempre pelo principal. O núcleo mede só a ligação TCP à porta de cada
+  relay (aberta e fechada logo, sem TLS nem pedidos; duas vezes cada um, todos ao mesmo tempo, no
+  máximo 2 s) e devolve a ordem (`relay_order_for_new_account`, `ffi/src/relay_choice.rs`). Os que
+  não respondem ficam no fim; sem nenhuma resposta, fica a ordem da lista.
+- Se esse relay estiver fechado a contas novas (`RELAY_NOVAS_CONTAS=0`), a app passa ao seguinte
+  dessa ordem (`relay_next_for_new_account`), como antes passava ao seguinte da lista.
+- Na recuperação com as 12 palavras, a app só mede quando o relay responde "sem contas novas" (a
+  conta tem de ser criada de novo). As contas que já existem nunca mudam de relay, e a medida nunca
+  se repete depois do registo.
+- Nada visível: sem textos novos, sem nomes de servidores, sem escolha manual. Sem mudanças no relay
+  nem no protocolo.
+- Testes: a ordem pelo tempo medido, quem não responde no fim, o seguinte quando o primeiro está
+  fechado (`ffi/src/relay_choice.rs`) e, de ponta a ponta com dois relays federados (um fechado) e um
+  terceiro que não responde, a conta nova fica no que aceita (`server/tests/relay_federacao.rs`).
+
 ### 31 de outubro de 2026: correções das chamadas de grupo e do deploy (Android e iPhone 0.9.68, build 68)
 
 - **Fechar a app a meio de uma chamada de grupo (Android):** o microfone, a câmara e o serviço da
