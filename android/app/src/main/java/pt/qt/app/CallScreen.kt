@@ -86,8 +86,8 @@ import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.delay
 import uniffi.qt_ffi.VideoResponse
 
-private val GREEN = Color(0xFF2E9E5B)
-private val RED = Color(0xFFD64545)
+internal val CALL_GREEN = Color(0xFF2E9E5B)
+internal val CALL_RED = Color(0xFFD64545)
 private val SCRIM = Color(0x99000000)
 
 /**
@@ -118,7 +118,7 @@ val VideoCallIcon: ImageVector by lazy {
 /** Fundo dos botoes por cima do video: preto a 65% (o branco por cima tem contraste mesmo com video claro). */
 private val ON_VIDEO = Color(0xA6000000)
 /** Botao redondo normal (claro e escuro: o fundo da chamada e sempre o gradiente escuro ou o video). */
-private val ROUND_IDLE = Color(0x29FFFFFF)
+internal val ROUND_IDLE = Color(0x29FFFFFF)
 /** Icone de um botao ligado (fundo branco). */
 private val ICON_ON = Color(0xFF1C1B1F)
 /** Com video, o topo e os controlos desaparecem ao fim disto sem toques (o Android pode pedir mais). */
@@ -226,7 +226,7 @@ fun CallScreen(
         // Camadas do video (por baixo de tudo, ate as bordas do ecra).
         if (showRemote) {
             RemoteVideo(v, onRemoteSurface, Modifier.fillMaxSize())
-            // O video dele parou (pausa, rede, sem fichas): so a foto ou a inicial, sem texto.
+            // O video dele parou (pausa, rede, sem ligacao direta): so a foto ou a inicial, sem texto.
             if (v.remoteStalled) RemotePaused(call, colors.topBarGradient)
         }
         if (showSelf) {
@@ -289,8 +289,8 @@ fun CallScreen(
                 }
                 when (call.phase) {
                     CallPhase.INCOMING -> Row(horizontalArrangement = Arrangement.spacedBy(64.dp)) {
-                        RoundAction(s(R.string.t_recusar), RED, Icons.Filled.Call, hangup = true, onClick = onHangup)
-                        RoundAction(s(R.string.t_atender), GREEN, Icons.Filled.Call, hangup = false, onClick = onAccept)
+                        RoundAction(s(R.string.t_recusar), CALL_RED, Icons.Filled.Call, hangup = true, onClick = onHangup)
+                        RoundAction(s(R.string.t_atender), CALL_GREEN, Icons.Filled.Call, hangup = false, onClick = onAccept)
                     }
                     CallPhase.ENDED -> Spacer(Modifier.height(1.dp))
                     else -> AnimatedVisibility(visible, enter = fadeIn(), exit = fadeOut()) {
@@ -320,7 +320,7 @@ fun CallScreen(
 
 /** Painel dos testers: os numeros da chamada (de segundo a segundo) e "Copiar diagnostico". */
 @Composable
-private fun CallDiagDialog(diagnostic: () -> String?, onDismiss: () -> Unit) {
+internal fun CallDiagDialog(diagnostic: () -> String?, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     var text by remember { mutableStateOf(diagnostic().orEmpty()) }
     LaunchedEffect(Unit) {
@@ -354,7 +354,7 @@ private fun CallDiagDialog(diagnostic: () -> String?, onDismiss: () -> Unit) {
  * em segundo plano nunca apaga o ecra das outras apps.
  */
 @Composable
-private fun CallScreenPower(proximity: Boolean, keepOn: Boolean) {
+internal fun CallScreenPower(proximity: Boolean, keepOn: Boolean) {
     val view = LocalView.current
     DisposableEffect(view, keepOn) {
         if (keepOn) view.keepScreenOn = true
@@ -445,7 +445,7 @@ private fun ControlBar(
 
 /** Botao redondo de ligar/desligar: ligado = fundo branco e icone escuro. O TalkBack diz "ligado/desligado". */
 @Composable
-private fun ToggleRound(icon: ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
+internal fun ToggleRound(icon: ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .size(56.dp)
@@ -499,7 +499,7 @@ private fun RouteRound(call: CallUi, onRoute: (String) -> Unit) {
 
 /** Botao redondo de uma acao (trocar camara). Desativado: mais transparente. */
 @Composable
-private fun ActionRound(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
+internal fun ActionRound(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .size(56.dp)
@@ -515,13 +515,13 @@ private fun ActionRound(icon: ImageVector, label: String, enabled: Boolean, onCl
 
 /** Desligar: botao redondo vermelho com o auscultador (o padrao que toda a gente reconhece). */
 @Composable
-private fun HangupButton(onClick: () -> Unit) {
+internal fun HangupButton(onClick: () -> Unit) {
     val label = s(R.string.t_desligar)
     Box(
         Modifier
             .size(72.dp)
             .clip(CircleShape)
-            .background(RED)
+            .background(CALL_RED)
             .clickable(role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
@@ -577,7 +577,7 @@ private fun VideoRequest(name: String, onRespond: (VideoResponse) -> Unit) {
 }
 
 /** Ouvinte de uma TextureView: avisa quando a superficie aparece e desaparece. */
-private fun textureListener(onReady: (SurfaceTexture?) -> Unit) = object : TextureView.SurfaceTextureListener {
+internal fun textureListener(onReady: (SurfaceTexture?) -> Unit) = object : TextureView.SurfaceTextureListener {
     override fun onSurfaceTextureAvailable(st: SurfaceTexture, width: Int, height: Int) = onReady(st)
     override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, width: Int, height: Int) {}
     override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
@@ -652,7 +652,7 @@ fun CallBar(call: CallUi, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .background(GREEN)
+            .background(CALL_GREEN)
             .clickable(onClick = onClick)
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -671,7 +671,7 @@ fun CallBar(call: CallUi, onClick: () -> Unit) {
 }
 
 @Composable
-private fun RoundAction(label: String, color: Color, icon: ImageVector, hangup: Boolean, onClick: () -> Unit) {
+internal fun RoundAction(label: String, color: Color, icon: ImageVector, hangup: Boolean, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier.size(72.dp).clip(CircleShape).background(color).clickable(onClick = onClick),

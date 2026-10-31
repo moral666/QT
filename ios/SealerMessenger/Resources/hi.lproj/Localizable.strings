@@ -37,6 +37,16 @@
 "full_screen_open" = "सेटिंग खोलें";
 "full_screen_text" = "फ़ोन लॉक होने पर कॉल को फ़ुल स्क्रीन में दिखाने के लिए Android को आपकी अनुमति चाहिए। इसके बिना कॉल सिर्फ़ एक छोटी सूचना के रूप में दिखेगी।";
 "full_screen_title" = "फ़ुल-स्क्रीन कॉल";
+"gcall_from" = "%1$@ कॉल कर रहे हैं";
+"gcall_full" = "ग्रुप कॉल में पहले से 5 लोग हैं।";
+"gcall_join" = "कॉल में शामिल हों";
+"gcall_me" = "मैं";
+"gcall_name_text" = "जिनके संपर्कों में आप नहीं हैं, उन्हें यह नाम दिखेगा।";
+"gcall_name_title" = "इस कॉल में आपका नाम";
+"gcall_notice" = "ग्रुप कॉल में आपका नेटवर्क पता दूसरे प्रतिभागियों को दिखता है।";
+"gcall_title" = "ग्रुप कॉल";
+"gcall_video_title" = "ग्रुप वीडियो कॉल";
+"gcall_waiting" = "दूसरों के जुड़ने का इंतज़ार…";
 "ios_bio_changed" = "Face ID, Touch ID या iPhone पासकोड बदल गया है। ऐप का पासकोड इस्तेमाल करें और क्विक अनलॉक फिर से चालू करें।";
 "ios_bio_confirm" = "ऐप के पासकोड से पुष्टि करें। इसके बाद iPhone आपसे Face ID, Touch ID या iPhone पासकोड मांगेगा।";
 "ios_bio_unavailable" = "उपलब्ध नहीं: इस iPhone में पासकोड सेट नहीं है।";
@@ -201,7 +211,6 @@
 "t_chamadas_a_tocar" = "आने वाली कॉल";
 "t_chamadas_de_voz_em_curso_e" = "ऐप खुला होने पर चल रही और आने वाली वॉइस कॉल।";
 "t_chave_do_armazenamento_seguro_indisponivel" = "सुरक्षित स्टोरेज की कुंजी उपलब्ध नहीं है: %1$@";
-"t_chave_publica_do_relay_pinning" = "रिले की पब्लिक कुंजी (पिनिंग)";
 "t_cifrada_no_teu_telemovel_antes_de" = "भेजने से पहले आपके फ़ोन पर ही एन्क्रिप्ट की जाती है। फ़ोटो की लोकेशन हटा दी जाती है।";
 "t_codigo_alterado" = "पासकोड बदल दिया गया।";
 "t_codigo_atual" = "मौजूदा पासकोड";
@@ -253,7 +262,6 @@
 "t_erro" = "गड़बड़ी: %1$@";
 "t_escolhe_um_codigo_so_com_numeros" = "सिर्फ़ अंकों वाला पासकोड चुनें और उसे संभालकर रखें: इसके बिना चैट खोलने का कोई तरीका नहीं है।";
 "t_escolher_foto" = "फ़ोटो चुनें";
-"t_esconder_opcoes_de_teste" = "टेस्ट विकल्प छिपाएं";
 "t_esqueceste_o_codigo" = "पासकोड भूल गए?";
 "t_esqueci_me_do_codigo" = "पासकोड याद नहीं है";
 "t_esse_e_o_teu_proprio_id" = "यह आपकी अपनी ID है";
@@ -273,7 +281,6 @@
 "t_foto_ou_gif" = "फ़ोटो या GIF";
 "t_grupo" = "ग्रुप";
 "t_guardar" = "सेव करें";
-"t_guardar_e_voltar_a_ligar" = "सेव करें और दोबारा कनेक्ट करें";
 "t_guardar_nos_contactos" = "संपर्कों में सेव करें";
 "t_hoje" = "आज";
 "t_id_qt1" = "ID (qt1:…)";
@@ -358,7 +365,6 @@
 "t_o_ficheiro_tem_mais_de_25" = "फ़ाइल 25 MB से बड़ी है और भेजी नहीं जा सकती।";
 "t_o_ficheiro_tem_mais_de_25_2" = "फ़ाइल 25 MB से बड़ी है।";
 "t_o_meu_id" = "मेरी ID";
-"t_o_relay_tem_de_usar_wss" = "रिले को wss:// इस्तेमाल करना होगा (ws:// सिर्फ़ डीबग बिल्ड में)";
 "t_o_servidor_ainda_nao_aceita_anexos" = "सर्वर अभी अटैचमेंट स्वीकार नहीं करता (इसे अपडेट करना होगा)।";
 "t_o_servidor_ainda_nao_tem_esta" = "सर्वर में अभी यह सुविधा नहीं है";
 "t_o_servidor_respondeu" = "सर्वर का जवाब: %1$@";
@@ -367,7 +373,6 @@
 "t_online" = "ऑनलाइन";
 "t_online_agora" = "अभी ऑनलाइन";
 "t_ontem" = "कल";
-"t_opcoes_de_teste" = "टेस्ट विकल्प";
 "t_os_codigos_nao_sao_iguais" = "पासकोड मेल नहीं खाते।";
 "t_ou" = "या";
 "t_ouvir" = "सुनें";
@@ -388,7 +393,6 @@
 "t_reagir" = "रिएक्ट करें";
 "t_recebe_o_id_diretamente_da_pessoa" = "ID सीधे उसी व्यक्ति से लें: मिलने पर उनका QR कोड स्कैन करें, या किसी भरोसेमंद तरीके का इस्तेमाल करें।";
 "t_recusar" = "अस्वीकार करें";
-"t_relay_teste" = "रिले (टेस्ट)";
 "t_repetir_o_novo_codigo" = "नया पासकोड दोबारा डालें";
 "t_resposta_inesperada_do_servidor" = "सर्वर से अनपेक्षित जवाब";
 "t_retirar_a_minha" = "मेरा रिएक्शन हटाएं";
@@ -423,7 +427,6 @@
 "t_toque_das_chamadas_de_voz_com" = "ऐप बंद होने पर वॉइस कॉल की रिंगटोन।";
 "t_tornar_administrador" = "एडमिन बनाएं";
 "t_tu" = "आप";
-"t_url_do_relay" = "रिले URL";
 "t_usar_impressao_digital_ou_pin_do" = "फ़िंगरप्रिंट या फ़ोन का PIN इस्तेमाल करें";
 "t_vai_tal_como_esta_cifrado_no" = "जैसी है वैसी ही भेजी जाएगी, और भेजने से पहले आपके फ़ोन पर एन्क्रिप्ट होगी।";
 "t_verificar_seguranca" = "सुरक्षा जांचें";

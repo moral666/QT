@@ -37,6 +37,16 @@
 "full_screen_open" = "Abrir ajustes";
 "full_screen_text" = "Para que una llamada aparezca a pantalla completa con el móvil bloqueado, Android necesita tu permiso. Sin él, la llamada solo aparece como un aviso pequeño.";
 "full_screen_title" = "Llamadas a pantalla completa";
+"gcall_from" = "%1$@ está llamando";
+"gcall_full" = "La llamada de grupo ya tiene 5 personas.";
+"gcall_join" = "Unirse a la llamada";
+"gcall_me" = "Yo";
+"gcall_name_text" = "Quien no te tenga en sus contactos verá este nombre.";
+"gcall_name_title" = "Tu nombre en esta llamada";
+"gcall_notice" = "En las llamadas de grupo, tu dirección de red es visible para los demás participantes.";
+"gcall_title" = "Llamada de grupo";
+"gcall_video_title" = "Videollamada de grupo";
+"gcall_waiting" = "Esperando a que entren los demás…";
 "ios_bio_changed" = "Face ID, Touch ID o el código del iPhone han cambiado. Usa el código de la app y vuelve a activar el desbloqueo rápido.";
 "ios_bio_confirm" = "Confirma con tu código. Después, el iPhone pide Face ID, Touch ID o el código del iPhone.";
 "ios_bio_unavailable" = "No disponible: este iPhone no tiene código.";
@@ -201,7 +211,6 @@
 "t_chamadas_a_tocar" = "Llamadas entrantes";
 "t_chamadas_de_voz_em_curso_e" = "Llamadas de voz en curso y entrantes con la app abierta.";
 "t_chave_do_armazenamento_seguro_indisponivel" = "Clave del almacenamiento seguro no disponible: %1$@";
-"t_chave_publica_do_relay_pinning" = "Clave pública del relay (pinning)";
 "t_cifrada_no_teu_telemovel_antes_de" = "Cifrada en tu móvil antes de salir. Se elimina la ubicación de la foto.";
 "t_codigo_alterado" = "Código cambiado.";
 "t_codigo_atual" = "Código actual";
@@ -253,7 +262,6 @@
 "t_erro" = "Error: %1$@";
 "t_escolhe_um_codigo_so_com_numeros" = "Elige un código solo con números y guárdalo bien: sin él no hay forma de abrir las conversaciones.";
 "t_escolher_foto" = "Elegir foto";
-"t_esconder_opcoes_de_teste" = "Ocultar opciones de prueba";
 "t_esqueceste_o_codigo" = "¿Has olvidado el código?";
 "t_esqueci_me_do_codigo" = "He olvidado el código";
 "t_esse_e_o_teu_proprio_id" = "Ese es tu propio ID";
@@ -273,7 +281,6 @@
 "t_foto_ou_gif" = "Foto o GIF";
 "t_grupo" = "Grupo";
 "t_guardar" = "Guardar";
-"t_guardar_e_voltar_a_ligar" = "Guardar y volver a conectar";
 "t_guardar_nos_contactos" = "Guardar en contactos";
 "t_hoje" = "Hoy";
 "t_id_qt1" = "ID (qt1:…)";
@@ -358,7 +365,6 @@
 "t_o_ficheiro_tem_mais_de_25" = "El archivo supera los 25 MB y no se puede enviar.";
 "t_o_ficheiro_tem_mais_de_25_2" = "El archivo supera los 25 MB.";
 "t_o_meu_id" = "Mi ID";
-"t_o_relay_tem_de_usar_wss" = "El relay debe usar wss:// (ws:// solo en la build debug)";
 "t_o_servidor_ainda_nao_aceita_anexos" = "El servidor aún no acepta adjuntos (hay que actualizarlo).";
 "t_o_servidor_ainda_nao_tem_esta" = "el servidor aún no tiene esta función";
 "t_o_servidor_respondeu" = "el servidor ha respondido: %1$@";
@@ -367,7 +373,6 @@
 "t_online" = "en línea";
 "t_online_agora" = "En línea ahora";
 "t_ontem" = "Ayer";
-"t_opcoes_de_teste" = "Opciones de prueba";
 "t_os_codigos_nao_sao_iguais" = "Los códigos no coinciden.";
 "t_ou" = "o";
 "t_ouvir" = "Escuchar";
@@ -388,7 +393,6 @@
 "t_reagir" = "Reaccionar";
 "t_recebe_o_id_diretamente_da_pessoa" = "Recibe el ID directamente de la persona: lee su código QR cuando estéis juntos, o usa un canal de confianza.";
 "t_recusar" = "Rechazar";
-"t_relay_teste" = "Relay (prueba)";
 "t_repetir_o_novo_codigo" = "Repetir el código nuevo";
 "t_resposta_inesperada_do_servidor" = "respuesta inesperada del servidor";
 "t_retirar_a_minha" = "Quitar la mía";
@@ -423,7 +427,6 @@
 "t_toque_das_chamadas_de_voz_com" = "Tono de las llamadas de voz con la app cerrada.";
 "t_tornar_administrador" = "Hacer administrador";
 "t_tu" = "Tú";
-"t_url_do_relay" = "URL del relay";
 "t_usar_impressao_digital_ou_pin_do" = "Usar huella o PIN del móvil";
 "t_vai_tal_como_esta_cifrado_no" = "Se envía tal cual, cifrado en tu móvil antes de salir.";
 "t_verificar_seguranca" = "Verificar seguridad";

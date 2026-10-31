@@ -62,6 +62,9 @@ seguir.
 - **Comunidade** (0.9.52, Android e iPhone): as pessoas com medalha, só com foto e medalha (sem
   nome nem ID), atualizada uma vez por semana no Sealer Control, cifrada nos dois relays e
   descarregada só quando se abre o ecrã.
+- **Vídeo só pela ligação direta** (0.9.53, Android e iPhone): a imagem das videochamadas vai de
+  telemóvel para telemóvel entre contactos mútuos e nunca passa pelo servidor (até 1080p no Wi-Fi).
+  Sem ligação direta, a chamada continua só com voz.
 
 ## A seguir: tornar isto usável no dia a dia
 

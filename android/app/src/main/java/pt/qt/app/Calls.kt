@@ -63,7 +63,23 @@ private const val TAG = "SealerCall"
  * chamada, o foco do audio e o caminho do som (auricular, altifalante, Bluetooth) sao do Telecom:
  * aqui nao se mexe neles, so se espera pelo modo de chamada antes de criar o microfone.
  */
-class CallAudioIO(private val ctx: Context, private val audio: CallAudio, private val managed: Boolean = false) {
+/** De onde vem e para onde vai o som: a chamada a dois ou a de grupo (a mistura de todos; 0.9.63). */
+interface AudioPipe {
+    fun pushCapture(pcm: ByteArray)
+    fun pullPlayback(): ByteArray
+}
+
+fun CallAudio.pipe(): AudioPipe = object : AudioPipe {
+    override fun pushCapture(pcm: ByteArray) = this@pipe.pushCapture(pcm)
+    override fun pullPlayback(): ByteArray = this@pipe.pullPlayback()
+}
+
+fun uniffi.qt_ffi.GroupAudio.pipe(): AudioPipe = object : AudioPipe {
+    override fun pushCapture(pcm: ByteArray) = this@pipe.pushCapture(pcm)
+    override fun pullPlayback(): ByteArray = this@pipe.pullPlayback()
+}
+
+class CallAudioIO(private val ctx: Context, private val audio: AudioPipe, private val managed: Boolean = false) {
     private val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     @Volatile private var running = false
     @Volatile var muted = false

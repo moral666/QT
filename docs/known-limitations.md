@@ -56,6 +56,11 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     máquina). As filas são ciphertext, mas quem chegar ao Redis pode apagar ou atrasar mensagens.
 18. **Mensagens de texto ≤ 10 000 bytes** (JSON dentro de um frame Noise de 64 KiB).
     Imagens e GIFs ate 25 MiB seguem por outro caminho (ver 36).
+46. **Vídeo das chamadas só pela ligação direta (desde a 0.9.53).** Só há vídeo entre contactos
+    mútuos e quando os dois telemóveis se conseguem ligar diretamente. Em redes que não o deixam
+    (algumas operadoras móveis, redes de empresas ou públicas que fecham o UDP), ou com quem não é
+    contacto mútuo, a chamada continua só com voz pelo relay e o vídeo fica em pausa, sem aviso no
+    ecrã. Não há reserva de vídeo pelo servidor (nem TURN).
 
 ## Android / app
 19. ~~**`build-android.sh` não foi executado**~~ (resolvido): é o script usado para as APKs

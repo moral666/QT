@@ -172,16 +172,16 @@ pub enum ClientMessage {
     /// sem premium e as apps fecham as funcoes pagas. `None` so pergunta. Resposta: `PremiumEnforce`.
     AdminPremiumEnforce { on: Option<bool> },
 
-    // ----- Fichas anonimas do video pelo relay (0006, ver `qt_core::fichas`). -----
-    /// Pede fichas do mes `epoch` (AAAAMM, UTC), CEGAS: `blinded` sao n elementos de 32 bytes
-    /// (ristretto255) em base64, com n ate `qt_core::fichas::MAX_BATCH`. O relay so conta
-    /// quantas deu a esta conta neste mes (ate ao teto: `ServerConfig::fichas_per_month`, ou o
-    /// desta conta) e nunca guarda o pedido nem a resposta. So contas registadas.
-    /// Resposta: `Fichas`. Relays antigos respondem `Error` (pedido desconhecido).
-    IssueFichas { epoch: u32, blinded: String },
-    /// OPERADOR: fichas por mes desta conta (quota propria); `None` volta
-    /// ao valor do relay. Resposta: `Ack`.
-    AdminSetFichasQuota { user_id: UserId, per_month: Option<u32> },
+    /// SO PARA AS APPS ANTIGAS (0.9.37 a 0.9.52): pedido das fichas do video pelo relay, que
+    /// deixou de existir na 0.9.53 (o video so vai pela ligacao direta). O relay nao le os
+    /// campos e responde sempre `Error` com `FICHAS_OFF`, que essas apps ja tratam (voltam a
+    /// perguntar so horas depois).
+    IssueFichas {
+        #[serde(default)]
+        epoch: u32,
+        #[serde(default)]
+        blinded: String,
+    },
     /// OPERADOR (27/10/2026): quantas contas tem a app ligada ao relay agora (contas
     /// diferentes, nao ligacoes; sem o operador). So o numero, contado em memoria.
     /// Resposta: `Online`. Relays antigos respondem `Error`.
@@ -284,7 +284,7 @@ pub const PREMIUM_REQUIRED: &str = "precisa de premium";
 
 pub const RATE_LIMITED: &str = "demasiados pedidos, tenta daqui a pouco";
 
-/// Motivo do `Error` a `IssueFichas` num relay sem a semente das fichas.
+/// Motivo do `Error` a `IssueFichas` (apps antigas): desde a 0.9.53 nenhum relay emite fichas.
 pub const FICHAS_OFF: &str = "fichas desligadas neste relay";
 
 /// Tamanho maximo de um token FCM (na pratica ~160 a 200 caracteres).
@@ -391,12 +391,6 @@ pub enum ServerMessage {
     PremiumEnforce { on: bool },
     /// Resposta a `AdminListPremium`.
     PremiumList { entries: Vec<PremiumEntry> },
-    /// Resposta a `IssueFichas`: as primeiras `granted` fichas pedidas, avaliadas
-    /// (`evaluated`: base64 de granted x 32 bytes) com a prova DLEQ em lote (`proof`: base64
-    /// de 64 bytes) para a chave publica do mes (`public_key`: base64 de 32 bytes). `epoch`
-    /// diferente do pedido: o relay ja esta noutro mes (pedir outra vez para esse, sem nada
-    /// dado). `remaining`: quantas esta conta ainda pode pedir neste mes; `per_month`: o teto.
-    Fichas { epoch: u32, public_key: String, evaluated: String, proof: String, granted: u32, remaining: u32, per_month: u32 },
     /// Resposta a `AdminOnline`.
     Online { users: u64 },
     /// Resposta a `CommunityVersion` (0 = sem lista).

@@ -33,6 +33,7 @@ import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -87,6 +88,10 @@ fun GroupChatScreen(
     onSendFile: (Uri) -> Unit = {},
     onSendVoice: (File, Long) -> Unit = { _, _ -> },
     onDraftRestored: () -> Unit = {},
+    /** Chamada de grupo (0.9.63): `true` = videochamada. `null`: sem os botoes (grupo inativo). */
+    onCall: ((Boolean) -> Unit)? = null,
+    /** Ha uma chamada a decorrer neste grupo em que nao estou (0.9.65): "Entrar na chamada". */
+    onJoinOngoing: (() -> Unit)? = null,
 ) {
     val colors = LocalChatColors.current
     var reactingTo by remember { mutableStateOf<ChatMessage?>(null) }
@@ -127,6 +132,16 @@ fun GroupChatScreen(
                     }
                 },
                 actions = {
+                    if (onJoinOngoing != null && group.active) {
+                        TextButton(onClick = onJoinOngoing) {
+                            Icon(Icons.Filled.Call, contentDescription = null, tint = CALL_GREEN)
+                            Spacer(Modifier.width(6.dp))
+                            Text(s(R.string.gcall_join), color = CALL_GREEN)
+                        }
+                    } else if (onCall != null && group.active) {
+                        IconButton(onClick = { onCall(true) }) { Icon(VideoCallIcon, contentDescription = s(R.string.gcall_video_title)) }
+                        IconButton(onClick = { onCall(false) }) { Icon(Icons.Filled.Call, contentDescription = s(R.string.gcall_title)) }
+                    }
                     IconButton(onClick = onInfo) { Icon(Icons.Filled.Info, contentDescription = s(R.string.t_informacao_do_grupo)) }
                 },
             )

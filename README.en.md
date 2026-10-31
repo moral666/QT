@@ -50,6 +50,7 @@ It is also a working example of "data protection by design", as the GDPR asks: e
 - **Protected connection:** Noise Protocol on top of TLS (`wss://`), with the server key pinned in the apps.
 - **Everything encrypted on the phone:** history in SQLCipher, with the key kept in the Android Keystore or the iPhone Secure Enclave (this device only, outside cloud backups). The recent-apps thumbnail does not show your chats.
 - **Direct calls only between mutual contacts:** when both have each other in their contacts, the call connects phone to phone after it is answered, and in that case each one sees the other's IP. Otherwise (or if one blocks or deletes the other), it goes through the call server and the IP is not shared. Always end-to-end encrypted; through the server, audio packets all have the same size and rhythm, and the call server does not know which accounts are talking.
+- **Video never goes through the server:** the picture in video calls only travels over the direct connection between mutual contacts. Without a direct connection, the call carries on with voice only.
 - **Server defences:** proof of work to create an account, limits per account and per IP, and only registered accounts can send.
 
 What this does and does not protect against is in [`docs/threat-model.md`](docs/threat-model.md) and [`docs/known-limitations.md`](docs/known-limitations.md) (in Portuguese).

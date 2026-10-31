@@ -37,6 +37,16 @@
 "full_screen_open" = "打开设置";
 "full_screen_text" = "要在手机锁定时全屏显示来电，Android需要你的授权。如果不授权，来电只会显示为一条小通知。";
 "full_screen_title" = "全屏来电";
+"gcall_from" = "%1$@ 正在呼叫";
+"gcall_full" = "群组通话已有 5 人。";
+"gcall_join" = "加入通话";
+"gcall_me" = "我";
+"gcall_name_text" = "没有把你加为联系人的人会看到这个名字。";
+"gcall_name_title" = "你在本次通话中的名字";
+"gcall_notice" = "在群组通话中，其他参与者可以看到你的网络地址。";
+"gcall_title" = "群组通话";
+"gcall_video_title" = "群组视频通话";
+"gcall_waiting" = "正在等待其他人加入…";
 "ios_bio_changed" = "面容 ID、触控 ID或iPhone密码已更改。请使用应用密码，并重新开启快速解锁。";
 "ios_bio_confirm" = "请输入应用密码确认。接下来，iPhone会要求验证面容 ID、触控 ID或iPhone密码。";
 "ios_bio_unavailable" = "不可用：此iPhone未设置密码。";
@@ -201,7 +211,6 @@
 "t_chamadas_a_tocar" = "来电";
 "t_chamadas_de_voz_em_curso_e" = "应用打开时的进行中通话和来电。";
 "t_chave_do_armazenamento_seguro_indisponivel" = "安全存储密钥不可用：%1$@";
-"t_chave_publica_do_relay_pinning" = "中继服务器公钥（公钥固定）";
 "t_cifrada_no_teu_telemovel_antes_de" = "发送前在你的手机上加密。照片中的位置信息会被删除。";
 "t_codigo_alterado" = "密码已更改。";
 "t_codigo_atual" = "当前密码";
@@ -253,7 +262,6 @@
 "t_erro" = "错误：%1$@";
 "t_escolhe_um_codigo_so_com_numeros" = "请设置一个纯数字密码并妥善保管：没有它就无法打开聊天。";
 "t_escolher_foto" = "选择照片";
-"t_esconder_opcoes_de_teste" = "隐藏测试选项";
 "t_esqueceste_o_codigo" = "忘记密码了？";
 "t_esqueci_me_do_codigo" = "忘记密码";
 "t_esse_e_o_teu_proprio_id" = "这是你自己的ID";
@@ -273,7 +281,6 @@
 "t_foto_ou_gif" = "照片或GIF";
 "t_grupo" = "群组";
 "t_guardar" = "保存";
-"t_guardar_e_voltar_a_ligar" = "保存并重新连接";
 "t_guardar_nos_contactos" = "保存到联系人";
 "t_hoje" = "今天";
 "t_id_qt1" = "ID（qt1:…）";
@@ -358,7 +365,6 @@
 "t_o_ficheiro_tem_mais_de_25" = "文件超过25 MB，无法发送。";
 "t_o_ficheiro_tem_mais_de_25_2" = "文件超过25 MB。";
 "t_o_meu_id" = "我的ID";
-"t_o_relay_tem_de_usar_wss" = "中继服务器必须使用 wss://（ws:// 仅限调试版本）";
 "t_o_servidor_ainda_nao_aceita_anexos" = "服务器暂不支持附件（需要更新）。";
 "t_o_servidor_ainda_nao_tem_esta" = "服务器暂不支持此功能";
 "t_o_servidor_respondeu" = "服务器返回：%1$@";
@@ -367,7 +373,6 @@
 "t_online" = "在线";
 "t_online_agora" = "当前在线";
 "t_ontem" = "昨天";
-"t_opcoes_de_teste" = "测试选项";
 "t_os_codigos_nao_sao_iguais" = "两次输入的密码不一致。";
 "t_ou" = "或";
 "t_ouvir" = "播放";
@@ -388,7 +393,6 @@
 "t_reagir" = "表情回应";
 "t_recebe_o_id_diretamente_da_pessoa" = "请直接从对方那里获取ID：见面时扫描对方的二维码，或使用你信任的渠道。";
 "t_recusar" = "拒绝";
-"t_relay_teste" = "中继服务器（测试）";
 "t_repetir_o_novo_codigo" = "再次输入新密码";
 "t_resposta_inesperada_do_servidor" = "服务器返回了意外的响应";
 "t_retirar_a_minha" = "取消我的表情回应";
@@ -423,7 +427,6 @@
 "t_toque_das_chamadas_de_voz_com" = "应用关闭时语音通话的铃声。";
 "t_tornar_administrador" = "设为管理员";
 "t_tu" = "你";
-"t_url_do_relay" = "中继服务器URL";
 "t_usar_impressao_digital_ou_pin_do" = "使用指纹或手机PIN码";
 "t_vai_tal_como_esta_cifrado_no" = "按原样发送，发送前在你的手机上加密。";
 "t_verificar_seguranca" = "验证安全性";

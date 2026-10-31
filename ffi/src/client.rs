@@ -213,15 +213,15 @@ pub struct QtClient {
     pub(crate) presence: Mutex<crate::presence::Presence>,
     /// Chamada de voz em curso e eventos por entregar (so em memoria; ver call.rs).
     pub(crate) calls: Mutex<crate::call::Calls>,
+    /// Chamada de grupo em curso (so em memoria; ver group_call.rs). Ordem dos locks: `calls`
+    /// antes de `group_calls`.
+    pub(crate) group_calls: Mutex<crate::group_call::GroupCalls>,
     /// Recuperacao a meio (palavras ja verificadas): chave e identificador da copia, so em
     /// memoria (ver recovery.rs).
     pub(crate) pending_recovery: Mutex<Option<crate::recovery::PendingRecovery>>,
     /// Chave temporaria para falar com o relay antes de haver identidade (buscar a copia de
     /// recuperacao num telemovel novo). So em memoria.
     pub(crate) ephemeral_signing: Mutex<Option<SigningKeyPair>>,
-    /// Fichas do video pelo relay: pedido a meio e carteira da chamada (so em memoria; as
-    /// fichas em si ficam na base cifrada). Ver fichas.rs.
-    pub(crate) fichas: Mutex<crate::fichas::FichasState>,
 }
 
 pub(crate) fn parse_public_id(id: &str) -> Result<([u8; 32], [u8; 32]), QtError> {
@@ -279,9 +279,9 @@ impl QtClient {
             files_dir: std::path::PathBuf::from(format!("{path}.anexos")),
             presence: Mutex::new(Default::default()),
             calls: Mutex::new(Default::default()),
+            group_calls: Mutex::new(Default::default()),
             pending_recovery: Mutex::new(None),
             ephemeral_signing: Mutex::new(None),
-            fichas: Mutex::new(Default::default()),
         }))
     }
 
@@ -1038,8 +1038,6 @@ pub enum RelayResponse {
     /// operador ligou o bloqueio (so entao as funcoes pagas fecham). `active` (0.9.23): ativo
     /// agora pelo relogio do relay (`None` num relay antigo: usar `until_ms` e o relogio local).
     Premium { until_ms: u64, enforced: bool, active: Option<bool> },
-    /// Fichas do video (0006), resposta a `relay_request_fichas`: passar a `fichas_accept`.
-    Fichas { issued: crate::fichas::FichasIssued },
     /// Comunidade (0.9.52): numero da lista no relay (0 = nenhuma).
     CommunityVersion { version: u64 },
     /// Comunidade: o indice cifrado (passar a `community_apply_index`).
@@ -1081,7 +1079,6 @@ enum WireServerMsg {
         #[serde(default)]
         active: Option<bool>,
     },
-    Fichas { epoch: u32, public_key: String, evaluated: String, proof: String, granted: u32, remaining: u32, per_month: u32 },
     CommunityVersion { version: u64 },
     CommunityIndex { version: u64, data: String },
     CommunityNone,
@@ -1140,15 +1137,6 @@ pub fn relay_parse_response(bytes: Vec<u8>) -> Result<RelayResponse, QtError> {
         }
         WireServerMsg::BackupNotFound => RelayResponse::BackupNotFound,
         WireServerMsg::Premium { until_ms, enforced, active } => RelayResponse::Premium { until_ms, enforced, active },
-        WireServerMsg::Fichas { epoch, public_key, evaluated, proof, granted, remaining, per_month } => {
-            use base64::Engine;
-            let d = |s: String| base64::engine::general_purpose::STANDARD.decode(s).map_err(|_| QtError::InvalidEnvelope);
-            let (public_key, evaluated, proof) = (d(public_key)?, d(evaluated)?, d(proof)?);
-            if evaluated.len() > qt_core::fichas::MAX_BATCH * qt_core::fichas::ELEMENT_LEN {
-                return Err(QtError::InvalidEnvelope);
-            }
-            RelayResponse::Fichas { issued: crate::fichas::FichasIssued { epoch, public_key, evaluated, proof, granted, remaining, per_month } }
-        }
         WireServerMsg::CommunityVersion { version } => RelayResponse::CommunityVersion { version },
         WireServerMsg::CommunityIndex { version, data } => {
             use base64::Engine;

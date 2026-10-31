@@ -68,7 +68,7 @@ async fn chamada_como_na_app() {
     let ws = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let ws_port = ws.local_addr().unwrap().port();
     let udp_port = udp.local_addr().unwrap().port();
-    serve(udp, Some(ws), &keys.private, CallLimits::default(), Default::default());
+    serve(udp, Some(ws), &keys.private, CallLimits::default());
     // O motor deriva o UDP (porta 443) do URL; aqui o relay local esta noutra porta, por
     // isso o UDP nao responde e o motor passa para a reserva ws://127.0.0.1:<porta>/call.
     let _ = udp_port;

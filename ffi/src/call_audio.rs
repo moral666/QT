@@ -18,7 +18,8 @@
 //!   * `video_pull` (thread propria): a proxima imagem do outro lado para o descodificador,
 //!     ja na hora certa (sincronizada com o audio);
 //!   * `video_request_keyframe`: o descodificador falhou;
-//!   * `set_network`: Wi-Fi ou dados moveis (teto da ligacao direta: 1080p ou 720p).
+//!   * `set_network`: Wi-Fi ou dados moveis (com dados moveis o teto e 720p; no Wi-Fi so o da
+//!     ligacao e o dos aparelhos: `video_set_encode_limit` / `video_set_decode_limit`).
 //!
 //! O que pode sair e entrar decide o nucleo (`call_video_set_camera` / `call_video_respond`):
 //! sem o outro aceitar, `video_push` devolve `false` e nada sai.
@@ -68,10 +69,9 @@ struct Diag {
     bitrate_ms: u128,
     bitrate_min: u32,
     bitrate_max: u32,
-    ms_limited_by_relay: u64,
     pause: Option<Pause>,
     pauses_weak: u32,
-    pauses_relay: u32,
+    pauses_no_direct: u32,
     net: Option<Net>,
     net_changes: u32,
     transport: Transport,
@@ -93,10 +93,9 @@ impl Diag {
             bitrate_ms: 0,
             bitrate_min: u32::MAX,
             bitrate_max: 0,
-            ms_limited_by_relay: 0,
             pause: None,
             pauses_weak: 0,
-            pauses_relay: 0,
+            pauses_no_direct: 0,
             net: None,
             net_changes: 0,
             transport: Transport::Connecting,
@@ -132,14 +131,11 @@ impl Diag {
             self.bitrate_ms += p.bitrate_bps as u128 * dt as u128;
             self.bitrate_min = self.bitrate_min.min(p.bitrate_bps);
             self.bitrate_max = self.bitrate_max.max(p.bitrate_bps);
-            if p.limited_by_relay {
-                self.ms_limited_by_relay += dt;
-            }
         }
         if p.paused != self.pause {
             match p.paused {
                 Some(Pause::WeakNetwork) => self.pauses_weak += 1,
-                Some(Pause::RelayLimit) => self.pauses_relay += 1,
+                Some(Pause::NoDirect) => self.pauses_no_direct += 1,
                 None => {}
             }
             self.pause = p.paused;
@@ -216,12 +212,11 @@ impl Diag {
                 .collect();
             let avg = if self.ms_sending > 0 { (self.bitrate_ms / self.ms_sending as u128) as u32 } else { 0 };
             t += &format!(
-                "video enviado: {} · {} kb/s (min {} max {}) · limitado pelo relay {} · imagens {} · deitadas fora {}\n",
+                "video enviado: {} · {} kb/s (min {} max {}) · imagens {} · deitadas fora {}\n",
                 if res.is_empty() { "-".into() } else { res.join(" ") },
                 avg / 1000,
                 if self.bitrate_min == u32::MAX { 0 } else { self.bitrate_min / 1000 },
                 self.bitrate_max / 1000,
-                pct(self.ms_limited_by_relay, self.ms_sending),
                 v.sent_frames,
                 v.dropped_frames,
             );
@@ -245,11 +240,8 @@ impl Diag {
                 r.av_lag_ms,
             );
         }
-        if self.pauses_weak + self.pauses_relay > 0 {
-            t += &format!("pausas do video: rede fraca {} · limite do relay {}\n", self.pauses_weak, self.pauses_relay);
-        }
-        if v.fichas_spent > 0 || v.relay_mode != 0 {
-            t += &format!("fichas gastas: {} · relay: {}\n", v.fichas_spent, ["normal", "so 240p", "sem video"].get(v.relay_mode as usize).unwrap_or(&"?"));
+        if self.pauses_weak + self.pauses_no_direct > 0 {
+            t += &format!("pausas do video: rede fraca {} · sem ligacao direta {}\n", self.pauses_weak, self.pauses_no_direct);
         }
         t
     }
@@ -263,8 +255,9 @@ struct VideoGate {
 }
 
 /// Rede do telemovel, para o teto do video em ligacao direta.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, uniffi::Enum)]
 pub enum NetworkKind {
+    #[default]
     Unknown,
     Wifi,
     Mobile,
@@ -275,8 +268,8 @@ pub enum NetworkKind {
 pub enum VideoPause {
     /// "Video em pausa: rede fraca."
     WeakNetwork,
-    /// Pelo servidor ja nao ha video este mes (teto da conta); em ligacao direta continua.
-    RelayLimit,
+    /// Sem ligacao direta: o video nunca vai pelo servidor. Volta quando o direto voltar.
+    NoDirect,
 }
 
 /// O que o codificador deve fazer agora.
@@ -289,8 +282,6 @@ pub struct VideoEncoderParams {
     pub height: u32,
     pub fps: u32,
     pub paused: Option<VideoPause>,
-    /// A qualidade esta limitada por ir pelo servidor (ligacao direta daria mais).
-    pub limited_by_relay: bool,
     /// Mudou desde a ultima vez: pedir ja uma imagem completa ao codificador.
     pub keyframe_seq: u32,
 }
@@ -432,9 +423,8 @@ impl CallAudio {
                 fps: p.fps as u32,
                 paused: p.paused.map(|r| match r {
                     Pause::WeakNetwork => VideoPause::WeakNetwork,
-                    Pause::RelayLimit => VideoPause::RelayLimit,
+                    Pause::NoDirect => VideoPause::NoDirect,
                 }),
-                limited_by_relay: p.limited_by_relay,
                 keyframe_seq: p.keyframe_seq,
             },
             None => VideoEncoderParams {
@@ -444,7 +434,6 @@ impl CallAudio {
                 height: 0,
                 fps: 0,
                 paused: None,
-                limited_by_relay: true,
                 keyframe_seq: 0,
             },
         }
@@ -484,6 +473,23 @@ impl CallAudio {
         g.hold = on;
         if let Some(e) = self.engine() {
             e.video_set_sending(g.send && !on);
+        }
+    }
+
+    /// O maior video (altura: 720, 1080, 1440 ou 2160) que este telemovel CODIFICA em tempo
+    /// real com a camara atual. A app diz ao ligar a camara (e ao trocar de camara). Sem isto:
+    /// 1080p. Com Wi-Fi dos dois lados nao ha outro teto fixo (so a ligacao).
+    pub fn video_set_encode_limit(&self, max_height: u32) {
+        if let Some(e) = self.engine() {
+            e.video_set_limits(Some(max_height.min(u16::MAX as u32) as u16), None);
+        }
+    }
+
+    /// O maior video (altura) que este telemovel DESCODIFICA em tempo real. Vai para o outro
+    /// lado (para nao me enviar mais do que isto). Sem isto: 1080p.
+    pub fn video_set_decode_limit(&self, max_height: u32) {
+        if let Some(e) = self.engine() {
+            e.video_set_limits(None, Some(max_height.min(u16::MAX as u32) as u16));
         }
     }
 
@@ -578,12 +584,8 @@ impl QtClient {
         if relay_public_key.len() != 32 {
             return Err(bad("relay_public_key"));
         }
-        // As fichas do mes (base cifrada) para o motor, antes de fechar as chamadas (a base e
-        // sempre aberta antes das chamadas, nunca o contrario). So para um motor novo.
-        let started = crate::client::relock(&self.calls).has_engine(&id);
-        let wallet = if started { None } else { Some(crate::fichas::wallet_for_call(self)?) };
         let mut calls = crate::client::relock(&self.calls);
-        crate::call::start_for_call(&mut calls, id, &relay_url, &relay_public_key, wallet)
+        crate::call::start_for_call(&mut calls, id, &relay_url, &relay_public_key)
     }
 }
 

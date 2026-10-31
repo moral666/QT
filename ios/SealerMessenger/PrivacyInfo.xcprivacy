@@ -11,7 +11,7 @@
 	<array/>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
-		<!-- UserDefaults: so opcoes desta app (relay de teste, recibos de leitura, notificacoes,
+		<!-- UserDefaults: so opcoes desta app (relay da conta, recibos de leitura, notificacoes,
 		     presenca, tempo do bloqueio). Nada de conteudo, contactos ou chaves. -->
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>

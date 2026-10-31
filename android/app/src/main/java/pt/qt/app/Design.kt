@@ -347,7 +347,6 @@ fun ProfileSettingsScreen(
     onReadReceipts: (Boolean) -> Unit,
     onPush: (Boolean) -> Unit,
     onLanguage: () -> Unit,
-    onRelay: () -> Unit,
     onWipeAll: () -> Unit,
 ) {
     val c = LocalChatColors.current
@@ -396,7 +395,6 @@ fun ProfileSettingsScreen(
             if (Push.available) SettingsSwitch(Icons.Filled.Notifications, s(R.string.t_notificacoes), ui.pushOn, onPush)
             SettingsRow(null, s(R.string.lang_menu), onClick = onLanguage, glyph = "Aa")
             SettingsRow(Icons.Filled.Email, s(R.string.lang_report), onClick = { Lang.reportTranslation(ctx) })
-            if (BuildConfig.RELAY_EDITABLE) SettingsRow(Icons.Filled.Build, s(R.string.t_relay_teste), onClick = onRelay)
             // Testers (fase 5c): os numeros da ultima chamada, para colar numa mensagem.
             val lastDiag = ui.lastCallDiag
             if (CallDiag.enabled && lastDiag != null) {

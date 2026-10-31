@@ -174,7 +174,7 @@ struct CallScreen: View {
         if showRemote, let layer = remoteLayer {
             RemoteVideoView(layer: layer, rotation: v.remoteRotation).ignoresSafeArea()
             if v.remoteStalled {
-                // O video dele parou (pausa, rede, sem fichas): so a foto ou a inicial, sem texto.
+                // O video dele parou (pausa, rede, sem ligacao direta): so a foto ou a inicial, sem texto.
                 ZStack {
                     LinearGradient(colors: c.topBarGradient, startPoint: .top, endPoint: .bottom)
                     Avatar(name: call.name, seed: call.contactId, size: 112)
@@ -256,7 +256,7 @@ struct CallScreen: View {
 }
 
 /// Botao redondo de ligar/desligar: ligado = fundo branco e icone escuro.
-private struct ToggleRound: View {
+struct ToggleRound: View {
     let icon: String
     let label: String
     let on: Bool
@@ -275,7 +275,7 @@ private struct ToggleRound: View {
 }
 
 /// Desligar: botao redondo vermelho com o auscultador.
-private struct HangupButton: View {
+struct HangupButton: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
@@ -317,7 +317,7 @@ private struct VideoRequestCard: View {
 }
 
 /// Painel dos testers: os numeros da chamada (de segundo a segundo) e "Copiar diagnostico".
-private struct CallDiagSheet: View {
+struct CallDiagSheet: View {
     let diagnostic: () -> String?
     @State private var text = ""
     @State private var copied = false
@@ -391,7 +391,7 @@ struct CallBar: View {
     }
 }
 
-private struct RoundAction: View {
+struct RoundAction: View {
     let label: String
     let color: Color
     let hangup: Bool

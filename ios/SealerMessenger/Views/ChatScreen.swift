@@ -33,6 +33,10 @@ struct ChatScreen: View {
     let onCall: (Contact) -> Void
     /// Videochamada (so para contactos que disseram que tem video).
     var onVideoCall: (Contact) -> Void = { _ in }
+    /// Chamada de grupo (0.9.64): `true` = videochamada. `nil`: sem os botoes.
+    var onGroupCall: ((Bool) -> Void)? = nil
+    /// Ha uma chamada a decorrer neste grupo em que nao estou (0.9.65): "Entrar na chamada".
+    var onJoinOngoing: (() -> Void)? = nil
 
     @State private var deleteTarget: DeleteTarget?
     @State private var viewing: ChatMessage?
@@ -134,6 +138,16 @@ struct ChatScreen: View {
                 }
                 .buttonStyle(.plain)
             }, actions: {
+                if let onJoinOngoing, g.active {
+                    Button(action: onJoinOngoing) {
+                        Label(s("gcall_join"), systemImage: "phone.fill").font(.sLabelLarge)
+                            .foregroundStyle(Color(hex: 0x2E9E5B))
+                    }
+                    .buttonStyle(.plain)
+                } else if let onGroupCall, g.active {
+                    TopBarIcon(systemName: "video.fill", label: s("gcall_video_title")) { onGroupCall(true) }
+                    TopBarIcon(systemName: "phone.fill", label: s("gcall_title")) { onGroupCall(false) }
+                }
                 TopBarIcon(systemName: "info.circle", label: s("t_informacao_do_grupo"), action: onInfo)
             })
         } else {

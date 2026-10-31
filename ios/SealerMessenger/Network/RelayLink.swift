@@ -257,8 +257,7 @@ actor RelayLink {
     /// Pode repetir-se sem efeito duplicado (leituras, confirmacoes, registos)? Desde a 0.9.23
     /// nao se repetem automaticamente, depois de enviados: mensagens, anexos novos, denuncias e
     /// a espera por mensagens.
-    // IssueFichas: repetido, o relay contava o mesmo lote duas vezes no teto do mes.
-    private static let notRepeatable = ["{\"SendMessage\"", "{\"BlobCreate\"", "{\"SubmitReport\"", "{\"WaitMessages\"", "{\"IssueFichas\""]
+    private static let notRepeatable = ["{\"SendMessage\"", "{\"BlobCreate\"", "{\"SubmitReport\"", "{\"WaitMessages\""]
 
     private static func repeatable(_ bytes: Data) -> Bool {
         let head = String(decoding: bytes.prefix(24), as: UTF8.self)
@@ -288,9 +287,9 @@ actor RelayLink {
                     }
                 }
             }
-            // Fora da Debug o pin e obrigatorio: sem ele nao se liga (0.9.23, defesa extra; o
-            // script da build Release ja obriga a ter o pin).
-            if pinnedRelayKeyHex.isEmpty && !Config.relayEditable {
+            // O pin e obrigatorio em todas as builds: sem ele nao se liga (0.9.23; tambem na Debug
+            // desde a 0.9.53, sem relay de teste editavel).
+            if pinnedRelayKeyHex.isEmpty {
                 throw RelayLinkError.permanent("falta a chave do relay (pin)")
             }
             // Pinning: se a chave do relay nao for a esperada, aborta SEM repetir (possivel MITM)

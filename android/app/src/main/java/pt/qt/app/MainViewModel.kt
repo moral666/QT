@@ -212,7 +212,7 @@ data class VideoUi(
     val peerAccepts: Boolean = false,
     val peerDeclined: Boolean = false,
     /**
-     * O video do outro parou (pausa por rede, sem fichas ou outra razao): o ecra mostra so a
+     * O video do outro parou (pausa por rede, sem ligacao direta ou outra razao): o ecra mostra so a
      * foto ou a inicial dele, sem texto. A app nunca diz porque.
      */
     val remoteStalled: Boolean = false,
@@ -265,8 +265,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     @Volatile private var link: RelayLink? = null
     @Volatile private var poller: Job? = null
     @Volatile private var transferJob: Job? = null
-    /** Pedido das fichas do video (0006), numa hora aleatoria: ver `scheduleFichas`. */
-    @Volatile private var fichasJob: Job? = null
     /** "Ha anexos para enviar/descarregar": acorda o ciclo de transferencias. */
     private val transferKick = Channel<Unit>(Channel.CONFLATED)
     /** Chave da lista de contactos; so existe em memoria com a base de dados aberta. */
@@ -314,6 +312,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Abrir e fechar a camara nunca se cruzam (ecra, ciclo da chamada e segundo plano). */
     private val senderLock = Any()
     private val callSounds = CallSounds(app)
+
+    /** Chamadas de grupo (0.9.63; ver GroupCall.kt). */
+    val groupCalls = GroupCallController(
+        app, viewModelScope, { qt }, { flushOutbox() },
+        nameOf = { cid ->
+            // Nunca o QT ID: o nome nos contactos ou "Membro" (como na conversa do grupo).
+            _ui.value.contacts.firstOrNull { it.contactId == cid }?.nickname ?: s(R.string.t_membro, cid.take(6))
+        },
+        groupNameOf = { gid -> _ui.value.groups.firstOrNull { it.groupId == gid }?.name ?: "" },
+        sounds = callSounds,
+        busy = { _ui.value.call?.let { it.phase != CallPhase.ENDED } == true },
+        visible = { visible },
+        onError = { e -> error(e) },
+        ensureGroupSessions = { gid -> qt?.let { c -> ensureSessions(c, c.groupMembersNeedingSession(gid)) } },
+        isContact = { cid -> _ui.value.contacts.any { it.contactId == cid } },
+    )
     /** Atender, desligar, silenciar e saidas do som vindos do sistema de chamadas (auricular, carro). */
     private val systemCalls = object : SystemCalls.Listener {
         override fun owns(callId: String): Boolean =
@@ -413,7 +427,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             contactsBroken = true
             emptyList()
         }
-        // Release: o relay da conta, da lista fixa da build (federacao, `Relays`). Debug: editavel.
+        // O relay da conta, da lista fixa da build (federacao, `Relays`), em todas as builds. O relay
+        // de teste das builds debug ate a 0.9.52 (`relay_url`/`relay_key`) ja nao conta: sai.
+        prefs.edit().remove("relay_url").remove("relay_key").apply()
         val home = Relays.home(prefs)
         val url = home.url
         val pin = home.pin
@@ -483,8 +499,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         poller = null
         transferJob?.cancel()
         transferJob = null
-        fichasJob?.cancel()
-        fichasJob = null
         link?.shutdown()
         link = null
         // Imagens decifradas que estavam em memoria para o ecra, e ficheiros abertos noutra app.
@@ -511,7 +525,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun lockNow() {
         if (!_ui.value.lockEnabled || _ui.value.locked) return
         // Durante uma chamada nao se fecha a base de dados (a chamada precisa dela).
-        if (_ui.value.call != null) return
+        if (_ui.value.call != null || groupCalls.ui.value != null) return
         closeSession()
         showLocked()
     }
@@ -535,7 +549,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         scheduleAutoLock()
         pauseJob?.cancel()
         // Chamada a decorrer: as ligacoes ficam abertas (o servico da chamada mantem a app viva).
-        if (_ui.value.call != null) return
+        if (_ui.value.call != null || groupCalls.ui.value != null) return
         pauseJob = viewModelScope.launch(Dispatchers.IO) {
             delay(BACKGROUND_GRACE_MS)
             // Anexos a meio (enviar ou descarregar): deixa-os acabar, ate BACKGROUND_TRANSFER_MAX_MS.
@@ -879,14 +893,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------------------------------------------------------- configuracao
 
-    fun createIdentity(relayUrl: String, relayKeyHex: String) = io {
+    fun createIdentity() = io {
         val client = qt ?: return@io
         // Conta nova: comeca no relay principal (se estiver fechado a contas novas, o startLink
         // passa ao seguinte da lista).
         Relays.resetHome(prefs)
         Relays.home(prefs).let { h -> _ui.update { it.copy(relayUrl = h.url, relayKeyHex = h.pin) } }
         runCatching { client.callSetRelay(null) }
-        saveRelay(relayUrl, relayKeyHex)
         val me = client.createIdentity()
         // Conta nova: "Mostrar quando estou online" comeca desligado (0.9.23). Liga-se no menu.
         // Quem ja tinha conta fica como estava.
@@ -899,19 +912,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun newAccountPresenceOff() {
         prefs.edit().putBoolean("presence", false).apply()
         _ui.update { it.copy(presenceOn = false, online = emptySet()) }
-    }
-
-    fun saveRelay(relayUrl: String, relayKeyHex: String) {
-        if (!BuildConfig.RELAY_EDITABLE) return   // release: relay fixo, nunca alteravel
-        val u = relayUrl.trim().lowercase()
-        if (!u.startsWith("wss://") && !(BuildConfig.ALLOW_CLEARTEXT && u.startsWith("ws://"))) {
-            error(s(R.string.t_o_relay_tem_de_usar_wss))
-            return
-        }
-        prefs.edit().putString("relay_url", relayUrl.trim()).putString("relay_key", relayKeyHex.trim()).apply()
-        _ui.update { it.copy(relayUrl = relayUrl.trim(), relayKeyHex = relayKeyHex.trim()) }
-        // hasIdentity() toca no SQLCipher: nunca na thread principal.
-        io { if (qt?.hasIdentity() == true) startLink() }
     }
 
     /**
@@ -972,7 +972,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // da que la esta quando recebe o bundle).
         if (publishBundle) scheduleBackup()
         refreshPremium(client, bundleLink)
-        scheduleFichas()
         // Presenca: "online" aos contactos (se a app estiver no ecra).
         if (visible) presenceAnnounce(true)
     }
@@ -1537,68 +1536,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         } catch (e: Exception) {
             // Sem rede: fica o ultimo estado conhecido.
-        }
-    }
-
-    /**
-     * Fichas do video pelo relay (0006): o relay das chamadas so passa o video de quem as tem
-     * (quota configuravel no servidor; pelo caminho direto nao se gastam). Pedem-se numa hora ALEATORIA depois
-     * de a app abrir (e depois mais ou menos de hora a hora, enquanto faltarem), nunca com uma
-     * chamada a decorrer nem ao comecar uma: assim o relay nao junta o pedido a uma chamada.
-     * Nada disto aparece no ecra.
-     */
-    private fun scheduleFichas() {
-        fichasJob?.cancel()
-        fichasJob = viewModelScope.launch(Dispatchers.IO) {
-            delay(kotlin.random.Random.nextLong(FICHAS_FIRST_MIN_MS, FICHAS_FIRST_MAX_MS))
-            while (isActive) {
-                val client = qt ?: break
-                val l = link ?: break
-                requestFichas(client, l)
-                delay(FICHAS_AGAIN_MS + kotlin.random.Random.nextLong(0L, FICHAS_AGAIN_MS))
-            }
-        }
-    }
-
-    private suspend fun requestFichas(client: QtClient, l: RelayLink) {
-        refreshFichasKeys(client)
-        // Varios lotes seguidos so com uma quota maior; para no primeiro sem nada.
-        repeat(FICHAS_MAX_BATCHES) {
-            if (_ui.value.call != null) return
-            val req = runCatching { client.relayRequestFichas() }.getOrNull() ?: return
-            try {
-                when (val r = l.request(req, FICHAS_TIMEOUT_MS)) {
-                    is RelayResponse.Fichas -> if (client.fichasAccept(r.issued) == 0u) return
-                    else -> {
-                        // Relay antigo, sem fichas ou conta sem registo: tenta daqui a umas horas.
-                        Log.w(TAG, "fichas: ${r.describe()}")
-                        client.fichasRefused()
-                        return
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // Sem rede ou resposta invalida: tenta outra vez mais tarde.
-                Log.w(TAG, "fichas: ${e.safeMsg()}")
-                return
-            }
-        }
-    }
-
-    /**
-     * Chaves publicas das fichas de cada mes, publicadas FORA do relay (no site, `estado.json`,
-     * servido pela Cloudflare). O nucleo so aceita fichas do emissor e so as gasta numa sala se a
-     * chave for a do site: um relay comprometido nao pode dar uma chave diferente a cada conta
-     * (particao de chaves). Sem rede fica a ultima lista boa; sem lista nenhuma o video pelo relay
-     * fica em pausa (falha fechada) e a voz e o caminho direto continuam.
-     */
-    private fun refreshFichasKeys(client: QtClient) {
-        val body = RelayLink.fetchSmall(BuildConfig.FICHAS_KEYS_URL, FICHAS_KEYS_MAX_BYTES) ?: return
-        try {
-            client.fichasSetPublishedKeys(body)
-        } catch (e: Exception) {
-            Log.w(TAG, "fichas: estado.json invalido (${e.safeMsg()})")
         }
     }
 
@@ -2645,6 +2582,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             restartSessions(client)
             handleCallEvents(client)
+            groupCalls.onEvents(client)
             if (received) {
                 // Fotos e badges recebidos (Updated) ja; por mensagens novas (contactos com sessao
                 // nova), no maximo de minuto a minuto. Antes relia as fotos e os badges de todos os
@@ -2697,7 +2635,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // No sistema de chamadas (Android 8+): o modo de chamada e a saida do som sao dele.
         val managed = _ui.value.call?.let { SystemCalls.manages(it.callId) } == true
         try {
-            callIO = CallAudioIO(app, a, managed).also {
+            callIO = CallAudioIO(app, a.pipe(), managed).also {
                 it.onMicLost = { _ui.update { u -> u.copy(notice = s(R.string.call_mic_lost)) } }
                 it.start()
                 it.muted = _ui.value.call?.muted == true
@@ -3106,7 +3044,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val v = _ui.value.call?.video ?: return
         val a = callAudio ?: return
         if (v.showRemote) {
-            val r = videoReceiver ?: VideoReceiver(a) { w, h, rot ->
+            val r = videoReceiver ?: VideoReceiver(a.videoIn()) { w, h, rot ->
                 _ui.update { u -> u.call?.let { cur -> u.copy(call = cur.copy(video = cur.video.copy(remoteW = w, remoteH = h, remoteRotation = rot))) } ?: u }
             }.also {
                 videoReceiver = it
@@ -3136,7 +3074,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * A cada segundo: videochamada para quem nao tem video, e se o video do outro parou (o ecra
-     * mostra entao so a foto ou a inicial dele). Nada no ecra diz porque parou (rede, fichas).
+     * mostra entao so a foto ou a inicial dele). Nada no ecra diz porque parou (rede, sem ligacao direta).
      */
     private fun refreshVideoParams() {
         val c = _ui.value.call ?: return
@@ -3227,8 +3165,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (videoSender != null || cameraHeld) return
             val a = callAudio ?: return
             val front = _ui.value.call?.video?.front ?: true
-            videoSender = VideoSender(getApplication(), a).also { vs ->
-                vs.onError = { _ui.update { it.copy(notice = s(R.string.video_camera_failed)) } }
+            videoSender = VideoSender(getApplication(), a.videoOut()).also { vs ->
+                // Nunca um aviso no ecra sobre a camara (decisao do Nuno, 0.9.67): so o registo.
+                vs.onError = { CallDiag.log(TAG, "camara: falhou") }
                 vs.onPreview = {
                     val size = vs.previewSize
                     if (size != null) {
@@ -3258,6 +3197,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * a inicial, sem texto). A voz continua. O botao fica "ligado".
      */
     private fun holdCameraForBackground() {
+        // Chamada de grupo: a minha camara pausa para todos (sem avisar), a voz continua.
+        groupCalls.hold(true)
         val c = _ui.value.call ?: return
         if (c.phase == CallPhase.ENDED || !c.video.camera) return
         synchronized(senderLock) {
@@ -3274,6 +3215,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * tipo camara do servico primeiro (o Android so o da com a app no ecra), depois a camara.
      */
     fun onAppResumed() {
+        groupCalls.hold(false)
         val cur = _ui.value.call
         if (cur != null && cur.phase != CallPhase.INCOMING && cur.phase != CallPhase.ENDED) CallService.ensure(getApplication())
         synchronized(senderLock) {
@@ -3351,13 +3293,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val PREF_LOCK_PENDING = "lock_pending"
         private const val PREF_PREMIUM_ACTIVE = "premium_active"
         private const val PREMIUM_TIMEOUT_MS = 4_000L
-        /** Fichas do video: primeiro pedido entre 30 s e 10 min depois de abrir; depois 1-2 h. */
-        private const val FICHAS_FIRST_MIN_MS = 30_000L
-        private const val FICHAS_FIRST_MAX_MS = 600_000L
-        private const val FICHAS_AGAIN_MS = 3_600_000L
-        private const val FICHAS_TIMEOUT_MS = 20_000L
-        private const val FICHAS_MAX_BATCHES = 3
-        private const val FICHAS_KEYS_MAX_BYTES = 64 * 1024
         private const val PREF_PREMIUM_UNTIL = "premium_until"
         /** Copia de recuperacao: espera um pouco depois de uma mudanca (junta varias seguidas). */
         private const val BACKUP_DELAY_MS = 3_000L
@@ -3379,7 +3314,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val INTERRUPT_PAUSE_MS = 20L
         /** Etiqueta dos registos (adb logcat -s SealerRelay). Nunca regista conteudo nem chaves. */
         private const val TAG = "SealerRelay"
-        private const val MY_PHOTO = "\u0000eu"
+        const val MY_PHOTO = "\u0000eu"
         /** Resposta de um relay a um pedido que nao conhece (relay sem entrega imediata). */
         private const val RELAY_UNKNOWN_REQUEST = "mensagem invalida"
         private const val MAX_PAGES = 20
@@ -3425,7 +3360,7 @@ private fun RelayResponse.describe(): String = when (this) {
  * rede aparecem como "Sem ligacao ao servidor" na lingua da app (0.9.23; antes apareciam os
  * textos tecnicos, em portugues sem acentos). O detalhe fica no registo do RelayLink.
  */
-private fun Exception.safeMsg(): String = when (this) {
+internal fun Exception.safeMsg(): String = when (this) {
     is QtException -> this::class.simpleName ?: "erro"
     is RelayRefusedException -> message ?: "recusado"
     is IOException -> s(R.string.t_sem_ligacao_ao_servidor)

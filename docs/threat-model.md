@@ -49,9 +49,7 @@ Cada linha indica o mecanismo e **o teste que o demonstra** (corre com
 | Estado comprometido expõe mensagens futuras | Post-compromise security após um novo passo DH (limites em §4) | `post_compromise_security_cura_apos_novo_passo_dh` |
 | Cópia do ficheiro da base de dados | SQLCipher com chave binária de 32 bytes vinda do Android Keystore; sem cabeçalho SQLite em claro. O histórico de mensagens é guardado **só** dentro da base cifrada (com `secure_delete`), nunca em claro | `storage/tests/storage_extended.rs::texto_das_mensagens_nunca_fica_em_claro_no_ficheiro` |
 | Lixo / entradas malformadas | Todas as entradas de rede e disco devolvem erro (sem `unwrap` em caminhos de rede/cripto); limites de tamanho | `sessao_inexistente_e_lixo_nao_fazem_panic`, `limites_e_validacao_de_entrada`, fuzz do estado em `forward_secrecy.rs` |
-| Relay das chamadas liga o vídeo de uma sala a uma conta (teto do vídeo, 0006) | Fichas cegas (VOPRF, RFC 9497, ristretto255-SHA512, crate `voprf`): o emissor só vê elementos aleatórios; o resgate só leva nonce e saída; o relay das chamadas não acede às contas e só guarda um resumo do nonce | `server/tests/fichas_e2e.rs::ficha_aceite_uma_vez_e_o_relay_nao_liga_resgate_a_emissao`, `core::fichas::tests::o_emissor_so_ve_elementos_aleatorios` |
-| Mais vídeo pelo relay do que o teto da conta | Contagem por conta e por mês na emissão (atómica: nunca passa do teto, nem com pedidos ao mesmo tempo); gasto duplo no Redis; fichas forjadas, repetidas ou de outro mês recusadas | `emissao_nunca_passa_do_teto_por_conta_e_por_mes`, `pedidos_ao_mesmo_tempo_nao_passam_do_teto`, `ficha_forjada_de_outro_mes_ou_de_outra_chave_recusada`, `sem_ficha_so_voz_com_ficha_um_bloco_de_video` |
-| Emissor marca uma conta com uma chave só dela (partição de chaves) | Chave de cada mês publicada fora do relay (`https://sealerapp.com/estado.json`, Cloudflare). A app verifica a prova DLEQ, recusa a emissão se a chave não for a do site e só gasta fichas se a chave da sala também for essa; sem a chave do site falha fechada (vídeo pelo relay em pausa, voz e direto normais). O mês dito pelo relay só se segue se for o vizinho, a menos de 48 h da viragem (partição pelo mês, com os 24 meses publicados) | `prova_dleq_obrigatoria`, `fichas_de_outro_mes_ou_de_outra_chave_nao_servem`, `ffi::fichas::tests::chave_diferente_da_publicada_na_emissao_e_recusada`, `ffi::fichas::tests::sem_chave_do_site_nada_se_pede`, `call::fichas::tests::chave_da_sala_diferente_da_publicada_nada_se_gasta`, `call::fichas::tests::sem_chave_do_site_falha_fechada`, `call/tests/fichas_e2e.rs::chave_diferente_da_publicada_ou_sem_site_falha_fechada`, `mes_do_relay_so_o_proprio_ou_o_vizinho_na_viragem`, `ffi::fichas::tests::so_meses_plausiveis_vao_para_o_motor` |
+| Vídeo das chamadas passa pelo servidor (o operador vê quando e quanto vídeo cada sala envia; custo) | Desde a 0.9.53 o vídeo só vai pela ligação direta entre contactos mútuos (a mesma regra do áudio). O relay das chamadas nunca encaminha vídeo: deita-o fora e responde "sem vídeo pelo relay" às apps antigas | `call_relay::tests::video_nunca_passa_e_quem_envia_ouve_sem_video`, `call/tests/video_e2e.rs::video_so_pelo_direto_e_nunca_pelo_relay`, `direto_que_cai_pausa_o_video_e_volta` |
 
 ### 3.1 Segurança pós-quântica: o que exatamente se afirma
 
@@ -102,28 +100,14 @@ e depois alimenta a root key do Double Ratchet.
   o evitar (decisão do Nuno). Não há verificação de contactos: confia-se que o ID guardado é de
   quem se pensa. Se um dos lados não tiver o outro nos contactos, ou o bloqueou, tudo passa pelo
   relay; bloquear, apagar ou tirar dos contactos a meio volta logo ao relay.
-* **Fichas do vídeo pelo relay (0006):**
-  * O emissor (relay das mensagens) vê quando cada conta pede fichas e quantas; o relay das
-    chamadas vê quando cada sala gasta (uma por minuto de vídeo pelo relay) e o IP. Os dois
-    processos estão na mesma máquina e são do mesmo operador: um operador mal-intencionado pode
-    tentar ligar o pedido das fichas a uma chamada pelo IP e pela hora. Por isso a app pede numa
-    hora aleatória, fora das chamadas; isto não impede a correlação pelo IP (o mesmo telemóvel na
-    mesma rede).
-  * A chave de cada mês vem do site (Cloudflare), não do relay: um relay comprometido sozinho não
-    consegue dar uma chave diferente a cada conta. Fica a confiança no site: quem controlar o
-    repositório do site ou a conta da Cloudflare **e** o relay podia servir a cada telemóvel uma
-    lista diferente (pelo IP). Não há registo público de chaves (transparência) nem comparação
-    entre utilizadores. O ficheiro é publicado à mão pelo operador: se o deploy criar uma semente
-    nova e o site não for atualizado, o vídeo pelo relay fica em pausa para todos (falha fechada).
-  * Cada conta registada recebe o teto do mês: quem criar muitas contas (cada uma com prova de
-    trabalho) junta mais fichas.
-  * A semente das chaves está em texto simples no disco do relay (0600, como a chave Noise): quem
-    a tiver emite fichas à vontade, para todos os meses (as chaves derivam dela).
-  * Sem fichas, os pacotes de vídeo de tamanho mínimo (relatórios de quem só vê) passam na mesma,
-    até 5 por segundo e por lado (~1,5 kB/s): uma app alterada podia usá-los para um vídeo
-    minúsculo.
-  * Redis em baixo ou sem semente: nenhuma ficha é aceite (vídeo pelo relay em pausa; voz e direto
-    normais).
+* **Vídeo das chamadas (desde a 0.9.53): só pela ligação direta.** O vídeo nunca passa pelo relay,
+  por isso o relay não vê quando nem quanto vídeo há numa chamada. O preço é o da ligação direta:
+  só há vídeo entre contactos mútuos (e cada um vê o IP do outro, como no áudio). Sem direto (contacto
+  não mútuo ou bloqueado, rede que não deixa) a chamada fica só com voz pelo relay. As fichas
+  anónimas do 0006 saíram (e com elas a semente, o registo das fichas gastas no Redis e a chave
+  publicada no site). As apps 0.9.37 a 0.9.52 ainda enviam vídeo e pacotes das fichas ao relay: o
+  relay deita-os fora e responde só com o aviso "sem vídeo pelo relay" (18 bytes, de 5 em 5 s no
+  máximo, menor do que o pacote recebido).
 * **O relay pode censurar, atrasar, descartar ou reordenar** (disponibilidade
   não é garantida). Na federação, o relay de casa de cada conta pode fazer o mesmo ao que lhe chega do
   outro relay.
@@ -137,7 +121,7 @@ e depois alimenta a root key do Double Ratchet.
   * Um relay da lista pode dizer que uma conta é sua e desviar os pedidos de bundle dessa conta. As
     apps continuam a verificar o bundle contra o ID (ver secção 3): não consegue fingir ser a conta, só
     impedir que lhe cheguem mensagens.
-  * Os dois relays são do mesmo operador e usam a mesma semente das fichas do vídeo.
+  * Os dois relays são do mesmo operador.
 * **Spam / abuso:** qualquer conta registada pode enfileirar mensagens para
   qualquer `user_id` registado (limite de 1000 mensagens por fila; desde a 0.9.17
   o relay recusa escritas de contas sem registo). Desde a 0.9.3 há limites por
@@ -210,9 +194,7 @@ e depois alimenta a root key do Double Ratchet.
 | Operador (chave das denúncias e dos banimentos) | Ler as denúncias, banir e emitir medalhas | Ler outras mensagens (não tem como) |
 | Relay + Redis | Entregar o que recebe, quando quiser | Confidencialidade, autenticidade de bundles, ordem, disponibilidade |
 | Relay par da federação | Entregar às suas contas o que o outro relay lhe passa; dizer onde está cada conta | Confidencialidade, quem envia, autenticidade de bundles |
-| Emissor das fichas (relay das mensagens) | Contar e emitir fichas do vídeo | Saber que fichas deu (vê-as cegas); escolher a chave do mês (vem do site) |
-| Site (`sealerapp.com/estado.json`, Cloudflare) | Publicar a mesma chave das fichas a toda a gente | - |
-| Relay das chamadas + `qt-fichas` no Redis | Recusar fichas gastas ou forjadas | Saber de que conta é uma ficha (não tem como) |
+| Relay das chamadas | Encaminhar a voz de salas anónimas (nunca vídeo) | Saber de que conta é uma sala (não tem como) |
 | Rede | Nada | Tudo |
 | Apps Kotlin e Swift | Mover bytes, UI, ciclo de vida, preparar imagens antes de as cifrar | Qualquer criptografia (proibido) |
 

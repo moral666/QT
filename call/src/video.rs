@@ -18,31 +18,41 @@
 //!     [8 maior contador recebido + 1, 0 = nenhum]`. Recebidos e esperados contam TODOS os
 //!     pacotes de video do outro lado (imagens, relatorios, pedidos): o contador e um so.
 //!   * pedido de imagem completa: `[1 2]` (perdeu-se uma imagem: as seguintes dependem dela).
+//!   * capacidade de quem recebe (desde a 0.9.61, a cada 2 s): `[1 3][2 altura maxima]`, o maior
+//!     video que este telemovel consegue descodificar (720, 1080, 1440 ou 2160). As apps antigas
+//!     deitam-no fora (tipo desconhecido); sem ele, quem envia fica nos 1080p de antes.
 //!
 //! DEBITO (quem envia): sobe 20%/s ate ao primeiro sinal de congestao e depois ~8%/s,
 //! enquanto os relatorios vierem limpos; desce 15% (a partir do que chegou de facto) com
 //! perdas, fila a crescer (atraso acima de 100 ms) ou perdas no audio (o audio tem sempre
 //! prioridade), 30% quando nada esta a chegar. Nunca abaixo do minimo dos 240p: se a
 //! congestao continuar ai durante 2 s, o video pausa. A resolucao segue o debito (escada de
-//! 240p a 1080p), com tetos pelo caminho: pelo relay 360p (240p com o travao do mes, nada
-//! com o teto da conta); em ligacao direta 1080p com Wi-Fi dos dois lados e 720p com dados
-//! moveis. Abaixo do minimo dos 240p durante 2 s, o video pausa (a voz continua) e volta a
-//! tentar quando o audio estiver limpo.
+//! 240p a 2160p), com teto pelo caminho: com dados moveis (de qualquer dos lados) 720p; com
+//! Wi-Fi dos dois lados nao ha teto fixo, so o da ligacao (o debito) e o dos aparelhos (o maior
+//! que o meu codificador faz e que o descodificador do outro aguenta). O arranque tambem segue
+//! a rede: 1,2 Mbit/s (720p) no Wi-Fi, 500 kbit/s (360p) com dados moveis. "Atraso de fila"
+//! nos relatorios inclui o do AUDIO (fila parada e variacao acima de 40 ms, medidas no jitter
+//! buffer): se a voz comecar a chegar atrasada, o video desce antes de ela se perder. O video so passa pela LIGACAO DIRETA (desde a 0.9.53): sem ela (contacto nao mutuo,
+//! rede que nao deixa, caminho que caiu) fica em pausa (`Pause::NoDirect`), a voz continua
+//! pelo relay e o video volta sozinho quando o caminho direto voltar. Abaixo do minimo dos
+//! 240p durante 2 s, o video pausa (a voz continua) e volta a tentar quando o audio estiver
+//! limpo.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::time::{Duration, Instant};
 
-use qt_core::call::{RelayVideo, VIDEO_MAX_BODY};
+use qt_core::call::VIDEO_MAX_BODY;
 
 pub const T_FRAG: u8 = 0;
 pub const T_FEEDBACK: u8 = 1;
 pub const T_KEYFRAME: u8 = 2;
+pub const T_CAPS: u8 = 3;
 /// Cabecalho de cada pedaco de imagem.
 pub const FRAG_HDR: usize = 14;
 /// Dados de imagem em cada pacote cheio.
 pub const FRAG_DATA: usize = VIDEO_MAX_BODY - FRAG_HDR;
-/// Maior imagem aceite (uma imagem completa em 1080p fica muito abaixo disto).
-pub const MAX_FRAME_BYTES: usize = 1 << 20;
+/// Maior imagem aceite (uma imagem completa em 2160p fica abaixo disto).
+pub const MAX_FRAME_BYTES: usize = 2 << 20;
 const MAX_FRAGS: usize = MAX_FRAME_BYTES.div_ceil(FRAG_DATA);
 const FEEDBACK_LEN: usize = 27;
 /// Relatorios de quem recebe.
@@ -108,6 +118,8 @@ pub enum Body {
     Frag(Frag),
     Feedback(Feedback),
     Keyframe,
+    /// O maior video (altura) que o outro lado consegue descodificar.
+    Caps { max_height: u16 },
 }
 
 /// Parte uma imagem em pedacos (um por pacote). Os pacotes cheios tem 1168 bytes de dados.
@@ -148,6 +160,12 @@ pub fn encode_keyframe_request() -> Vec<u8> {
     vec![T_KEYFRAME]
 }
 
+/// O maior video que este telemovel consegue descodificar (para quem me envia).
+pub fn encode_caps(max_height: u16) -> Vec<u8> {
+    let h = max_height.to_be_bytes();
+    vec![T_CAPS, h[0], h[1]]
+}
+
 fn be16(b: &[u8]) -> u16 {
     u16::from_be_bytes([b[0], b[1]])
 }
@@ -184,6 +202,7 @@ pub fn parse_body(b: &[u8]) -> Option<Body> {
             highest: u64::from_be_bytes(b[19..27].try_into().ok()?).checked_sub(1),
         })),
         T_KEYFRAME if b.len() == 1 => Some(Body::Keyframe),
+        T_CAPS if b.len() == 3 => Some(Body::Caps { max_height: be16(&b[1..3]) }),
         _ => None,
     }
 }
@@ -460,8 +479,10 @@ impl VideoReceiver {
         true
     }
 
-    /// Relatorio para quem envia, a cada `FEEDBACK_EVERY`.
-    pub fn feedback(&mut self, now: Instant, audio_loss_pct: u8, net: Net) -> Option<Feedback> {
+    /// Relatorio para quem envia, a cada `FEEDBACK_EVERY`. `audio_delay_ms`: atraso a mais do
+    /// AUDIO que chega (ver `JitterBuffer::audio_delay_ms`): vai no "atraso de fila", que e a
+    /// mesma fila (a rede de quem envia), para o video descer antes de a voz sofrer.
+    pub fn feedback(&mut self, now: Instant, audio_loss_pct: u8, net: Net, audio_delay_ms: u32) -> Option<Feedback> {
         let dt = now.duration_since(self.interval_start);
         if dt < FEEDBACK_EVERY {
             return None;
@@ -481,7 +502,7 @@ impl VideoReceiver {
             interval_ms: ms.min(u16::MAX as u64) as u16,
             received: self.interval_received,
             expected: expected.max(self.interval_received),
-            queue_delay_ms: queue,
+            queue_delay_ms: queue.max(audio_delay_ms.min(u16::MAX as u32) as u16),
             audio_loss_pct,
             net,
             recv_bps: (self.interval_bytes * 8 * 1000 / ms).min(u32::MAX as u64) as u32,
@@ -513,22 +534,23 @@ pub struct Rung {
     pub max_bps: u32,
 }
 
-pub const LADDER: [Rung; 5] = [
+pub const LADDER: [Rung; 7] = [
     Rung { width: 426, height: 240, fps: 15, min_bps: 150_000, max_bps: 350_000 },
     Rung { width: 640, height: 360, fps: 30, min_bps: 350_000, max_bps: 800_000 },
     Rung { width: 854, height: 480, fps: 30, min_bps: 700_000, max_bps: 1_400_000 },
     Rung { width: 1280, height: 720, fps: 30, min_bps: 1_200_000, max_bps: 2_500_000 },
     Rung { width: 1920, height: 1080, fps: 30, min_bps: 2_200_000, max_bps: 4_000_000 },
+    Rung { width: 2560, height: 1440, fps: 30, min_bps: 3_800_000, max_bps: 8_000_000 },
+    Rung { width: 3840, height: 2160, fps: 30, min_bps: 7_000_000, max_bps: 16_000_000 },
 ];
 const R240: usize = 0;
-const R360: usize = 1;
 const R720: usize = 3;
-const R1080: usize = 4;
-/// Pelo relay: ate 360p a 800 kbit/s; com o travao do mes, 240p a 300 kbit/s.
-pub const RELAY_MAX_BPS: u32 = 800_000;
-pub const RELAY_CAP240_BPS: u32 = 300_000;
-const START_RELAY_BPS: f64 = 500_000.0;
-const START_DIRECT_BPS: f64 = 1_200_000.0;
+/// Sem saber o que os aparelhos aguentam (app antiga do outro lado, ou a app ainda nao disse):
+/// 1080p, como antes da 0.9.61.
+pub const DEFAULT_MAX_HEIGHT: u16 = 1080;
+/// Debito ao comecar (ou ao voltar o caminho direto): Wi-Fi dos dois lados e o resto.
+const START_WIFI_BPS: f64 = 1_200_000.0;
+const START_MOBILE_BPS: f64 = 500_000.0;
 /// Nunca abaixo disto sem pausar (minimo dos 240p).
 const FLOOR_BPS: f64 = 150_000.0;
 /// Subida por segundo: no arranque (ate ao primeiro sinal de congestao) e depois.
@@ -538,10 +560,10 @@ const GROWTH: f64 = 0.08;
 /// Porque o video esta em pausa (a voz continua).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pause {
-    /// Rede fraca (ou o relay nao deixa passar video: versao antiga).
+    /// Rede fraca (o caminho direto nao aguenta o minimo dos 240p, ou o video nao chega).
     WeakNetwork,
-    /// Pelo relay, sem video: teto da conta. Em ligacao direta continua.
-    RelayLimit,
+    /// Sem ligacao direta: o video nunca vai pelo relay. Volta quando o direto voltar.
+    NoDirect,
 }
 
 /// O que a app aplica no codificador.
@@ -554,16 +576,14 @@ pub struct VideoParams {
     pub height: u16,
     pub fps: u8,
     pub paused: Option<Pause>,
-    /// A qualidade esta limitada por ir pelo relay (ligacao direta daria mais).
-    pub limited_by_relay: bool,
     /// Muda quando e preciso uma imagem completa ja (o outro perdeu uma, recomecou, ...).
     pub keyframe_seq: u32,
 }
 
 /// Sem relatorios ha tanto tempo, a enviar: rede a falhar.
 const FEEDBACK_STALE: Duration = Duration::from_millis(1500);
-/// A enviar ha tanto tempo e NUNCA chegou um relatorio: o relay nao deixa passar video
-/// (versao antiga) ou o caminho nao serve: pausa.
+/// A enviar pelo direto ha tanto tempo e NUNCA chegou um relatorio: o caminho nao serve
+/// para video: pausa.
 const NO_FEEDBACK_PAUSE: Duration = Duration::from_secs(4);
 const DECREASE_EVERY: Duration = Duration::from_millis(500);
 const INCREASE_AFTER_DECREASE: Duration = Duration::from_secs(1);
@@ -576,9 +596,11 @@ pub struct RateController {
     sending: bool,
     sending_since: Option<Instant>,
     direct: bool,
-    relay_mode: RelayVideo,
     local_net: Net,
     peer_net: Net,
+    /// O maior video que o meu codificador (e a camara) faz e que o descodificador do outro aguenta.
+    local_max_height: u16,
+    peer_max_height: u16,
     bitrate: f64,
     rung: usize,
     upgrade_since: Option<Instant>,
@@ -605,11 +627,12 @@ impl RateController {
             sending: false,
             sending_since: None,
             direct: false,
-            relay_mode: RelayVideo::Full,
             local_net: Net::Unknown,
             peer_net: Net::Unknown,
-            bitrate: START_RELAY_BPS,
-            rung: R360,
+            local_max_height: DEFAULT_MAX_HEIGHT,
+            peer_max_height: DEFAULT_MAX_HEIGHT,
+            bitrate: START_MOBILE_BPS,
+            rung: 1,
             upgrade_since: None,
             last_decrease: None,
             last_feedback: None,
@@ -622,26 +645,36 @@ impl RateController {
         }
     }
 
-    /// Pelo relay e sem video la (teto da conta): pausa, sem mexer no debito.
-    fn relay_denied(&self) -> bool {
-        !self.direct && self.relay_mode == RelayVideo::Denied
+    /// Sem ligacao direta: o video nao sai (nunca pelo relay). Pausa, sem mexer no debito.
+    fn no_direct(&self) -> bool {
+        !self.direct
     }
 
-    /// Teto do caminho atual: (degrau maximo, debito maximo).
+    /// Wi-Fi deste lado e o outro nao disse que esta com dados moveis.
+    fn on_wifi(&self) -> bool {
+        self.local_net == Net::Wifi && self.peer_net != Net::Mobile
+    }
+
+    fn start_bps(&self) -> f64 {
+        if self.on_wifi() {
+            START_WIFI_BPS
+        } else {
+            START_MOBILE_BPS
+        }
+    }
+
+    /// Teto do caminho atual: (degrau maximo, debito maximo). Sem direto: nada. Com dados
+    /// moveis 720p; com Wi-Fi so o dos aparelhos (o debito faz o resto).
     fn caps(&self) -> (usize, u32) {
         if !self.direct {
-            return match self.relay_mode {
-                RelayVideo::Full => (R360, RELAY_MAX_BPS),
-                RelayVideo::Cap240 => (R240, RELAY_CAP240_BPS),
-                RelayVideo::Denied => (R240, 0),
-            };
+            return (R240, 0);
         }
-        let wifi = self.local_net == Net::Wifi && self.peer_net != Net::Mobile;
-        if wifi {
-            (R1080, LADDER[R1080].max_bps)
-        } else {
-            (R720, LADDER[R720].max_bps)
+        let device = self.local_max_height.min(self.peer_max_height);
+        let mut top = LADDER.iter().rposition(|r| r.height <= device).unwrap_or(R240);
+        if !self.on_wifi() {
+            top = top.min(R720);
         }
+        (top, LADDER[top].max_bps)
     }
 
     fn clamp(&mut self) {
@@ -663,7 +696,7 @@ impl RateController {
             self.last_feedback = None;
             self.weak_since = None;
             self.paused_weak_since = None;
-            self.bitrate = if self.direct { START_DIRECT_BPS } else { START_RELAY_BPS };
+            self.bitrate = self.start_bps();
             self.slow_start = true;
             self.clamp();
             self.rung = self.best_rung(false);
@@ -673,50 +706,49 @@ impl RateController {
         }
     }
 
-    /// O caminho do audio (direto ou relay). Ao passar para o relay, desce logo ao teto dele;
-    /// ao passar para direto, salta para o arranque do direto (e volta a subir depressa).
-    pub fn set_path(&mut self, direct: bool) {
+    /// O caminho do audio (direto ou relay). Sem direto o video pausa (`Pause::NoDirect`); com o
+    /// direto de volta recomeca do arranque do direto, com uma imagem completa e as contas dos
+    /// relatorios do zero (sem direto nao chegou nenhum: nao e rede fraca).
+    pub fn set_path(&mut self, direct: bool, now: Instant) {
         if direct == self.direct {
             return;
         }
-        let was_denied = self.relay_denied();
         self.direct = direct;
         if direct {
-            if self.bitrate < START_DIRECT_BPS {
-                self.bitrate = START_DIRECT_BPS;
-                self.slow_start = true;
+            self.bitrate = self.bitrate.max(self.start_bps());
+            self.slow_start = true;
+            self.weak_since = None;
+            self.paused_weak_since = None;
+            self.clean_reports = 0;
+            self.last_feedback = None;
+            self.last_stale_cut = None;
+            self.last_decrease = None;
+            if self.sending {
+                self.sending_since = Some(now);
             }
-            if was_denied {
-                self.weak_since = None;
-                self.keyframe_seq = self.keyframe_seq.wrapping_add(1);
-            }
+            self.keyframe_seq = self.keyframe_seq.wrapping_add(1);
         }
         self.clamp();
-        let best = self.best_rung(false);
-        // Para direto: o degrau sobe ja (o caminho melhorou de uma vez). Para o relay: desce.
-        if direct || best < self.rung {
-            self.rung = best;
-            self.upgrade_since = None;
-        }
-    }
-
-    pub fn set_relay_mode(&mut self, m: RelayVideo) {
-        if m != self.relay_mode {
-            let was_denied = self.relay_mode == RelayVideo::Denied;
-            self.relay_mode = m;
-            if was_denied && !self.direct {
-                self.bitrate = START_RELAY_BPS;
-                self.slow_start = true;
-                self.weak_since = None;
-                self.keyframe_seq = self.keyframe_seq.wrapping_add(1);
-            }
-            self.clamp();
-            self.rung = if was_denied { self.best_rung(false) } else { self.rung.min(self.caps().0) };
-        }
+        self.rung = self.best_rung(false);
+        self.upgrade_since = None;
     }
 
     pub fn set_local_net(&mut self, n: Net) {
         self.local_net = n;
+        self.clamp();
+        self.rung = self.rung.min(self.caps().0);
+    }
+
+    /// O maior video (altura) que este telemovel consegue codificar com a camara atual.
+    pub fn set_local_max_height(&mut self, h: u16) {
+        self.local_max_height = h.max(LADDER[R240].height);
+        self.clamp();
+        self.rung = self.rung.min(self.caps().0);
+    }
+
+    /// O maior video (altura) que o outro telemovel consegue descodificar (`Body::Caps`).
+    pub fn set_peer_max_height(&mut self, h: u16) {
+        self.peer_max_height = h.max(LADDER[R240].height);
         self.clamp();
         self.rung = self.rung.min(self.caps().0);
     }
@@ -776,7 +808,7 @@ impl RateController {
         } else {
             0.0
         };
-        if self.relay_denied() {
+        if self.no_direct() {
             return;
         }
         // Sem pacotes no intervalo (e sem nada parado) o relatorio nao diz nada do video: nao
@@ -803,7 +835,7 @@ impl RateController {
 
     /// A cada ~100 ms.
     pub fn tick(&mut self, now: Instant) {
-        if !self.sending || self.relay_denied() {
+        if !self.sending || self.no_direct() {
             return;
         }
         // Relatorios que deixaram de chegar: corta.
@@ -865,8 +897,9 @@ impl RateController {
 
     pub fn params(&self) -> VideoParams {
         let (max_rung, max_bps) = self.caps();
-        let paused = if self.relay_denied() {
-            Some(Pause::RelayLimit)
+        // Sem direto so conta como pausa com a camara autorizada (senao nao ha nada a pausar).
+        let paused = if self.sending && self.no_direct() {
+            Some(Pause::NoDirect)
         } else if self.weak_paused() {
             Some(Pause::WeakNetwork)
         } else {
@@ -881,7 +914,6 @@ impl RateController {
             height: rung.height,
             fps: rung.fps,
             paused,
-            limited_by_relay: !self.direct,
             keyframe_seq: self.keyframe_seq,
         }
     }
@@ -1044,8 +1076,8 @@ mod tests {
                 r.on_fragment(f, at(t0, arr));
             }
         }
-        assert!(r.feedback(at(t0, 100), 0, Net::Mobile).is_none(), "so de 250 em 250 ms");
-        let fb = r.feedback(at(t0, 250), 4, Net::Mobile).unwrap();
+        assert!(r.feedback(at(t0, 100), 0, Net::Mobile, 0).is_none(), "so de 250 em 250 ms");
+        let fb = r.feedback(at(t0, 250), 4, Net::Mobile, 0).unwrap();
         assert_eq!((fb.received, fb.expected, fb.audio_loss_pct, fb.net), (8, 8, 4, Net::Mobile));
         assert_eq!(fb.recv_bps, 8 * 1200 * 8 * 4);
         // Media (20+20+100)/3 = 46, base 20: 26 ms de fila.
@@ -1053,7 +1085,7 @@ mod tests {
         for c in [10u64, 11, 14] {
             r.on_packet(c, 1200);
         }
-        let fb = r.feedback(at(t0, 500), 0, Net::Mobile).unwrap();
+        let fb = r.feedback(at(t0, 500), 0, Net::Mobile, 0).unwrap();
         assert_eq!((fb.received, fb.expected), (3, 5), "do 9 ao 14: 5 esperados");
     }
 
@@ -1076,29 +1108,30 @@ mod tests {
     }
 
     #[test]
-    fn pelo_relay_sobe_ate_360p_e_nao_passa() {
+    fn sem_direto_nao_ha_video() {
         let t0 = Instant::now();
         let mut c = RateController::new();
         c.set_sending(true, t0);
         let p = c.params();
-        assert!(p.send && p.limited_by_relay && p.height == 360 && p.bitrate_bps == 500_000, "{p:?}");
-        run(&mut c, t0, 0, 20, |b| fb(0, 0, 10, b));
+        assert_eq!((p.send, p.paused), (false, Some(Pause::NoDirect)), "{p:?}");
+        // Muito tempo assim (sem relatorios nenhuns) nao vira "rede fraca" nem mexe no debito.
+        run(&mut c, t0, 0, 20, |_| Feedback { received: 0, expected: 0, ..fb(0, 0, 0, 0) });
         let p = c.params();
-        assert_eq!((p.height, p.bitrate_bps), (360, RELAY_MAX_BPS), "{p:?}");
+        assert_eq!((p.send, p.paused, c.bitrate), (false, Some(Pause::NoDirect), START_MOBILE_BPS), "{p:?}");
     }
 
     #[test]
     fn direto_sobe_a_1080p_com_wifi_e_fica_em_720p_com_dados() {
         let t0 = Instant::now();
         let mut c = RateController::new();
-        c.set_path(true);
+        c.set_path(true, t0);
         c.set_local_net(Net::Wifi);
         c.set_sending(true, t0);
         assert_eq!(c.params().bitrate_bps, 1_200_000);
         let mut wifi = |b| Feedback { net: Net::Wifi, ..fb(0, 0, 10, b) };
         let ms = run(&mut c, t0, 0, 40, &mut wifi);
         let p = c.params();
-        assert_eq!((p.width, p.height, p.bitrate_bps, p.limited_by_relay), (1920, 1080, 4_000_000, false), "{p:?}");
+        assert_eq!((p.width, p.height, p.bitrate_bps), (1920, 1080, 4_000_000), "{p:?}");
         // O outro passa para dados moveis: 720p.
         run(&mut c, t0, ms, 3, |b| Feedback { net: Net::Mobile, ..fb(0, 0, 10, b) });
         let p = c.params();
@@ -1109,7 +1142,7 @@ mod tests {
     fn perdas_no_audio_baixam_o_video_primeiro() {
         let t0 = Instant::now();
         let mut c = RateController::new();
-        c.set_path(true);
+        c.set_path(true, t0);
         c.set_local_net(Net::Wifi);
         c.set_sending(true, t0);
         let ms = run(&mut c, t0, 0, 30, |b| Feedback { net: Net::Wifi, ..fb(0, 0, 10, b) });
@@ -1124,39 +1157,40 @@ mod tests {
     }
 
     #[test]
-    fn caminho_para_o_relay_desce_logo_ao_teto() {
+    fn direto_que_cai_pausa_e_volta_com_imagem_completa() {
         let t0 = Instant::now();
         let mut c = RateController::new();
-        c.set_path(true);
+        c.set_path(true, t0);
         c.set_local_net(Net::Wifi);
         c.set_sending(true, t0);
         let ms = run(&mut c, t0, 0, 30, |b| Feedback { net: Net::Wifi, ..fb(0, 0, 10, b) });
         assert_eq!(c.params().height, 1080);
-        c.set_path(false);
-        let p = c.params();
-        assert_eq!((p.height, p.bitrate_bps, p.limited_by_relay), (360, RELAY_MAX_BPS, true), "{p:?}");
-        // Travao do mes: 240p.
-        c.set_relay_mode(RelayVideo::Cap240);
-        let p = c.params();
-        assert_eq!((p.height, p.bitrate_bps), (240, RELAY_CAP240_BPS), "{p:?}");
-        // Teto da conta: pausa pelo relay; volta a ligacao direta e continua.
-        c.set_relay_mode(RelayVideo::Denied);
-        assert_eq!((c.params().send, c.params().paused), (false, Some(Pause::RelayLimit)));
-        // Muito tempo assim nao pausa por "rede fraca" nem estraga o debito.
+        // O direto cai: o video pausa logo (nunca vai pelo relay).
+        c.set_path(false, at(t0, ms));
+        assert_eq!((c.params().send, c.params().paused), (false, Some(Pause::NoDirect)));
+        // Muito tempo assim (nada chega) nao pausa por "rede fraca".
         let ms = run(&mut c, t0, ms, 10, |_| Feedback { received: 0, expected: 0, ..fb(0, 0, 0, 0) });
-        assert_eq!(c.params().paused, Some(Pause::RelayLimit));
+        assert_eq!(c.params().paused, Some(Pause::NoDirect));
+        // O direto volta: continua ja, com imagem completa, e sem pausar por falta de relatorios
+        // logo a seguir (as contas dos relatorios recomecam).
         let seq = c.params().keyframe_seq;
-        c.set_path(true);
-        run(&mut c, t0, ms, 1, |b| Feedback { net: Net::Wifi, ..fb(0, 0, 10, b) });
+        c.set_path(true, at(t0, ms));
         let p = c.params();
         assert!(p.send && p.paused.is_none() && p.bitrate_bps >= 1_200_000, "{p:?}");
         assert_ne!(p.keyframe_seq, seq, "recomeca com imagem completa");
+        for k in 1..=30u64 {
+            c.tick(at(t0, ms + k * 100));
+        }
+        assert!(c.params().send, "3 s sem relatorio logo a seguir ao regresso nao e rede fraca");
+        run(&mut c, t0, ms + 3_000, 2, |b| Feedback { net: Net::Wifi, ..fb(0, 0, 10, b) });
+        assert!(c.params().send && c.params().paused.is_none());
     }
 
     #[test]
     fn rede_fraca_pausa_e_volta() {
         let t0 = Instant::now();
         let mut c = RateController::new();
+        c.set_path(true, t0);
         c.set_sending(true, t0);
         let seq = c.params().keyframe_seq;
         // 30% de perdas e o pouco que chega e cada vez menos: desce ate pausar.
@@ -1184,6 +1218,8 @@ mod tests {
     fn relatorio_vazio_so_e_perda_se_estiver_parado() {
         let t0 = Instant::now();
         let mut c = RateController::new();
+        c.set_path(true, t0);
+        c.set_local_net(Net::Wifi);
         c.set_sending(true, t0);
         let empty = Feedback { received: 0, expected: 0, ..fb(0, 0, 0, 0) };
         // Logo a seguir a comecar: os pacotes ainda vao a caminho. Nao desce.
@@ -1191,19 +1227,22 @@ mod tests {
             c.on_feedback(&empty, false, at(t0, ms));
             c.tick(at(t0, ms));
         }
-        assert_eq!(c.bitrate(), 500_000);
+        assert_eq!(c.bitrate(), 1_200_000);
         // Pacotes enviados ha mais de 800 ms que nunca chegaram: perda.
         c.on_feedback(&empty, true, at(t0, 1_000));
-        assert!(c.bitrate() < 500_000);
+        assert!(c.bitrate() < 1_200_000);
     }
 
     #[test]
     fn rede_que_recupera_nao_pausa() {
         let t0 = Instant::now();
         let mut c = RateController::new();
+        c.set_path(true, t0);
+        c.set_local_net(Net::Wifi);
         c.set_sending(true, t0);
-        // Desce ate ao minimo com perdas, e a rede recupera logo: nao pausa.
-        let ms = run(&mut c, t0, 0, 6, |b| fb(30, 0, 10, b));
+        // Desce ate ao minimo com perdas (de 1,2 Mbit/s: 13 descidas), e a rede recupera logo:
+        // nao pausa.
+        let ms = run(&mut c, t0, 0, 7, |b| fb(30, 0, 10, b));
         assert_eq!(c.bitrate(), 150_000);
         run(&mut c, t0, ms, 6, |b| fb(0, 0, 10, b));
         let p = c.params();
@@ -1214,20 +1253,21 @@ mod tests {
     fn sem_relatorios_pausa() {
         let t0 = Instant::now();
         let mut c = RateController::new();
+        c.set_path(true, t0);
         c.set_sending(true, t0);
         for ms in (0..3_900).step_by(100) {
             c.tick(at(t0, ms));
         }
         assert!(c.params().send);
         c.tick(at(t0, 4_000));
-        assert_eq!(c.params().paused, Some(Pause::WeakNetwork), "relay antigo: o video nunca chega");
+        assert_eq!(c.params().paused, Some(Pause::WeakNetwork), "o caminho direto nao deixa passar video");
     }
 
     #[test]
     fn degrau_so_sobe_depois_de_2_s() {
         let t0 = Instant::now();
         let mut c = RateController::new();
-        c.set_path(true);
+        c.set_path(true, t0);
         c.set_local_net(Net::Wifi);
         c.set_sending(true, t0);
         assert_eq!(c.params().height, 720, "1,2 Mbit/s no inicio: 720p");
@@ -1242,5 +1282,83 @@ mod tests {
         // 1080p pede 2,2 Mbit/s x 1,15 durante 2 s (a ~8%/s, mais ~17%).
         let bps = first_1080.expect("devia chegar a 1080p");
         assert!(bps as f64 >= 2_200_000.0 * 1.15 * 1.1, "subiu a 1080p cedo demais ({bps})");
+    }
+
+    #[test]
+    fn wifi_sem_teto_fixo_sobe_ate_ao_que_os_aparelhos_aguentam() {
+        let t0 = Instant::now();
+        let mut c = RateController::new();
+        c.set_path(true, t0);
+        c.set_local_net(Net::Wifi);
+        c.set_local_max_height(2160);
+        c.set_peer_max_height(2160);
+        c.set_sending(true, t0);
+        let ms = run(&mut c, t0, 0, 90, |b| Feedback { net: Net::Wifi, ..fb(0, 0, 10, b) });
+        let p = c.params();
+        assert_eq!((p.width, p.height, p.bitrate_bps), (3840, 2160, 16_000_000), "{p:?}");
+        // O descodificador do outro so aguenta 1440p: desce ja para 1440p.
+        c.set_peer_max_height(1440);
+        let ms = run(&mut c, t0, ms, 1, |b| Feedback { net: Net::Wifi, ..fb(0, 0, 10, b) });
+        let p = c.params();
+        assert_eq!((p.height, p.bitrate_bps), (1440, 8_000_000), "{p:?}");
+        // O outro passa para dados moveis: 720p, mesmo com aparelhos que fazem 4K.
+        c.set_peer_max_height(2160);
+        run(&mut c, t0, ms, 2, |b| Feedback { net: Net::Mobile, ..fb(0, 0, 10, b) });
+        let p = c.params();
+        assert_eq!((p.height, p.bitrate_bps), (720, 2_500_000), "{p:?}");
+    }
+
+    #[test]
+    fn sem_saber_dos_aparelhos_fica_nos_1080p() {
+        // App antiga do outro lado (nao diz o que descodifica): o teto e o de antes.
+        let t0 = Instant::now();
+        let mut c = RateController::new();
+        c.set_path(true, t0);
+        c.set_local_net(Net::Wifi);
+        c.set_local_max_height(2160);
+        c.set_sending(true, t0);
+        run(&mut c, t0, 0, 60, |b| Feedback { net: Net::Wifi, ..fb(0, 0, 10, b) });
+        let p = c.params();
+        assert_eq!((p.height, p.bitrate_bps), (1080, 4_000_000), "{p:?}");
+    }
+
+    #[test]
+    fn dados_moveis_arrancam_em_360p_e_param_nos_720p() {
+        let t0 = Instant::now();
+        let mut c = RateController::new();
+        c.set_path(true, t0);
+        c.set_local_net(Net::Mobile);
+        c.set_local_max_height(2160);
+        c.set_peer_max_height(2160);
+        c.set_sending(true, t0);
+        let p = c.params();
+        assert_eq!((p.height, p.bitrate_bps), (360, 500_000), "{p:?}");
+        run(&mut c, t0, 0, 60, |b| Feedback { net: Net::Wifi, ..fb(0, 0, 10, b) });
+        let p = c.params();
+        assert_eq!((p.height, p.bitrate_bps), (720, 2_500_000), "{p:?}");
+    }
+
+    #[test]
+    fn voz_atrasada_baixa_o_video() {
+        // O audio chega com 120 ms a mais (fila na rede de quem envia), sem perdas: o
+        // relatorio leva esse atraso e o video desce.
+        let t0 = Instant::now();
+        let mut rx = VideoReceiver::new(t0);
+        let f = rx.feedback(at(t0, 300), 0, Net::Wifi, 120).expect("relatorio");
+        assert_eq!(f.queue_delay_ms, 120);
+        let mut c = RateController::new();
+        c.set_path(true, t0);
+        c.set_local_net(Net::Wifi);
+        c.set_sending(true, t0);
+        let ms = run(&mut c, t0, 0, 20, |b| Feedback { net: Net::Wifi, ..fb(0, 0, 10, b) });
+        let before = c.bitrate();
+        run(&mut c, t0, ms, 3, |b| Feedback { net: Net::Wifi, ..fb(0, 0, 120, b) });
+        assert!(c.bitrate() < before / 2, "{} -> {}", before, c.bitrate());
+    }
+
+    #[test]
+    fn capacidade_ida_e_volta() {
+        assert_eq!(parse_body(&encode_caps(2160)), Some(Body::Caps { max_height: 2160 }));
+        assert_eq!(parse_body(&[T_CAPS, 1]), None);
     }
 }

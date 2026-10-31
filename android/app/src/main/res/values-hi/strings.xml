@@ -118,12 +118,6 @@
     <string name="t_mensagens_cifradas_ponta_a_ponta_com">पोस्ट-क्वांटम क्रिप्टोग्राफ़ी के साथ एंड-टू-एंड एन्क्रिप्टेड मैसेज। न फ़ोन नंबर, न ईमेल।</string>
     <string name="t_comecar">शुरू करें</string>
     <string name="t_versao_de_testes">टेस्ट वर्ज़न। वर्ज़न 1.0 आने तक ऐप में सुधार होते रहेंगे।</string>
-    <string name="t_esconder_opcoes_de_teste">टेस्ट विकल्प छिपाएं</string>
-    <string name="t_opcoes_de_teste">टेस्ट विकल्प</string>
-    <string name="t_url_do_relay">रिले URL</string>
-    <string name="t_chave_publica_do_relay_pinning">रिले की पब्लिक कुंजी (पिनिंग)</string>
-    <string name="t_relay_teste">रिले (टेस्ट)</string>
-    <string name="t_guardar_e_voltar_a_ligar">सेव करें और दोबारा कनेक्ट करें</string>
     <string name="t_voltar">वापस</string>
     <string name="t_mais_opcoes">और विकल्प</string>
     <string name="t_o_meu_id">मेरी ID</string>
@@ -246,7 +240,6 @@
     <string name="t_este_telemovel_nao_permite_desbloquear_assim">यह फ़ोन इस तरह अनलॉक करने की सुविधा नहीं देता (Android 11 या नया वर्ज़न और स्क्रीन लॉक ज़रूरी है)।</string>
     <string name="t_nao_foi_possivel_ativar">चालू नहीं किया जा सका: %1$s</string>
     <string name="t_demasiadas_tentativas_tenta_de_novo_daqui">बहुत ज़्यादा कोशिशें हो गईं। %1$s सेकंड बाद फिर से कोशिश करें।</string>
-    <string name="t_o_relay_tem_de_usar_wss">रिले को wss:// इस्तेमाल करना होगा (ws:// सिर्फ़ डीबग बिल्ड में)</string>
     <string name="t_nao_foi_possivel_ler_essa_imagem">वह इमेज पढ़ी नहीं जा सकी।</string>
     <string name="t_contacto">संपर्क</string>
     <string name="t_esse_e_o_teu_proprio_id">यह आपकी अपनी ID है</string>
@@ -432,4 +425,15 @@
     <string name="community_title">कम्युनिटी</string>
     <string name="community_subtitle">Sealer बैज वाले लोग, उनकी फ़ोटो और बैज के साथ।</string>
     <string name="community_empty">कम्युनिटी अभी खाली है।</string>
+    <!-- Chamadas de grupo (0.9.63) -->
+    <string name="gcall_title">ग्रुप कॉल</string>
+    <string name="gcall_video_title">ग्रुप वीडियो कॉल</string>
+    <string name="gcall_from">%1$s कॉल कर रहे हैं</string>
+    <string name="gcall_waiting">दूसरों के जुड़ने का इंतज़ार…</string>
+    <string name="gcall_full">ग्रुप कॉल में पहले से 5 लोग हैं।</string>
+    <string name="gcall_notice">ग्रुप कॉल में आपका नेटवर्क पता दूसरे प्रतिभागियों को दिखता है।</string>
+    <string name="gcall_me">मैं</string>
+    <string name="gcall_join">कॉल में शामिल हों</string>
+    <string name="gcall_name_title">इस कॉल में आपका नाम</string>
+    <string name="gcall_name_text">जिनके संपर्कों में आप नहीं हैं, उन्हें यह नाम दिखेगा।</string>
 </resources>

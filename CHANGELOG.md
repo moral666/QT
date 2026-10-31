@@ -6,6 +6,155 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 31 de outubro de 2026: nomes e ligações nas chamadas de grupo (Android e iPhone 0.9.67)
+
+- Membros do grupo que não são contactos um do outro (e nunca escreveram no grupo) não tinham
+  sessão cifrada entre si: a perna deles nunca se criava e não se viam nem se ouviam. Antes de
+  ligar ou entrar, a app cria as sessões que faltam (como antes de enviar uma mensagem ao grupo).
+  No núcleo, quem já está na chamada repete o "entrei" a quem chega quando é o outro que tem de
+  oferecer (o primeiro "entrei" pode não ter chegado por falta de sessão). Teste novo.
+- Nome nesta chamada: antes de ligar ou entrar escolhe-se um nome (fica guardado para a próxima).
+  Vai cifrado a cada participante (op 8, `group_call_set_name`); quem não me tem nos contactos vê
+  esse nome, quem tem vê o nome que me deu. Nunca o QT ID.
+- O aviso "Não foi possível usar a câmara" nunca aparece (chamadas a dois e de grupo): os erros da
+  câmara só vão para o registo.
+
+### 30 de outubro de 2026: a minha câmara em cima nas chamadas de grupo (Android e iPhone 0.9.66)
+
+- O quadrado grande em cima passa a ser sempre o meu (a minha câmara, ou a minha foto) e os outros
+  ficam na grelha de 2, sempre pela mesma ordem. Antes ia para cima quem falava, e cada troca
+  refazia os vídeos (flashes constantes). Quem fala continua com a moldura na cor da app.
+
+### 30 de outubro de 2026: correções das chamadas de grupo (Android e iPhone 0.9.65)
+
+- Android: o aviso "Não foi possível usar a câmara" deixava de parar. As sessões da câmara
+  refeitas a meio (uma pausa curta, alguém a entrar) falhavam e cada falha voltava a avisar. Agora
+  uma sessão substituída não conta como erro, o aviso aparece no máximo uma vez, e o codificador
+  só pára ao fim de 3 s sem nada a enviar.
+- Android: o vídeo de alguém ficava preto quando passava para o quadrado grande (ou saía dele):
+  o quadrado antigo apagava o ecrã do novo. Agora só o quadrado atual apaga o seu ecrã.
+- O QT ID nunca aparece na chamada de grupo: quem não está nos contactos aparece como "Membro".
+- Quem recusa (ou não atende) uma chamada de grupo pode entrar depois, enquanto houver alguém:
+  "Entrar na chamada" no topo da conversa do grupo (`group_call_ongoing`, `group_call_rejoin`,
+  evento `Ongoing`). Teste novo: recusar e entrar depois, com as duas pernas ligadas.
+- Diagnóstico da chamada de grupo, como nas chamadas a dois: premir o tempo da chamada abre os
+  números de cada participante (com o nome, sem IPs nem ids), com "Copiar" (`diagnostic_of`).
+
+### 30 de outubro de 2026: chamadas de grupo no iPhone (0.9.64, build 64)
+
+- O mesmo que no Android 0.9.63: botões na conversa do grupo, o aviso do IP com "Aceitar" antes
+  da primeira chamada de grupo, o ecrã (`GroupCallScreen.swift`: quem fala em cima, os outros e eu
+  na grelha de 2, os botões a desaparecer com vídeo) e o `GroupCallModel` (`Calls/GroupCall.swift`).
+- `CallAudioIO`, `VideoSender` e `VideoReceiver` passam a usar protocolos (`AudioPipe`,
+  `VideoOut`, `VideoIn`), que o `CallAudio` e o `GroupAudio` cumprem.
+- Sem CallKit por agora: a chamada de grupo toca com a app aberta (toque da app em ciclo) e a
+  sessão de áudio é ativada pela app. Durante a chamada de grupo as ligações ao relay não pausam.
+- Textos novos gerados com `scripts/strings-ios.py` (as mesmas chaves do Android, nas 10 línguas).
+
+### 30 de outubro de 2026: chamadas de grupo no Android (0.9.63, build 63)
+
+- Botões de chamada e videochamada na conversa do grupo. Antes da primeira chamada de grupo
+  aparece "Nas chamadas de grupo, o teu endereço de rede fica visível aos outros participantes"
+  com "Aceitar" (sem isso não se liga nem se entra).
+- Ecrã novo (`GroupCallScreen.kt`, layout do esboço com as cores da app): quem está a falar num
+  quadrado grande em cima (moldura com o gradiente da app), os outros e eu numa grelha de 2, com o
+  nome e o ícone do microfone ou da câmara. Com vídeo, o topo e os botões desaparecem ao fim de
+  3,5 s sem toques, como na videochamada a dois.
+- `GroupCallController` (`GroupCall.kt`): toque, entrar, sair, microfone e altifalante (a mistura
+  vem do Rust), uma só codificação da câmara para todos, um descodificador por participante com a
+  câmara ligada, serviço da chamada e pausa da câmara fora do ecrã.
+- `CallAudioIO`, `VideoSender` e `VideoReceiver` passam a usar interfaces (`AudioPipe`,
+  `VideoOut`, `VideoIn`), para servirem a chamada a dois e a de grupo.
+- Ainda não: a chamada de grupo não toca com a app fechada (só com a app aberta ou em segundo
+  plano), nem passa pelo sistema de chamadas do Android (Bluetooth do carro).
+
+### 30 de outubro de 2026: núcleo das chamadas de grupo (0.9.62)
+
+- Chamadas de grupo até 5 pessoas (`ffi/src/group_call.rs`, tipo 14 no Double Ratchet): uma malha
+  de chamadas a dois ("pernas"), cada uma com chaves e motor próprios; o relay não muda. Quem
+  oferece cada perna é o participante com o id menor (sem corridas, seja qual for a ordem de
+  entrada). Só entre membros do grupo, nunca com bloqueados; o 6.º não entra.
+- Voz: ligação direta com todos os participantes (mesmo os que não são contactos) e, sem direto,
+  pelo relay. Vídeo: só pela ligação direta. Entrar numa videochamada de grupo é aceitar ver.
+- `GroupAudio`: o microfone vai para todas as pernas, o altifalante recebe a mistura, quem fala
+  mais alto passa a ser "quem está a falar" (fica pelo menos 1,5 s). Vídeo: uma só codificação
+  para todos, ao débito da perna mais fraca; 360p por omissão, 720p no Wi-Fi (480p em dados) a
+  falar (1,5 s para subir, 4 s para descer).
+- Uma chamada de cada vez: convite de grupo durante uma chamada a dois (ou o contrário) dá
+  ocupado.
+- Testes com telemóveis reais (QtClient + motores, só pelo direto): 3 pessoas ouvem-se e sabem
+  quem fala, vídeo de um chega aos outros dois, 5 entram e o 6.º não, o último a sair pára o toque
+  de quem ainda tocava, sem aceitar o aviso não se liga, quem não é do grupo não liga.
+
+### 30 de outubro de 2026: qualidade do vídeo e voz à frente (Android e iPhone 0.9.61, build 61)
+
+- **Teto do vídeo:** com dados móveis (de qualquer dos lados) continua 720p; com Wi-Fi dos dois
+  lados deixa de haver teto fixo: sobe até ao que a ligação deixa, sem passar do que o codificador
+  (e a câmara) de quem envia faz nem do que o descodificador de quem recebe aguenta. A escada ganha
+  1440p (até 8 Mbit/s) e 2160p (até 16 Mbit/s). Cada app diz o que faz (`video_set_encode_limit`,
+  `video_set_decode_limit`) e quem recebe envia a sua capacidade pelo direto a cada 2 s (pacote de
+  vídeo novo `[3][2 altura]`; as apps antigas deitam-no fora). Sem ela (app antiga do outro lado),
+  fica nos 1080p de antes.
+- **Arranque conforme a rede:** 1,2 Mbit/s (720p) com Wi-Fi dos dois lados; 500 kbit/s (360p) com
+  dados móveis (na 0.9.53 arrancava sempre em 1,2 Mbit/s e entupia o envio pelos dados).
+- **A voz manda:** o atraso a mais do áudio que chega pela ligação direta (fila parada contra a
+  menor chegada dos últimos 10 s, ou a variação acima de 40 ms) vai no "atraso de fila" dos
+  relatórios do vídeo (o mesmo campo: as apps antigas também reagem). O vídeo desce antes de a voz
+  chegar atrasada.
+- **Jitter buffer:** o atraso a mais desce primeiro nos silêncios (um frame baixinho, já
+  descodificado, salta-se sem se ouvir) e, com fala contínua, mais depressa quanto maior o excesso
+  (600 ms a mais saem em ~3 s; antes ~15 s).
+- **Bateria (Android):** sem nada a enviar (pausa, sem ligação direta, o outro ainda não aceitou)
+  o codificador H.264 para e a câmara só alimenta a pré-visualização (antes codificava tudo e o
+  Rust deitava fora). No iPhone já não codificava.
+- Imagem completa maior aceite: 2 MB (era 1 MB), para o 4K. Nível H.264 5/5.1 acima de 1080p
+  (Android); 4K da câmara reduzido a 1440p quando é esse o pedido (iPhone).
+- Testes novos: escada até 2160p com Wi-Fi e aparelhos 4K, teto pelo descodificador do outro,
+  1080p sem saber dos aparelhos, 360p/720p com dados, voz atrasada baixa o vídeo, capacidade ida e
+  volta, atraso grande do jitter buffer sai depressa, salto nos silêncios, medidor do atraso do
+  áudio, e ponta a ponta: Wi-Fi com aparelhos 4K sobe acima de 1080p sem nada no relay.
+
+### 30 de outubro de 2026: vídeo só pela ligação direta, sem fichas, sem relay de teste (Android e iPhone 0.9.53)
+
+- O vídeo das chamadas vai **só pela ligação direta** entre contactos mútuos e nunca pelo relay
+  (nem imagens, nem relatórios, nem pedidos de imagem completa; na duplicação vai só pelo direto).
+  Sem direto (contacto não mútuo ou bloqueado, rede que não deixa, caminho que caiu) a chamada
+  continua só com voz pelo relay e o vídeo fica em pausa, sem nada no ecrã; volta sozinho com o
+  direto, com uma imagem completa. A voz e a regra do direto (`p2p_allowed`) não mudam.
+- Saem as **fichas anónimas** do vídeo (0006): `core/src/fichas.rs`, `call/src/fichas.rs`,
+  `ffi/src/fichas.rs`, `server/src/fichas.rs`, a crate `voprf` (e a `elliptic-curve` e a
+  `crypto-bigint`, que só vinham com ela; sai o aviso RUSTSEC ignorado no `.cargo/audit.toml`) e os
+  testes delas. Saem também os tetos do vídeo pelo relay (360p e 240p): fica o do direto (1080p no
+  Wi-Fi sem limite de dados, 720p no resto).
+- Relay das mensagens: sem emissão de fichas, sem `AdminSetFichasQuota`, sem a semente e sem as
+  chaves `{p}:fichas:*`. `IssueFichas` (das apps antigas) responde sempre `FICHAS_OFF`.
+- Relay das chamadas: só voz. Deita fora o vídeo das apps antigas e responde "sem vídeo pelo
+  relay" (modo 2, no máximo de 5 em 5 s) para elas pararem de enviar; os pacotes de resgate e da
+  chave do mês ficam sem resposta. Sem Redis (sai o utilizador `qt-fichas` da ACL), sem a semente
+  e sem a conta do mês em disco. Saem `CALL_RELAY_VIDEO`, `CALL_VIDEO_BYTES_PER_SEC`,
+  `CALL_MONTHLY_EGRESS_GB`, `CALL_FICHAS`, `CALL_FICHAS_SEED`, `CALL_REDIS_URL` e `CALL_STATE_FILE`.
+- Apps: sem pedido de fichas nem leitura do `estado.json` do site. Ao abrir, a base cifrada perde a
+  tabela `fichas` e as chaves `fichas:*` (`secure_delete`). Nenhuma string das fichas (nunca mostraram
+  texto).
+  `VideoPause::RelayLimit` passa a `NoDirect` (só com a câmara autorizada) e sai `limited_by_relay`
+  da FFI (as apps não os usavam).
+- Deploy: o `setup-ec2.sh` deixa de tratar da semente, do `fichas.env`, do `sealer-estado.json` e
+  das variáveis do vídeo; o `limites.conf` fica só com os limites das salas. Site: o `estado.json`
+  fica só com a versão.
+- Documentação: `docs/protocol-spec.md` (secção 18, vídeo, e secção 24, só a compatibilidade),
+  `docs/threat-model.md`, `docs/known-limitations.md` (46), `docs/aws-orcamento.md`, README, ROADMAP.
+  Sai `docs/privacidade-fichas-rascunho.md`.
+- **Sai a opção "Relay (teste)"** das duas apps, com o código: a linha nas Definições, o ecrã, as
+  "Opções de teste" do primeiro ecrã (URL e chave do relay) e o `RELAY_EDITABLE` (Android) /
+  `Config.relayEditable` e `QTRelayEditable` (iPhone). O relay é sempre o fixo do
+  `gradle.properties` / `Relay.xcconfig`, também nas builds debug, e a chave de pinning passa a ser
+  obrigatória em todas as builds. As apps apagam o relay de teste que uma build debug antiga tivesse
+  guardado. Saem das 10 línguas as strings que ficaram sem uso: `t_relay_teste`,
+  `t_opcoes_de_teste`, `t_esconder_opcoes_de_teste`, `t_url_do_relay`,
+  `t_chave_publica_do_relay_pinning`, `t_guardar_e_voltar_a_ligar` e `t_o_relay_tem_de_usar_wss`.
+  No iPhone, os registos da chamada no ecrã continuam só na Debug (`#if DEBUG`).
+- Android e iPhone: versão 0.9.53 (build 60).
+
 ### 30 de outubro de 2026: Comunidade, a lista das pessoas com medalha (Android e iPhone 0.9.52, Sealer Control 2.2)
 
 - Ecrã novo **Comunidade** nas duas apps (Definições): todas as pessoas com medalha, incluindo a

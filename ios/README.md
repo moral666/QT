@@ -87,11 +87,12 @@ QT_ENTITLEMENTS = SealerMessenger/SealerMessenger.entitlements
 
 | | Debug (▶ normal) | Release (Product → Archive) |
 |---|---|---|
-| Relay | editável em "Opções de teste"; por omissão o de produção (`wss://relay.sealerapp.com`) | **fixo**: `Configs/Relay.xcconfig` |
+| Relay | **fixo**: `Configs/Relay.xcconfig` | **fixo**: `Configs/Relay.xcconfig` |
 | `ws://` sem TLS | permitido | recusado (no código e no ATS) |
-| Botão "Relay (teste)" | visível | escondido |
 
-Para um relay no próprio Mac (simulador): "Opções de teste" → `ws://127.0.0.1:9443` e a chave dele.
+A app não tem onde mudar o relay (desde a 0.9.53, nem na Debug). Para um relay no próprio Mac (simulador),
+muda `QT_RELAY_URL` para `ws://127.0.0.1:9443` e `QT_RELAY_PIN` para a chave dele em `Configs/Relay.xcconfig`
+(sem fazer commit dessa mudança).
 
 ## Notificações e chamadas (sem Firebase)
 

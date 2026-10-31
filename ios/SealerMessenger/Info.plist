@@ -72,7 +72,7 @@
 	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- Sem excecoes globais. So permite redes locais (relay de teste no Mac), e so na
+		<!-- Sem excecoes globais. So permite redes locais (relay no proprio Mac, em Relay.xcconfig), e so na
 		     Debug: na Release esta chave e tirada depois da build (project.yml). -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
@@ -86,8 +86,6 @@
 	<string>$(QT_RELAY_NAME)</string>
 	<key>QTRelaysOthers</key>
 	<string>$(QT_RELAYS_OTHERS)</string>
-	<key>QTRelayEditable</key>
-	<string>$(QT_RELAY_EDITABLE)</string>
 	<key>QTAllowCleartext</key>
 	<string>$(QT_ALLOW_CLEARTEXT)</string>
 	<!-- Letras: Manrope (marca) e Plus Jakarta Sans (texto), as mesmas do Android -->

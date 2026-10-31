@@ -123,12 +123,6 @@
     <string name="t_mensagens_cifradas_ponta_a_ponta_com">Mensagens cifradas ponta a ponta, com criptografia pós-quântica. Sem número de telefone, sem email.</string>
     <string name="t_comecar">Começar</string>
     <string name="t_versao_de_testes">Versão de testes. Até à versão 1.0, a app continua a ser melhorada.</string>
-    <string name="t_esconder_opcoes_de_teste">Esconder opções de teste</string>
-    <string name="t_opcoes_de_teste">Opções de teste</string>
-    <string name="t_url_do_relay">URL do relay</string>
-    <string name="t_chave_publica_do_relay_pinning">Chave pública do relay (pinning)</string>
-    <string name="t_relay_teste">Relay (teste)</string>
-    <string name="t_guardar_e_voltar_a_ligar">Guardar e voltar a ligar</string>
     <string name="t_voltar">Voltar</string>
     <string name="t_mais_opcoes">Mais opções</string>
     <string name="t_o_meu_id">O meu ID</string>
@@ -251,7 +245,6 @@
     <string name="t_este_telemovel_nao_permite_desbloquear_assim">Este telemóvel não permite desbloquear assim (precisa de Android 11 ou mais recente e de bloqueio de ecrã).</string>
     <string name="t_nao_foi_possivel_ativar">Não foi possível ativar: %1$s</string>
     <string name="t_demasiadas_tentativas_tenta_de_novo_daqui">Demasiadas tentativas. Tenta de novo daqui a %1$s s.</string>
-    <string name="t_o_relay_tem_de_usar_wss">O relay tem de usar wss:// (ws:// só na build debug)</string>
     <string name="t_nao_foi_possivel_ler_essa_imagem">Não foi possível ler essa imagem.</string>
     <string name="t_contacto">Contacto</string>
     <string name="t_esse_e_o_teu_proprio_id">Esse é o teu próprio ID</string>
@@ -439,4 +432,15 @@
     <string name="community_title">Comunidade</string>
     <string name="community_subtitle">Quem tem medalha no Sealer, com a foto e a medalha.</string>
     <string name="community_empty">A Comunidade ainda está vazia.</string>
+    <!-- Chamadas de grupo (0.9.63) -->
+    <string name="gcall_title">Chamada de grupo</string>
+    <string name="gcall_video_title">Videochamada de grupo</string>
+    <string name="gcall_from">%1$s está a ligar</string>
+    <string name="gcall_waiting">À espera de quem entra…</string>
+    <string name="gcall_full">A chamada de grupo já tem 5 pessoas.</string>
+    <string name="gcall_notice">Nas chamadas de grupo, o teu endereço de rede fica visível aos outros participantes.</string>
+    <string name="gcall_me">Eu</string>
+    <string name="gcall_join">Entrar na chamada</string>
+    <string name="gcall_name_title">O teu nome nesta chamada</string>
+    <string name="gcall_name_text">Quem não te tem nos contactos vê este nome.</string>
 </resources>

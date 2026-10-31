@@ -303,6 +303,7 @@ enum Payload {
     SessionEnd,
     /// Chamada de voz (tipo 11, ver `call.rs`): o corpo comeca pela operacao.
     Call { body: Vec<u8>, sent_at: i64 },
+    GroupCall { body: Vec<u8>, sent_at: i64 },
     /// Foto de perfil (tipo 12, ver `profile.rs`).
     Profile { body: Vec<u8> },
     /// Badge (tipo 13, ver `badges.rs`): o certificado.
@@ -372,6 +373,10 @@ fn decode(plain: &[u8], legacy_id: &[u8]) -> Payload {
         T_SESSION_END => Payload::SessionEnd,
         crate::call::T_CALL => match plain.len() - HDR {
             17..=128 => Payload::Call { body: plain[HDR..].to_vec(), sent_at },
+            _ => Payload::Ignored,
+        },
+        crate::group_call::T_GROUP_CALL => match plain.len() - HDR {
+            17..=crate::group_call::MAX_BODY => Payload::GroupCall { body: plain[HDR..].to_vec(), sent_at },
             _ => Payload::Ignored,
         },
         crate::profile::T_PROFILE => match plain.len() - HDR {
@@ -700,6 +705,7 @@ impl QtClient {
                 Payload::Presence { online, sent_at } => crate::presence::on_presence(self, tx, contact_id, online, sent_at)?,
                 Payload::SessionEnd => on_session_end(tx, contact_id)?,
                 Payload::Call { body, sent_at } => crate::call::on_call(self, tx, contact_id, &body, sent_at)?,
+                Payload::GroupCall { body, sent_at } => crate::group_call::on_group_call(self, tx, contact_id, &body, sent_at)?,
                 Payload::Profile { body } => crate::profile::on_profile(tx, contact_id, &body)?,
                 Payload::Badge { body } => crate::badges::on_badge(tx, contact_id, &body)?,
                 Payload::Ignored => ReceiveResult::NoChange { contact_id: contact_id.to_string() },

@@ -19,7 +19,6 @@ struct ProfileSettingsScreen: View {
     let onReadReceipts: (Bool) -> Void
     let onPush: (Bool) -> Void
     let onLanguage: () -> Void
-    let onRelay: () -> Void
     let onWipeAll: () -> Void
     @State private var showBlocked = false
     @State private var showWipe = false
@@ -79,7 +78,6 @@ struct ProfileSettingsScreen: View {
                         guard let u = Lang.reportURL(version: Config.version) else { return }
                         openURL(u) { ok in if !ok { showNoMail = true } }
                     })
-                    if Config.relayEditable { SettingsRow(icon: "wrench.fill", title: s("t_relay_teste"), action: onRelay) }
                     SettingsRow(icon: "info.circle.fill", title: s("t_versao", Config.version), divider: false, action: nil)
 
                     Rectangle().fill(c.outlineVariant).frame(height: 0.5).padding(.horizontal, 20).padding(.top, 10)

@@ -45,7 +45,7 @@ O AWS Budgets mostra e guarda os valores **sempre em dólares (USD)**, mesmo que
 
 ## Parte 2: alarme do tráfego de saída da EC2 (consola)
 
-O tráfego que sai da EC2 para a Internet é o custo que mais pode crescer depressa (sobretudo o vídeo pelo relay). O plano gratuito da AWS inclui 100 GB de saída por mês, somados entre todos os serviços; acima disso paga-se por GB (vê o preço atual de `eu-north-1` na página de preços da EC2, em "Data Transfer").
+O tráfego que sai da EC2 para a Internet é o custo que mais pode crescer depressa (desde a 0.9.53 o vídeo das chamadas já não passa pelo relay: só a voz das chamadas que não são diretas, as mensagens e os anexos). O plano gratuito da AWS inclui 100 GB de saída por mês, somados entre todos os serviços; acima disso paga-se por GB (vê o preço atual de `eu-north-1` na página de preços da EC2, em "Data Transfer").
 
 ### 2.1 Tópico de email (SNS)
 
@@ -160,5 +160,5 @@ O alarme volta sozinho a `OK` na avaliação seguinte.
 ## Notas
 
 * Se trocares de instância EC2 (instância nova = ID novo), o alarme da parte 2 tem de ser recriado com o ID novo. O orçamento não muda.
-* O relay das chamadas tem também um travão próprio do tráfego do mês (`CALL_MONTHLY_EGRESS_GB` no `setup-ec2.sh`); o alarme da AWS é uma segunda rede de segurança, independente do relay.
+* Desde a 0.9.53 o vídeo das chamadas vai só pela ligação direta entre os telemóveis e deixa de pesar na AWS. O relay das chamadas só leva voz (pacotes de cerca de 200 bytes, 50 por segundo em cada sentido: perto de 70 MB por hora de chamada que não seja direta) e já não tem travão do mês (saiu o `CALL_MONTHLY_EGRESS_GB`). Este alarme continua a ser a rede de segurança para o tráfego de saída.
 * Opcional: a AWS também permite um alarme do CloudWatch sobre a fatura estimada (`EstimatedCharges`), mas só na região `us-east-1` e depois de ligar **Billing preferences → Receive CloudWatch billing alerts**. Com o orçamento da parte 1 não é preciso.

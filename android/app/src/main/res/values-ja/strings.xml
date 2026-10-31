@@ -118,12 +118,6 @@
     <string name="t_mensagens_cifradas_ponta_a_ponta_com">耐量子暗号を使った、エンドツーエンドで暗号化されたメッセージ。電話番号もメールアドレスも不要です。</string>
     <string name="t_comecar">はじめる</string>
     <string name="t_versao_de_testes">テスト版です。バージョン1.0まで、アプリは改良が続けられます。</string>
-    <string name="t_esconder_opcoes_de_teste">テスト用オプションを隠す</string>
-    <string name="t_opcoes_de_teste">テスト用オプション</string>
-    <string name="t_url_do_relay">リレーのURL</string>
-    <string name="t_chave_publica_do_relay_pinning">リレーの公開鍵（ピンニング）</string>
-    <string name="t_relay_teste">リレー（テスト）</string>
-    <string name="t_guardar_e_voltar_a_ligar">保存して再接続</string>
     <string name="t_voltar">戻る</string>
     <string name="t_mais_opcoes">その他のオプション</string>
     <string name="t_o_meu_id">自分のID</string>
@@ -246,7 +240,6 @@
     <string name="t_este_telemovel_nao_permite_desbloquear_assim">このスマートフォンでは、この方法でロックを解除できません（Android 11以降と画面ロックが必要です）。</string>
     <string name="t_nao_foi_possivel_ativar">オンにできませんでした：%1$s</string>
     <string name="t_demasiadas_tentativas_tenta_de_novo_daqui">試行回数が多すぎます。%1$s秒後にもう一度お試しください。</string>
-    <string name="t_o_relay_tem_de_usar_wss">リレーには wss:// を使う必要があります（ws:// はデバッグビルドのみ）</string>
     <string name="t_nao_foi_possivel_ler_essa_imagem">その画像を読み込めませんでした。</string>
     <string name="t_contacto">連絡先</string>
     <string name="t_esse_e_o_teu_proprio_id">それはあなた自身のIDです</string>
@@ -432,4 +425,15 @@
     <string name="community_title">コミュニティ</string>
     <string name="community_subtitle">Sealerのバッジを持つ人たち（写真とバッジのみ）。</string>
     <string name="community_empty">コミュニティはまだ空です。</string>
+    <!-- Chamadas de grupo (0.9.63) -->
+    <string name="gcall_title">グループ通話</string>
+    <string name="gcall_video_title">グループビデオ通話</string>
+    <string name="gcall_from">%1$sさんが発信中</string>
+    <string name="gcall_waiting">参加者を待っています…</string>
+    <string name="gcall_full">このグループ通話はすでに5人です。</string>
+    <string name="gcall_notice">グループ通話では、あなたのネットワークアドレスが他の参加者に表示されます。</string>
+    <string name="gcall_me">自分</string>
+    <string name="gcall_join">通話に参加</string>
+    <string name="gcall_name_title">この通話での名前</string>
+    <string name="gcall_name_text">あなたを連絡先に登録していない人にはこの名前が表示されます。</string>
 </resources>

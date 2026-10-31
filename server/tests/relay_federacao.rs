@@ -488,11 +488,9 @@ async fn operador_num_relay_trata_contas_do_outro() {
     let (bs, mut bob) = conta(&ub).await;
     let bob_id = uid(&bs);
     let mut o = ligar(&ua_op, &op).await;
-    // Premium e quota de fichas para o Bob (que esta no relay b), pedidos ao relay a.
+    // Premium para o Bob (que esta no relay b), pedido ao relay a.
     ack(o.request(ClientMessage::AdminGrantPremium { user_id: bob_id.clone(), until_ms: 4_000_000_000_000 }).await.unwrap());
     assert_eq!(b.store.premium_until(&bob_id).await.unwrap(), 4_000_000_000_000);
-    ack(o.request(ClientMessage::AdminSetFichasQuota { user_id: bob_id.clone(), per_month: Some(7) }).await.unwrap());
-    assert_eq!(b.store.fichas_quota(&bob_id).await.unwrap(), Some(7));
     match o.request(ClientMessage::AdminListPremium).await.unwrap() {
         ServerMessage::PremiumList { entries } => assert!(entries.iter().any(|e| e.user_id == bob_id)),
         x => panic!("{x:?}"),

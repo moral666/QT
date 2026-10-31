@@ -57,8 +57,6 @@ pub struct Stats {
     pub not_registered: AtomicU64,
     /// Envios recusados para IDs sem bundle (inexistentes ou expirados).
     pub recipient_unknown: AtomicU64,
-    /// Fichas do video emitidas (so o total; nunca a quem).
-    pub fichas_issued: AtomicU64,
     /// Federacao: mensagens enviadas para contas de outros relays / recebidas de outros relays.
     pub fed_out: AtomicU64,
     pub fed_in: AtomicU64,
@@ -102,7 +100,6 @@ pub static STATS: Stats = Stats {
     otpks_served: AtomicU64::new(0),
     not_registered: AtomicU64::new(0),
     recipient_unknown: AtomicU64::new(0),
-    fichas_issued: AtomicU64::new(0),
     fed_out: AtomicU64::new(0),
     fed_in: AtomicU64::new(0),
     fed_lookups: AtomicU64::new(0),
@@ -155,7 +152,6 @@ pub fn take_line(s: &Stats) -> Option<String> {
         ("otpks_entregues", t(&s.otpks_served)),
         ("sem_registo", t(&s.not_registered)),
         ("destinatario_desconhecido", t(&s.recipient_unknown)),
-        ("fichas_emitidas", t(&s.fichas_issued)),
         ("fed_enviadas", t(&s.fed_out)),
         ("fed_recebidas", t(&s.fed_in)),
         ("fed_pedidos", t(&s.fed_lookups)),

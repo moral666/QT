@@ -31,7 +31,10 @@ import android.view.OrientationEventListener
 import android.view.Surface
 import android.view.TextureView
 import uniffi.qt_ffi.CallAudio
+import uniffi.qt_ffi.GroupAudio
 import uniffi.qt_ffi.NetworkKind
+import uniffi.qt_ffi.VideoEncoderParams
+import uniffi.qt_ffi.VideoFrameIn
 
 /**
  * Videochamadas (fase 5b, com a app aberta). Aqui so ha o que e do Android: a camara
@@ -54,7 +57,91 @@ tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
-/** Rede do telemovel para o teto do video em ligacao direta (Wi-Fi sem limite de dados: 1080p). */
+/**
+ * Para onde vai o video da minha camara: a chamada a dois (`CallAudio`) ou a de grupo
+ * (`GroupAudio`, uma so codificacao para todos; 0.9.63).
+ */
+interface VideoOut {
+    fun videoParams(): VideoEncoderParams
+    fun videoPush(frame: ByteArray, keyframe: Boolean, rotationDegrees: UInt, ageMs: UInt): Boolean
+    fun videoSetEncodeLimit(maxHeight: UInt)
+}
+
+/** De onde vem o video de uma pessoa: a chamada a dois ou um participante do grupo. */
+interface VideoIn {
+    fun videoPull(timeoutMs: UInt): VideoFrameIn?
+    fun videoRequestKeyframe()
+    fun videoSetDecodeLimit(maxHeight: UInt)
+}
+
+fun CallAudio.videoOut(): VideoOut = object : VideoOut {
+    override fun videoParams() = this@videoOut.videoParams()
+    override fun videoPush(frame: ByteArray, keyframe: Boolean, rotationDegrees: UInt, ageMs: UInt) =
+        this@videoOut.videoPush(frame, keyframe, rotationDegrees, ageMs)
+    override fun videoSetEncodeLimit(maxHeight: UInt) = this@videoOut.videoSetEncodeLimit(maxHeight)
+}
+
+fun CallAudio.videoIn(): VideoIn = object : VideoIn {
+    override fun videoPull(timeoutMs: UInt) = this@videoIn.videoPull(timeoutMs)
+    override fun videoRequestKeyframe() = this@videoIn.videoRequestKeyframe()
+    override fun videoSetDecodeLimit(maxHeight: UInt) = this@videoIn.videoSetDecodeLimit(maxHeight)
+}
+
+fun GroupAudio.videoOut(): VideoOut = object : VideoOut {
+    override fun videoParams() = this@videoOut.videoParams()
+    override fun videoPush(frame: ByteArray, keyframe: Boolean, rotationDegrees: UInt, ageMs: UInt) =
+        this@videoOut.videoPush(frame, keyframe, rotationDegrees, ageMs)
+    override fun videoSetEncodeLimit(maxHeight: UInt) = this@videoOut.videoSetEncodeLimit(maxHeight)
+}
+
+/** O video de `contactId` numa chamada de grupo. */
+fun GroupAudio.videoIn(contactId: String): VideoIn = object : VideoIn {
+    override fun videoPull(timeoutMs: UInt) = this@videoIn.videoPull(contactId, timeoutMs)
+    override fun videoRequestKeyframe() = this@videoIn.videoRequestKeyframe(contactId)
+    override fun videoSetDecodeLimit(maxHeight: UInt) = this@videoIn.videoSetDecodeLimit(maxHeight)
+}
+
+/**
+ * O maior video (altura) que este telemovel faz em tempo real (0.9.61). Com Wi-Fi dos dois
+ * lados o Rust nao tem outro teto fixo: sobe ate ao que a ligacao deixa, sem passar do que o meu
+ * codificador (e a camara) faz nem do que o descodificador do outro aguenta.
+ */
+object VideoCaps {
+    private val HEIGHTS = intArrayOf(2160, 1440, 1080, 720)
+
+    private fun widthFor(h: Int) = h * 16 / 9
+
+    /** O maior que algum codificador (ou descodificador) H.264 em hardware faz a 30 imagens/s. */
+    private fun codecMax(encoder: Boolean): Int = runCatching {
+        val infos = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter {
+            it.isEncoder == encoder && it.supportedTypes.any { t -> t.equals(AVC, ignoreCase = true) } &&
+                (Build.VERSION.SDK_INT < 29 || !it.isSoftwareOnly)
+        }
+        HEIGHTS.firstOrNull { h ->
+            infos.any { info ->
+                runCatching {
+                    info.getCapabilitiesForType(AVC).videoCapabilities?.areSizeAndRateSupported(widthFor(h), h, 30.0) == true
+                }.getOrDefault(false)
+            }
+        } ?: 720
+    }.getOrDefault(1080)
+
+    private val encodeCodec by lazy { codecMax(encoder = true) }
+    private val decodeCodec by lazy { codecMax(encoder = false) }
+
+    /** Codificar com esta camara: o menor entre o codificador e a camara (16:9 para o MediaCodec). */
+    fun encodeMaxHeight(cameraSizes: Array<Size>?): Int {
+        val cam = cameraSizes
+            ?.filter { kotlin.math.abs(it.width * 9 - it.height * 16) <= it.height }
+            ?.maxOfOrNull { it.height }
+            ?: 1080
+        return minOf(cam, encodeCodec)
+    }
+
+    fun decodeMaxHeight(): Int = decodeCodec
+}
+
+/** Rede do telemovel para o teto do video em ligacao direta (dados moveis: 720p). */
 object VideoNet {
     fun current(ctx: Context): NetworkKind {
         val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return NetworkKind.UNKNOWN
@@ -136,7 +223,7 @@ class VideoTextureView(ctx: Context) : TextureView(ctx) {
  * imagem completa) e entrega cada imagem codificada ao Rust (`videoPush`), com a rotacao.
  * Toda a configuracao corre numa thread propria ([handler]).
  */
-class VideoSender(private val ctx: Context, private val audio: CallAudio) {
+class VideoSender(private val ctx: Context, private val audio: VideoOut) {
     private val cm = ctx.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private val thread = HandlerThread("sealer-video-cam").apply { start() }
     private val handler = Handler(thread.looper)
@@ -151,6 +238,8 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
     private var previewSurface: Surface? = null
     private var encSize: Size? = null
     private var encFps = 0
+    /** Nenhum codificador aceitou (com esta camara): nao se volta a tentar a cada 250 ms. */
+    private var encoderBroken = false
     private var lastBitrate = 0
     private var lastKeySeq: UInt? = null
     private var sensorOrientation = 90
@@ -230,6 +319,11 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
         if (!running) return
         val id = runCatching { pickCamera(front) }.getOrNull() ?: return fail("sem camara")
         val ch = cm.getCameraCharacteristics(id)
+        // O maior video que esta camara + o codificador fazem (o teto no Wi-Fi).
+        runCatching {
+            val sizes = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)?.getOutputSizes(MediaCodec::class.java)
+            audio.videoSetEncodeLimit(VideoCaps.encodeMaxHeight(sizes).toUInt())
+        }
         sensorOrientation = ch.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
         timestampRealtime = ch.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
             CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
@@ -241,6 +335,7 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
                         return
                     }
                     camera = c
+                    encoderBroken = false
                     configureEncoder()
                     startSession()
                 }
@@ -264,10 +359,20 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
         }
     }
 
+    /** So se avisa uma vez (antes, cada sessao refeita a meio repetia o aviso sem parar). */
+    @Volatile private var reported = false
+
     private fun fail(why: String) {
         Log.w(TAG, "camara: $why")
+        if (reported) return
+        reported = true
         onError?.invoke()
     }
+
+    /** Cada sessao pedida tem um numero: uma resposta de uma sessao ja substituida nao e erro. */
+    private var sessionGen = 0
+    /** Desde quando nao ha nada a enviar (0: ha). O codificador so para ao fim de 3 s assim. */
+    private var noSendSince = 0L
 
     private fun closeCamera() {
         runCatching { session?.close() }
@@ -308,7 +413,12 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
                 setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)
                 setInteger(
                     MediaFormat.KEY_LEVEL,
-                    if (size.height > 720) MediaCodecInfo.CodecProfileLevel.AVCLevel4 else MediaCodecInfo.CodecProfileLevel.AVCLevel31,
+                    when {
+                        size.height > 1440 -> MediaCodecInfo.CodecProfileLevel.AVCLevel51
+                        size.height > 1088 -> MediaCodecInfo.CodecProfileLevel.AVCLevel5
+                        size.height > 720 -> MediaCodecInfo.CodecProfileLevel.AVCLevel4
+                        else -> MediaCodecInfo.CodecProfileLevel.AVCLevel31
+                    },
                 )
             }
         }
@@ -349,18 +459,32 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
         return null
     }
 
-    /** (Re)cria o codificador para os parametros atuais. */
+    /**
+     * (Re)cria o codificador para os parametros atuais. Sem nada a enviar (o outro ainda nao
+     * aceitou, pausa, sem ligacao direta) nao ha codificador: a camara so alimenta a
+     * pre-visualizacao (poupa bateria; antes codificava-se tudo e o Rust deitava fora).
+     */
     private fun configureEncoder() {
         val cam = camera ?: return
         releaseEncoder()
         val p = audio.videoParams()
         val map = cm.getCameraCharacteristics(cam.id).get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return fail("sem tamanhos")
+        previewSize = chooseSize(map.getOutputSizes(SurfaceTexture::class.java), 640, 360)
+        onPreview?.invoke()
+        if (!p.send) {
+            encSize = null
+            encFps = 0
+            return
+        }
         val w = p.width.toInt().takeIf { it > 0 } ?: 640
         val h = p.height.toInt().takeIf { it > 0 } ?: 360
         val size = chooseSize(map.getOutputSizes(MediaCodec::class.java), w, h)
         val fps = p.fps.toInt().coerceIn(10, 30)
         val bitrate = p.bitrateBps.toInt().coerceAtLeast(100_000)
-        val enc = openEncoder(size, bitrate, fps) ?: return fail("codificador: nenhum aceitou")
+        val enc = openEncoder(size, bitrate, fps) ?: run {
+            encoderBroken = true
+            return fail("codificador: nenhum aceitou")
+        }
         val surface = enc.createInputSurface()
         enc.start()
         csd = null
@@ -370,9 +494,6 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
         encFps = fps
         lastBitrate = bitrate
         lastKeySeq = p.keyframeSeq
-        val prevSize = chooseSize(map.getOutputSizes(SurfaceTexture::class.java), 640, 360)
-        previewSize = prevSize
-        onPreview?.invoke()
         outThread = Thread({ outputLoop(enc) }, "sealer-video-enc").apply { start() }
     }
 
@@ -404,11 +525,12 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
         }
         if (targets.isEmpty()) return
         val ch = cm.getCameraCharacteristics(cam.id)
+        val gen = ++sessionGen
         try {
             @Suppress("DEPRECATION")
             cam.createCaptureSession(targets, object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(s: CameraCaptureSession) {
-                    if (camera !== cam) {
+                    if (camera !== cam || gen != sessionGen) {
                         s.close()
                         return
                     }
@@ -421,14 +543,17 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
                         }.build()
                         s.setRepeatingRequest(req, null, handler)
                     } catch (e: Exception) {
-                        fail("pedido: ${e.javaClass.simpleName}")
+                        if (gen == sessionGen && camera === cam) fail("pedido: ${e.javaClass.simpleName}")
                     }
                 }
 
-                override fun onConfigureFailed(s: CameraCaptureSession) = fail("sessao")
+                override fun onConfigureFailed(s: CameraCaptureSession) {
+                    // Uma sessao substituida (ou a camara ja fechada) falha sempre: nao e erro.
+                    if (gen == sessionGen && camera === cam) fail("sessao")
+                }
             }, handler)
         } catch (e: Exception) {
-            fail("sessao: ${e.javaClass.simpleName}")
+            if (gen == sessionGen && camera === cam) fail("sessao: ${e.javaClass.simpleName}")
         }
     }
 
@@ -445,9 +570,35 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
         }
     }
 
-    private fun applyParams(p: uniffi.qt_ffi.VideoEncoderParams) {
-        val enc = encoder ?: return
+    private fun applyParams(p: VideoEncoderParams) {
         val cam = camera ?: return
+        // Nada a enviar (pausa, sem direto, o outro ainda nao aceitou): o codificador para e a
+        // pre-visualizacao continua. A sessao fecha antes, para a camara nao escrever numa
+        // superficie ja libertada.
+        if (!p.send) {
+            val now = SystemClock.elapsedRealtime()
+            if (noSendSince == 0L) noSendSince = now
+            // Pausas curtas (rede, um participante a entrar) nao refazem a camara.
+            if (encoder != null && now - noSendSince >= 3_000L) {
+                runCatching { session?.close() }
+                session = null
+                releaseEncoder()
+                encSize = null
+                startSession()
+            }
+            return
+        }
+        noSendSince = 0L
+        val enc = encoder
+        if (enc == null) {
+            if (encoderBroken) return
+            // Voltou a haver o que enviar: codificador novo (a primeira imagem sai completa).
+            runCatching { session?.close() }
+            session = null
+            configureEncoder()
+            startSession()
+            return
+        }
         val map = cm.getCameraCharacteristics(cam.id).get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
         val want = chooseSize(map.getOutputSizes(MediaCodec::class.java), p.width.toInt().coerceAtLeast(1), p.height.toInt().coerceAtLeast(1))
         val fps = p.fps.toInt().coerceIn(10, 30)
@@ -533,7 +684,7 @@ class VideoSender(private val ctx: Context, private val audio: CallAudio) {
  * certa (`videoPull`) e mostra-a logo. Se o descodificador falhar, recomeca e pede uma
  * imagem completa ao outro lado.
  */
-class VideoReceiver(private val audio: CallAudio, private val onFrame: (width: Int, height: Int, rotation: Int) -> Unit) {
+class VideoReceiver(private val audio: VideoIn, private val onFrame: (width: Int, height: Int, rotation: Int) -> Unit) {
     /** Quando chegou a ultima imagem do outro (`SystemClock.elapsedRealtime`); 0 = nenhuma ainda. */
     @Volatile var lastFrameAt = 0L
         private set
@@ -550,8 +701,13 @@ class VideoReceiver(private val audio: CallAudio, private val onFrame: (width: I
     fun start() {
         if (running) return
         running = true
+        // O maior video que descodifico vai para o outro lado (para nao me enviar mais).
+        runCatching { audio.videoSetDecodeLimit(maxH.toUInt()) }
         thread = Thread({ loop() }, "sealer-video-dec").apply { start() }
     }
+
+    /** O maior video (altura) que o descodificador aguenta; 1080p reserva 1088 linhas. */
+    private val maxH = VideoCaps.decodeMaxHeight()
 
     /** O ecra do video (null: escondido). Muda o ecra: o descodificador recomeca. */
     fun setSurface(s: Surface?) {
@@ -568,18 +724,31 @@ class VideoReceiver(private val audio: CallAudio, private val onFrame: (width: I
         thread = null
     }
 
+    private fun decoderFormat(w: Int, h: Int) = MediaFormat.createVideoFormat(AVC, 1280, 720).apply {
+        setInteger(MediaFormat.KEY_MAX_WIDTH, w)
+        setInteger(MediaFormat.KEY_MAX_HEIGHT, h)
+        setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 2 shl 20)
+        if (Build.VERSION.SDK_INT >= 23) setInteger(MediaFormat.KEY_PRIORITY, 0)
+        if (Build.VERSION.SDK_INT >= 30) setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
+    }
+
+    /** Descodificador para o maior video que aguenta; se o recusar, o de antes (1080p). */
     private fun createDecoder(s: Surface): MediaCodec {
-        val fmt = MediaFormat.createVideoFormat(AVC, 1280, 720).apply {
-            setInteger(MediaFormat.KEY_MAX_WIDTH, 1920)
-            setInteger(MediaFormat.KEY_MAX_HEIGHT, 1088)
-            setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1 shl 20)
-            if (Build.VERSION.SDK_INT >= 23) setInteger(MediaFormat.KEY_PRIORITY, 0)
-            if (Build.VERSION.SDK_INT >= 30) setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
+        val best = if (maxH <= 1080) 1920 to 1088 else maxH * 16 / 9 to maxH
+        val sizes = listOf(best, 1920 to 1088).distinct()
+        var last: Exception? = null
+        for ((w, hh) in sizes) {
+            val c = MediaCodec.createDecoderByType(AVC)
+            try {
+                c.configure(decoderFormat(w, hh), s, null, 0)
+                c.start()
+                return c
+            } catch (e: Exception) {
+                last = e
+                runCatching { c.release() }
+            }
         }
-        val c = MediaCodec.createDecoderByType(AVC)
-        c.configure(fmt, s, null, 0)
-        c.start()
-        return c
+        throw last ?: IllegalStateException("descodificador")
     }
 
     private fun release() {

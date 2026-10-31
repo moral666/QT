@@ -40,16 +40,18 @@
 //!     sai da oferta E da resposta (o relay nao a tem: nao consegue forjar sondas).
 //!   * ENDERECO (19 bytes): `[1 familia 4|6][16 IP, o IPv4 nos 4 primeiros e zeros][2 porta BE]`.
 //!
-//! VIDEO (fase 5a). Um fluxo a mais dentro da chamada, pelo mesmo caminho do audio (direto
-//! ou relay). Chaves proprias, da oferta E da resposta, com outra etiqueta
+//! VIDEO (fase 5a; so pela ligacao direta desde a 0.9.53). Um fluxo a mais dentro da chamada,
+//! pelo caminho direto entre contactos mutuos; nunca pelo relay. Chaves proprias, da oferta E da resposta, com outra etiqueta
 //! (`"QT-CALL-v1 video caller->callee"` / `"... callee->caller"`): o contador e a janela
 //! anti-repeticao sao outros, e um pacote de audio nunca passa por video nem o contrario.
 //!   * PACOTE: `[1 0x40|papel][8 room_id][8 contador BE][AEAD([2 tamanho][conteudo][zeros]) + 16][8 etiqueta]`.
 //!     O texto cifrado tem um multiplo de 256 bytes, no maximo 1184 (pacote de 1225 bytes,
 //!     cabe no MTU minimo do IPv6). O conteudo (pedacos de imagens, relatorios, pedidos de
 //!     imagem completa) e do motor (`qt_call::video`); aqui so se cifra.
-//!   * AVISO DO RELAY: `[1 0x24][8 room_id][1 modo][8 etiqueta relay_key]` (18 bytes): 0 video
-//!     normal, 1 so ate 240p (travao do mes), 2 sem video pelo relay (teto da conta).
+//!   * AVISO DO RELAY: `[1 0x24][8 room_id][1 modo][8 etiqueta relay_key]` (18 bytes). Desde a
+//!     0.9.53 o relay so responde 2 (sem video pelo relay) a quem ainda lhe envia video (apps
+//!     0.9.37 a 0.9.52), para essas apps pararem de enviar. Os modos 0 (normal) e 1 (so 240p)
+//!     ficam no formato porque as apps antigas os conhecem.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
@@ -369,14 +371,15 @@ pub fn parse_join_ok(room: &RoomKeys, p: &[u8]) -> Option<bool> {
     Some(p[1 + ROOM_ID_LEN] == 1)
 }
 
-/// O que o relay deixa passar de video nesta sala.
+/// Modos do aviso do relay sobre o video. Desde a 0.9.53 o relay so envia `Denied`; os outros
+/// ficam no formato (as apps 0.9.37 a 0.9.52 conhecem-nos).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelayVideo {
-    /// Normal (ate 360p).
+    /// Normal (relays antigos, ate 360p).
     Full = 0,
-    /// Travao do mes (o relay ja enviou demasiado): so ate 240p, para todos.
+    /// So ate 240p (relays antigos).
     Cap240 = 1,
-    /// Sem video pelo relay (teto da conta): so voz. Em ligacao direta continua.
+    /// Sem video pelo relay: so voz. Em ligacao direta continua.
     Denied = 2,
 }
 

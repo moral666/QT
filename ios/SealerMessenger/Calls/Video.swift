@@ -19,7 +19,6 @@ extension VideoFrameIn: @unchecked Sendable {}
 extension VideoEncoderParams: @unchecked Sendable {}
 extension VideoResponse: @unchecked Sendable {}
 extension NetworkKind: @unchecked Sendable {}
-extension FichasIssued: @unchecked Sendable {}
 
 private let videoLog = "SealerVideo"
 
@@ -135,7 +134,7 @@ enum H264 {
 final class VideoSender: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     /// A sessao da camara: a pre-visualizacao (`SelfVideoView`) liga-se a ela.
     let session = AVCaptureSession()
-    private let audio: CallAudio
+    private let audio: any VideoOut
     private let queue = DispatchQueue(label: "sealer-video-cam", qos: .userInteractive)
     private let output = AVCaptureVideoDataOutput()
     private var input: AVCaptureDeviceInput?
@@ -160,7 +159,7 @@ final class VideoSender: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     /// A camara nao abriu ou falhou a meio (chamado na fila principal).
     var onError: (() -> Void)?
 
-    init(audio: CallAudio) {
+    init(audio: any VideoOut) {
         self.audio = audio
         super.init()
     }
@@ -196,6 +195,7 @@ final class VideoSender: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
                 fail("sem camara")
                 return
             }
+            reportEncodeLimit()
             applyParams(audio.videoParams(), force: true)
             session.startRunning()
             startParamsLoop()
@@ -208,6 +208,7 @@ final class VideoSender: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             guard running else { return }
             front.toggle()
             if !openCamera() { fail("trocar camara") }
+            reportEncodeLimit()
             forceKey = true
         }
     }
@@ -281,9 +282,25 @@ final class VideoSender: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     }
 
     /// O formato da camara para o pedido (16:9; o VideoToolbox reduz ao tamanho do codificador).
+    /// Acima de 1080p (so com Wi-Fi dos dois lados e a ligacao a deixar): 4K, reduzido a 1440p
+    /// quando e esse o pedido.
     private func presetFor(height: Int32) -> AVCaptureSession.Preset {
+        if height > 1080 && session.canSetSessionPreset(.hd4K3840x2160) { return .hd4K3840x2160 }
         if height > 720 && session.canSetSessionPreset(.hd1920x1080) { return .hd1920x1080 }
         return .hd1280x720
+    }
+
+    /// O maior video que esta camara + o codificador fazem: o teto no Wi-Fi (0.9.61). Na [queue].
+    private func reportEncodeLimit() {
+        let h: UInt32
+        if session.canSetSessionPreset(.hd4K3840x2160) {
+            h = 2160
+        } else if session.canSetSessionPreset(.hd1920x1080) {
+            h = 1080
+        } else {
+            h = 720
+        }
+        audio.videoSetEncodeLimit(maxHeight: h)
     }
 
     // ------------------------------------------------------------------ parametros do Rust
@@ -470,14 +487,14 @@ final class VideoSender: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
 final class VideoReceiver: @unchecked Sendable {
     /// A camada onde o video aparece (a vista `RemoteVideoView` mostra-a).
     let layer = AVSampleBufferDisplayLayer()
-    private let audio: CallAudio
+    private let audio: any VideoIn
     private let state = OSAllocatedUnfairLock(initialState: (running: false, lastFrameAt: 0.0, rotation: UInt32(0)))
     private var thread: Thread?
     private var format: CMVideoFormatDescription?
     /// A rotacao das imagens mudou (chamado na fila principal).
     var onRotation: ((UInt32) -> Void)?
 
-    init(audio: CallAudio) {
+    init(audio: any VideoIn) {
         self.audio = audio
         layer.videoGravity = .resizeAspectFill
         layer.backgroundColor = UIColor.black.cgColor
@@ -493,6 +510,8 @@ final class VideoReceiver: @unchecked Sendable {
             return false
         }
         if already { return }
+        // O maior video que descodifico vai para o outro lado (o H.264 em hardware faz 4K).
+        audio.videoSetDecodeLimit(maxHeight: VTIsHardwareDecodeSupported(kCMVideoCodecType_H264) ? 2160 : 1080)
         let t = Thread { [weak self] in self?.loop() }
         t.name = "sealer-video-dec"
         t.qualityOfService = .userInteractive

@@ -35,22 +35,18 @@
 //!   * Audio vindo de fora do relay so e aceite de enderecos que ja mandaram uma sonda
 //!     valida (nada de decifrar pacotes de qualquer um).
 //!
-//! VIDEO (fase 5a, `crate::video`). Um fluxo a mais pelo MESMO caminho do audio (direto,
-//! relay ou os dois na duplicacao). O nucleo diz quando se pode enviar (camara ligada E o
-//! outro aceitou: `video_set_sending`) e quando se aceita receber (`video_set_receiving`);
-//! sem isso nada sai nem se processa. As imagens ja codificadas (H.264, da app) sao
-//! partidas em pacotes de ate 1225 bytes e passam por um ritmador (5 ms) ao debito que o
-//! controlo de debito decide; o audio nunca espera por ele. Fora da ligacao direta, o
-//! debito desce logo ao teto do relay. Quem recebe remonta as imagens, espera pelos
-//! pedacos atrasados (a copia pelo relay), mostra cada imagem quando o audio que esta a
-//! tocar chega ao momento em que foi captada, pede uma imagem completa quando perde uma, e
-//! manda um relatorio a cada 250 ms (perdas, atraso de fila, perdas no AUDIO, rede).
-//!
-//! FICHAS (patch 0006, `crate::fichas`). O video que sai PELO RELAY gasta fichas anonimas (um
-//! bloco de 1 minuto cada), entregues ao relay pela propria sala; o caminho direto nao gasta
-//! nada. Sem credito, o video nao vai para o relay (nem se cifra: o contador nao avanca) e,
-//! sem fichas que sirvam, fica em pausa pelo relay (`Pause::RelayLimit`); a voz continua. Os
-//! relatorios de quem so ve continuam a passar (o relay deixa poucos sem fichas).
+//! VIDEO (fase 5a, `crate::video`). So pela LIGACAO DIRETA (desde a 0.9.53): nunca sai nada
+//! de video para o relay (nem imagens, nem relatorios, nem pedidos de imagem completa). Na
+//! duplicacao (direto e relay ao mesmo tempo) o video vai so pelo direto. Sem caminho direto
+//! o video fica em pausa (`Pause::NoDirect`) e a voz continua pelo relay; volta sozinho com
+//! o direto. O nucleo diz quando se pode enviar (camara ligada E o outro aceitou:
+//! `video_set_sending`) e quando se aceita receber (`video_set_receiving`); sem isso nada sai
+//! nem se processa. As imagens ja codificadas (H.264, da app) sao partidas em pacotes de ate
+//! 1225 bytes e passam por um ritmador (5 ms) ao debito que o controlo de debito decide; o
+//! audio nunca espera por ele. Quem recebe remonta as imagens, espera pelos pedacos atrasados,
+//! mostra cada imagem quando o audio que esta a tocar chega ao momento em que foi captada,
+//! pede uma imagem completa quando perde uma, e manda um relatorio a cada 250 ms (perdas,
+//! atraso de fila, perdas no AUDIO, rede).
 //!
 //! As chaves nunca saem daqui: a app entrega a `MediaSession` (fase 1) e o pedido de
 //! entrada ja feito (`QtClient::call_join_packet`).
@@ -61,12 +57,12 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use qt_core::call::{join_payload, parse_join_ok, MediaSession, RelayVideo, Role, RoomKeys, VideoSession, JOIN_KIND, JOIN_OK_KIND, JOIN_OK_LEN, JOIN_PROLOGUE};
+use qt_core::call::{join_payload, parse_join_ok, MediaSession, Role, RoomKeys, VideoSession, JOIN_KIND, JOIN_OK_KIND, JOIN_OK_LEN, JOIN_PROLOGUE};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::codec::{Decoder, Encoder, EncoderConfig, FRAME_SAMPLES, MAX_OPUS_BYTES};
-use crate::jitter::{JitterBuffer, JitterStats, Slot};
-use crate::video::{fragment, RateController, VideoReceiver, VideoRecvStats, MAX_FRAME_BYTES};
+use crate::jitter::{DelayMeter, JitterBuffer, JitterStats, Slot};
+use crate::video::{fragment, RateController, VideoReceiver, VideoRecvStats, DEFAULT_MAX_HEIGHT, MAX_FRAME_BYTES};
 pub use crate::video::{Net, Pause, ReceivedFrame, VideoParams};
 
 /// Se o UDP nao der resposta em tanto tempo, tenta a reserva por WebSocket.
@@ -111,11 +107,9 @@ pub struct EngineConfig {
     pub p2p_allow_loopback: bool,
     /// So para testes: deita fora esta % do audio recebido pelo caminho direto (as sondas passam).
     pub simulated_direct_loss_percent: u32,
-    /// So para testes: com caminho direto, envia sempre tambem pelo relay.
+    /// So para testes: com caminho direto, envia sempre tambem pelo relay (so o audio: o video
+    /// nunca vai pelo relay).
     pub test_both_paths: bool,
-    /// Fichas do video pelo relay (0006). `None`: sem fichas (video pelo relay so com um relay
-    /// que nao as peca; o caminho direto nao muda).
-    pub fichas: Option<crate::fichas::FichasConfig>,
 }
 
 impl EngineConfig {
@@ -128,7 +122,6 @@ impl EngineConfig {
             p2p_allow_loopback: false,
             simulated_direct_loss_percent: 0,
             test_both_paths: false,
-            fichas: None,
         }
     }
 }
@@ -187,16 +180,11 @@ pub struct VideoStats {
     pub duplicates: u64,
     pub invalid: u64,
     pub keyframe_requests_received: u64,
-    /// Ultimo aviso do relay: 0 normal, 1 so 240p, 2 sem video pelo relay.
-    pub relay_mode: u8,
     /// Perda do meu video medida pelo outro lado (ultimo relatorio, em milesimas).
     pub peer_loss_permille: u32,
     /// Relatorios recebidos e, desses, os que diziam "nada esta a chegar".
     pub feedbacks: u64,
     pub stalls: u64,
-    /// Fichas gastas nesta chamada (blocos de video pelo relay) e credito que resta (s).
-    pub fichas_spent: u64,
-    pub relay_credit_secs: u32,
 }
 
 struct VideoState {
@@ -218,6 +206,9 @@ struct VideoState {
     net: Net,
     /// O descodificador falhou: pedir ao outro lado uma imagem completa.
     want_remote_keyframe: bool,
+    /// O maior video que este telemovel descodifica (vai para o outro lado a cada 2 s).
+    decode_max_height: u16,
+    caps_sent_at: Option<Instant>,
     stats: VideoStats,
 }
 
@@ -248,6 +239,25 @@ impl VideoState {
     }
 }
 
+/// Descodifica um frame (vazio: silencio). Devolve 1 se teve de usar o PLC.
+fn decode_frame(decoder: &mut Decoder, f: &[u8], out: &mut [i16]) -> Result<u64, EngineError> {
+    if f.is_empty() {
+        out.fill(0);
+        return Ok(0);
+    }
+    if decoder.decode(f, out).is_err() {
+        decoder.conceal(out)?;
+        return Ok(1);
+    }
+    Ok(0)
+}
+
+/// Silencio (pausa entre palavras): abaixo de ~-40 dBFS.
+fn quiet(pcm: &[i16]) -> bool {
+    let sum: i64 = pcm.iter().map(|&x| x as i64 * x as i64).sum();
+    sum / pcm.len().max(1) as i64 <= 300 * 300
+}
+
 /// Linhas de tempo do audio, para sincronizar o video.
 #[derive(Default)]
 struct AvClock {
@@ -259,6 +269,8 @@ struct AvClock {
 
 struct Playback {
     jitter: JitterBuffer,
+    /// Atraso a mais do audio que chega pela ligacao direta (para os relatorios do video).
+    direct_delay: DelayMeter,
     decoder: Decoder,
     /// Pacote de onde veio o DRED ja lido (para nao o ler outra vez no mesmo buraco).
     dred_from: Option<u64>,
@@ -325,7 +337,7 @@ impl CallEngine {
         let shared = Arc::new(Shared {
             media: Mutex::new(None),
             encoder: Mutex::new(Encoder::new(cfg.encoder)?),
-            playback: Mutex::new(Playback { jitter: JitterBuffer::new(), decoder: Decoder::new()?, dred_from: None }),
+            playback: Mutex::new(Playback { jitter: JitterBuffer::new(), direct_delay: DelayMeter::new(), decoder: Decoder::new()?, dred_from: None }),
             stats: Mutex::new(EngineStats::default()),
             opus_bytes: Mutex::new(0),
             p2p: Mutex::new(P2pCtl::default()),
@@ -341,6 +353,8 @@ impl CallEngine {
                 ctl: RateController::new(),
                 net: Net::Unknown,
                 want_remote_keyframe: false,
+                decode_max_height: DEFAULT_MAX_HEIGHT,
+                caps_sent_at: None,
                 stats: VideoStats::default(),
             }),
             video_cv: Condvar::new(),
@@ -456,11 +470,14 @@ impl CallEngine {
         let (mut dred, mut plc) = (0, 0);
         match pb.jitter.pop(Instant::now()) {
             Slot::Waiting => out.fill(0),
-            Slot::Frame(f) if f.is_empty() => out.fill(0),
             Slot::Frame(f) => {
-                if pb.decoder.decode(&f, out).is_err() {
-                    pb.decoder.conceal(out)?;
-                    plc += 1;
+                plc += decode_frame(&mut pb.decoder, &f, out)?;
+                // Atraso a mais e isto era silencio: salta-se ja (ja foi descodificado, o
+                // descodificador continua certo e nao se ouve nada). No maximo um por pedido.
+                if pb.jitter.drain_wanted() && quiet(out) {
+                    if let Some(next) = pb.jitter.take_next() {
+                        plc += decode_frame(&mut pb.decoder, &next, out)?;
+                    }
                 }
             }
             Slot::Lost { ahead_counter, ahead, frames_back } => {
@@ -530,6 +547,20 @@ impl CallEngine {
         if let Ok(mut v) = self.shared.video.lock() {
             v.net = n;
             v.ctl.set_local_net(n);
+        }
+    }
+
+    /// O maior video (altura) que este telemovel codifica com a camara atual e o maior que
+    /// descodifica (a app diz, ao ligar a camara e ao comecar a receber). Sem isto: 1080p.
+    pub fn video_set_limits(&self, encode_max_height: Option<u16>, decode_max_height: Option<u16>) {
+        if let Ok(mut v) = self.shared.video.lock() {
+            if let Some(h) = encode_max_height {
+                v.ctl.set_local_max_height(h);
+            }
+            if let Some(h) = decode_max_height {
+                v.decode_max_height = h;
+                v.caps_sent_at = None;
+            }
         }
     }
 
@@ -649,10 +680,13 @@ mod net {
     use tokio::net::UdpSocket;
 
     use qt_core::call::{
-        addr_request, is_probe, is_video, parse_addr_ok, parse_relay_video_notice, CallError, PathKeys, Probe,
-        ADDR_OK_KIND, ADDR_OK_LEN, RELAY_VIDEO_KIND, RELAY_VIDEO_LEN,
+        addr_request, is_probe, is_video, parse_addr_ok, CallError, PathKeys, Probe, ADDR_OK_KIND, ADDR_OK_LEN,
+        RELAY_VIDEO_KIND, RELAY_VIDEO_LEN,
     };
-    use crate::video::{encode_feedback, encode_keyframe_request, parse_body, Body};
+    use crate::video::{encode_caps, encode_feedback, encode_keyframe_request, parse_body, Body};
+
+    /// A capacidade do descodificador vai para o outro lado a cada tanto (UDP: pode perder-se).
+    const CAPS_EVERY: Duration = Duration::from_secs(2);
 
     #[cfg(feature = "ws")]
     type WsOpt = Option<ws::Sink>;
@@ -902,13 +936,12 @@ mod net {
         }
     }
 
-    /// Por onde sai o VIDEO, com as fichas: sem credito no relay, so pelo direto (`Both` passa
-    /// a `Direct`) ou fica a espera (`None`: nem se cifra).
-    fn video_route(route: Route, relay_ok: bool) -> Option<Route> {
-        match (route, relay_ok) {
-            (Route::Direct, _) | (Route::Both, false) => Some(Route::Direct),
-            (r, true) => Some(r),
-            (Route::Relay, false) => None,
+    /// Por onde sai o VIDEO: so pelo direto (`Both` passa a `Direct`). Sem direto fica a espera
+    /// (`None`: nem se cifra, e o controlo de debito pausa).
+    fn video_route(route: Route) -> Option<Route> {
+        match route {
+            Route::Direct | Route::Both => Some(Route::Direct),
+            Route::Relay => None,
         }
     }
 
@@ -973,7 +1006,6 @@ mod net {
         let mut rng = Rng(0x9E37_79B9_7F4A_7C15 ^ seed | 1);
         let mut tick = tokio::time::interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        let mut fx = crate::fichas::Fichas::new(cfg.fichas.clone(), shared.room.clone());
 
         loop {
             tokio::select! {
@@ -995,16 +1027,6 @@ mod net {
                             continue;
                         }
                     };
-                    // Fichas: a chave do mes ou a resposta a uma ficha.
-                    if crate::fichas::Fichas::is_fichas_packet(&data) {
-                        if let Some(crate::fichas::Effect::Mode(m)) = fx.on_packet(&data, Instant::now()) {
-                            if let Ok(mut v) = shared.video.lock() {
-                                v.stats.relay_mode = m as u8;
-                                v.ctl.set_relay_mode(m);
-                            }
-                        }
-                        continue;
-                    }
                     // Resposta "o teu endereco e ..." (so pelo UDP).
                     if !via_ws && data.len() == ADDR_OK_LEN && data[0] == ADDR_OK_KIND {
                         if let (Some(g), Some((txid, addr))) = (d.gather.as_mut(), parse_addr_ok(&shared.room, &data)) {
@@ -1014,14 +1036,7 @@ mod net {
                         }
                         continue;
                     }
-                    let was_joined = st.joined_udp || st.joined_ws;
                     on_packet(&shared, &cfg, &mut st, &mut rng, &data, via_ws);
-                    // Acabou de entrar na sala: pergunta ja a chave das fichas deste mes.
-                    if !was_joined && (st.joined_udp || st.joined_ws) {
-                        if let Some(p) = fx.on_joined(Instant::now()) {
-                            send_out(&udp, &mut ws, &st, &d, Route::Relay, p).await;
-                        }
-                    }
                 }
                 Some(packet) = outbox.recv() => {
                     // Audio: sai logo, nunca espera pelo video.
@@ -1031,8 +1046,8 @@ mod net {
                 _ = pace.tick() => {
                     let now = Instant::now();
                     let route = route_now(&udp, &cfg, &mut d, now);
-                    // Sem credito de fichas no relay: o video espera (nem se cifra).
-                    if let Some(vroute) = video_route(route, fx.relay_ok(now)) {
+                    // Sem caminho direto: o video espera (nem se cifra).
+                    if let Some(vroute) = video_route(route) {
                         for p in pacer.take(&shared, now) {
                             send_out(&udp, &mut ws, &st, &d, vroute, p).await;
                         }
@@ -1069,37 +1084,16 @@ mod net {
                     p2p_tick(&shared, &cfg, udp.as_deref(), &st, &mut d, &mut rng).await;
                     let now = Instant::now();
                     let route = route_now(&udp, &cfg, &mut d, now);
-                    let joined = st.joined_udp || st.joined_ws;
-                    if let Some(p) = fichas_tick(&shared, &mut fx, &d, route, joined, now) {
-                        send_out(&udp, &mut ws, &st, &d, Route::Relay, p).await;
-                    }
-                    let direct_video = video_route(route, fx.relay_ok(now)) == Some(Route::Direct);
-                    // Relatorios e pedidos de imagem: pelo caminho do audio (no relay passam sem fichas).
-                    for p in video_tick(&shared, direct_video, &mut audio_ref, now) {
-                        send_out(&udp, &mut ws, &st, &d, route, p).await;
+                    // Relatorios e pedidos de imagem: so pelo direto, como as imagens.
+                    let vroute = video_route(route);
+                    for p in video_tick(&shared, vroute.is_some(), &mut audio_ref, now) {
+                        if let Some(r) = vroute {
+                            send_out(&udp, &mut ws, &st, &d, r, p).await;
+                        }
                     }
                 }
             }
         }
-    }
-
-    /// A cada 100 ms: fichas do video pelo relay. Devolve um pacote para o relay, se houver.
-    fn fichas_tick(shared: &Shared, fx: &mut crate::fichas::Fichas, d: &Direct, route: Route, joined: bool, now: Instant) -> Option<Vec<u8>> {
-        let sending = shared.video.lock().map(|v| v.sending).unwrap_or(false);
-        let want = sending && route == Route::Relay;
-        let searching = d.enabled && d.path.is_none() && d.discovery_until.is_none_or(|t| now < t);
-        let role = shared.media.lock().ok().and_then(|m| m.as_ref().map(|m| m.role()));
-        let out = fx.tick(now, joined, want, searching, role);
-        if let Ok(mut v) = shared.video.lock() {
-            v.stats.fichas_spent = fx.spent;
-            v.stats.relay_credit_secs = fx.credit_secs(now);
-            // Sem fichas que sirvam: pausa pelo relay (a voz continua; o direto continua com video).
-            if want && fx.exhausted(now) && v.stats.relay_mode != RelayVideo::Denied as u8 {
-                v.stats.relay_mode = RelayVideo::Denied as u8;
-                v.ctl.set_relay_mode(RelayVideo::Denied);
-            }
-        }
-        out
     }
 
     /// A cada 100 ms: o que o nucleo decidiu, recolha dos meus enderecos e sondas.
@@ -1293,9 +1287,12 @@ mod net {
                 on_video(shared, data, now);
                 return;
             }
-            if on_media(shared, cfg, rng, data) {
+            if let Some(counter) = on_media(shared, cfg, rng, data) {
                 d.last_rx = Some(now);
                 set_stats(shared, |s| s.received_direct += 1);
+                if let Ok(mut pb) = shared.playback.lock() {
+                    pb.direct_delay.push(counter, now);
+                }
             }
         }
     }
@@ -1345,25 +1342,32 @@ mod net {
     /// completa. Devolve os pacotes a enviar.
     fn video_tick(shared: &Shared, direct: bool, audio_ref: &mut (u64, u64), now: Instant) -> Vec<Vec<u8>> {
         // Perdas do audio desde o ultimo relatorio (o audio tem sempre prioridade).
-        let (lost, received) = shared
+        let (lost, received, audio_delay) = shared
             .playback
             .lock()
             .map(|p| {
                 let s = p.jitter.stats();
-                (s.lost + s.gave_up, s.received)
+                (s.lost + s.gave_up, s.received, p.direct_delay.delay_ms())
             })
             .unwrap_or_default();
         let Ok(mut v) = shared.video.lock() else { return Vec::new() };
-        v.ctl.set_path(direct);
+        v.ctl.set_path(direct, now);
         v.ctl.tick(now);
         let mut bodies = Vec::new();
-        if v.receiving {
+        // Sem direto nada sai (o relay nao leva video): nem relatorios nem pedidos. Os pedidos de
+        // imagem completa ficam para quando o direto voltar.
+        if v.receiving && direct {
             let (dl, dr) = (lost.saturating_sub(audio_ref.0), received.saturating_sub(audio_ref.1));
             let pct = (dl * 100).checked_div(dl + dr).map_or(0, |p| p.min(100) as u8);
             let net = v.net;
-            if let Some(fb) = v.rx.feedback(now, pct, net) {
+            if let Some(fb) = v.rx.feedback(now, pct, net, audio_delay) {
                 *audio_ref = (lost, received);
                 bodies.push(encode_feedback(&fb));
+            }
+            // O maior video que eu descodifico (as apps antigas deitam-no fora).
+            if v.caps_sent_at.is_none_or(|t| now.duration_since(t) >= CAPS_EVERY) {
+                v.caps_sent_at = Some(now);
+                bodies.push(encode_caps(v.decode_max_height));
             }
             let want = std::mem::take(&mut v.want_remote_keyframe);
             if v.rx.take_keyframe_request(now) || want {
@@ -1416,6 +1420,7 @@ mod net {
                 v.stats.keyframe_requests_received += 1;
                 v.ctl.request_keyframe();
             }
+            Some(Body::Caps { max_height }) => v.ctl.set_peer_max_height(max_height),
             None => v.stats.invalid += 1,
         }
     }
@@ -1461,11 +1466,8 @@ mod net {
             }
             return;
         }
+        // Aviso do relay sobre o video: so para as apps antigas (esta nunca envia video ao relay).
         if data.len() == RELAY_VIDEO_LEN && data[0] == RELAY_VIDEO_KIND {
-            if let (Some(m), Ok(mut v)) = (parse_relay_video_notice(&shared.room, data), shared.video.lock()) {
-                v.stats.relay_mode = m as u8;
-                v.ctl.set_relay_mode(m);
-            }
             return;
         }
         if is_video(data) {
@@ -1475,11 +1477,12 @@ mod net {
         on_media(shared, cfg, rng, data);
     }
 
-    /// Um pacote de audio (pelo relay ou direto). `true`: valido e entregue ao jitter buffer.
-    fn on_media(shared: &Shared, cfg: &EngineConfig, rng: &mut Rng, data: &[u8]) -> bool {
+    /// Um pacote de audio (pelo relay ou direto). `Some(contador)`: valido, novo e entregue ao
+    /// jitter buffer.
+    fn on_media(shared: &Shared, cfg: &EngineConfig, rng: &mut Rng, data: &[u8]) -> Option<u64> {
         if cfg.simulated_loss_percent > 0 && rng.percent() < cfg.simulated_loss_percent {
             set_stats(shared, |s| s.simulated_drops += 1);
-            return false;
+            return None;
         }
         let opened = shared.media.lock().ok().and_then(|mut m| m.as_mut().map(|m| m.open(data)));
         match opened {
@@ -1491,16 +1494,16 @@ mod net {
                     s.received += 1;
                     s.peer_present = true;
                 });
-                true
+                Some(counter)
             }
             // O mesmo pacote pelos dois caminhos (ou repetido pela rede): a copia nao conta.
             Some(Err(CallError::Replay)) => {
                 set_stats(shared, |s| s.duplicates += 1);
-                false
+                None
             }
             _ => {
                 set_stats(shared, |s| s.invalid += 1);
-                false
+                None
             }
         }
     }

@@ -37,6 +37,16 @@
 "full_screen_open" = "Open settings";
 "full_screen_text" = "For a call to appear full screen when your phone is locked, Android needs your permission. Without it, the call only shows as a small notification.";
 "full_screen_title" = "Full-screen calls";
+"gcall_from" = "%1$@ is calling";
+"gcall_full" = "The group call already has 5 people.";
+"gcall_join" = "Join call";
+"gcall_me" = "Me";
+"gcall_name_text" = "People who don’t have you in their contacts will see this name.";
+"gcall_name_title" = "Your name in this call";
+"gcall_notice" = "In group calls, your network address is visible to the other participants.";
+"gcall_title" = "Group call";
+"gcall_video_title" = "Group video call";
+"gcall_waiting" = "Waiting for others to join…";
 "ios_bio_changed" = "Face ID, Touch ID or the iPhone passcode changed. Use the app code and turn quick unlock on again.";
 "ios_bio_confirm" = "Confirm with your code. Next, the iPhone asks for Face ID, Touch ID or the iPhone passcode.";
 "ios_bio_unavailable" = "Unavailable: this iPhone has no passcode.";
@@ -201,7 +211,6 @@
 "t_chamadas_a_tocar" = "Incoming calls";
 "t_chamadas_de_voz_em_curso_e" = "Ongoing voice calls and incoming calls while the app is open.";
 "t_chave_do_armazenamento_seguro_indisponivel" = "Secure storage key unavailable: %1$@";
-"t_chave_publica_do_relay_pinning" = "Relay public key (pinning)";
 "t_cifrada_no_teu_telemovel_antes_de" = "Encrypted on your phone before it leaves. The photo's location is removed.";
 "t_codigo_alterado" = "Passcode changed.";
 "t_codigo_atual" = "Current passcode";
@@ -253,7 +262,6 @@
 "t_erro" = "Error: %1$@";
 "t_escolhe_um_codigo_so_com_numeros" = "Choose a numbers-only passcode and keep it safe: without it there is no way to open the conversations.";
 "t_escolher_foto" = "Choose photo";
-"t_esconder_opcoes_de_teste" = "Hide test options";
 "t_esqueceste_o_codigo" = "Forgot the passcode?";
 "t_esqueci_me_do_codigo" = "I forgot the passcode";
 "t_esse_e_o_teu_proprio_id" = "That is your own ID";
@@ -273,7 +281,6 @@
 "t_foto_ou_gif" = "Photo or GIF";
 "t_grupo" = "Group";
 "t_guardar" = "Save";
-"t_guardar_e_voltar_a_ligar" = "Save and reconnect";
 "t_guardar_nos_contactos" = "Save to contacts";
 "t_hoje" = "Today";
 "t_id_qt1" = "ID (qt1:…)";
@@ -358,7 +365,6 @@
 "t_o_ficheiro_tem_mais_de_25" = "The file is larger than 25 MB and cannot be sent.";
 "t_o_ficheiro_tem_mais_de_25_2" = "The file is larger than 25 MB.";
 "t_o_meu_id" = "My ID";
-"t_o_relay_tem_de_usar_wss" = "The relay must use wss:// (ws:// only in debug builds)";
 "t_o_servidor_ainda_nao_aceita_anexos" = "The server does not accept attachments yet (it needs an update).";
 "t_o_servidor_ainda_nao_tem_esta" = "the server does not support this yet";
 "t_o_servidor_respondeu" = "the server replied: %1$@";
@@ -367,7 +373,6 @@
 "t_online" = "online";
 "t_online_agora" = "Online now";
 "t_ontem" = "Yesterday";
-"t_opcoes_de_teste" = "Test options";
 "t_os_codigos_nao_sao_iguais" = "The passcodes don't match.";
 "t_ou" = "or";
 "t_ouvir" = "Play";
@@ -388,7 +393,6 @@
 "t_reagir" = "React";
 "t_recebe_o_id_diretamente_da_pessoa" = "Get the ID directly from the person: scan their QR code when you are together, or use a channel you trust.";
 "t_recusar" = "Decline";
-"t_relay_teste" = "Relay (test)";
 "t_repetir_o_novo_codigo" = "Repeat the new passcode";
 "t_resposta_inesperada_do_servidor" = "unexpected reply from the server";
 "t_retirar_a_minha" = "Remove mine";
@@ -423,7 +427,6 @@
 "t_toque_das_chamadas_de_voz_com" = "Ringtone for voice calls when the app is closed.";
 "t_tornar_administrador" = "Make admin";
 "t_tu" = "You";
-"t_url_do_relay" = "Relay URL";
 "t_usar_impressao_digital_ou_pin_do" = "Use fingerprint or phone PIN";
 "t_vai_tal_como_esta_cifrado_no" = "Sent as is, encrypted on your phone before it leaves.";
 "t_verificar_seguranca" = "Verify security";
