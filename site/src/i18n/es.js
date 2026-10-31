@@ -77,7 +77,7 @@ export default {
   'index.71': 'Pruebas y cifras',
   'index.72': 'Pruebas',
   'index.73': '32&nbsp;500 a la vez',
-  'index.74': 'En una prueba de carga en AWS, con los mismos límites que uno de nuestros servidores, 32&nbsp;500 personas conectadas a la vez intercambiaron más de 1000 mensajes, audios y confirmaciones por segundo, sin errores, hasta que la máquina llegó a su límite. Por eso, cada servidor acepta hasta 25&nbsp;000 a la&nbsp;vez.',
+  'index.74': 'En una prueba de carga, en una máquina con 2 procesadores y 1,8 GB de memoria, 32&nbsp;500 personas conectadas a la vez intercambiaron más de 1000 mensajes, audios y confirmaciones por segundo, sin errores, hasta que la máquina llegó a su&nbsp;límite.',
   'index.75': 'Entre móviles',
   'index.76': 'Lo que tarda un mensaje típico, del móvil de quien lo envía al de quien lo recibe. Una medición real, actualizada cada&nbsp;minuto.',
   'index.77': 'Esta página',

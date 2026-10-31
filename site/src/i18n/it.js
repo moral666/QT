@@ -77,7 +77,7 @@ export default {
   'index.71': 'Test e numeri',
   'index.72': 'Test',
   'index.73': '32.500 insieme',
-  'index.74': 'In un test di carico su AWS, con gli stessi limiti di uno dei nostri server, 32.500 persone connesse contemporaneamente si sono scambiate oltre 1.000 messaggi, vocali e conferme al secondo, senza errori, finché la macchina non ha raggiunto il limite. Per questo ogni server accetta fino a 25.000 persone alla&nbsp;volta.',
+  'index.74': 'In un test di carico, su una macchina con 2 processori e 1,8 GB di memoria, 32.500 persone connesse contemporaneamente si sono scambiate oltre 1.000 messaggi, vocali e conferme al secondo, senza errori, finché la macchina non ha raggiunto il&nbsp;limite.',
   'index.75': 'Da telefono a telefono',
   'index.76': 'Quanto impiega un messaggio tipico, dal telefono di chi lo invia a quello di chi lo riceve. Una misura reale, aggiornata ogni&nbsp;minuto.',
   'index.77': 'Questa pagina',

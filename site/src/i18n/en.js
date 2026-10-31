@@ -77,7 +77,7 @@ export default {
   'index.71': 'Tests and numbers',
   'index.72': 'Tests',
   'index.73': '32,500 at once',
-  'index.74': 'In a load test on AWS, with the same limits as one of our servers, 32,500 people connected at the same time exchanged over 1,000 messages, voice clips and receipts per second, with no errors, until the machine hit its limit. That is why each server takes up to 25,000 at&nbsp;once.',
+  'index.74': 'In a load test, on a machine with 2 processors and 1.8 GB of memory, 32,500 people connected at the same time exchanged over 1,000 messages, voice clips and receipts per second, with no errors, until the machine hit its&nbsp;limit.',
   'index.75': 'Phone to phone',
   'index.76': 'How long a typical message takes, from the sender’s phone to the recipient’s. A real measurement, updated every&nbsp;minute.',
   'index.77': 'This page',
