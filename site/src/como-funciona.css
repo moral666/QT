@@ -166,18 +166,6 @@
   font-weight: 700;
 }
 
-.hdr-sub {
-  fill: rgba(255, 255, 255, 0.82);
-  font-size: 8px;
-  font-weight: 500;
-}
-
-.hdr-lock {
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.82);
-  stroke-width: 1.2;
-}
-
 .field {
   fill: #211a33;
 }
