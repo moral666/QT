@@ -585,7 +585,7 @@ impl CallAudio {
 impl QtClient {
     /// AUDIO da chamada: arranca o motor (Opus, jitter buffer, relay das chamadas) e entra
     /// ja na sala, mesmo antes de atender (pre-aquecimento). Chamar ao ligar ou quando
-    /// toca. `relay_url` e o do relay das mensagens ("wss://relay.sealer.pt") e
+    /// toca. `relay_url` e o do relay das mensagens ("wss://relay.sealerapp.com") e
     /// `relay_public_key` a chave dele (o pin, 32 bytes). Chamar outra vez devolve o mesmo.
     pub fn call_audio_start(&self, call_id: String, relay_url: String, relay_public_key: Vec<u8>) -> Result<Arc<CallAudio>, QtError> {
         let id: [u8; 16] = crate::client::unhex(&call_id).and_then(|b| b.try_into().ok()).ok_or_else(|| bad("call_id"))?;
@@ -604,7 +604,7 @@ pub fn call_frame_bytes() -> u32 {
 }
 
 /// Onde esta o relay das chamadas, a partir do URL do relay das mensagens
-/// ("wss://relay.sealer.pt" -> UDP "relay.sealer.pt:443" e "wss://relay.sealer.pt/call").
+/// ("wss://relay.sealerapp.com" -> UDP "relay.sealerapp.com:443" e "wss://relay.sealerapp.com/call").
 pub(crate) fn relay_target(relay_url: &str) -> Result<RelayTarget, QtError> {
     let (scheme, rest) = relay_url.split_once("://").ok_or_else(|| bad("relay_url"))?;
     let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
@@ -637,10 +637,10 @@ mod tests {
 
     #[test]
     fn relay_das_chamadas_a_partir_do_url() {
-        let t = relay_target("wss://relay.sealer.pt").unwrap();
-        assert_eq!((t.udp.as_str(), t.ws_url.as_deref()), ("relay.sealer.pt:443", Some("wss://relay.sealer.pt/call")));
-        let t = relay_target("wss://relay.sealer.pt:443/").unwrap();
-        assert_eq!(t.ws_url.as_deref(), Some("wss://relay.sealer.pt:443/call"));
+        let t = relay_target("wss://relay.sealerapp.com").unwrap();
+        assert_eq!((t.udp.as_str(), t.ws_url.as_deref()), ("relay.sealerapp.com:443", Some("wss://relay.sealerapp.com/call")));
+        let t = relay_target("wss://relay.sealerapp.com:443/").unwrap();
+        assert_eq!(t.ws_url.as_deref(), Some("wss://relay.sealerapp.com:443/call"));
         assert!(relay_target("https://x").is_err());
         assert!(relay_target("nada").is_err());
     }

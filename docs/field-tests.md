@@ -46,7 +46,7 @@ ao voltar à app no ecrã de recuperar e menu Idioma (0.9.31).
 | Chamadas de voz Android com iPhone | OK |
 | Chamadas de voz iPhone com iPhone | OK |
 
-- **Relay:** produção, `wss://relay.sealer.pt` (AWS EC2, Estocolmo); chamadas pelo `qt-call-relay`.
+- **Relay:** produção, `wss://relay.sealerapp.com` (AWS EC2, Estocolmo); chamadas pelo `qt-call-relay`.
 
 ---
 

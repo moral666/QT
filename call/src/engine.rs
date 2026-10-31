@@ -89,9 +89,9 @@ pub enum EngineError {
 /// Onde esta o relay das chamadas.
 #[derive(Debug, Clone)]
 pub struct RelayTarget {
-    /// "relay.sealer.pt:443"
+    /// "relay.sealerapp.com:443"
     pub udp: String,
-    /// "wss://relay.sealer.pt/call" (reserva quando o UDP esta bloqueado).
+    /// "wss://relay.sealerapp.com/call" (reserva quando o UDP esta bloqueado).
     pub ws_url: Option<String>,
 }
 

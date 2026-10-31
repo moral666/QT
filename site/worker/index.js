@@ -21,9 +21,16 @@
  *   cada um e diz o estado de cada um ("relays"). Os tempos vêm só de um deles (RELAY_TEMPO,
  *   hoje "espanha"); se esse ainda não tiver nenhuma medição, vêm do primeiro que tiver.
  *
+ *   Ping (31/10/2026): o worker abre também uma ligação TCP à porta 443 de cada relay e mede o
+ *   tempo até ela abrir (uma ida e volta, como um ping), duas vezes, e fica com a menor (a
+ *   primeira inclui o DNS). Mede-se a partir do centro de dados da Cloudflare que atende o
+ *   visitante (para quem está em Portugal, Lisboa): "medido_em" é o código desse centro.
+ *   O navegador continua a falar só com o site, nunca com os relays.
+ *
  *   Resposta: {
  *     "estado": "on" | "partial" | "off",  (todos a funcionar | só alguns | nenhum)
- *     "relays": [{ "nome": "estocolmo", "estado": "on" | "off" }, ...],
+ *     "relays": [{ "nome": "estocolmo", "estado": "on" | "off", "ping_ms": número | null }, ...],
+ *     "medido_em": "LIS" | null,           (centro de dados da Cloudflare de onde veio o ping)
  *     "tempo_relay": "espanha" | null,     (de que relay vêm os tempos)
  *     "verificado": "<data ISO>",
  *     "envio_media_ms": número | null,     (telemóvel -> servidor; null: sem mensagens recentes)
@@ -39,7 +46,12 @@
  *   }
  */
 
+import { connect } from 'cloudflare:sockets';
+
 const CACHE_SECONDS = 30;
+/** Tentativas do ping (fica a menor) e espera máxima de cada uma. */
+const PING_TRIES = 2;
+const PING_TIMEOUT_MS = 3000;
 const TIMEOUT_MS = 5000;
 /** O estado.json é reescrito a cada minuto; mais velho do que isto, já não vale. */
 const STATUS_MAX_AGE_S = 180;
@@ -67,8 +79,9 @@ async function estado(request, env, ctx) {
   const relays = relayList(env);
   const checks = await Promise.all(
     relays.map(async (r) => {
-      const [on, delivery] = await Promise.all([relayOnline(r.url), relayDelivery(r.url)]);
-      return { nome: r.nome, on, delivery };
+      // Ao mesmo tempo: com um relay em baixo, a resposta não espera pelas esperas somadas.
+      const [ping, on, delivery] = await Promise.all([relayPing(r.url), relayOnline(r.url), relayDelivery(r.url)]);
+      return { nome: r.nome, on, delivery, ping };
     }),
   );
   const upCount = checks.filter((c) => c.on).length;
@@ -77,7 +90,8 @@ async function estado(request, env, ctx) {
   const delivery = timing ? timing.delivery : null;
   const body = {
     estado: upCount === checks.length && upCount > 0 ? 'on' : upCount > 0 ? 'partial' : 'off',
-    relays: checks.map((c) => ({ nome: c.nome, estado: c.on ? 'on' : 'off' })),
+    relays: checks.map((c) => ({ nome: c.nome, estado: c.on ? 'on' : 'off', ping_ms: c.on ? c.ping : null })),
+    medido_em: typeof request.cf?.colo === 'string' ? request.cf.colo : null,
     tempo_relay: timing ? timing.nome : null,
     verificado: new Date().toISOString(),
     envio_media_ms: on && delivery ? delivery.idaAvg : null,
@@ -132,6 +146,44 @@ function pickTiming(checks, preferred) {
   const pref = checks.find((c) => c.nome === preferred);
   if (pref && hasTiming(pref.delivery)) return pref;
   return checks.find((c) => hasTiming(c.delivery)) ?? pref ?? checks[0] ?? null;
+}
+
+/**
+ * Tempo de ida e volta até ao relay, em ms: o que demora a abrir uma ligação TCP à porta 443
+ * (fecha-se logo, sem TLS nem pedidos). A menor de PING_TRIES; null se nenhuma abrir.
+ */
+async function relayPing(relayUrl) {
+  if (!relayUrl) return null;
+  let hostname;
+  try {
+    hostname = new URL(relayUrl).hostname;
+  } catch {
+    return null;
+  }
+  let best = null;
+  for (let i = 0; i < PING_TRIES; i++) {
+    let socket;
+    try {
+      const start = Date.now();
+      socket = connect({ hostname, port: 443 });
+      await Promise.race([
+        socket.opened,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), PING_TIMEOUT_MS)),
+      ]);
+      const ms = Date.now() - start;
+      best = best == null ? ms : Math.min(best, ms);
+    } catch {
+      // Sem resposta: não vale a pena esperar outra vez.
+      break;
+    } finally {
+      try {
+        socket?.close();
+      } catch {
+        // Já fechada.
+      }
+    }
+  }
+  return best;
 }
 
 /** Tenta abrir uma ligação WebSocket ao relay (pelo Caddy, com TLS) e fecha-a logo. */

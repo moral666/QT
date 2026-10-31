@@ -51,7 +51,7 @@ echo "show info" | socat stdio /var/lib/haproxy/stats.sock 2>/dev/null | grep -E
 echo "show stat" | socat stdio /var/lib/haproxy/stats.sock 2>/dev/null | awk -F, 'NR==1{for(i=1;i<=NF;i++) h[$i]=i; next} $1=="https" && $2=="FRONTEND"{print "  recusadas por IP (dcon): " $h["dcon"]}'
 
 t "Relay (ultima linha de estatisticas)"
-journalctl -u qt-relay -n 200 -o cat --no-pager | grep -E 'ativas|ida_' | tail -1 | fold -w 110 | sed 's/^/  /'
+journalctl -u qt-relay -n 200 -o cat --no-pager | grep -E 'stats 60s' | tail -1 | fold -w 110 | sed 's/^/  /'
 echo "  reinicios do relay em 7 dias: $(journalctl -u qt-relay --since '7 days ago' -o cat --no-pager | grep -c 'pinning')"
 
 t "Ligacao aos outros relays (TCP, 5 tentativas)"
