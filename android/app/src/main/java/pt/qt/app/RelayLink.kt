@@ -239,8 +239,8 @@ class RelayLink(
             }
             // Pinning: se a chave do relay nao for a esperada, aborta SEM repetir (possivel MITM)
             val pin = pinnedRelayKeyHex?.trim()?.lowercase().orEmpty()
-            // Fora da build de testes o pin e obrigatorio: sem ele nao se liga (0.9.23).
-            if (pin.isEmpty() && !BuildConfig.RELAY_EDITABLE) throw PermanentRelayException("falta a chave do relay (pin)")
+            // O pin e obrigatorio em todas as builds: sem ele nao se liga (0.9.23; tambem na debug desde a 0.9.53).
+            if (pin.isEmpty()) throw PermanentRelayException("falta a chave do relay (pin)")
             if (pin.isNotEmpty() && noise.remoteStaticPublicKey().toHex() != pin) {
                 throw PermanentRelayException("chave do relay diferente da esperada (possivel intermediario)")
             }
@@ -287,33 +287,7 @@ class RelayLink(
                 .pingInterval(25, TimeUnit.SECONDS)   // mantem a ligacao viva e deteta quedas
                 .build()
         }
-        /**
-         * GET de um ficheiro pequeno por HTTPS (o `estado.json` do site com as chaves das fichas).
-         * Sem cookies nem cabecalhos da conta: o pedido e igual para toda a gente. `null` se
-         * falhar ou passar de `max` bytes.
-         */
-        fun fetchSmall(url: String, max: Int): ByteArray? {
-            if (!url.startsWith("https://") && !(BuildConfig.ALLOW_CLEARTEXT && url.startsWith("http://"))) return null
-            return try {
-                val req = Request.Builder().url(url).header("Cache-Control", "no-cache").build()
-                http.newCall(req).execute().use { r ->
-                    if (!r.isSuccessful) return null
-                    val body = r.body ?: return null
-                    val len = body.contentLength()
-                    if (len > max) return null
-                    val src = body.source()
-                    src.request(max.toLong() + 1)
-                    if (src.buffer.size > max) return null
-                    src.buffer.readByteArray()
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "estado.json: ${e.javaClass.simpleName}")
-                null
-            }
-        }
-
-        // IssueFichas: repetido, o relay contava o mesmo lote duas vezes no teto do mes.
-        private val NOT_REPEATABLE = listOf("{\"SendMessage\"", "{\"BlobCreate\"", "{\"SubmitReport\"", "{\"WaitMessages\"", "{\"IssueFichas\"")
+        private val NOT_REPEATABLE = listOf("{\"SendMessage\"", "{\"BlobCreate\"", "{\"SubmitReport\"", "{\"WaitMessages\"")
         private const val MAX_RETRIES = 3
         private const val BACKOFF_MS = 300L
         private const val HANDSHAKE_MS = 10_000L

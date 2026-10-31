@@ -118,12 +118,6 @@
     <string name="t_mensagens_cifradas_ponta_a_ponta_com">رسائل مشفّرة بين الطرفين بتشفير ما بعد الكمّ. دون رقم هاتف ودون بريد إلكتروني.</string>
     <string name="t_comecar">البدء</string>
     <string name="t_versao_de_testes">نسخة تجريبية. سيستمر تحسين التطبيق حتى الإصدار 1.0.</string>
-    <string name="t_esconder_opcoes_de_teste">إخفاء خيارات الاختبار</string>
-    <string name="t_opcoes_de_teste">خيارات الاختبار</string>
-    <string name="t_url_do_relay">عنوان URL لخادم الترحيل</string>
-    <string name="t_chave_publica_do_relay_pinning">المفتاح العام لخادم الترحيل (التثبيت)</string>
-    <string name="t_relay_teste">خادم الترحيل (اختبار)</string>
-    <string name="t_guardar_e_voltar_a_ligar">حفظ وإعادة الاتصال</string>
     <string name="t_voltar">رجوع</string>
     <string name="t_mais_opcoes">خيارات إضافية</string>
     <string name="t_o_meu_id">معرّفي</string>
@@ -246,7 +240,6 @@
     <string name="t_este_telemovel_nao_permite_desbloquear_assim">لا يتيح هذا الهاتف فتح القفل بهذه الطريقة (يتطلب Android 11 أو أحدث وقفلًا للشاشة).</string>
     <string name="t_nao_foi_possivel_ativar">تعذّر التفعيل: %1$s</string>
     <string name="t_demasiadas_tentativas_tenta_de_novo_daqui">محاولات كثيرة جدًا. يُرجى المحاولة مرة أخرى بعد %1$s ث.</string>
-    <string name="t_o_relay_tem_de_usar_wss">يجب أن يستخدم خادم الترحيل البروتوكول wss://‎، ولا يُسمح بـ ws://‎ إلا في نسخة التصحيح (debug)</string>
     <string name="t_nao_foi_possivel_ler_essa_imagem">تعذّرت قراءة تلك الصورة.</string>
     <string name="t_contacto">جهة اتصال</string>
     <string name="t_esse_e_o_teu_proprio_id">هذا معرّفك أنت</string>
@@ -432,4 +425,15 @@
     <string name="community_title">المجتمع</string>
     <string name="community_subtitle">الأشخاص الذين لديهم شارة في Sealer، مع صورتهم وشارتهم.</string>
     <string name="community_empty">المجتمع لا يزال فارغًا.</string>
+    <!-- Chamadas de grupo (0.9.63) -->
+    <string name="gcall_title">مكالمة جماعية</string>
+    <string name="gcall_video_title">مكالمة فيديو جماعية</string>
+    <string name="gcall_from">%1$s يتصل</string>
+    <string name="gcall_waiting">في انتظار انضمام الآخرين…</string>
+    <string name="gcall_full">المكالمة الجماعية تضم 5 أشخاص بالفعل.</string>
+    <string name="gcall_notice">في المكالمات الجماعية، يكون عنوان شبكتك مرئيًا للمشاركين الآخرين.</string>
+    <string name="gcall_me">أنا</string>
+    <string name="gcall_join">الانضمام إلى المكالمة</string>
+    <string name="gcall_name_title">اسمك في هذه المكالمة</string>
+    <string name="gcall_name_text">من ليس لديك في جهات اتصاله سيرى هذا الاسم.</string>
 </resources>

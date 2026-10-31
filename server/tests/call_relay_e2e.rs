@@ -69,7 +69,7 @@ async fn relay() -> Relay {
     let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let ws = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let r = Relay { udp: udp.local_addr().unwrap(), ws: format!("ws://{}/call", ws.local_addr().unwrap()), public: keys.public };
-    serve(udp, Some(ws), &keys.private, CallLimits::default(), Default::default());
+    serve(udp, Some(ws), &keys.private, CallLimits::default());
     r
 }
 

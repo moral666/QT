@@ -65,12 +65,14 @@ QT_ALLOW_PUBLIC_BIND=1 RELAY_BIND_ADDR=0.0.0.0:9443 NOISE_KEY_PATH=$HOME/relay_n
 hostname -I          # o IP do PC, ex.: 192.168.1.23
 sudo ufw allow 9443/tcp   # se tiveres firewall
 ```
-Na app: URL `ws://192.168.1.23:9443` (o `ws://` só funciona na build *debug*) e a chave pública de pinning.
+A app não tem onde mudar o relay (desde a 0.9.53, nem na build *debug*): é sempre o da build. Para usar este relay,
+compila a build *debug* com `./gradlew assembleDebug -PqtRelayUrl=ws://192.168.1.23:9443 -PqtRelayPin=<chave>`
+(o `ws://` só funciona na build *debug*; a chave de pinning é obrigatória).
 As imagens enviadas ficam na pasta `anexos/` ao lado da chave Noise (aqui `$HOME/anexos`), ou em
 `RELAY_BLOB_DIR` se a definires; o relay apaga-as ao fim de 24 horas.
 Nota: o relay escuta por omissão só em `127.0.0.1` e recusa outro endereço sem `QT_ALLOW_PUBLIC_BIND=1`
 (usar só em redes de teste). **No emulador** não é preciso: o PC é `10.0.2.2`, por isso basta o relay em
-`127.0.0.1` e na app `ws://10.0.2.2:9443` (é o valor por omissão da build debug quando `qtRelayUrl` não está definido).
+`127.0.0.1` e compilar com `-PqtRelayUrl=ws://10.0.2.2:9443 -PqtRelayPin=<chave>`.
 Em produção: `wss://` atrás de proxy TLS (`docs/deploy-wss.md`, `deploy/aws/setup-ec2.sh`).
 
 ## Testar com UM só telemóvel: o PC faz de segundo utilizador
@@ -94,7 +96,6 @@ Toca na tua foto (com a roda dentada), no cabeçalho do ecrã inicial:
 - **Bloqueio da app** (código, biometria, tempo até bloquear), **Bloquear agora** e **Contactos bloqueados**.
 - **Privacidade**: mostrar quando estou online e confirmações de leitura (o visto ✓✓).
 - **Notificações**, **Idioma** e **Versão**.
-- **Relay (teste)**: só na build *debug*.
 - **Destruir perfil e dados**: apaga a conta no servidor e depois tudo deste telemóvel.
 
 No chat, o cadeado abre **Verificar segurança** e o menu ⋮ tem **Bloquear**, **Denunciar** e **Eliminar conversa ou contacto**.

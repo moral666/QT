@@ -20,6 +20,12 @@ extension AttachmentInfo: @unchecked Sendable {}
 extension AttachmentRef: @unchecked Sendable {}
 extension AttachmentState: @unchecked Sendable {}
 extension CallAudio: @unchecked Sendable {}
+extension GroupAudio: @unchecked Sendable {}
+extension GroupCallEvent: @unchecked Sendable {}
+extension GroupCallEndReason: @unchecked Sendable {}
+extension GroupCallStart: @unchecked Sendable {}
+extension GroupCallParticipant: @unchecked Sendable {}
+extension CallRelayInfo: @unchecked Sendable {}
 extension CallAudioStats: @unchecked Sendable {}
 extension CallEvent: @unchecked Sendable {}
 extension CallEndReason: @unchecked Sendable {}
@@ -82,7 +88,6 @@ extension RelayResponse {
         case .backupPart: return "BackupPart"
         case .backupNotFound: return "BackupNotFound"
         case .premium: return "Premium"
-        case .fichas: return "Fichas"
         case .communityVersion: return "CommunityVersion"
         case .communityIndex: return "CommunityIndex"
         case .communityNone: return "CommunityNone"

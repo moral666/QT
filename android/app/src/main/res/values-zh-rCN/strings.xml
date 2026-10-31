@@ -118,12 +118,6 @@
     <string name="t_mensagens_cifradas_ponta_a_ponta_com">端到端加密消息，采用抗量子密码技术。无需手机号，无需邮箱。</string>
     <string name="t_comecar">开始</string>
     <string name="t_versao_de_testes">测试版。在1.0版本之前，应用会持续改进。</string>
-    <string name="t_esconder_opcoes_de_teste">隐藏测试选项</string>
-    <string name="t_opcoes_de_teste">测试选项</string>
-    <string name="t_url_do_relay">中继服务器URL</string>
-    <string name="t_chave_publica_do_relay_pinning">中继服务器公钥（公钥固定）</string>
-    <string name="t_relay_teste">中继服务器（测试）</string>
-    <string name="t_guardar_e_voltar_a_ligar">保存并重新连接</string>
     <string name="t_voltar">返回</string>
     <string name="t_mais_opcoes">更多选项</string>
     <string name="t_o_meu_id">我的ID</string>
@@ -246,7 +240,6 @@
     <string name="t_este_telemovel_nao_permite_desbloquear_assim">此手机不支持这种解锁方式（需要Android 11或更高版本，并设置屏幕锁定）。</string>
     <string name="t_nao_foi_possivel_ativar">无法开启：%1$s</string>
     <string name="t_demasiadas_tentativas_tenta_de_novo_daqui">尝试次数过多。请在%1$s秒后重试。</string>
-    <string name="t_o_relay_tem_de_usar_wss">中继服务器必须使用 wss://（ws:// 仅限调试版本）</string>
     <string name="t_nao_foi_possivel_ler_essa_imagem">无法读取该图片。</string>
     <string name="t_contacto">联系人</string>
     <string name="t_esse_e_o_teu_proprio_id">这是你自己的ID</string>
@@ -432,4 +425,15 @@
     <string name="community_title">社区</string>
     <string name="community_subtitle">拥有 Sealer 徽章的人，显示照片和徽章。</string>
     <string name="community_empty">社区目前还是空的。</string>
+    <!-- Chamadas de grupo (0.9.63) -->
+    <string name="gcall_title">群组通话</string>
+    <string name="gcall_video_title">群组视频通话</string>
+    <string name="gcall_from">%1$s 正在呼叫</string>
+    <string name="gcall_waiting">正在等待其他人加入…</string>
+    <string name="gcall_full">群组通话已有 5 人。</string>
+    <string name="gcall_notice">在群组通话中，其他参与者可以看到你的网络地址。</string>
+    <string name="gcall_me">我</string>
+    <string name="gcall_join">加入通话</string>
+    <string name="gcall_name_title">你在本次通话中的名字</string>
+    <string name="gcall_name_text">没有把你加为联系人的人会看到这个名字。</string>
 </resources>

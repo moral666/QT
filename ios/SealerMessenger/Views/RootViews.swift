@@ -7,7 +7,6 @@ import UIKit
 /// Mesma navegacao que o AppRoot do Android: um ecra de cada vez, decidido pelo estado.
 struct AppRoot: View {
     @ObservedObject var model: AppModel
-    @State private var showRelay = false
     @State private var showSettings = false
     @State private var showAddContact = false
     @State private var showMyId = false
@@ -20,6 +19,11 @@ struct AppRoot: View {
     @State private var cameraDenied = false
     /// Chamada minimizada (0.9.29): o resto da app fica usavel e a barra no topo volta a chamada.
     @State private var callMinimized = false
+    /// O aviso do IP antes da primeira chamada de grupo (0.9.64): a acao espera pelo "Aceitar".
+    @State private var groupNotice: (() -> Void)?
+    /// Depois do aviso: o nome para esta chamada (0.9.67), ja com o ultimo que usei.
+    @State private var askName: (() -> Void)?
+    @State private var nameText = ""
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -81,6 +85,30 @@ struct AppRoot: View {
             Button(s("ios_open_settings")) { if let u = URL(string: UIApplication.openSettingsURLString) { openURL(u) } }
             Button(s("t_cancelar"), role: .cancel) {}
         }
+        .alert(s("gcall_title"), isPresented: Binding(get: { groupNotice != nil }, set: { if !$0 { groupNotice = nil } })) {
+            Button(s("t_aceitar")) {
+                let act = groupNotice
+                groupNotice = nil
+                model.groupCalls.acceptNotice()
+                act?()
+            }
+            Button(s("t_cancelar"), role: .cancel) { groupNotice = nil }
+        } message: {
+            Text(s("gcall_notice"))
+        }
+        .alert(s("gcall_name_title"), isPresented: Binding(get: { askName != nil }, set: { if !$0 { askName = nil } })) {
+            TextField("", text: $nameText)
+            Button(s("t_continuar")) {
+                let act = askName
+                askName = nil
+                guard !nameText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                model.groupCalls.myName = nameText
+                act?()
+            }
+            Button(s("t_cancelar"), role: .cancel) { askName = nil }
+        } message: {
+            Text(s("gcall_name_text"))
+        }
     }
 
     /// A chamada a chegar nunca fica escondida; minimizar so a chamar, a tocar ou atendida.
@@ -104,6 +132,15 @@ struct AppRoot: View {
         }
     }
 
+    /// Chamada de grupo: o aviso do IP primeiro (uma vez), depois a acao.
+    private func withGroupNotice(_ action: @escaping () -> Void) {
+        let named = {
+            nameText = model.groupCalls.myName
+            askName = action
+        }
+        if model.groupCalls.noticeAccepted() { named() } else { groupNotice = named }
+    }
+
     /// Video: a camara e pedida so ao ligar a camara numa chamada (uma vez).
     private func withCamera(_ action: @escaping () -> Void) {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -121,6 +158,19 @@ struct AppRoot: View {
         let openGroup = ui.openChatId.flatMap { ui.groupOf($0) }
         if ui.loading {
             LoadingScreen()
+        } else if let g = model.groupCalls.ui, !ui.locked {
+            GroupCallScreen(
+                g: g, myName: s("gcall_me"),
+                onJoin: { withGroupNotice { withMic { if g.video { withCamera { model.groupCalls.join() } } else { model.groupCalls.join() } } } },
+                onLeave: model.groupCalls.leave,
+                onMute: model.groupCalls.toggleMute,
+                onSpeaker: model.groupCalls.toggleSpeaker,
+                onCamera: { if g.camera { model.groupCalls.toggleCamera() } else { withCamera { model.groupCalls.toggleCamera() } } },
+                onSwitchCamera: model.groupCalls.switchCamera,
+                selfSession: model.groupCalls.selfSession,
+                remoteLayer: model.groupCalls.layer(for:),
+                diagnostic: model.groupCalls.diagnostic
+            )
         } else if let call = ui.call, !ui.locked, !showCallBar(ui) {
             CallScreen(call: call, onAccept: { withMic { model.acceptCall() } }, onHangup: model.hangupCall,
                        onMute: model.toggleMute, onSpeaker: model.toggleSpeaker, diag: model.callDiag,
@@ -137,7 +187,7 @@ struct AppRoot: View {
         } else if !ui.hasIdentity && showRestore {
             RestoreScreen(ui: ui, onBack: { showRestore = false }, onRestore: model.restoreAccount)
         } else if !ui.hasIdentity {
-            SetupScreen(ui: ui, onCreate: model.createIdentity, onRestore: { showRestore = true })
+            SetupScreen(onCreate: model.createIdentity, onRestore: { showRestore = true })
         } else if ui.showPremium {
             PremiumScreen(ui: ui, onBack: model.closePremium)
         } else if ui.showCommunity {
@@ -150,7 +200,13 @@ struct AppRoot: View {
                             onAddContact: { n, p in model.addContact(nickname: n, publicId: p) })
         } else if let g = openGroup {
             ChatScreen(model: model, ui: ui, conversationId: g.conversationId, group: g, onInfo: { showGroupInfo = true },
-                       onCall: { _ in })
+                       onCall: { _ in },
+                       onGroupCall: { video in
+                           withGroupNotice { withMic { if video { withCamera { model.groupCalls.start(g.groupId, video: true) } } else { model.groupCalls.start(g.groupId, video: false) } } }
+                       },
+                       onJoinOngoing: model.groupCalls.ongoing[g.groupId] == nil ? nil : {
+                           withGroupNotice { withMic { withCamera { model.groupCalls.rejoin(g.groupId) } } }
+                       })
                 .transition(.move(edge: .trailing))
         } else if let id = ui.openChatId, id.hasPrefix("g:") {
             // O grupo foi apagado (ou ainda nao carregou): volta a lista.
@@ -169,9 +225,6 @@ struct AppRoot: View {
             LockSettingsScreen(ui: ui, onBack: { showLockSettings = false },
                                onEnable: model.enableLock, onDisable: model.disableLock, onChange: model.changeCode,
                                onBioOn: model.startBioEnable, onBioOff: model.disableBio, onTimeout: model.setLockTimeout)
-        } else if showRelay && Config.relayEditable {
-            RelaySettingsScreen(ui: ui, onSave: { u, k in model.saveRelay(relayUrl: u, relayKeyHex: k); showRelay = false },
-                                onBack: { showRelay = false })
         } else if showAddContact {
             AddContactScreen(ui: ui, onBack: { showAddContact = false },
                              onAdd: { n, p in showAddContact = false; model.addContact(nickname: n, publicId: p) },
@@ -187,7 +240,6 @@ struct AppRoot: View {
                 onUnblock: model.unblockContact, onPresence: model.setPresence, onReadReceipts: model.setReadReceipts,
                 onPush: model.setPush,
                 onLanguage: { if let u = URL(string: UIApplication.openSettingsURLString) { openURL(u) } },
-                onRelay: { showRelay = true },
                 onWipeAll: { showSettings = false; model.wipeAllData() }
             )
         } else {
@@ -214,12 +266,8 @@ struct LoadingScreen: View {
 // ========================================================================= entrada
 
 struct SetupScreen: View {
-    let ui: UiState
-    let onCreate: (String, String) -> Void
+    let onCreate: () -> Void
     var onRestore: () -> Void = {}
-    @State private var url = ""
-    @State private var key = ""
-    @State private var advanced = false
     @Environment(\.chat) private var c
 
     var body: some View {
@@ -233,28 +281,17 @@ struct SetupScreen: View {
                 Text(s("t_mensagens_cifradas_ponta_a_ponta_com"))
                     .font(.sBodyMedium).multilineTextAlignment(.center).foregroundStyle(c.onSurfaceVariant)
                 Spacer().frame(height: 32)
-                PrimaryButton(title: s("t_comecar")) { onCreate(url, key) }
+                PrimaryButton(title: s("t_comecar"), action: onCreate)
                 Button(s("recovery_have_words"), action: onRestore).font(.sLabelLarge).padding(.top, 12)
                 Spacer().frame(height: 16)
                 Text(s("t_versao_de_testes"))
                     .font(.sLabelSmall).multilineTextAlignment(.center).foregroundStyle(c.onSurfaceVariant)
-                if Config.relayEditable {   // so na build debug
-                    Button(advanced ? s("t_esconder_opcoes_de_teste") : s("t_opcoes_de_teste")) { advanced.toggle() }
-                        .font(.sLabelLarge).padding(.top, 8)
-                    if advanced {
-                        VStack(spacing: 12) {
-                            OutlinedField(label: s("t_url_do_relay"), text: $url, singleLine: true)
-                            OutlinedField(label: s("t_chave_publica_do_relay_pinning"), text: $key, monospaced: true)
-                        }
-                    }
-                }
             }
             .padding(32)
             .frame(maxWidth: 520)
             .frame(maxWidth: .infinity)
         }
         .background(c.background.ignoresSafeArea())
-        .onAppear { url = ui.relayUrl; key = ui.relayKeyHex }
     }
 }
 
@@ -297,30 +334,6 @@ struct TermsScreen: View {
             .padding(24)
         }
         .background(c.background.ignoresSafeArea())
-    }
-}
-
-struct RelaySettingsScreen: View {
-    let ui: UiState
-    let onSave: (String, String) -> Void
-    let onBack: () -> Void
-    @State private var url = ""
-    @State private var key = ""
-    @Environment(\.chat) private var c
-
-    var body: some View {
-        VStack(spacing: 0) {
-            SealerTopBar(onBack: onBack) { Text(s("t_relay_teste")) }
-            VStack(alignment: .leading, spacing: 12) {
-                OutlinedField(label: s("t_url_do_relay"), text: $url, singleLine: true)
-                OutlinedField(label: s("t_chave_publica_do_relay_pinning"), text: $key, monospaced: true)
-                PrimaryButton(title: s("t_guardar_e_voltar_a_ligar"), height: 44) { onSave(url, key) }
-            }
-            .padding(16)
-            Spacer()
-        }
-        .background(c.background.ignoresSafeArea())
-        .onAppear { url = ui.relayUrl; key = ui.relayKeyHex }
     }
 }
 

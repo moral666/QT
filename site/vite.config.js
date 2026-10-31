@@ -68,7 +68,7 @@ function contentSecurityPolicy() {
         '/assets/*',
         '  Cache-Control: public, max-age=31536000, immutable',
         '',
-        '# Chaves públicas das fichas do vídeo (gerado no deploy do relay): as apps leem-no.',
+        '# Ficheiro de estado do site (só a versão). As apps 0.9.37 a 0.9.52 ainda o pedem.',
         '/estado.json',
         '  Cache-Control: public, max-age=300',
         '',

@@ -118,12 +118,6 @@
     <string name="t_mensagens_cifradas_ponta_a_ponta_com">End-to-end encrypted messages with post-quantum cryptography. No phone number, no email.</string>
     <string name="t_comecar">Get started</string>
     <string name="t_versao_de_testes">Test version. Until version 1.0, the app keeps being improved.</string>
-    <string name="t_esconder_opcoes_de_teste">Hide test options</string>
-    <string name="t_opcoes_de_teste">Test options</string>
-    <string name="t_url_do_relay">Relay URL</string>
-    <string name="t_chave_publica_do_relay_pinning">Relay public key (pinning)</string>
-    <string name="t_relay_teste">Relay (test)</string>
-    <string name="t_guardar_e_voltar_a_ligar">Save and reconnect</string>
     <string name="t_voltar">Back</string>
     <string name="t_mais_opcoes">More options</string>
     <string name="t_o_meu_id">My ID</string>
@@ -246,7 +240,6 @@
     <string name="t_este_telemovel_nao_permite_desbloquear_assim">This phone does not allow unlocking this way (requires Android 11 or newer and a screen lock).</string>
     <string name="t_nao_foi_possivel_ativar">Could not turn on: %1$s</string>
     <string name="t_demasiadas_tentativas_tenta_de_novo_daqui">Too many attempts. Try again in %1$s s.</string>
-    <string name="t_o_relay_tem_de_usar_wss">The relay must use wss:// (ws:// only in debug builds)</string>
     <string name="t_nao_foi_possivel_ler_essa_imagem">Could not read that image.</string>
     <string name="t_contacto">Contact</string>
     <string name="t_esse_e_o_teu_proprio_id">That is your own ID</string>
@@ -434,4 +427,15 @@
     <string name="community_title">Community</string>
     <string name="community_subtitle">People with a Sealer badge, shown with their photo and badge.</string>
     <string name="community_empty">The Community is still empty.</string>
+    <!-- Chamadas de grupo (0.9.63) -->
+    <string name="gcall_title">Group call</string>
+    <string name="gcall_video_title">Group video call</string>
+    <string name="gcall_from">%1$s is calling</string>
+    <string name="gcall_waiting">Waiting for others to join…</string>
+    <string name="gcall_full">The group call already has 5 people.</string>
+    <string name="gcall_notice">In group calls, your network address is visible to the other participants.</string>
+    <string name="gcall_me">Me</string>
+    <string name="gcall_join">Join call</string>
+    <string name="gcall_name_title">Your name in this call</string>
+    <string name="gcall_name_text">People who don’t have you in their contacts will see this name.</string>
 </resources>

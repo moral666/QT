@@ -432,7 +432,6 @@ fun AppRoot(
     onDone: () -> Unit = {},
 ) {
     val ui by vm.ui.collectAsState()
-    var showSettings by remember { mutableStateOf(false) }
     /** Ecras da 0.9.11: Definicoes (antes o menu de tres pontos) e Novo contacto (antes uma janela). */
     var showProfileSettings by rememberSaveable { mutableStateOf(false) }
     var showAddContact by rememberSaveable { mutableStateOf(false) }
@@ -522,6 +521,43 @@ fun AppRoot(
     }
 
     val call = ui.call
+    // Chamada de grupo (0.9.63): tem o seu ecra, por cima de tudo (menos do bloqueio).
+    val groupCall by vm.groupCalls.ui.collectAsState()
+    val ongoingCalls by vm.groupCalls.ongoing.collectAsState()
+    var groupNotice by remember { mutableStateOf<(() -> Unit)?>(null) }
+    // O aviso do IP antes da primeira chamada de grupo; depois, as permissoes e a acao.
+    // Depois do aviso: o nome para esta chamada (0.9.67), ja com o ultimo que usei.
+    var askName by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val withGroupNotice: (() -> Unit) -> Unit = { action ->
+        val named = { askName = action }
+        if (vm.groupCalls.noticeAccepted()) named() else groupNotice = named
+    }
+    askName?.let { act ->
+        var name by remember { mutableStateOf(vm.groupCalls.myName) }
+        AlertDialog(
+            onDismissRequest = { askName = null },
+            title = { Text(s(R.string.gcall_name_title)) },
+            text = {
+                Column {
+                    Text(s(R.string.gcall_name_text))
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(value = name, onValueChange = { name = it.take(32) }, singleLine = true)
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = name.isNotBlank(), onClick = { vm.groupCalls.myName = name; askName = null; act() }) {
+                    Text(s(R.string.t_continuar))
+                }
+            },
+            dismissButton = { TextButton(onClick = { askName = null }) { Text(s(R.string.t_cancelar)) } },
+        )
+    }
+    groupNotice?.let { act ->
+        GroupCallNotice(
+            onAccept = { vm.groupCalls.acceptNotice(); groupNotice = null; act() },
+            onDismiss = { groupNotice = null },
+        )
+    }
     var showPhoto by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
     // Chamada minimizada (0.9.29): o resto da app fica usavel e a barra no topo volta a chamada.
@@ -539,6 +575,25 @@ fun AppRoot(
     when {
         overLock -> CallOverLock(ui, vm, withMic, withCamera, keyguardLocked, onLeaveLock, onDone)
         ui.loading -> LoadingScreen()
+        groupCall != null && !ui.locked -> {
+            val g = groupCall!!
+            BackHandler { }
+            GroupCallScreen(
+                g,
+                myName = s(R.string.gcall_me),
+                myId = MainViewModel.MY_PHOTO,
+                onJoin = { withGroupNotice { withMic { if (g.video) withCamera { vm.groupCalls.join() } else vm.groupCalls.join() } } },
+                onLeave = { vm.groupCalls.leave() },
+                onMute = { vm.groupCalls.toggleMute() },
+                onSpeaker = { vm.groupCalls.toggleSpeaker() },
+                onCamera = { if (g.camera) vm.groupCalls.toggleCamera() else withCamera { vm.groupCalls.toggleCamera() } },
+                onSwitchCamera = { vm.groupCalls.switchCamera() },
+                onSelfPreview = { st -> vm.groupCalls.setPreview(st) },
+                onSurface = { id, surface -> vm.groupCalls.setSurface(id, surface) },
+                onClearSurface = { id, surface -> vm.groupCalls.clearSurface(id, surface) },
+                diagnostic = if (CallDiag.enabled) ({ vm.groupCalls.diagnostic() }) else null,
+            )
+        }
         call != null && !ui.locked && !showCallBar -> {
             // O "voltar" minimiza (antes nao fazia nada); desligar so no botao.
             BackHandler { if (canMinimize) callMinimized = true }
@@ -565,7 +620,7 @@ fun AppRoot(
             BackHandler { if (!ui.recoveryBusy) showRestore = false }
             RestoreScreen(ui, onBack = { if (!ui.recoveryBusy) showRestore = false }, onRestore = vm::restoreAccount)
         }
-        !ui.hasIdentity -> SetupScreen(ui, onCreate = vm::createIdentity, onRestore = { showRestore = true })
+        !ui.hasIdentity -> SetupScreen(onCreate = vm::createIdentity, onRestore = { showRestore = true })
         ui.showPremium -> {
             BackHandler { vm.closePremium() }
             PremiumScreen(ui, onBack = vm::closePremium)
@@ -596,6 +651,12 @@ fun AppRoot(
                 onSendFile = { uri -> vm.sendFileTo(openGroup.conversationId, uri) },
                 onSendVoice = { file, ms -> vm.sendVoiceTo(openGroup.conversationId, file, ms) },
                 onDraftRestored = vm::draftRestored,
+                onCall = { video ->
+                    withGroupNotice { withMic { if (video) withCamera { vm.groupCalls.start(openGroup.groupId, true) } else vm.groupCalls.start(openGroup.groupId, false) } }
+                },
+                onJoinOngoing = if (openGroup.groupId in ongoingCalls) ({
+                    withGroupNotice { withMic { withCamera { vm.groupCalls.rejoin(openGroup.groupId) } } }
+                }) else null,
             )
         }
         ui.openChatId?.startsWith("g:") == true -> {
@@ -639,10 +700,6 @@ fun AppRoot(
                 onBioOn = vm::startBioEnable, onBioOff = vm::disableBio, onTimeout = vm::setLockTimeout,
             )
         }
-        showSettings && BuildConfig.RELAY_EDITABLE -> {
-            BackHandler { showSettings = false }
-            RelaySettingsScreen(ui, onSave = { u, k -> vm.saveRelay(u, k); showSettings = false }, onBack = { showSettings = false })
-        }
         showAddContact -> {
             BackHandler { showAddContact = false }
             AddContactScreen(
@@ -672,7 +729,6 @@ fun AppRoot(
                     }
                 },
                 onLanguage = { showLanguage = true },
-                onRelay = { showSettings = true },
                 onWipeAll = { showProfileSettings = false; vm.wipeAllData() },
             )
         }
@@ -912,10 +968,7 @@ val ManropeBold = FontFamily(Font(R.font.manrope_bold, FontWeight.Bold))
 // ========================================================================= entrada
 
 @Composable
-fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit, onRestore: () -> Unit = {}) {
-    var url by remember { mutableStateOf(ui.relayUrl) }
-    var key by remember { mutableStateOf(ui.relayKeyHex) }
-    var advanced by remember { mutableStateOf(false) }
+fun SetupScreen(onCreate: () -> Unit, onRestore: () -> Unit = {}) {
     Column(
         Modifier.fillMaxSize().safeDrawingPadding().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -931,7 +984,7 @@ fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit, onRestore: () -
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(32.dp))
-        Button(onClick = { onCreate(url, key) }, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(26.dp)) {
+        Button(onClick = onCreate, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(26.dp)) {
             Text(s(R.string.t_comecar), fontSize = 16.sp)
         }
         Spacer(Modifier.height(8.dp))
@@ -942,27 +995,6 @@ fun SetupScreen(ui: UiState, onCreate: (String, String) -> Unit, onRestore: () -
             style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (BuildConfig.RELAY_EDITABLE) {   // so na build debug
-            TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) s(R.string.t_esconder_opcoes_de_teste) else s(R.string.t_opcoes_de_teste)) }
-            if (advanced) {
-                OutlinedTextField(url, { url = it }, label = { Text(s(R.string.t_url_do_relay)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(key, { key = it }, label = { Text(s(R.string.t_chave_publica_do_relay_pinning)) }, modifier = Modifier.fillMaxWidth())
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun RelaySettingsScreen(ui: UiState, onSave: (String, String) -> Unit, onBack: () -> Unit) {
-    var url by remember { mutableStateOf(ui.relayUrl) }
-    var key by remember { mutableStateOf(ui.relayKeyHex) }
-    Scaffold(topBar = { SealerTopBar(title = { Text(s(R.string.t_relay_teste)) }, onBack = onBack) }) { pad ->
-        Column(Modifier.padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(url, { url = it }, label = { Text(s(R.string.t_url_do_relay)) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            OutlinedTextField(key, { key = it }, label = { Text(s(R.string.t_chave_publica_do_relay_pinning)) }, modifier = Modifier.fillMaxWidth())
-            Button(onClick = { onSave(url, key) }) { Text(s(R.string.t_guardar_e_voltar_a_ligar)) }
-        }
     }
 }
 

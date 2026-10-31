@@ -30,9 +30,6 @@ bip39 = "2"
 # rustc >= 1.88 (`rust-version`). Testado e a passar com rustc 1.91.1 - ativa com
 # `cargo build --features pq` / `cargo test --features pq`.
 ml-kem = { version = "0.2", optional = true }
-# Fichas anonimas do video pelo relay (src/fichas.rs): VOPRF do RFC 9497, ristretto255-SHA512.
-# Crate da Facebook (a mesma do OPAQUE); nada desta criptografia e feito a mao.
-voprf = { version = "0.5", default-features = false, features = ["ristretto255-ciphersuite", "alloc"] }
 
 [features]
 default = []

@@ -1,5 +1,6 @@
 import AVFoundation
 import CallKit
+import Combine
 import Foundation
 import LocalAuthentication
 import SwiftUI
@@ -140,7 +141,7 @@ struct VideoUi: Equatable {
     var peerCamera = false
     var peerAccepts = false
     var peerDeclined = false
-    /// O video do outro parou (pausa por rede, sem fichas ou outra razao): o ecra mostra so a
+    /// O video do outro parou (pausa por rede, sem ligacao direta ou outra razao): o ecra mostra so a
     /// foto ou a inicial dele, sem texto.
     var remoteStalled = false
     /// Quanto rodar o video do outro (graus, sentido dos ponteiros).
@@ -171,6 +172,30 @@ final class AppModel: ObservableObject {
     static let shared = AppModel()
 
     @Published private(set) var ui = UiState()
+
+    /// Chamadas de grupo (0.9.64; ver Calls/GroupCall.swift). As mudancas dela redesenham a app.
+    lazy var groupCalls: GroupCallModel = makeGroupCalls()
+    private var groupCallsSink: AnyCancellable?
+
+    private func makeGroupCalls() -> GroupCallModel {
+        let m = GroupCallModel()
+        m.attach(
+            client: { [weak self] in self?.qt },
+            flush: { [weak self] in await self?.flushOutbox() },
+            nameOf: { [weak self] id in self?.ui.memberName(id) ?? id },
+            groupNameOf: { [weak self] gid in self?.ui.groups.first { $0.groupId == gid }?.name ?? "" },
+            busy: { [weak self] in self?.ui.call.map { $0.phase != .ended } ?? false },
+            onError: { [weak self] m in self?.showError(m) },
+            ensureGroupSessions: { [weak self] gid in
+                guard let self, let client = self.qt else { return }
+                let ids = (try? await background { try client.groupMembersNeedingSession(groupId: gid) }) ?? []
+                await self.ensureSessions(client, ids)
+            },
+            isContact: { [weak self] cid in self?.ui.contacts.contains { $0.contactId == cid } ?? false }
+        )
+        groupCallsSink = m.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        return m
+    }
     /// So na build de testes (Debug): as ultimas linhas do registo da chamada, no ecra da chamada.
     @Published private(set) var callDiag: [String] = []
 
@@ -230,8 +255,6 @@ final class AppModel: ObservableObject {
     /// A sessao da minha camara (a pre-visualizacao liga-se a ela) e a camada do video do outro.
     @Published private(set) var selfVideoSession: AVCaptureSession?
     @Published private(set) var remoteVideoLayer: AVSampleBufferDisplayLayer?
-    /// Pedido das fichas do video, numa hora aleatoria (ver `scheduleFichas`).
-    private var fichasTask: Task<Void, Never>?
 
     private static let pollSeconds: UInt64 = 3
     private static let backgroundGraceSeconds: UInt64 = 25
@@ -253,13 +276,6 @@ final class AppModel: ObservableObject {
     private static let noVideoAfterSeconds: Double = 5
     /// Sem imagens do outro ha mais do que isto: mostra so a foto ou a inicial dele.
     private static let remoteStallSeconds: Double = 2
-    /// Fichas do video: primeiro pedido entre 30 s e 10 min depois de abrir; depois 1-2 h.
-    private static let fichasFirstMin: Double = 30
-    private static let fichasFirstMax: Double = 600
-    private static let fichasAgain: Double = 3_600
-    private static let fichasTimeout: Double = 20
-    private static let fichasMaxBatches = 3
-    private static let fichasKeysMaxBytes = 64 * 1024
     /// Quanto tempo uma chamada toca (igual ao Rust).
     static let ringSeconds: Double = 45
     private static let answerValidSeconds: Double = 60
@@ -316,7 +332,10 @@ final class AppModel: ObservableObject {
     private func setupClient(_ client: QtClient) async throws {
         qt = client
         guard let ck = contactsKey else { throw SecureStoreError(message: "sem a chave dos contactos") }
-        // Release: o relay da conta, da lista fixa da build (federacao, `Relays`). Debug: editavel.
+        // O relay da conta, da lista fixa da build (federacao, `Relays`), em todas as builds. O relay
+        // de teste das builds Debug ate a 0.9.52 (`relay_url`/`relay_key`) ja nao conta: sai.
+        prefs.removeObject(forKey: "relay_url")
+        prefs.removeObject(forKey: "relay_key")
         let home = Relays.home(prefs)
         let url = home.url
         let pin = home.pin
@@ -418,7 +437,6 @@ final class AppModel: ObservableObject {
     private func closeLinks() {
         poller?.cancel(); poller = nil
         transferTask?.cancel(); transferTask = nil
-        fichasTask?.cancel(); fichasTask = nil
         let l = link
         link = nil
         Task { await l?.close() }
@@ -444,7 +462,7 @@ final class AppModel: ObservableObject {
         pauseTask?.cancel()
         // Videochamada: a minha camara pausa em silencio; a voz continua.
         holdCameraForBackground()
-        if ui.call != nil { return }   // chamada: o CallKit mantem a app viva, as ligacoes ficam
+        if ui.call != nil || groupCalls.ui != nil { return }   // chamada: o CallKit (ou o audio do grupo) mantem a app viva, as ligacoes ficam
         // O iOS da ~30 s para acabar o que estava a meio (envios, "offline", recibos).
         if bgTask == .invalid {
             bgTask = UIApplication.shared.beginBackgroundTask(withName: "sealer-envios") { [weak self] in
@@ -479,7 +497,7 @@ final class AppModel: ObservableObject {
 
     private func lockInBackground() {
         guard !visible, ui.lockEnabled, !ui.locked else { return }
-        if ui.call != nil || pendingRing != nil { lockAfterCall = true; return }
+        if ui.call != nil || groupCalls.ui != nil || pendingRing != nil { lockAfterCall = true; return }
         lockNow()
     }
 
@@ -522,7 +540,7 @@ final class AppModel: ObservableObject {
     }
 
     private func pauseLinks() {
-        if visible || qt == nil || link == nil || ui.call != nil || pendingRing != nil { return }
+        if visible || qt == nil || link == nil || ui.call != nil || groupCalls.ui != nil || pendingRing != nil { return }
         closeLinks()
         linksPaused = true
         log("SealerRelay", "segundo plano: ligacoes ao relay fechadas")
@@ -776,7 +794,7 @@ final class AppModel: ObservableObject {
 
     // ================================================================ configuracao
 
-    func createIdentity(relayUrl: String, relayKeyHex: String) {
+    func createIdentity() {
         Task {
             guard let client = qt else { return }
             // Conta nova: comeca no relay principal (se estiver fechado a contas novas, o
@@ -786,7 +804,6 @@ final class AppModel: ObservableObject {
             ui.relayUrl = h.url
             ui.relayKeyHex = h.pin
             try? client.callSetRelay(name: nil)
-            if Config.relayEditable && !applyRelay(relayUrl, relayKeyHex) { return }
             do {
                 let me = try await background { try client.createIdentity() }
                 // Conta nova: "Mostrar quando estou online" comeca desligado (0.9.23).
@@ -806,29 +823,6 @@ final class AppModel: ObservableObject {
         prefs.set(false, forKey: "presence")
         ui.presenceOn = false
         ui.online = []
-    }
-
-    func saveRelay(relayUrl: String, relayKeyHex: String) {
-        guard Config.relayEditable, applyRelay(relayUrl, relayKeyHex) else { return }
-        Task {
-            guard let client = qt, (try? await background({ try client.hasIdentity() })) == true else { return }
-            await startLink()
-        }
-    }
-
-    private func applyRelay(_ relayUrl: String, _ relayKeyHex: String) -> Bool {
-        let u = relayUrl.trimmingCharacters(in: .whitespaces)
-        let lower = u.lowercased()
-        guard lower.hasPrefix("wss://") || (Config.allowCleartext && lower.hasPrefix("ws://")) else {
-            showError(s("t_o_relay_tem_de_usar_wss"))
-            return false
-        }
-        let k = relayKeyHex.trimmingCharacters(in: .whitespaces)
-        prefs.set(u, forKey: "relay_url")
-        prefs.set(k, forKey: "relay_key")
-        ui.relayUrl = u
-        ui.relayKeyHex = k
-        return true
     }
 
     private func newLink(_ client: QtClient) -> RelayLink {
@@ -895,7 +889,6 @@ final class AppModel: ObservableObject {
         // Copia de recuperacao: so se mudou alguma coisa desde a ultima.
         if publishBundle { scheduleBackup() }
         await refreshPremium(client, f)
-        scheduleFichas()
     }
 
     // ================================================================ notificacoes
@@ -1255,81 +1248,6 @@ final class AppModel: ObservableObject {
         ui.premiumUntil = u
         ui.premium = premiumNow(u, active: active)
         ui.premiumLock = enforced
-    }
-
-    // ================================================================ fichas do video
-
-    /// Fichas do video pelo relay (igual ao Android): o relay das chamadas so passa o video de
-    /// quem as tem (pelo caminho direto nao se gastam). Pedem-se numa hora ALEATORIA depois de a
-    /// app se ligar (e depois mais ou menos de hora a hora), nunca com uma chamada a decorrer nem
-    /// ao comecar uma: assim o relay nao junta o pedido a uma chamada. Nada disto aparece no ecra.
-    private func scheduleFichas() {
-        fichasTask?.cancel()
-        fichasTask = Task { [weak self] in
-            var wait = Double.random(in: Self.fichasFirstMin..<Self.fichasFirstMax)
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
-                guard !Task.isCancelled, let self, let client = self.qt, let l = self.link else { break }
-                await self.requestFichas(client, l)
-                wait = Self.fichasAgain + Double.random(in: 0..<Self.fichasAgain)
-            }
-        }
-    }
-
-    private func requestFichas(_ client: QtClient, _ l: RelayLink) async {
-        await refreshFichasKeys(client)
-        // Varios lotes seguidos so com uma quota maior; para no primeiro sem nada.
-        for _ in 0..<Self.fichasMaxBatches {
-            if ui.call != nil || pendingRing != nil { return }
-            guard let req = try? await background({ try client.relayRequestFichas() }) else { return }
-            do {
-                let r = try await l.request(req, timeout: Self.fichasTimeout)
-                if case .fichas(let issued) = r {
-                    let n = (try? await background { try client.fichasAccept(issued: issued) }) ?? 0
-                    if n == 0 { return }
-                } else {
-                    // Relay antigo, sem fichas ou conta sem registo: tenta daqui a umas horas.
-                    log("SealerVideo", "fichas: \(r.describe)")
-                    _ = try? await background { try client.fichasRefused() }
-                    return
-                }
-            } catch {
-                // Sem rede ou resposta invalida: tenta outra vez mais tarde.
-                log("SealerVideo", "fichas: \(safeMessage(error))")
-                return
-            }
-        }
-    }
-
-    /// Chaves publicas das fichas de cada mes, publicadas FORA do relay (no site, `estado.json`,
-    /// servido pela Cloudflare). O nucleo so aceita fichas do emissor e so as gasta numa sala se a
-    /// chave for a do site (um relay comprometido nao pode dar uma chave diferente a cada conta).
-    /// Sem rede fica a ultima lista boa; sem lista nenhuma o video pelo relay fica em pausa e a
-    /// voz e o caminho direto continuam.
-    private func refreshFichasKeys(_ client: QtClient) async {
-        guard let body = await Self.fetchSmall(Config.fichasKeysURL, max: Self.fichasKeysMaxBytes) else { return }
-        do {
-            _ = try await background { try client.fichasSetPublishedKeys(json: body) }
-        } catch {
-            log("SealerVideo", "fichas: estado.json invalido (\(safeMessage(error)))")
-        }
-    }
-
-    /// GET de um ficheiro pequeno por HTTPS, sem cookies, cache nem nada da conta (o pedido e
-    /// igual para toda a gente). `nil` se falhar ou passar de `max` bytes.
-    private static func fetchSmall(_ url: String, max: Int) async -> Data? {
-        guard let u = URL(string: url), u.scheme == "https" || (Config.allowCleartext && u.scheme == "http") else { return nil }
-        let cfg = URLSessionConfiguration.ephemeral
-        cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
-        cfg.httpShouldSetCookies = false
-        cfg.timeoutIntervalForRequest = 15
-        let session = URLSession(configuration: cfg)
-        defer { session.finishTasksAndInvalidate() }
-        var req = URLRequest(url: u)
-        req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-        guard let (data, resp) = try? await session.data(for: req),
-              let http = resp as? HTTPURLResponse, http.statusCode == 200, data.count <= max else { return nil }
-        return data
     }
 
     // ================================================================ chave de recuperacao
@@ -2498,6 +2416,7 @@ final class AppModel: ObservableObject {
             }
             await restartSessions(client)
             await handleCallEvents(client)
+            await groupCalls.onEvents(client)
             if received {
                 // Fotos e badges recebidos (updated) ja; por mensagens novas (contactos com sessao
                 // nova), no maximo de minuto a minuto. Antes relia as fotos e os badges de todos os
@@ -3048,9 +2967,8 @@ final class AppModel: ObservableObject {
         // A app fora do ecra: a camara so abre quando voltar (`resumeCameraAfterBackground`).
         guard videoSender == nil, !cameraHeld, let a = callAudio else { return }
         let vs = VideoSender(audio: a)
-        vs.onError = { [weak self] in
-            Task { @MainActor in self?.ui.notice = s("video_camera_failed") }
-        }
+        // Nunca um aviso no ecra sobre a camara (decisao do Nuno, 0.9.67): so o registo.
+        vs.onError = { log("SealerVideo", "camara: falhou") }
         videoSender = vs
         selfVideoSession = vs.session
         vs.start(front: ui.call?.video.front ?? true)
@@ -3068,6 +2986,7 @@ final class AppModel: ObservableObject {
     /// outro lado (para ele o video para e ve so a minha foto ou a inicial, sem texto). A voz
     /// continua e o botao fica "ligado". O iOS tambem nao deixa usar a camara fora do ecra.
     private func holdCameraForBackground() {
+        groupCalls.hold(true)
         guard let c = ui.call, c.phase != .ended, c.video.camera, !cameraHeld else { return }
         cameraHeld = true
         callAudio?.videoHold(on: true)
@@ -3076,6 +2995,7 @@ final class AppModel: ObservableObject {
 
     /// A app voltou ao ecra: a camara volta sozinha se continuava ligada.
     private func resumeCameraAfterBackground() {
+        groupCalls.hold(false)
         guard cameraHeld else { return }
         cameraHeld = false
         let on = ui.call.map { $0.phase != .ended && $0.video.camera } ?? false
@@ -3172,14 +3092,15 @@ final class AppModel: ObservableObject {
 
     // ================================================================ utilitarios
 
-    /// Registo das chamadas (SealerCall). Na build de testes tambem aparece no ecra da chamada.
+    /// Registo das chamadas (SealerCall). Na build Debug tambem aparece no ecra da chamada.
     private func diag(_ m: String) {
         log("SealerCall", m)
-        guard Config.relayEditable else { return }
+        #if DEBUG
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss"
         callDiag.append(f.string(from: Date()) + " " + m)
         if callDiag.count > 10 { callDiag.removeFirst(callDiag.count - 10) }
+        #endif
     }
 
     func dismissError() { ui.error = nil }

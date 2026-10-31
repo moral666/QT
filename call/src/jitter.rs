@@ -21,8 +21,17 @@
 //!
 //! O atraso alvo segue a variacao medida das chegadas (percentil 95 dos ultimos 3 s):
 //! entre 40 e 200 ms. Os pacotes que chegam tarde demais tambem contam para a medida
-//! (senao o alvo nunca aprendia com eles). Quando ha frames a mais do que o alvo durante meio segundo,
-//! salta-se um frame (20 ms) para baixar o atraso.
+//! (senao o alvo nunca aprendia com eles). Atraso a mais do que o alvo (depois de uma rajada
+//! de pacotes retidos na rede) desce de duas formas (0.9.61): primeiro nos silencios (quem toca
+//! descodifica um frame baixinho e salta-o logo, sem se ouvir: `drain_wanted`/`take_next`) e,
+//! se a pessoa nao parar de falar, saltando frames as cegas, tanto mais depressa quanto maior
+//! for o excesso (antes era so um frame por meio segundo: 0,7 s a mais demoravam 17 s a sair).
+//!
+//! ATRASO DO AUDIO PARA O VIDEO (`DelayMeter`, so com o audio que chega pela LIGACAO DIRETA, o
+//! caminho do video): a fila parada (media recente das chegadas menos a menor dos ultimos 10 s)
+//! ou a variacao acima de 40 ms, a que for maior. Vai nos relatorios do video: e a mesma rede,
+//! e assim o video desce antes de a voz sofrer. So pelo direto porque o relay tem outro atraso
+//! (mudar de caminho nao e fila).
 //!
 //! Nao depende do Opus nem da rede: os testes simulam o tempo.
 
@@ -46,6 +55,10 @@ const EXCESS_FRAMES: u32 = 2;
 const EXCESS_POPS: u32 = 25;
 /// Um salto maior que isto no contador (5 s) recomeca o buffer.
 const RESYNC_FRAMES: u64 = 250;
+/// Janela da menor chegada (base da fila parada), em baldes de 1 s.
+const BASE_WINDOW: Duration = Duration::from_secs(10);
+/// Variacao das chegadas que ainda e normal (nao conta como atraso para o video).
+const NORMAL_JITTER_MS: f64 = 40.0;
 
 /// O que tocar nos proximos 20 ms.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -236,14 +249,22 @@ impl JitterBuffer {
             self.origin = None;
             self.transits.clear();
         }
-        // Atraso a mais durante meio segundo: salta um frame (so com os dois seguintes
-        // presentes, para nao saltar por cima de uma perda).
-        if self.depth() > self.target + EXCESS_FRAMES {
+        // Atraso a mais: salta um frame (so com os dois seguintes presentes, para nao saltar por
+        // cima de uma perda). Pouco a mais: um por meio segundo, como antes; muito a mais (uma
+        // rajada do que a rede reteve): mais depressa, ate um em cada tres.
+        let excess = self.depth().saturating_sub(self.target);
+        if excess > EXCESS_FRAMES {
             self.excess_pops += 1;
         } else {
             self.excess_pops = 0;
         }
-        if self.excess_pops >= EXCESS_POPS && self.packets.contains_key(&next) && self.packets.contains_key(&(next + 1)) {
+        let every = match excess {
+            0..=4 => EXCESS_POPS,
+            5..=8 => 12,
+            9..=15 => 6,
+            _ => 3,
+        };
+        if self.excess_pops >= every && self.packets.contains_key(&next) && self.packets.contains_key(&(next + 1)) {
             self.packets.remove(&next);
             next += 1;
             self.next = Some(next);
@@ -286,6 +307,25 @@ impl JitterBuffer {
         Slot::Conceal
     }
 
+    /// Ha atraso a mais (frames alem do alvo) e o frame seguinte ja ca esta: quem toca pode
+    /// saltar o que acabou de descodificar se for silencio (`take_next`).
+    pub fn drain_wanted(&self) -> bool {
+        let Some(n) = self.next else { return false };
+        self.start_at.is_none() && self.depth() > self.target + EXCESS_FRAMES && self.packets.contains_key(&n)
+    }
+
+    /// Tira ja o frame seguinte (o anterior era silencio e foi saltado). Conta como salto.
+    pub fn take_next(&mut self) -> Option<Vec<u8>> {
+        let n = self.next?;
+        let f = self.packets.remove(&n)?;
+        self.next = Some(n + 1);
+        self.hold_since = None;
+        self.stalled = false;
+        self.excess_pops = 0;
+        self.stats.skips += 1;
+        Some(f)
+    }
+
     /// Contador do frame que esta a tocar (para sincronizar o video com o audio). `None`
     /// antes de comecar a tocar.
     pub fn playing(&self) -> Option<u64> {
@@ -302,6 +342,66 @@ impl JitterBuffer {
             jitter_ms: self.jitter_ms.round() as u32,
             ..self.stats.clone()
         }
+    }
+}
+
+/// Atraso a mais das chegadas do audio por UM caminho (o direto), para os relatorios do video
+/// (ver o inicio do ficheiro). Mede como o jitter buffer: chegada contra o relogio do envio
+/// (contador x 20 ms), menos a menor chegada vista.
+#[derive(Default)]
+pub struct DelayMeter {
+    origin: Option<(Instant, u64)>,
+    last: Option<u64>,
+    /// Media recente (~200 ms) das chegadas e a menor de cada segundo (ultimos 10 s).
+    recent: Option<f64>,
+    base: VecDeque<(Instant, f64)>,
+    /// Ultimas chegadas (3 s), para a variacao.
+    window: VecDeque<f64>,
+}
+
+impl DelayMeter {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Um pacote de audio NOVO (nao repetido) chegou por este caminho.
+    pub fn push(&mut self, counter: u64, now: Instant) {
+        // O outro lado recomecou ou saltou muito: as medidas antigas ja nao servem.
+        if self.last.is_some_and(|l| counter + RESYNC_FRAMES < l || counter > l + RESYNC_FRAMES) {
+            *self = DelayMeter::default();
+        }
+        self.last = Some(self.last.map_or(counter, |l| l.max(counter)));
+        let (t0, c0) = *self.origin.get_or_insert((now, counter));
+        let transit = now.duration_since(t0).as_secs_f64() * 1000.0 - (counter as i64 - c0 as i64) as f64 * FRAME_MS;
+        self.recent = Some(self.recent.map_or(transit, |r| r + 0.1 * (transit - r)));
+        match self.base.back_mut() {
+            Some((t, m)) if now.duration_since(*t) < Duration::from_secs(1) => *m = m.min(transit),
+            _ => self.base.push_back((now, transit)),
+        }
+        while self.base.front().is_some_and(|(t, _)| now.duration_since(*t) > BASE_WINDOW) {
+            self.base.pop_front();
+        }
+        self.window.push_back(transit);
+        if self.window.len() > WINDOW {
+            self.window.pop_front();
+        }
+    }
+
+    /// Atraso a mais, em ms: a fila parada ou a variacao acima de 40 ms, a que for maior.
+    pub fn delay_ms(&self) -> u32 {
+        let standing = match (self.recent, self.base.iter().map(|(_, m)| *m).reduce(f64::min)) {
+            (Some(r), Some(b)) => (r - b).max(0.0),
+            _ => 0.0,
+        };
+        let spread = if self.window.len() >= 25 {
+            let min = self.window.iter().copied().fold(f64::INFINITY, f64::min);
+            let mut dev: Vec<f64> = self.window.iter().map(|t| t - min).collect();
+            dev.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            (dev[(dev.len() * 95 / 100).min(dev.len() - 1)] - NORMAL_JITTER_MS).max(0.0)
+        } else {
+            0.0
+        };
+        standing.max(spread).round() as u32
     }
 }
 
@@ -595,5 +695,77 @@ mod tests {
         j.push(10_000, f(16), at(t0, 200));
         assert_eq!(j.pop(at(t0, 220)), Slot::Waiting);
         assert_eq!(j.pop(at(t0, 300)), Slot::Frame(f(16)));
+    }
+
+    /// Quem toca parou 600 ms (o altifalante mudou para o Bluetooth, a thread do audio ficou
+    /// presa) com a rede normal: ficam 600 ms a mais no buffer. Com a fala sempre a correr (sem
+    /// silencios), tem de voltar ao alvo em poucos segundos (antes: 20 ms por meio segundo, ~15 s).
+    #[test]
+    fn atraso_grande_sai_depressa() {
+        let t0 = Instant::now();
+        let mut j = JitterBuffer::new();
+        let mut back = None;
+        for ms in 0..20_000u64 {
+            if ms % 20 == 0 {
+                let c = ms / 20;
+                j.push(c, f(c), at(t0, ms + 30));
+            }
+            let stuck = (2_000..2_600).contains(&ms);
+            if ms % 20 == 5 && !stuck {
+                j.pop(at(t0, ms + 30));
+                let st = j.stats();
+                if ms > 2_600 && back.is_none() && st.depth_ms <= st.target_ms + 40 {
+                    back = Some(ms - 2_600);
+                }
+            }
+        }
+        let t = back.expect("o atraso devia voltar ao alvo");
+        assert!(t <= 4_000, "demorou {t} ms a voltar ao alvo");
+        assert_eq!(j.stats().lost, 0);
+    }
+
+    #[test]
+    fn silencio_salta_se_primeiro() {
+        let t0 = Instant::now();
+        let mut j = JitterBuffer::new();
+        for c in 0..30 {
+            j.push(c, f(c), at(t0, 0));
+        }
+        // A comecar: ainda nao.
+        assert!(!j.drain_wanted());
+        let _ = j.pop(at(t0, 60));
+        assert!(j.drain_wanted(), "{:?}", j.stats());
+        let next = j.take_next().expect("o seguinte esta ca");
+        assert_eq!(next, f(1));
+        assert_eq!(j.stats().skips, 1);
+        assert_eq!(j.pop(at(t0, 80)), Slot::Frame(f(2)), "continua por ordem");
+    }
+
+    #[test]
+    fn atraso_do_audio_para_o_video() {
+        let t0 = Instant::now();
+        // Rede calma (atraso fixo, mesmo grande): nada a mais.
+        let mut calmo = DelayMeter::new();
+        for c in 0..300u64 {
+            calmo.push(c, at(t0, c * 20 + 150));
+        }
+        assert!(calmo.delay_ms() <= 2, "{}", calmo.delay_ms());
+        // Fila a crescer na rede de quem envia: 3 s normais e depois +150 ms parados.
+        let mut fila = DelayMeter::new();
+        for c in 0..300u64 {
+            fila.push(c, at(t0, c * 20 + if c < 150 { 30 } else { 180 }));
+        }
+        let d = fila.delay_ms();
+        assert!((130..=160).contains(&d), "{d}");
+        // Variacao grande sem fila parada (metade chega 120 ms atrasada): conta o que passa dos 40 ms.
+        let mut agitado = DelayMeter::new();
+        for c in 0..300u64 {
+            agitado.push(c, at(t0, c * 20 + if c % 2 == 0 { 0 } else { 120 }));
+        }
+        let d = agitado.delay_ms();
+        assert!((60..=130).contains(&d), "{d}");
+        // O outro lado recomecou (contador muito atras): esquece as medidas.
+        fila.push(0, at(t0, 7_000));
+        assert_eq!(fila.delay_ms(), 0);
     }
 }

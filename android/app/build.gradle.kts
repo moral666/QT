@@ -21,8 +21,6 @@ fun signingProp(key: String, env: String): String? = keystoreProps.getProperty(k
 //   qtRelayPin=<chave publica Noise do relay, 64 caracteres hex>
 // ou nas variaveis de ambiente QT_RELAY_URL / QT_RELAY_PIN.
 val relayUrl: String = (findProperty("qtRelayUrl") as String?) ?: System.getenv("QT_RELAY_URL") ?: ""
-// Chaves publicas das fichas do video (0006), publicadas fora do relay (site, Cloudflare).
-val fichasKeysUrl: String = (findProperty("qtFichasKeysUrl") as String?) ?: System.getenv("QT_FICHAS_KEYS_URL") ?: "https://sealerapp.com/estado.json"
 val relayPin: String = ((findProperty("qtRelayPin") as String?) ?: System.getenv("QT_RELAY_PIN") ?: "").lowercase()
 // Federacao (fase 3): nome do relay principal (o de cima) e os OUTROS relays da federacao, por
 // ordem, como "nome|wss://...|pin;nome|wss://...|pin". Contas novas ficam no principal; se ele ja
@@ -70,14 +68,14 @@ android {
         minSdk = 24            // igual ao `-P 24` do cargo-ndk
         // Android 16. Exigido pela Play Store para apps novas e atualizacoes.
         targetSdk = 36
-        versionCode = 59
-        versionName = "0.9.52"
+        versionCode = 67
+        versionName = "0.9.67"
         // So as 6 linguas da app (0.9.12): sem isto iam tambem as ~80 traducoes das bibliotecas
         // (AndroidX, Firebase, ZXing), que a app nunca mostra. A base (values/) e o portugues.
         @Suppress("DEPRECATION")
         resourceConfigurations += listOf("pt", "en", "fr", "es", "de", "it", "ja", "zh-rCN", "hi", "ar")
         // So as ABIs que o Rust compilou. Adiciona "x86_64" quando tiveres esse .so (emulador).
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
 
     buildFeatures { buildConfig = true }
@@ -88,7 +86,6 @@ android {
         buildConfigField("String", "FCM_APP_ID", "\"${fcm?.appId ?: ""}\"")
         buildConfigField("String", "FCM_API_KEY", "\"${fcm?.apiKey ?: ""}\"")
         buildConfigField("String", "FCM_SENDER_ID", "\"${fcm?.senderId ?: ""}\"")
-        buildConfigField("String", "FICHAS_KEYS_URL", "\"$fichasKeysUrl\"")
         // Diagnostico das chamadas para os testers (fase 5c): painel com os numeros (toque longo no
         // tempo da chamada), "Copiar diagnostico" nas Definicoes e registos discretos no logcat.
         // Desligar ANTES da Play Store: -PqtCallDiag=false (ou no gradle.properties).
@@ -119,9 +116,8 @@ android {
         debug {
             // So a build debug pode falar ws:// (ver src/debug/res/xml/network_security_config.xml).
             buildConfigField("boolean", "ALLOW_CLEARTEXT", "true")
-            // Debug: relay editavel na app. 10.0.2.2 = o PC visto de dentro do emulador.
-            buildConfigField("boolean", "RELAY_EDITABLE", "true")
-            buildConfigField("String", "RELAY_URL", "\"${relayUrl.ifBlank { "ws://10.0.2.2:9443" }}\"")
+            // O relay e sempre o fixo do gradle.properties, tambem na debug (sem ecra para o mudar).
+            buildConfigField("String", "RELAY_URL", "\"$relayUrl\"")
             buildConfigField("String", "RELAY_PIN", "\"$relayPin\"")
             buildConfigField("String", "RELAY_NAME", "\"$relayName\"")
             buildConfigField("String", "RELAYS_OTHERS", "\"$relaysOthers\"")
@@ -129,7 +125,6 @@ android {
         release {
             buildConfigField("boolean", "ALLOW_CLEARTEXT", "false")
             // Release: relay FIXO (sem ecra de configuracao); pinning obrigatorio.
-            buildConfigField("boolean", "RELAY_EDITABLE", "false")
             buildConfigField("String", "RELAY_URL", "\"$relayUrl\"")
             buildConfigField("String", "RELAY_PIN", "\"$relayPin\"")
             buildConfigField("String", "RELAY_NAME", "\"$relayName\"")

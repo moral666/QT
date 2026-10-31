@@ -177,16 +177,13 @@ fn init_connection(conn: &Connection) -> Result<(), StorageError> {
         -- para que o relay nao consiga reentregar mensagens antigas e recriar a sessao.
         CREATE TABLE IF NOT EXISTS seen_tombstones (
             digest BLOB PRIMARY KEY
-        );
-        -- Fichas anonimas do video pelo relay (0006, `qt_core::fichas`): uma linha por ficha,
-        -- `ficha` = [4 epoca][32 nonce][64 saida][32 chave publica]. Apagadas ao usar e
-        -- quando o mes (epoca AAAAMM) acaba.
-        CREATE TABLE IF NOT EXISTS fichas (
-            nonce BLOB PRIMARY KEY,
-            epoch INTEGER NOT NULL,
-            ficha BLOB NOT NULL
         );",
     )?;
+    // 0.9.53: as fichas do video pelo relay (0006) acabaram (o video so vai pela ligacao direta).
+    // A tabela e o estado delas (chaves `fichas:*` do kv) saem das bases das apps 0.9.37 a
+    // 0.9.52. Com secure_delete ON as paginas sao sobrescritas. Numa base sem nada disto nao faz
+    // nada (corre a cada abertura, como o resto do esquema).
+    conn.execute_batch("DROP TABLE IF EXISTS fichas; DELETE FROM kv WHERE k LIKE 'fichas:%';")?;
     // Historico de mensagens e outbox (ver messages.rs): o texto passou a ser
     // guardado, SEMPRE dentro desta base cifrada e na mesma transacao que o
     // avanco do ratchet, para nunca se perder uma mensagem ja decifrada.
@@ -547,7 +544,7 @@ pub fn wipe_all(conn: &Connection) -> Result<(), StorageError> {
     conn.execute_batch(
         "DELETE FROM identity; DELETE FROM sessions; DELETE FROM one_time_prekeys;
          DELETE FROM pq_prekeys; DELETE FROM noise_static; DELETE FROM session_meta;
-         DELETE FROM seen_envelopes; DELETE FROM seen_tombstones; DELETE FROM kv; DELETE FROM fichas;
+         DELETE FROM seen_envelopes; DELETE FROM seen_tombstones; DELETE FROM kv;
          DELETE FROM messages; DELETE FROM outbox; DELETE FROM reactions; DELETE FROM groups; VACUUM;",
     )?;
     Ok(())
@@ -556,41 +553,6 @@ pub fn wipe_all(conn: &Connection) -> Result<(), StorageError> {
 // ---------------------------------------------------------------------------
 // Auxiliares: kv generico, leitura nao-destrutiva de prekeys, dedup read-only
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Fichas do video pelo relay (0006)
-// ---------------------------------------------------------------------------
-
-/// Guarda fichas novas (`(epoca, nonce, bytes)`); uma repetida e ignorada.
-pub fn fichas_put(conn: &Connection, fichas: &[(u32, [u8; 32], Vec<u8>)]) -> Result<(), StorageError> {
-    let mut stmt = conn.prepare("INSERT OR IGNORE INTO fichas (nonce, epoch, ficha) VALUES (?1, ?2, ?3)")?;
-    for (epoch, nonce, bytes) in fichas {
-        stmt.execute(rusqlite::params![&nonce[..], *epoch as i64, bytes])?;
-    }
-    Ok(())
-}
-
-/// Todas as fichas desta epoca (bytes, ordem de chegada).
-pub fn fichas_load(conn: &Connection, epoch: u32) -> Result<Vec<Vec<u8>>, StorageError> {
-    let mut stmt = conn.prepare("SELECT ficha FROM fichas WHERE epoch = ?1 ORDER BY rowid")?;
-    let rows = stmt.query_map([epoch as i64], |r| r.get::<_, Vec<u8>>(0))?;
-    Ok(rows.collect::<Result<Vec<_>, _>>()?)
-}
-
-pub fn fichas_count(conn: &Connection, epoch: u32) -> Result<u32, StorageError> {
-    Ok(conn.query_row("SELECT COUNT(*) FROM fichas WHERE epoch = ?1", [epoch as i64], |r| r.get::<_, i64>(0))? as u32)
-}
-
-/// Apaga uma ficha (ja usada).
-pub fn fichas_delete(conn: &Connection, nonce: &[u8; 32]) -> Result<(), StorageError> {
-    conn.execute("DELETE FROM fichas WHERE nonce = ?1", [&nonce[..]])?;
-    Ok(())
-}
-
-/// Apaga as fichas de outras epocas (o mes delas acabou: ja nao valem). Devolve quantas.
-pub fn fichas_delete_other_epochs(conn: &Connection, epoch: u32) -> Result<usize, StorageError> {
-    Ok(conn.execute("DELETE FROM fichas WHERE epoch != ?1", [epoch as i64])?)
-}
 
 pub fn kv_set(conn: &Connection, key: &str, value: &[u8]) -> Result<(), StorageError> {
     conn.execute("INSERT OR REPLACE INTO kv (k, v) VALUES (?1, ?2)", rusqlite::params![key, value])?;

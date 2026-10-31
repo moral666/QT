@@ -37,6 +37,16 @@
 "full_screen_open" = "فتح الإعدادات";
 "full_screen_text" = "لكي تظهر المكالمة بملء الشاشة عندما يكون الهاتف مقفلًا، يحتاج Android إلى إذنك. ومن دونه، تظهر المكالمة كإشعار صغير فقط.";
 "full_screen_title" = "المكالمات بملء الشاشة";
+"gcall_from" = "%1$@ يتصل";
+"gcall_full" = "المكالمة الجماعية تضم 5 أشخاص بالفعل.";
+"gcall_join" = "الانضمام إلى المكالمة";
+"gcall_me" = "أنا";
+"gcall_name_text" = "من ليس لديك في جهات اتصاله سيرى هذا الاسم.";
+"gcall_name_title" = "اسمك في هذه المكالمة";
+"gcall_notice" = "في المكالمات الجماعية، يكون عنوان شبكتك مرئيًا للمشاركين الآخرين.";
+"gcall_title" = "مكالمة جماعية";
+"gcall_video_title" = "مكالمة فيديو جماعية";
+"gcall_waiting" = "في انتظار انضمام الآخرين…";
 "ios_bio_changed" = "تغيّرت بصمة الوجه أو بصمة الإصبع أو رمز دخول iPhone. يُرجى استخدام رمز مرور التطبيق ثم إعادة تفعيل فتح القفل السريع.";
 "ios_bio_confirm" = "يُرجى التأكيد برمز مرور التطبيق. بعد ذلك، سيطلب iPhone بصمة الوجه أو بصمة الإصبع أو رمز الدخول.";
 "ios_bio_unavailable" = "غير متاح: لم يُعيَّن رمز دخول على جهاز iPhone هذا.";
@@ -201,7 +211,6 @@
 "t_chamadas_a_tocar" = "المكالمات الواردة";
 "t_chamadas_de_voz_em_curso_e" = "المكالمات الصوتية الجارية والواردة أثناء فتح التطبيق.";
 "t_chave_do_armazenamento_seguro_indisponivel" = "مفتاح التخزين الآمن غير متاح: %1$@";
-"t_chave_publica_do_relay_pinning" = "المفتاح العام لخادم الترحيل (التثبيت)";
 "t_cifrada_no_teu_telemovel_antes_de" = "تُشفَّر على هاتفك قبل إرسالها، ويُزال منها موقع التصوير.";
 "t_codigo_alterado" = "تم تغيير رمز المرور.";
 "t_codigo_atual" = "رمز المرور الحالي";
@@ -253,7 +262,6 @@
 "t_erro" = "خطأ: %1$@";
 "t_escolhe_um_codigo_so_com_numeros" = "يُرجى اختيار رمز مرور من أرقام فقط والاحتفاظ به في مكان آمن: لا توجد طريقة لفتح الدردشات من دونه.";
 "t_escolher_foto" = "اختيار صورة";
-"t_esconder_opcoes_de_teste" = "إخفاء خيارات الاختبار";
 "t_esqueceste_o_codigo" = "هل نسيت رمز المرور؟";
 "t_esqueci_me_do_codigo" = "نسيت رمز المرور";
 "t_esse_e_o_teu_proprio_id" = "هذا معرّفك أنت";
@@ -273,7 +281,6 @@
 "t_foto_ou_gif" = "صورة أو GIF";
 "t_grupo" = "مجموعة";
 "t_guardar" = "حفظ";
-"t_guardar_e_voltar_a_ligar" = "حفظ وإعادة الاتصال";
 "t_guardar_nos_contactos" = "حفظ في جهات الاتصال";
 "t_hoje" = "اليوم";
 "t_id_qt1" = "المعرّف (qt1:…‎)";
@@ -358,7 +365,6 @@
 "t_o_ficheiro_tem_mais_de_25" = "حجم الملف أكبر من 25 ميغابايت ولا يمكن إرساله.";
 "t_o_ficheiro_tem_mais_de_25_2" = "حجم الملف أكبر من 25 ميغابايت.";
 "t_o_meu_id" = "معرّفي";
-"t_o_relay_tem_de_usar_wss" = "يجب أن يستخدم خادم الترحيل البروتوكول wss://‎، ولا يُسمح بـ ws://‎ إلا في نسخة التصحيح (debug)";
 "t_o_servidor_ainda_nao_aceita_anexos" = "لا يقبل الخادم المرفقات بعد (يلزم تحديثه).";
 "t_o_servidor_ainda_nao_tem_esta" = "لا يدعم الخادم هذه الميزة بعد";
 "t_o_servidor_respondeu" = "رد الخادم: %1$@";
@@ -367,7 +373,6 @@
 "t_online" = "متصل";
 "t_online_agora" = "متصل الآن";
 "t_ontem" = "أمس";
-"t_opcoes_de_teste" = "خيارات الاختبار";
 "t_os_codigos_nao_sao_iguais" = "رمزا المرور غير متطابقين.";
 "t_ou" = "أو";
 "t_ouvir" = "تشغيل";
@@ -388,7 +393,6 @@
 "t_reagir" = "إضافة تفاعل";
 "t_recebe_o_id_diretamente_da_pessoa" = "يُرجى الحصول على المعرّف من الشخص مباشرةً: بمسح رمز QR الخاص به عند اللقاء، أو عبر وسيلة موثوقة.";
 "t_recusar" = "رفض";
-"t_relay_teste" = "خادم الترحيل (اختبار)";
 "t_repetir_o_novo_codigo" = "تكرار رمز المرور الجديد";
 "t_resposta_inesperada_do_servidor" = "رد غير متوقع من الخادم";
 "t_retirar_a_minha" = "إزالة تفاعلي";
@@ -423,7 +427,6 @@
 "t_toque_das_chamadas_de_voz_com" = "نغمة المكالمات الصوتية عندما يكون التطبيق مغلقًا.";
 "t_tornar_administrador" = "تعيين مشرفًا";
 "t_tu" = "أنت";
-"t_url_do_relay" = "عنوان URL لخادم الترحيل";
 "t_usar_impressao_digital_ou_pin_do" = "استخدام بصمة الإصبع أو رقم PIN للهاتف";
 "t_vai_tal_como_esta_cifrado_no" = "يُرسَل الملف كما هو، ويُشفَّر على هاتفك قبل إرساله.";
 "t_verificar_seguranca" = "التحقق من الأمان";

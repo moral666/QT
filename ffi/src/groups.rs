@@ -190,6 +190,18 @@ fn my_identity(c: &st::rusqlite::Connection) -> Result<(String, String), QtError
     Ok((hex(&p.identity_public), p.public_id))
 }
 
+/// Chamadas de grupo: os outros membros (ids das conversas) e o meu id, se eu fizer parte do
+/// grupo (ativo).
+pub(crate) fn call_members(c: &st::rusqlite::Connection, gid: &str) -> Result<Option<(Vec<String>, String)>, QtError> {
+    let Some((g, true)) = load(c, gid)? else { return Ok(None) };
+    let (me, _) = my_identity(c)?;
+    let cids: Vec<String> = g.members.iter().filter_map(|m| member_cid(&m.pid)).collect();
+    if !cids.contains(&me) {
+        return Ok(None);
+    }
+    Ok(Some((cids.into_iter().filter(|x| *x != me).collect(), me)))
+}
+
 fn load(c: &st::rusqlite::Connection, gid: &str) -> Result<Option<(StoredGroup, bool)>, QtError> {
     Ok(match hm::group_get(c, gid)? {
         Some((json, active)) => serde_json::from_str(&json).ok().map(|g| (g, active)),

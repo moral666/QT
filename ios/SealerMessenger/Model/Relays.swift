@@ -15,10 +15,9 @@ struct RelayInfo: Equatable {
 ///  * Conta nova num relay fechado a contas novas: o seguinte da lista.
 ///  * O relay diz "conta noutro relay: X" (ex.: recuperada noutro telemovel): muda para X.
 ///
-/// Build Debug com o relay de teste nas definicoes: so esse (nome "teste", sem federacao na app).
+/// Sempre os da build, tambem na Debug (o relay de teste editavel saiu na 0.9.53).
 enum Relays {
     private static let prefHome = "relay_home"
-    static let testName = "teste"
 
     static let all: [RelayInfo] = {
         var list = [RelayInfo(name: Config.relayName, url: Config.relayURL, pin: Config.relayPin)]
@@ -35,23 +34,18 @@ enum Relays {
         return all.first { $0.name == name }
     }
 
-    private static func testRelay(_ prefs: UserDefaults) -> RelayInfo? {
-        guard Config.relayEditable, let url = prefs.string(forKey: "relay_url") else { return nil }
-        return RelayInfo(name: testName, url: url, pin: prefs.string(forKey: "relay_key") ?? "")
-    }
-
-    /// O relay principal (o de cima da lista, ou o de teste numa build Debug).
-    static func main(_ prefs: UserDefaults) -> RelayInfo { testRelay(prefs) ?? all[0] }
+    /// O relay principal (o de cima da lista).
+    static var main: RelayInfo { all[0] }
 
     /// O relay da conta deste telemovel.
     static func home(_ prefs: UserDefaults) -> RelayInfo {
-        testRelay(prefs) ?? byName(prefs.string(forKey: prefHome)) ?? all[0]
+        byName(prefs.string(forKey: prefHome)) ?? all[0]
     }
 
-    /// Muda o relay da conta. Falso sem federacao na app (relay de teste) ou com um nome desconhecido.
+    /// Muda o relay da conta. Falso com um nome desconhecido.
     @discardableResult
     static func setHome(_ prefs: UserDefaults, _ name: String) -> Bool {
-        guard testRelay(prefs) == nil, byName(name) != nil else { return false }
+        guard byName(name) != nil else { return false }
         prefs.set(name, forKey: prefHome)
         return true
     }
@@ -65,9 +59,9 @@ enum Relays {
     /// O nome que vai nas ofertas de chamada: so quando a conta nao esta no principal.
     static func callName(_ prefs: UserDefaults) -> String? {
         let h = home(prefs)
-        return h.name == main(prefs).name ? nil : h.name
+        return h.name == main.name ? nil : h.name
     }
 
     /// O relay das chamadas de uma chamada (o de quem liga; sem nome: o principal).
-    static func forCall(_ prefs: UserDefaults, _ name: String?) -> RelayInfo { byName(name) ?? main(prefs) }
+    static func forCall(_ prefs: UserDefaults, _ name: String?) -> RelayInfo { byName(name) ?? main }
 }

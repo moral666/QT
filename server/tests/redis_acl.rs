@@ -158,16 +158,6 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     store.set_premium(&alice, 0).await.unwrap();
     assert_eq!(store.premium_until(&alice).await.unwrap(), 0);
 
-    // Fichas do video (0006): contagem por conta e por mes (MULTI, INCRBY, EXPIRE, DECRBY, GET).
-    assert_eq!(store.fichas_take(&alice, 202610, 250, 300).await.unwrap(), (250, 250));
-    assert_eq!(store.fichas_take(&alice, 202610, 100, 300).await.unwrap(), (50, 300));
-    store.fichas_refund(&alice, 202610, 10).await.unwrap();
-    assert_eq!(store.fichas_issued(&alice, 202610).await.unwrap(), 290);
-    store.set_fichas_quota(&alice, Some(600)).await.unwrap();
-    assert_eq!(store.fichas_quota(&alice).await.unwrap(), Some(600));
-    store.set_fichas_quota(&alice, None).await.unwrap();
-    assert_eq!(store.fichas_quota(&alice).await.unwrap(), None);
-
     // Comunidade (0.9.52): envios como as denuncias e a lista com GET, SET, EXPIRE e MULTI/EXEC.
     let id = store.submit_community(&alice, vec![2; 100]).await.unwrap();
     let (subs, more) = store.list_community(0, 40_000).await.unwrap();
@@ -183,29 +173,6 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     assert_eq!(store.community_index().await.unwrap(), Some((7, vec![9; 40])));
     assert_eq!(store.community_photo(&h).await.unwrap(), Some(vec![8; 50]));
     let _ = std::fs::remove_dir_all(dir);
-}
-
-#[tokio::test]
-async fn registo_das_fichas_gastas_com_o_utilizador_qt_fichas() {
-    let (pw, pw2) = ("cd34".repeat(16), "ef56".repeat(16));
-    let users = [("user qt-relay ", "SUBSTITUI_POR_PASSWORD_FORTE", pw.as_str()), ("user qt-fichas ", "SUBSTITUI_POR_PASSWORD_FICHAS", pw2.as_str())];
-    let Some((_redis, port)) = start_redis_with_acl_lines(&users) else { return };
-    // O relay das chamadas regista as gastas (SET NX EX em fichas:*).
-    let spent = qt_server::fichas::SpentStore::new(&format!("redis://qt-fichas:{pw2}@127.0.0.1:{port}")).unwrap();
-    assert!(spent.mark(202610, &[1u8; 16]).await.unwrap());
-    assert!(!spent.mark(202610, &[1u8; 16]).await.unwrap());
-    // ... e nao consegue ler nada: nem as chaves das contas, nem as dele.
-    let mut c = redis::Client::open(format!("redis://qt-fichas:{pw2}@127.0.0.1:{port}")).unwrap().get_multiplexed_async_connection().await.unwrap();
-    let r: redis::RedisResult<Option<String>> = redis::cmd("GET").arg("fichas:gastas:202610:x").query_async(&mut c).await;
-    assert!(r.is_err(), "GET recusado");
-    let r: redis::RedisResult<()> = redis::cmd("SET").arg("default:bundle:x").arg(1).query_async(&mut c).await;
-    assert!(r.is_err(), "fora de fichas:* recusado");
-    let r: redis::RedisResult<Vec<String>> = redis::cmd("KEYS").arg("*").query_async(&mut c).await;
-    assert!(r.is_err(), "KEYS recusado");
-    // E o relay das mensagens nao mexe nas fichas gastas.
-    let mut m = redis::Client::open(format!("redis://qt-relay:{pw}@127.0.0.1:{port}")).unwrap().get_multiplexed_async_connection().await.unwrap();
-    let r: redis::RedisResult<()> = redis::cmd("SET").arg("fichas:gastas:202610:y").arg(1).query_async(&mut m).await;
-    assert!(r.is_err());
 }
 
 /// Federacao (fase 1): o estado das contas, a marca "por verificar" e largar uma conta

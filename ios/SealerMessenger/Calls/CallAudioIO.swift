@@ -16,7 +16,7 @@ final class CallAudioIO: @unchecked Sendable {
     static let rate = 48_000.0
     private static let frame = 960   // 20 ms a 48 kHz
 
-    private let audio: CallAudio
+    private let audio: any AudioPipe
     private let engine = AVAudioEngine()
     private let capture = SampleRing(capacity: 48_000)      // 1 s de folga
     private let playback = SampleRing(capacity: 48_000 / 5)  // 200 ms
@@ -42,7 +42,7 @@ final class CallAudioIO: @unchecked Sendable {
     private struct Flags { var muted = false; var ringback = false }
     private let flags = OSAllocatedUnfairLock(initialState: Flags())
 
-    init(audio: CallAudio) {
+    init(audio: any AudioPipe) {
         self.audio = audio
     }
 

@@ -2,8 +2,8 @@ import Foundation
 
 /// Configuracao da build (equivalente ao BuildConfig do Android).
 /// Os valores vem do Info.plist, preenchidos pelos ficheiros ios/Configs/*.xcconfig:
-///  * Release: relay FIXO (QT_RELAY_URL / QT_RELAY_PIN em Relay.xcconfig), nao editavel, so wss://.
-///  * Debug:   relay editavel na app ("Opcoes de teste"); ws:// permitido para testes locais.
+///  * Relay FIXO em todas as builds (QT_RELAY_URL / QT_RELAY_PIN em Relay.xcconfig), nao editavel.
+///  * Release: so wss://. Debug: ws:// permitido.
 enum Config {
     static let appName = "SEALER"
 
@@ -13,13 +13,10 @@ enum Config {
 
     static var relayURL: String { plist("QTRelayURL") }
     static var relayPin: String { plist("QTRelayPin").lowercased() }
-    static var relayEditable: Bool { plist("QTRelayEditable") == "YES" }
     /// Federacao: nome do relay de cima e os outros ("nome|wss://...|pin;..."), ver `Relays`.
     static var relayName: String { let n = plist("QTRelayName"); return n.isEmpty ? "estocolmo" : n }
     static var relaysOthers: String { plist("QTRelaysOthers") }
     static var allowCleartext: Bool { plist("QTAllowCleartext") == "YES" }
-    /// Chaves publicas das fichas do video (fora do relay, no site). Igual ao Android.
-    static var fichasKeysURL: String { let u = plist("QTFichasKeysURL"); return u.isEmpty ? "https://sealerapp.com/estado.json" : u }
     /// Versao instalada (MARKETING_VERSION), so informativa nas Definicoes.
     static var version: String { plist("CFBundleShortVersionString") }
 

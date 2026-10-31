@@ -37,6 +37,16 @@
 "full_screen_open" = "Apri impostazioni";
 "full_screen_text" = "Perché una chiamata appaia a schermo intero con il telefono bloccato, Android ha bisogno del tuo permesso. Senza, la chiamata appare solo come una piccola notifica.";
 "full_screen_title" = "Chiamate a schermo intero";
+"gcall_from" = "%1$@ sta chiamando";
+"gcall_full" = "La chiamata di gruppo ha già 5 persone.";
+"gcall_join" = "Partecipa alla chiamata";
+"gcall_me" = "Io";
+"gcall_name_text" = "Chi non ti ha nei contatti vedrà questo nome.";
+"gcall_name_title" = "Il tuo nome in questa chiamata";
+"gcall_notice" = "Nelle chiamate di gruppo, il tuo indirizzo di rete è visibile agli altri partecipanti.";
+"gcall_title" = "Chiamata di gruppo";
+"gcall_video_title" = "Videochiamata di gruppo";
+"gcall_waiting" = "In attesa che entrino gli altri…";
 "ios_bio_changed" = "Face ID, Touch ID o il codice dell'iPhone sono cambiati. Usa il codice dell'app e riattiva lo sblocco rapido.";
 "ios_bio_confirm" = "Conferma con il tuo codice. Poi l'iPhone chiede Face ID, Touch ID o il codice dell'iPhone.";
 "ios_bio_unavailable" = "Non disponibile: questo iPhone non ha un codice.";
@@ -201,7 +211,6 @@
 "t_chamadas_a_tocar" = "Chiamate in arrivo";
 "t_chamadas_de_voz_em_curso_e" = "Chiamate vocali in corso e in arrivo con l'app aperta.";
 "t_chave_do_armazenamento_seguro_indisponivel" = "Chiave dell'archivio sicuro non disponibile: %1$@";
-"t_chave_publica_do_relay_pinning" = "Chiave pubblica del relay (pinning)";
 "t_cifrada_no_teu_telemovel_antes_de" = "Cifrata sul tuo telefono prima di partire. La posizione della foto viene rimossa.";
 "t_codigo_alterado" = "Codice cambiato.";
 "t_codigo_atual" = "Codice attuale";
@@ -253,7 +262,6 @@
 "t_erro" = "Errore: %1$@";
 "t_escolhe_um_codigo_so_com_numeros" = "Scegli un codice di sole cifre e conservalo bene: senza di esso non c'è modo di aprire le conversazioni.";
 "t_escolher_foto" = "Scegli foto";
-"t_esconder_opcoes_de_teste" = "Nascondi opzioni di test";
 "t_esqueceste_o_codigo" = "Hai dimenticato il codice?";
 "t_esqueci_me_do_codigo" = "Ho dimenticato il codice";
 "t_esse_e_o_teu_proprio_id" = "Questo è il tuo ID";
@@ -273,7 +281,6 @@
 "t_foto_ou_gif" = "Foto o GIF";
 "t_grupo" = "Gruppo";
 "t_guardar" = "Salva";
-"t_guardar_e_voltar_a_ligar" = "Salva e riconnetti";
 "t_guardar_nos_contactos" = "Salva nei contatti";
 "t_hoje" = "Oggi";
 "t_id_qt1" = "ID (qt1:…)";
@@ -358,7 +365,6 @@
 "t_o_ficheiro_tem_mais_de_25" = "Il file supera i 25 MB e non può essere inviato.";
 "t_o_ficheiro_tem_mais_de_25_2" = "Il file supera i 25 MB.";
 "t_o_meu_id" = "Il mio ID";
-"t_o_relay_tem_de_usar_wss" = "Il relay deve usare wss:// (ws:// solo nella build debug)";
 "t_o_servidor_ainda_nao_aceita_anexos" = "Il server non accetta ancora allegati (deve essere aggiornato).";
 "t_o_servidor_ainda_nao_tem_esta" = "il server non ha ancora questa funzione";
 "t_o_servidor_respondeu" = "il server ha risposto: %1$@";
@@ -367,7 +373,6 @@
 "t_online" = "online";
 "t_online_agora" = "Online ora";
 "t_ontem" = "Ieri";
-"t_opcoes_de_teste" = "Opzioni di test";
 "t_os_codigos_nao_sao_iguais" = "I codici non coincidono.";
 "t_ou" = "oppure";
 "t_ouvir" = "Ascolta";
@@ -388,7 +393,6 @@
 "t_reagir" = "Reagisci";
 "t_recebe_o_id_diretamente_da_pessoa" = "Ricevi l'ID direttamente dalla persona: leggi il suo codice QR quando siete insieme, oppure usa un canale di cui ti fidi.";
 "t_recusar" = "Rifiuta";
-"t_relay_teste" = "Relay (test)";
 "t_repetir_o_novo_codigo" = "Ripeti il nuovo codice";
 "t_resposta_inesperada_do_servidor" = "risposta inattesa dal server";
 "t_retirar_a_minha" = "Rimuovi la mia";
@@ -423,7 +427,6 @@
 "t_toque_das_chamadas_de_voz_com" = "Suoneria delle chiamate vocali con l'app chiusa.";
 "t_tornar_administrador" = "Rendi amministratore";
 "t_tu" = "Tu";
-"t_url_do_relay" = "URL del relay";
 "t_usar_impressao_digital_ou_pin_do" = "Usa l'impronta o il PIN del telefono";
 "t_vai_tal_como_esta_cifrado_no" = "Viene inviato così com'è, cifrato sul tuo telefono prima di partire.";
 "t_verificar_seguranca" = "Verifica sicurezza";

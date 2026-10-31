@@ -296,8 +296,9 @@ impl Call {
 #[derive(Default)]
 pub(crate) struct Calls {
     cur: Option<Call>,
-    /// O meu relay, quando nao e o principal (`call_set_relay`): vai nas minhas ofertas.
-    own_relay: Option<String>,
+    /// O meu relay, quando nao e o principal (`call_set_relay`): vai nas minhas ofertas (e nas
+    /// das pernas das chamadas de grupo).
+    pub(crate) own_relay: Option<String>,
     events: VecDeque<CallEvent>,
     ended: VecDeque<[u8; 16]>,
     /// So para testes: faz de app antiga (nunca diz que tem video).
@@ -388,7 +389,7 @@ pub(crate) fn offer_fresh(sent_at: i64, now: i64) -> bool {
 
 /// Cifra uma mensagem de chamada para `cid` e poe-na na outbox. `wake`: a oferta e o
 /// cancelamento antes de atender tocam a campainha marcada; o resto vai `silent`.
-fn queue(client: &QtClient, c: &st::rusqlite::Connection, cid: &str, plain: &[u8], wake: Option<CallWake>) -> Result<OutboxItem, QtError> {
+pub(crate) fn queue(client: &QtClient, c: &st::rusqlite::Connection, cid: &str, plain: &[u8], wake: Option<CallWake>) -> Result<OutboxItem, QtError> {
     let id = random::<16>()?;
     let blob = client.seal_with(c, cid, plain)?;
     let kind = match wake {
@@ -641,7 +642,7 @@ pub(crate) fn on_call(
                     calls.remember_ended(old.id);
                     calls.push(CallEvent::Ended { call_id: hex(&old.id), contact_id: old.contact, reason: CallEndReason::Cancelled });
                 }
-            } else if calls.cur.is_some() {
+            } else if calls.cur.is_some() || crate::client::relock(&client.group_calls).cur_any() {
                 // Ja estou noutra chamada: "ocupado" e, do meu lado, chamada perdida.
                 calls.remember_ended(call_id);
                 queue(client, c, cid, &encode(OP_HANGUP, &call_id, &[CallEndReason::Busy.to_byte()]), None)?;
@@ -791,7 +792,6 @@ pub(crate) fn start_for_call(
     id: [u8; 16],
     relay_url: &str,
     relay_public_key: &[u8],
-    wallet: Option<crate::fichas::CallWallet>,
 ) -> Result<Arc<CallAudio>, QtError> {
     let call = match calls.cur.as_mut() {
         Some(k) if k.id == id => k,
@@ -800,9 +800,7 @@ pub(crate) fn start_for_call(
     if let Some(a) = &call.audio {
         return Ok(a.clone());
     }
-    let mut cfg = crate::call_audio::engine_config(relay_url)?;
-    // Fichas deste mes para o video pelo relay (o caminho direto nao as gasta).
-    cfg.fichas = wallet.map(|(w, published)| qt_call::fichas::FichasConfig { wallet: w, relay_public_key: relay_public_key.to_vec(), published });
+    let cfg = crate::call_audio::engine_config(relay_url)?;
     let join = qt_call::engine::join_packet(relay_public_key, call.role, &call.room).map_err(|_| bad("relay_public_key"))?;
     let engine = qt_call::engine::CallEngine::start_pending(cfg, call.room.clone(), join).map_err(|_| QtError::Crypto)?;
     let audio = CallAudio::new(engine);
@@ -845,7 +843,7 @@ impl QtClient {
         let c = self.lock()?;
         let mut calls = crate::client::relock(&self.calls);
         expire(self, &c, &mut calls)?;
-        if calls.cur.is_some() {
+        if calls.cur.is_some() || crate::client::relock(&self.group_calls).in_call() {
             return Err(bad("call_busy"));
         }
         if video && !video_capable(&calls) {
@@ -971,8 +969,6 @@ impl QtClient {
     /// resposta (o aviso "sem resposta" fica na outbox para enviar).
     pub fn call_events(&self) -> Result<Vec<CallEvent>, QtError> {
         let c = self.lock()?;
-        // Fichas do video que o motor ja usou: saem ja da base cifrada.
-        crate::fichas::flush_used_with(self, &c)?;
         let mut calls = crate::client::relock(&self.calls);
         expire(self, &c, &mut calls)?;
         // Os meus enderecos ficam prontos uns instantes depois de atender: envia-os aqui.
@@ -1318,6 +1314,7 @@ mod tests {
 #[cfg(all(test, feature = "calls"))]
 mod p2p_tests {
     use super::*;
+    use crate::call_audio::VideoPause;
     use crate::client::{peer_bundle_from_relay_bytes, PublicIdentity};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
@@ -1519,26 +1516,6 @@ mod p2p_tests {
         assert!(!a.allowed(&b), "apagado");
     }
 
-    /// Fichas do video (0006): nunca se pedem com uma chamada a decorrer (o relay das mensagens
-    /// podia juntar a hora do pedido a hora da chamada).
-    #[test]
-    fn nunca_pede_fichas_durante_uma_chamada() {
-        let (a, b) = pair();
-        friends(&a, &b);
-        let site = format!(r#"{{"versao":1,"fichas":{{"{:06}":"{}"}}}}"#, qt_core::fichas::epoch_of_unix(qt_core::fichas::unix_now()), "11".repeat(32));
-        a.c.fichas_set_published_keys(site.clone().into_bytes()).unwrap();
-        b.c.fichas_set_published_keys(site.into_bytes()).unwrap();
-        assert!(a.c.fichas_status().unwrap().due);
-        let id = a.c.call_start(b.cid()).unwrap().call_id;
-        assert!(!a.c.fichas_status().unwrap().due);
-        assert!(a.c.relay_request_fichas().unwrap().is_none());
-        deliver(&a, &b);
-        assert!(b.c.relay_request_fichas().unwrap().is_none(), "a tocar tambem nao");
-        a.c.call_hangup(id).unwrap();
-        a.c.call_events().unwrap();
-        assert!(a.c.fichas_status().unwrap().due, "depois de desligar a app escolhe uma hora qualquer");
-    }
-
     /// A resposta guardada pela antiga janela de aviso (0005) e apagada e nao conta: um "Agora
     /// nao" antigo ja nao tira a ligacao direta, nem um OK antigo a da a quem nao e contacto.
     #[test]
@@ -1562,6 +1539,12 @@ mod p2p_tests {
         let (k, _) = call(a, b);
         assert!(run(a, b, 10, || k.audio_a.stats().direct && k.audio_b.stats().direct));
         k
+    }
+
+    /// O video so sai pela ligacao direta (0.9.53): com a maquina carregada (testes em paralelo)
+    /// o direto pode demorar um instante a estar bom. Espera ate o video sair.
+    fn sends(a: &Peer, b: &Peer, audio: &crate::call_audio::CallAudio) -> bool {
+        run(a, b, 10, || audio.video_params().send)
     }
 
     fn video_events(p: &Peer) -> Vec<CallEvent> {
@@ -1644,7 +1627,7 @@ mod p2p_tests {
         deliver(&b, &a);
         a.c.call_events().unwrap();
         b.c.call_events().unwrap();
-        assert!(k.audio_a.video_params().send);
+        assert!(sends(&a, &b, &k.audio_a));
         // A app de A sai do ecra: nada sai e B nao recebe aviso nenhum.
         k.audio_a.video_hold(true);
         assert!(!k.audio_a.video_params().send);
@@ -1658,7 +1641,7 @@ mod p2p_tests {
         assert!(!k.audio_a.video_params().send, "a pausa fica ate a app a tirar");
         // A volta ao ecra: o video volta a sair e a chegar a B.
         k.audio_a.video_hold(false);
-        assert!(k.audio_a.video_params().send);
+        assert!(sends(&a, &b, &k.audio_a));
         std::thread::scope(|sc| {
             sc.spawn(|| push_frames(&k.audio_a, 60));
             let got = pull_all(&k.audio_b, 2_500);
@@ -1694,7 +1677,7 @@ mod p2p_tests {
         b.c.call_video_respond(k.id.clone(), VideoResponse::View).unwrap();
         deliver(&b, &a);
         a.c.call_events().unwrap();
-        assert!(k.audio_a.video_params().send);
+        assert!(sends(&a, &b, &k.audio_a));
     }
 
     #[test]
@@ -1707,7 +1690,7 @@ mod p2p_tests {
         deliver(&b, &a);
         a.c.call_events().unwrap();
         b.c.call_events().unwrap();
-        assert!(k.audio_a.video_params().send && k.audio_b.video_params().send, "os dois enviam");
+        assert!(sends(&a, &b, &k.audio_a) && sends(&a, &b, &k.audio_b), "os dois enviam");
         std::thread::scope(|sc| {
             sc.spawn(|| push_frames(&k.audio_a, 45));
             sc.spawn(|| push_frames(&k.audio_b, 45));
@@ -1760,14 +1743,16 @@ mod p2p_tests {
         a.c.call_events().unwrap();
         // A recebeu "tenho video" de B: o pedido da camara segue sozinho.
         assert!(a.ops_to(&b).contains(&OP_VIDEO));
-        assert!(!audio_a.video_params().send, "B ainda nao aceitou");
+        assert_eq!((audio_a.video_params().send, audio_a.video_params().paused), (false, None), "B ainda nao aceitou");
         deliver(&a, &b);
         let ev = b.c.call_events().unwrap();
         assert!(ev.iter().any(|e| matches!(e, CallEvent::Video { peer_camera: true, .. })), "B ve o pedido: {ev:?}");
         b.c.call_video_respond(id.clone(), VideoResponse::View).unwrap();
         deliver(&b, &a);
         a.c.call_events().unwrap();
-        assert!(audio_a.video_params().send, "B aceitou: o video de A sai");
+        // B aceitou: o video de A fica autorizado. Aqui nao ha relay nem ligacao direta, e o video so
+        // sai pelo direto (0.9.53): fica em pausa a espera dele.
+        assert_eq!(audio_a.video_params().paused, Some(VideoPause::NoDirect), "B aceitou: o video de A espera pelo direto");
         assert!(!audio_b.video_params().send, "a camara de B continua desligada");
         a.c.call_hangup(id).unwrap();
     }

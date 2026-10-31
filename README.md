@@ -50,6 +50,7 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 - **Ligação protegida:** Noise Protocol por cima de TLS (`wss://`), com a chave do servidor fixada nas apps.
 - **Tudo cifrado no telemóvel:** histórico em SQLCipher, com a chave guardada no Keystore do Android ou no Secure Enclave do iPhone (só neste aparelho, fora das cópias na nuvem). A miniatura nas apps recentes não mostra as conversas.
 - **Chamadas diretas só entre contactos mútuos:** quando os dois se têm nos contactos, a chamada liga-se de telemóvel para telemóvel depois de atender, e nesse caso cada um vê o IP do outro. Nos outros casos (ou se um bloquear ou apagar o outro), passa pelo servidor das chamadas e o IP não é partilhado. Sempre cifradas ponta a ponta; pelo servidor, os pacotes de áudio têm todos o mesmo tamanho e o mesmo ritmo, e o servidor das chamadas não sabe que contas estão a falar.
+- **O vídeo nunca passa pelo servidor:** a imagem das videochamadas vai só pela ligação direta entre contactos mútuos. Sem ligação direta, a chamada continua só com voz.
 - **Defesas no servidor:** prova de trabalho para criar conta, limites por conta e por IP, e só contas registadas podem enviar.
 
 O que isto protege e o que não protege está em [`docs/threat-model.md`](docs/threat-model.md) e [`docs/known-limitations.md`](docs/known-limitations.md).

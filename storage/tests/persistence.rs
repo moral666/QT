@@ -135,3 +135,35 @@ fn sessao_de_ratchet_sobrevive_a_fechar_e_reabrir() {
 
     std::fs::remove_file(&db_path).ok();
 }
+
+/// 0.9.53: as fichas do video acabaram. Uma base das apps 0.9.37 a 0.9.52, com a tabela
+/// `fichas` e o estado delas no kv, fica sem nada disso ao abrir; o resto do kv fica.
+#[test]
+fn abrir_apaga_a_tabela_e_o_estado_das_fichas() {
+    let p = std::env::temp_dir().join(format!("qt-fichas-migracao-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&p);
+    let path = p.to_string_lossy().to_string();
+    let key = [9u8; 32];
+    {
+        let c = qt_storage::open_database_with_key(&path, &key).unwrap();
+        // Como as apps antigas a deixavam.
+        c.execute_batch(
+            "CREATE TABLE fichas (nonce BLOB PRIMARY KEY, epoch INTEGER NOT NULL, ficha BLOB NOT NULL);
+             INSERT INTO fichas VALUES (x'01', 202610, x'0203');",
+        )
+        .unwrap();
+        for k in ["fichas:publicadas", "fichas:done", "fichas:remaining", "fichas:retry_at"] {
+            qt_storage::kv_set(&c, k, &[1, 2, 3]).unwrap();
+        }
+        qt_storage::kv_set(&c, "outra:coisa", &[4]).unwrap();
+    }
+    let c = qt_storage::open_database_with_key(&path, &key).unwrap();
+    let tables: i64 = c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name = 'fichas'", [], |r| r.get(0)).unwrap();
+    assert_eq!(tables, 0, "a tabela fichas saiu");
+    for k in ["fichas:publicadas", "fichas:done", "fichas:remaining", "fichas:retry_at"] {
+        assert_eq!(qt_storage::kv_get(&c, k).unwrap(), None, "{k}");
+    }
+    assert_eq!(qt_storage::kv_get(&c, "outra:coisa").unwrap(), Some(vec![4]));
+    drop(c);
+    let _ = std::fs::remove_file(&p);
+}

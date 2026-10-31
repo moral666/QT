@@ -187,7 +187,6 @@ pub enum Pedido {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AdminFed {
     Premium { id: UserId, until_ms: u64 },
-    QuotaFichas { id: UserId, per_month: Option<u32> },
     Banir { id: UserId },
     Desbanir { id: UserId },
     /// O bloqueio premium vale para todos os relays.
@@ -850,7 +849,6 @@ impl Federacao {
         let valido = |id: &str| is_valid_user_id(id);
         match a {
             AdminFed::Premium { id, until_ms } if valido(&id) => feito(self.store.set_premium(&id, until_ms).await),
-            AdminFed::QuotaFichas { id, per_month } if valido(&id) => feito(self.store.set_fichas_quota(&id, per_month).await),
             AdminFed::Banir { id } if valido(&id) => {
                 let r = self.store.ban(&id).await;
                 if r.is_ok() {
