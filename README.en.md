@@ -4,7 +4,7 @@
 
 **SEALER** is a private messenger: no phone number, no email, end-to-end encryption and post-quantum protection. **QT** is the name of the protocol and of this repository.
 
-**Status:** test version, in closed testing. Android and iPhone apps **0.9.51**, with two federated relays in the European Union (Stockholm and Spain).
+**Status:** test version, in closed testing. Android app **0.9.67** (iPhone 0.9.67 not yet built), with two federated relays in the European Union (Stockholm and Spain).
 
 [Ler em português →](README.md)
 
@@ -30,6 +30,8 @@ It is also a working example of "data protection by design", as the GDPR asks: e
 
 - **One-to-one and group chats** (up to 10 people, 3 admins), between Android and iPhone, with *Sent / Delivered / Read*.
 - **Encrypted voice and video calls** on Android and iPhone, also between the two. On Android they ring with the app closed or the phone locked, with their own ringtone.
+- **Group calls** (up to 5 people, voice and video, end-to-end encrypted): everyone picks the name shown in the call, and whoever declined can join later.
+- **Video that adapts to the network:** on Wi-Fi it goes as high as the connection and the phones allow (up to 4K); on mobile data it stays at up to 720p. Voice always comes before video.
 - **Photos, GIFs, voice messages and files up to 25 MB.** Each file has its own key and leaves the server once downloaded (or after 24 hours).
 - **Notifications with the app closed**, always generic ("You have new messages"): no name, no text.
 - **Profile photo** only for your contacts, encrypted (the server does not even know it is a photo). It can be changed every 72 hours.
@@ -83,8 +85,7 @@ The design accepts more relays. The relay-to-relay protocol is in section 25 of 
 **Next:**
 
 
-- On Android, testing on real phones the integration with the system call service (Bluetooth, car, a regular call at the same time), done in 0.9.52.
-- Testing on real phones the Community (people with a badge, shown only with their photo and badge), done in 0.9.52 in both apps.
+- Building and testing the iPhone app 0.9.67 (group calls and video quality).
 - Distribution through Google Play and the App Store (today testers install the app by hand). Already prepared: [`docs/google-play.md`](docs/google-play.md).
 - Production server with backups and alerts.
 

@@ -398,4 +398,8 @@ export default {
   'func.95': 'Anrufe können auch Video haben, auf Android und iPhone. Dein Video sieht nur, wer zustimmt, es zu sehen, und du kannst die Kamera jederzeit ausschalten.',
   'func.96': 'Zwei Server, ein Netz',
   'func.97': 'SEALER hat zwei miteinander verbundene Server, einen in Schweden und einen in Spanien. Dein Konto liegt auf einem davon, und du kommunizierst mit Leuten auf dem anderen, ohne etwas davon zu merken. Zwischen den beiden reisen die Nachrichten versiegelt und ohne zu verraten, wer sie gesendet hat.',
+  'func.98': 'Gruppenanrufe',
+  'func.99': 'Bis zu 5 Personen, mit Sprache und Video, Ende-zu-Ende-verschlüsselt. Jeder wählt den Namen, mit dem er erscheint, und wer nicht abgenommen hat, kann später beitreten.',
+  'func.100': 'Video, das sich dem Netz anpasst',
+  'func.101': 'Im WLAN steigt das Bild so hoch, wie Verbindung und Handys es erlauben; mit mobilen Daten bleibt es bei höchstens 720p. Wird das Netz knapp, sinkt zuerst das Video und die Stimme bleibt klar.',
 };

@@ -398,4 +398,8 @@ export default {
   'func.95': 'Calls can have video too, on Android and iPhone. Your video only appears to someone who agrees to see it, and you can turn off the camera whenever you like.',
   'func.96': 'Two servers, one network',
   'func.97': 'SEALER has two servers linked to each other, one in Sweden and one in Spain. Your account lives on one of them, and you talk to people on the other without noticing. Between the two, messages travel sealed and without saying who sent them.',
+  'func.98': 'Group calls',
+  'func.99': 'Up to 5 people, with voice and video, end-to-end encrypted. Everyone picks the name they appear with, and anyone who didn’t answer can join later.',
+  'func.100': 'Video that adapts to the network',
+  'func.101': 'On Wi-Fi, the picture goes as high as the connection and the phones allow; on mobile data it stays at up to 720p. If the network gets tight, the video drops first and the voice stays clear.',
 };
