@@ -138,99 +138,28 @@ function relayName(nome) {
 }
 
 /**
- * "Há n minutos/horas/dias" em árabe: a palavra muda com o número (2 tem forma própria,
- * 3 a 10 usa o plural, 11 ou mais o singular). n nunca é 1 aqui (há min1, h1).
+ * O que são os milissegundos ao lado de cada relay (na frase completa). code: o centro de
+ * dados de onde foram medidos (ex.: LIS), ou vazio.
  */
-function arAgo(n, two, few, many) {
-  if (n === 2) return `منذ ${two}`;
-  const r = n % 100;
-  return `منذ ${n} ${r >= 3 && r <= 10 ? few : many}`;
-}
+const PING_TEXT = L({
+  pt: (c) => `Os milissegundos são o tempo de ida e volta até cada servidor, medido a partir do centro de dados do site mais perto de ti${c ? ` (${c})` : ''}.`,
+  en: (c) => `The milliseconds are the round-trip time to each server, measured from the site’s data centre closest to you${c ? ` (${c})` : ''}.`,
+  fr: (c) => `Les millisecondes sont le temps aller-retour jusqu’à chaque serveur, mesuré depuis le centre de données du site le plus proche de toi${c ? ` (${c})` : ''}.`,
+  es: (c) => `Los milisegundos son el tiempo de ida y vuelta hasta cada servidor, medido desde el centro de datos del sitio más cercano a ti${c ? ` (${c})` : ''}.`,
+  de: (c) => `Die Millisekunden sind die Hin- und Rücklaufzeit zu jedem Server, gemessen vom Rechenzentrum der Website, das dir am nächsten ist${c ? ` (${c})` : ''}.`,
+  it: (c) => `I millisecondi sono il tempo di andata e ritorno verso ciascun server, misurato dal data center del sito più vicino a te${c ? ` (${c})` : ''}.`,
+  ja: (c) => `ミリ秒は各サーバーまでの往復時間で、あなたに最も近いサイトのデータセンター${c ? `（${c}）` : ''}から測定しています。`,
+  zh: (c) => `毫秒数是到每台服务器的往返时间，从离你最近的网站数据中心${c ? `（${c}）` : ''}测得。`,
+  hi: (c) => `मिलीसेकंड हर सर्वर तक आने-जाने का समय हैं, जिसे आपके सबसे पास के साइट के डेटा सेंटर${c ? ` (${c})` : ''} से मापा गया है।`,
+  ar: (c) => `أجزاء الثانية هي زمن الذهاب والإياب إلى كل خادم، مقيسًا من أقرب مركز بيانات للموقع إليك${c ? ` (\u2066${c}\u2069)` : ''}.`,
+});
 
+/** Pontuação entre frases: japonês e chinês com 。 e sem espaços; hindi com ।. */
 const W = L({
-  pt: {
-    how: 'o tempo que uma mensagem típica demora do telemóvel de quem a envia até o telemóvel de quem a recebe confirmar que a tem (envio até ao servidor mais entrega)',
-    now: 'agora mesmo', min1: 'há 1 minuto', mins: (n) => `há ${n} minutos`, h1: 'há 1 hora', hs: (n) => `há ${n} horas`, days: (n) => `há ${n} dias`,
-    msg1: '1 mensagem', msgs: (n) => `${n} mensagens`,
-    hour: (v, n, how) => ` Tempo entre telemóveis na última hora: ${v} ms (${n}), ${how}.`,
-    last: (v, when, how) => ` Último tempo entre telemóveis: ${v} ms${when}, ${how}.`,
-    measured: (a) => ` (medido ${a})`,
-  },
-  en: {
-    how: 'the time a typical message takes from the sender’s phone until the recipient’s phone confirms it has it (sending to the server plus delivery)',
-    now: 'just now', min1: '1 minute ago', mins: (n) => `${n} minutes ago`, h1: '1 hour ago', hs: (n) => `${n} hours ago`, days: (n) => `${n} days ago`,
-    msg1: '1 message', msgs: (n) => `${n} messages`,
-    hour: (v, n, how) => ` Phone-to-phone time in the last hour: ${v} ms (${n}), ${how}.`,
-    last: (v, when, how) => ` Last phone-to-phone time: ${v} ms${when}, ${how}.`,
-    measured: (a) => ` (measured ${a})`,
-  },
-  fr: {
-    how: 'le temps que met un message type depuis le téléphone de l’expéditeur jusqu’à ce que le téléphone du destinataire confirme qu’il l’a (envoi au serveur plus remise)',
-    now: 'à l’instant', min1: 'il y a 1 minute', mins: (n) => `il y a ${n} minutes`, h1: 'il y a 1 heure', hs: (n) => `il y a ${n} heures`, days: (n) => `il y a ${n} jours`,
-    msg1: '1 message', msgs: (n) => `${n} messages`,
-    hour: (v, n, how) => ` Temps entre téléphones dans la dernière heure : ${v} ms (${n}), ${how}.`,
-    last: (v, when, how) => ` Dernier temps entre téléphones : ${v} ms${when}, ${how}.`,
-    measured: (a) => ` (mesuré ${a})`,
-  },
-  de: {
-    how: 'die Zeit, die eine typische Nachricht vom Handy des Absenders braucht, bis das Handy des Empfängers bestätigt, dass sie angekommen ist (Senden an den Server plus Zustellung)',
-    now: 'gerade eben', min1: 'vor 1 Minute', mins: (n) => `vor ${n} Minuten`, h1: 'vor 1 Stunde', hs: (n) => `vor ${n} Stunden`, days: (n) => `vor ${n} Tagen`,
-    msg1: '1 Nachricht', msgs: (n) => `${n} Nachrichten`,
-    hour: (v, n, how) => ` Zeit zwischen Handys in der letzten Stunde: ${v} ms (${n}), ${how}.`,
-    last: (v, when, how) => ` Letzte Zeit zwischen Handys: ${v} ms${when}, ${how}.`,
-    measured: (a) => ` (gemessen ${a})`,
-  },
-  it: {
-    how: 'il tempo che un messaggio tipico impiega dal telefono di chi lo invia finché il telefono di chi lo riceve conferma di averlo (invio al server più consegna)',
-    now: 'proprio ora', min1: '1 minuto fa', mins: (n) => `${n} minuti fa`, h1: '1 ora fa', hs: (n) => `${n} ore fa`, days: (n) => `${n} giorni fa`,
-    msg1: '1 messaggio', msgs: (n) => `${n} messaggi`,
-    hour: (v, n, how) => ` Tempo tra telefoni nell’ultima ora: ${v} ms (${n}), ${how}.`,
-    last: (v, when, how) => ` Ultimo tempo tra telefoni: ${v} ms${when}, ${how}.`,
-    measured: (a) => ` (misurato ${a})`,
-  },
-  es: {
-    how: 'el tiempo que tarda un mensaje típico desde el móvil de quien lo envía hasta que el móvil de quien lo recibe confirma que lo tiene (envío al servidor más entrega)',
-    now: 'ahora mismo', min1: 'hace 1 minuto', mins: (n) => `hace ${n} minutos`, h1: 'hace 1 hora', hs: (n) => `hace ${n} horas`, days: (n) => `hace ${n} días`,
-    msg1: '1 mensaje', msgs: (n) => `${n} mensajes`,
-    hour: (v, n, how) => ` Tiempo entre móviles en la última hora: ${v} ms (${n}), ${how}.`,
-    last: (v, when, how) => ` Último tiempo entre móviles: ${v} ms${when}, ${how}.`,
-    measured: (a) => ` (medido ${a})`,
-  },
-  ja: {
-    how: '一般的なメッセージが、送る人のスマートフォンを出てから、受け取る人のスマートフォンが受信を確認するまでにかかる時間（サーバーへの送信と配信の合計）',
-    now: 'たった今', min1: '1分前', mins: (n) => `${n}分前`, h1: '1時間前', hs: (n) => `${n}時間前`, days: (n) => `${n}日前`,
-    msg1: '1件のメッセージ', msgs: (n) => `${n}件のメッセージ`,
-    hour: (v, n, how) => `直近1時間のスマートフォン間の時間：${v} ms（${n}）。これは${how}です。`,
-    last: (v, when, how) => `最後に測定したスマートフォン間の時間：${v} ms${when}。これは${how}です。`,
-    measured: (a) => `（測定：${a}）`,
-    stop: '。', sep: '',
-  },
-  zh: {
-    how: '一条典型消息从发送者的手机发出，到接收者的手机确认收到所需的时间（发送到服务器加上送达）',
-    now: '刚刚', min1: '1分钟前', mins: (n) => `${n}分钟前`, h1: '1小时前', hs: (n) => `${n}小时前`, days: (n) => `${n}天前`,
-    msg1: '1条消息', msgs: (n) => `${n}条消息`,
-    hour: (v, n, how) => `最近1小时手机到手机的耗时：${v} ms（${n}），即${how}。`,
-    last: (v, when, how) => `最近一次测得的手机到手机耗时：${v} ms${when}，即${how}。`,
-    measured: (a) => `（${a}测得）`,
-    stop: '。', sep: '',
-  },
-  hi: {
-    how: 'एक आम मैसेज को भेजने वाले के फ़ोन से लेकर पाने वाले के फ़ोन द्वारा उसके मिलने की पुष्टि तक लगने वाला समय (सर्वर तक भेजना और फिर पहुंचाना)',
-    now: 'अभी-अभी', min1: '1 मिनट पहले', mins: (n) => `${n} मिनट पहले`, h1: '1 घंटा पहले', hs: (n) => `${n} घंटे पहले`, days: (n) => `${n} दिन पहले`,
-    msg1: '1 मैसेज', msgs: (n) => `${n} मैसेज`,
-    hour: (v, n, how) => ` पिछले एक घंटे में फ़ोन से फ़ोन तक का समय: ${v} ms (${n}), यानी ${how}।`,
-    last: (v, when, how) => ` फ़ोन से फ़ोन तक का पिछला समय: ${v} ms${when}, यानी ${how}।`,
-    measured: (a) => ` (${a} मापा गया)`,
-    stop: '।',
-  },
-  ar: {
-    how: 'وهو الوقت الذي تستغرقه رسالة نموذجية من هاتف المرسل حتى يؤكد هاتف المستلم وصولها (الإرسال إلى الخادم ثم التسليم)',
-    now: 'الآن', min1: 'منذ دقيقة', mins: (n) => arAgo(n, 'دقيقتين', 'دقائق', 'دقيقة'), h1: 'منذ ساعة', hs: (n) => arAgo(n, 'ساعتين', 'ساعات', 'ساعة'), days: (n) => arAgo(n, 'يومين', 'أيام', 'يومًا'),
-    msg1: 'رسالة واحدة', msgs: (n) => `الرسائل: ${n}`,
-    hour: (v, n, how) => ` الوقت بين الهواتف خلال الساعة الأخيرة: \u2066${v} ms\u2069 (${n})، ${how}.`,
-    last: (v, when, how) => ` آخر وقت مُقاس بين الهواتف: \u2066${v} ms\u2069${when}، ${how}.`,
-    measured: (a) => ` (قيس ${a})`,
-  },
+  pt: {}, en: {}, fr: {}, es: {}, de: {}, it: {}, ar: {},
+  ja: { stop: '。', sep: '' },
+  zh: { stop: '。', sep: '' },
+  hi: { stop: '।' },
 });
 
 export function initStatus(el) {
@@ -245,8 +174,6 @@ export function initStatus(el) {
   const tagEl = el.querySelector('.status-pill__tag');
   if (tagEl) tagEl.innerHTML = TAG;
   let timer = 0;
-
-  const HOW = W.how;
 
   /** Envio (telemóvel -> servidor) + entrega (servidor -> destinatário confirmar), em ms. */
   function sum(a, b) {
@@ -275,53 +202,34 @@ export function initStatus(el) {
     return currentValue(data) ?? lastValue(data);
   }
 
-  /** "há 5 minutos", "há 3 horas", "há 2 dias". */
-  function ago(unixSecs) {
-    const min = Math.max(0, Math.round((Date.now() / 1000 - unixSecs) / 60));
-    if (min < 1) return W.now;
-    if (min < 60) return min === 1 ? W.min1 : W.mins(min);
-    const h = Math.round(min / 60);
-    if (h < 48) return h === 1 ? W.h1 : W.hs(h);
-    return W.days(Math.round(h / 24));
-  }
-
-  /** Frase sobre o tempo entre telemóveis, para o title; vazia se não se aplica. */
-  function totalText(data) {
-    const now = currentValue(data);
-    if (now != null) {
-      const n = data.mensagens === 1 ? W.msg1 : W.msgs(fmt.format(data.mensagens));
-      return W.hour(fmt.format(now), n, HOW);
-    }
-    const last = lastValue(data);
-    if (last != null) {
-      const at = Math.max(data.ultimo_envio_medicao || 0, data.ultima_medicao || 0);
-      const when = at > 0 ? W.measured(ago(at)) : '';
-      return W.last(fmt.format(last), when, HOW);
-    }
-    return '';
+  /** "77 ms" isolado (numa página em árabe fica "77 ms" e não "ms 77"); vazio sem medição. */
+  function pingLabel(r) {
+    return Number.isFinite(r?.ping_ms) ? `\u2066${fmt.format(r.ping_ms)} ms\u2069` : '';
   }
 
   function show(state, data) {
     el.dataset.state = state;
     label.textContent = TEXT[state].short;
     if (mini) mini.textContent = TEXT[state].mini;
-    if (ms) {
-      // Fica sempre a última leitura conhecida, mesmo sem mensagens recentes ou com o serviço em baixo.
-      const value = totalValue(data);
-      // O quadro "Entre telemóveis" (Testes e números) mostra o mesmo valor, em grande, no
-      // original e nas cópias que a grelha faz em ecrãs grandes (sem ids, por isso data-live).
-      if (value != null) {
-        for (const tile of document.querySelectorAll('[data-live="tempo"]')) {
-          tile.textContent = `\u2066${fmt.format(value)} ms\u2069`;
-        }
-      }
-      if (value != null) {
-        ms.hidden = false;
-        // Isolado: numa página em árabe fica "250 ms" e não "ms 250".
-        ms.textContent = `\u2066${fmt.format(value)} ms\u2069`;
+    // O quadro "Entre telemóveis" (Testes e números) continua com o tempo entre telemóveis, no
+    // original e nas cópias que a grelha faz em ecrãs grandes (sem ids, por isso data-live).
+    // Fica sempre a última leitura conhecida, mesmo sem mensagens recentes.
+    const value = totalValue(data);
+    if (value != null) {
+      for (const tile of document.querySelectorAll('[data-live="tempo"]')) {
+        tile.textContent = `\u2066${fmt.format(value)} ms\u2069`;
       }
     }
     const relays = Array.isArray(data?.relays) ? data.relays.filter((r) => r && typeof r.nome === 'string') : [];
+    // No marcador: o ping até cada relay, ao lado do seu ponto (segunda linha). Nos telemóveis
+    // estreitos essa linha não aparece: ao lado do estado fica só o do relay mais perto.
+    if (ms) {
+      const pings = relays.map((r) => r.ping_ms).filter((v) => Number.isFinite(v));
+      if (pings.length > 0) {
+        ms.hidden = false;
+        ms.textContent = `\u2066${fmt.format(Math.min(...pings))} ms\u2069`;
+      }
+    }
     if (relaysEl) {
       relaysEl.replaceChildren(
         ...relays.map((r) => {
@@ -332,17 +240,31 @@ export function initStatus(el) {
           dot.className = 'status-relay__dot';
           dot.setAttribute('aria-hidden', 'true');
           item.append(dot, relayName(r.nome));
+          const ping = r.estado === 'on' ? pingLabel(r) : '';
+          if (ping) {
+            const p = document.createElement('span');
+            p.className = 'status-relay__ms';
+            p.textContent = ping;
+            item.append(p);
+          }
           return item;
         }),
       );
       relaysEl.hidden = relays.length === 0;
     }
     // "Suécia: Online. Espanha: Online." (na frase completa, para leitores de ecrã e title).
+    // "Suécia: Online (77 ms)."
     const relaysText = relays
-      .map((r) => `${relayName(r.nome)}: ${TEXT[r.estado === 'on' ? 'on' : 'off'].mini}${W.stop ?? '.'}`)
+      .map((r) => {
+        const ping = r.estado === 'on' ? pingLabel(r) : '';
+        return `${relayName(r.nome)}: ${TEXT[r.estado === 'on' ? 'on' : 'off'].mini}${ping ? ` (${ping})` : ''}${W.stop ?? '.'}`;
+      })
       .join(W.sep ?? ' ');
+    const hasPing = relays.some((r) => r.estado === 'on' && Number.isFinite(r.ping_ms));
+    const code = typeof data?.medido_em === 'string' ? data.medido_em.replace(/[^A-Z0-9]/gi, '').slice(0, 6) : '';
+    const pingText = hasPing ? (W.sep ?? ' ') + PING_TEXT(code) : '';
     // Japones e chines: ponto final 。 e sem espacos entre frases; hindi: ponto final ।.
-    const full = `${TEXT[state].long}${W.stop ?? '.'}${relaysText ? (W.sep ?? ' ') + relaysText : ''}${totalText(data)}${W.sep ?? ' '}${TESTING}`;
+    const full = `${TEXT[state].long}${W.stop ?? '.'}${relaysText ? (W.sep ?? ' ') + relaysText : ''}${pingText}${W.sep ?? ' '}${TESTING}`;
     el.title = full;
     el.setAttribute('aria-label', full);
   }

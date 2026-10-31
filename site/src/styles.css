@@ -1062,6 +1062,14 @@ p {
   box-shadow: 0 0 0.35rem color-mix(in srgb, #34d378 60%, transparent);
 }
 
+/* Ping até ao relay ("77 ms"), a seguir ao nome. */
+.status-relay__ms {
+  margin-inline-start: 0.1rem;
+  color: var(--mist);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .status-relay[data-state="off"] {
   color: #ffb3b3;
 }
@@ -1107,8 +1115,10 @@ p {
   animation: status-pulse 1.2s ease-in-out infinite;
 }
 
-/* Tempo médio de envio (telemóvel até ao servidor): "envio 23 ms", a seguir ao estado. */
+/* Ping até ao relay mais perto, a seguir ao estado: só nos ecrãs estreitos, onde a linha dos
+   relays (com o ping de cada um) não aparece. */
 .status-pill__ms {
+  display: none;
   grid-row: 1;
   grid-column: 3;
   margin-inline-start: 0.15rem;
@@ -1116,12 +1126,6 @@ p {
   font: 600 0.75rem / 1 var(--font-text);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
-}
-
-.status-pill__ms::before {
-  content: "entre telemóveis ";
-  color: var(--mist);
-  font-weight: 500;
 }
 
 .status-pill__ms[hidden] {
@@ -1179,6 +1183,10 @@ p {
     display: none;
   }
 
+  .status-pill__ms:not([hidden]) {
+    display: inline;
+  }
+
   .status-pill__ms {
     margin-inline-start: -0.15rem;
     font-size: 0.6875rem;
@@ -1186,6 +1194,7 @@ p {
 
   .status-pill__ms::before {
     content: "· ";
+    color: var(--mist);
   }
 }
 
@@ -1213,9 +1222,9 @@ p {
   }
 }
 
-/* Ecrãs mínimos: o tempo de envio fica só na frase completa (title). */
+/* Ecrãs mínimos: o ping fica só na frase completa (title). */
 @media (max-width: 340px) {
-  .status-pill__ms {
+  .status-pill__ms:not([hidden]) {
     display: none;
   }
 }
