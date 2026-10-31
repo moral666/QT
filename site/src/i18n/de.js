@@ -77,7 +77,7 @@ export default {
   'index.71': 'Tests und Zahlen',
   'index.72': 'Tests',
   'index.73': '32.500 gleichzeitig',
-  'index.74': 'In einem Lasttest bei AWS, mit denselben Grenzen wie einer unserer Server, tauschten 32.500 gleichzeitig verbundene Personen über 1.000 Nachrichten, Sprachnachrichten und Bestätigungen pro Sekunde aus, ohne Fehler, bis die Maschine an ihre Grenze kam. Deshalb nimmt jeder Server bis zu 25.000 gleichzeitig&nbsp;an.',
+  'index.74': 'In einem Lasttest auf einer Maschine mit 2 Prozessoren und 1,8 GB Arbeitsspeicher tauschten 32.500 gleichzeitig verbundene Personen über 1.000 Nachrichten, Sprachnachrichten und Bestätigungen pro Sekunde aus, ohne Fehler, bis die Maschine an ihre Grenze&nbsp;kam.',
   'index.75': 'Von Handy zu Handy',
   'index.76': 'Wie lange eine typische Nachricht vom Handy des Absenders bis zum Handy des Empfängers braucht. Eine echte Messung, jede Minute&nbsp;aktualisiert.',
   'index.77': 'Diese Seite',

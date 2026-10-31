@@ -77,7 +77,7 @@ export default {
   'index.71': 'Tests et chiffres',
   'index.72': 'Tests',
   'index.73': '32&nbsp;500 en même temps',
-  'index.74': 'Lors d’un test de charge sur AWS, avec les mêmes limites que l’un de nos serveurs, 32&nbsp;500 personnes connectées en même temps ont échangé plus de 1&nbsp;000 messages, audios et accusés de réception par seconde, sans erreur, jusqu’à ce que la machine atteigne sa limite. C’est pourquoi chaque serveur accepte jusqu’à 25&nbsp;000 personnes à la&nbsp;fois.',
+  'index.74': 'Lors d’un test de charge, sur une machine avec 2 processeurs et 1,8 Go de mémoire, 32&nbsp;500 personnes connectées en même temps ont échangé plus de 1&nbsp;000 messages, audios et accusés de réception par seconde, sans erreur, jusqu’à ce que la machine atteigne sa&nbsp;limite.',
   'index.75': 'De téléphone à téléphone',
   'index.76': 'Le temps que met un message type, du téléphone de l’expéditeur à celui du destinataire. Une mesure réelle, mise à jour chaque&nbsp;minute.',
   'index.77': 'Cette page',
