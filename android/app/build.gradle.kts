@@ -75,7 +75,7 @@ android {
         @Suppress("DEPRECATION")
         resourceConfigurations += listOf("pt", "en", "fr", "es", "de", "it", "ja", "zh-rCN", "hi", "ar")
         // So as ABIs que o Rust compilou. Adiciona "x86_64" quando tiveres esse .so (emulador).
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     buildFeatures { buildConfig = true }
