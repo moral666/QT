@@ -6,6 +6,25 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 31 de outubro de 2026: afinações dos relays (sem mudanças nas apps nem no protocolo)
+
+- **Redis sem fecho de clientes parados** (`timeout 0`, era 300): com poucas pessoas ligadas a
+  ligação única do relay ao Redis ficava parada mais de 5 min, o Redis fechava-a e o primeiro
+  pedido a seguir falhava ("broken pipe"; o redis-rs 0.25 só volta a ligar depois desse erro).
+  Reproduzido com o redis-rs 0.25 e um Redis com `timeout 2`: o 1.º pedido depois da pausa falha, os
+  seguintes passam; com `timeout 0` passam todos. Esse pedido podia ser a verificação de conta banida
+  ao entrar (que deixa entrar quando o Redis falha) ou a limpeza dos anexos de 10 em 10 min.
+- **Kernel**: `vm.swappiness=10` (a memória das ligações paradas deixa de ir para a swap da
+  compilação), `tcp_slow_start_after_idle=0` (a entrega de uma fila ou de um anexo depois de uma
+  pausa já não recomeça devagar) e BBR + fq (melhor nas redes móveis com perdas; o fq só entra no
+  próximo arranque da máquina).
+- **HAProxy**: cache de sessões TLS de 50 000 durante 1 h (era 20 000 durante 5 min). Ao voltar a
+  ligar, o telemóvel retoma a sessão e salta a verificação do certificado. Continua sem tickets
+  (`no-tls-tickets`): a retoma é só do lado do servidor, testada em TLS 1.3 e 1.2 com o HAProxy 2.8
+  do Ubuntu 24.04. ~10 MB de memória.
+- `scripts/diagnostico-relay.sh` (só leitura, corre no relay) e `scripts/latencia-relays.sh` (corre
+  no PC): para medir antes e depois.
+
 ### 31 de outubro de 2026: conta nova no relay mais próximo (Android e iPhone 0.9.69, build 69)
 
 - Ao criar uma conta, a app regista-se no relay da lista que responde mais depressa (Estocolmo ou

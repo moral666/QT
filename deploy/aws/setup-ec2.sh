@@ -88,8 +88,23 @@ fs.file-max = 1048576
 # Redis: deixa o fork das reescritas do AOF funcionar com pouca memoria livre (o proprio
 # Redis avisa no arranque se isto estiver desligado). O fork so copia as paginas que mudam.
 vm.overcommit_memory = 1
+# Swap (secao 2) so para a compilacao: com o valor por omissao (60) o kernel mandava para o
+# disco a memoria das ligacoes paradas do relay e do Redis, e a primeira mensagem depois de
+# horas sem trafego esperava pelo disco. 10: so com pouca memoria a serio.
+vm.swappiness = 10
+# Ligacoes WebSocket longas e quase sempre paradas: sem isto, depois de cada pausa o TCP
+# recomeca devagar (janela pequena) e a entrega de uma fila ou de um anexo arranca lenta.
+net.ipv4.tcp_slow_start_after_idle = 0
+# BBR + fq: melhor nas redes moveis com perdas (o cubic trava a cada pacote perdido).
+# So muda o envio do servidor; as apps nao mudam. O fq so entra no proximo arranque da maquina
+# (o BBR funciona ja sem ele).
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
 EOF
-sysctl -q --system
+# O BBR e um modulo: carregado ja e em cada arranque (antes do sysctl).
+echo tcp_bbr > /etc/modules-load.d/qt-bbr.conf
+modprobe tcp_bbr 2>/dev/null || true
+sysctl -q --system || echo "Aviso: algum valor do sysctl nao foi aceite (ver: sysctl --system)" >&2
 
 # ---------- 2. Swap (instancias de 1-2 GB ficam sem memoria a compilar com LTO) ----------
 if ! swapon --show | grep -q /swapfile; then
@@ -383,6 +398,12 @@ global
     # precisam de caber no buffer) e os cabecalhos das apps sao pequenos.
     tune.bufsize 8192
     tune.maxrewrite 1024
+    # Retoma de sessao TLS (do lado do servidor, sem tickets): ao voltar a ligar (Wi-Fi <-> dados
+    # moveis, app reaberta) o telemovel salta a verificacao do certificado e o HAProxy a
+    # assinatura. Por omissao: 20 000 sessoes durante 5 min; o travao do relay e 25 000 e as
+    # religacoes passam muitas vezes dos 5 min. ~200 bytes por sessao (~10 MB), so em memoria.
+    tune.ssl.cachesize 50000
+    tune.ssl.lifetime 3600
     # So para consultar contadores (ligacoes recusadas por IP), apenas localmente:
     #   echo "show stat" | sudo socat stdio /var/lib/haproxy/stats.sock
     stats socket /var/lib/haproxy/stats.sock mode 600 level user
@@ -456,7 +477,7 @@ cat <<CFG
 frontend https
     bind :443 ssl crt /etc/haproxy/certs/ alpn http/1.1
     # Limites por IP (decididos a 19/10/2026): no maximo 100 ligacoes abertas ao mesmo
-    # tempo e 100 ligacoes novas a cada 10 s. Cada app aberta usa 2 ligacoes, e nas redes
+    # tempo e 100 ligacoes novas a cada 10 s. Cada app aberta usa 1 ligacao (desde a 0.9.45), e nas redes
     # moveis muitos clientes saem pelo mesmo IP da operadora (CGNAT). Rever se o contador
     # de recusadas (dcon, ver "stats socket" acima) subir com clientes legitimos.
     stick-table type ipv6 size 100k expire 60s store conn_cur,conn_rate(10s)
