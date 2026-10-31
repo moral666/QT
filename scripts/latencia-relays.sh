@@ -5,6 +5,8 @@
 #   bash scripts/latencia-relays.sh            # 60 medidas de 5 em 5 s (~5 min)
 #   bash scripts/latencia-relays.sh 20 2       # 20 medidas de 2 em 2 s
 N="${1:-60}"; GAP="${2:-5}"
+# Numeros com ponto (o curl e o awk seguem a lingua do sistema: em portugues saia 0,052 e o awk lia 0).
+export LC_ALL=C
 RELAYS="${RELAYS:-relay.sealerapp.com relay-es.sealerapp.com}"
 for H in $RELAYS; do : > "/tmp/lat-$H.txt"; done
 for i in $(seq 1 "$N"); do

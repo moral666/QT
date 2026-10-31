@@ -3,6 +3,8 @@
 #   sudo bash /opt/qt-src/scripts/diagnostico-relay.sh
 # Sem IPs de clientes nem ids de contas: so contagens e configuracao.
 set -uo pipefail
+# Numeros com ponto (o curl e o awk seguem a lingua do sistema: em portugues saia 0,052 e o awk lia 0).
+export LC_ALL=C
 [ "$(id -u)" -eq 0 ] || { echo "Corre com sudo."; exit 1; }
 t() { printf '\n== %s\n' "$*"; }
 
