@@ -23,6 +23,7 @@ function policy(scriptHashes, { forHeaders = false } = {}) {
     `script-src 'self' ${scriptHashes.join(' ')}`.trim(),
     "style-src 'self'",
     "img-src 'self'",
+    "media-src 'self'",
     "font-src 'self'",
     "connect-src 'self'",
     "manifest-src 'self'",
