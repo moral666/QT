@@ -4,13 +4,13 @@
 
 **SEALER** é um mensageiro privado: sem número de telefone, sem email, com cifra ponta a ponta e proteção pós-quântica. **QT** é o nome do protocolo e deste repositório.
 
-**Estado:** versão de testes, em testes fechados. App Android **0.9.69** (iPhone 0.9.69 por compilar), com dois relays em federação na União Europeia (Estocolmo e Espanha).
+**Estado:** versão de testes, em testes fechados. Apps Android e iPhone **0.9.69**, com dois relays em federação na União Europeia (Estocolmo e Espanha).
 
 [Read this in English →](README.en.md)
 
 <p align="center">
   <img src="site/public/ecras/conversas-0.9.11.jpg" width="180" alt="Ecrã inicial: cabeçalho roxo com o logo, a foto de perfil e o ID, e a lista de conversas">
-  <img src="site/public/ecras/chat-0.9.11.jpg" width="180" alt="Uma conversa cifrada ponta a ponta">
+  <img src="site/public/ecras/chat-0.9.11.jpg" width="180" alt="Uma conversa">
   <img src="site/public/ecras/definicoes-0.9.11.jpg" width="180" alt="Ecrã Definições">
   <img src="site/public/ecras/novo-contacto-0.9.11.jpg" width="180" alt="Ecrã Novo contacto com o código QR">
 </p>
@@ -29,19 +29,19 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 ## O que a app faz
 
 - **Conversas a dois e em grupo** (até 10 pessoas, 3 administradores), entre Android e iPhone, com *Enviado / Entregue / Visto*.
-- **Chamadas de voz e videochamadas cifradas** no Android e no iPhone, também entre os dois. No Android tocam com a app fechada ou o telemóvel bloqueado, com toque próprio.
+- **Chamadas de voz e videochamadas cifradas** no Android e no iPhone, também entre os dois. No Android, as chamadas a dois tocam com a app fechada ou o telemóvel bloqueado, com toque próprio, e passam para o auricular Bluetooth e para o carro, sem nada no registo de chamadas do telemóvel.
 - **Chamadas de grupo** (até 5 pessoas, voz e vídeo, cifradas ponta a ponta): cada um escolhe o nome com que aparece na chamada, e quem recusou pode entrar depois.
 - **Vídeo que se ajusta à rede:** no Wi-Fi sobe até ao que a ligação e os telemóveis aguentam (até 4K); com dados móveis fica até 720p. A voz tem sempre prioridade sobre o vídeo.
 - **Fotos, GIFs, mensagens de voz e ficheiros até 25 MB.** Cada ficheiro tem uma chave própria e sai do servidor quando é descarregado (ou ao fim de 24 horas).
 - **Notificações com a app fechada**, sempre genéricas ("Tens mensagens novas"): sem nome nem texto.
 - **Foto de perfil** só para os teus contactos, cifrada (o servidor nem sabe que é uma foto). Pode mudar-se de 72 em 72 horas.
 - **Convites por código QR**, reações, bloquear contactos e "online" só para os contactos.
-- **Medalhas** (Founder, Co-founder, Dev, Tester, Contributor, Bug Hunter, Support, Troll e Legacy): um aro e uma medalha na foto (na Legacy, um escudo à volta da foto), com certificado assinado, enviados cifrados só aos contactos.
+- **Medalhas** (Founder, Co-founder, Dev, Tester, Contributor, Bug Hunter, Support, Troll e Legacy): um aro e uma medalha na foto (na Legacy, um escudo à volta da foto), com certificado assinado, enviados cifrados só aos contactos. Quem tem medalha aparece no ecrã **Comunidade** das apps, só com a foto e a medalha.
 - **Denunciar um contacto:** o motivo e até 20 mensagens seguem cifrados para a equipa da SEALER; o servidor guarda a denúncia sem a ler e sem saber quem a fez, e o contacto fica bloqueado.
 - **Bloqueio da app** com código próprio, impressão digital ou rosto (Face ID no iPhone). Depois de 5 códigos errados a espera vai até 15 minutos, e mudar a hora do telemóvel não a salta.
 - **Chave de recuperação:** 12 palavras recuperam o ID, os contactos, os bloqueados e a medalha num telemóvel novo. A cópia fica cifrada no servidor; o histórico e os grupos não vão nela.
 - **Dez línguas:** português, inglês, francês, espanhol, alemão, italiano, japonês, chinês simplificado, hindi e árabe (da direita para a esquerda).
-- **Dois servidores, uma só rede:** a tua conta vive num dos relays da federação e falas com quem está no outro sem dares por isso (ver [Federação](#federação-dois-relays-uma-só-rede)).
+- **Dois servidores, uma só rede:** a tua conta vive num dos relays da federação (ao criá-la, a app escolhe o que responde mais depressa) e falas com quem está no outro sem dares por isso (ver [Federação](#federação-dois-relays-uma-só-rede)).
 - **Apagar a conta** do telemóvel e do servidor com um toque.
 
 ## Como protege a privacidade
@@ -51,8 +51,8 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 - **Mensagens do mesmo tamanho:** o texto leva enchimento até 4 tamanhos fixos, por isso o servidor não distingue uma mensagem curta de um recibo.
 - **Ligação protegida:** Noise Protocol por cima de TLS (`wss://`), com a chave do servidor fixada nas apps.
 - **Tudo cifrado no telemóvel:** histórico em SQLCipher, com a chave guardada no Keystore do Android ou no Secure Enclave do iPhone (só neste aparelho, fora das cópias na nuvem). A miniatura nas apps recentes não mostra as conversas.
-- **Chamadas diretas só entre contactos mútuos:** quando os dois se têm nos contactos, a chamada liga-se de telemóvel para telemóvel depois de atender, e nesse caso cada um vê o IP do outro. Nos outros casos (ou se um bloquear ou apagar o outro), passa pelo servidor das chamadas e o IP não é partilhado. Sempre cifradas ponta a ponta; pelo servidor, os pacotes de áudio têm todos o mesmo tamanho e o mesmo ritmo, e o servidor das chamadas não sabe que contas estão a falar.
-- **O vídeo nunca passa pelo servidor:** a imagem das videochamadas vai só pela ligação direta entre contactos mútuos. Sem ligação direta, a chamada continua só com voz.
+- **Chamadas a dois diretas só entre contactos mútuos:** nas chamadas a dois, quando os dois se têm nos contactos, a chamada liga-se de telemóvel para telemóvel depois de atender, e nesse caso cada um vê o IP do outro. Nos outros casos (ou se um bloquear ou apagar o outro), passa pelo servidor das chamadas e o IP não é partilhado. Sempre cifradas ponta a ponta; pelo servidor, os pacotes de áudio têm todos o mesmo tamanho e o mesmo ritmo, e o servidor das chamadas não sabe que contas estão a falar.
+- **O vídeo nunca passa pelo servidor:** a imagem das videochamadas vai só pela ligação direta. Sem ligação direta, a chamada continua só com voz.
 - **Defesas no servidor:** prova de trabalho para criar conta, limites por conta e por IP, e só contas registadas podem enviar.
 
 O que isto protege e o que não protege está em [`docs/threat-model.md`](docs/threat-model.md) e [`docs/known-limitations.md`](docs/known-limitations.md).
@@ -65,7 +65,7 @@ Desde 29/10/2026 a SEALER tem **dois relays em federação**, os dois na União 
 - **A app fala só com o seu relay**, por uma ligação. Mensagens, chaves para começar conversas, anexos e a cópia de recuperação seguem de relay para relay.
 - **O remetente continua selado:** o relay de destino só fica a saber que a mensagem veio do outro relay, não de quem.
 - **Federação fechada:** só os relays de uma lista aprovada falam entre si, por `wss://<relay>/fed`, com Noise_XX e as chaves fixadas dos dois lados. O HAProxy só deixa passar os IPs dos relays da lista.
-- **Chamadas entre relays:** as duas apps usam o relay das chamadas de quem liga.
+- **Conta nova no relay mais rápido** (0.9.69): ao criar a conta, a app mede quanto tempo cada relay demora a responder e fica no mais rápido que aceite contas novas. As contas que já existem não mudam de relay.
 - **Sem registos dos pedidos:** a informação "esta conta está no relay X" fica só em memória (até 24 horas), e os relays só contam quantas mensagens trocaram.
 
 O desenho aceita mais relays. O protocolo entre relays está na secção 25 de [`docs/protocol-spec.md`](docs/protocol-spec.md) e os limites em [`docs/known-limitations.md`](docs/known-limitations.md) (14).
@@ -80,12 +80,12 @@ O desenho aceita mais relays. O protocolo entre relays está na secção 25 de [
 - **Android 0.9.16 com iPhone 0.9.15** (20/10/2026), sem erros: adicionar, apagar e voltar a adicionar contactos, código QR, botão de partilhar o ID, todos os menus, mensagens de texto e de voz, GIFs, envio de ficheiros, bloquear contactos, apagar conversas e chamadas de voz entre Androids, entre Android e iPhone e entre iPhones.
 - **Android 0.9.22** (22/10/2026): bloqueio da app, apps recentes e recuperação da conta.
 - **Android 0.9.31** (23/10/2026), sem erros: pedidos dos testadores (toque de quem liga, altifalante antes de atender, chamada minimizada, copiar as 12 palavras, links, medalhas depois de recuperar a conta) e as dez línguas revistas, árabe incluído.
+- **Android 0.9.67**: chamadas de grupo testadas em telemóveis.
+- **iPhone 0.9.69**: compilado e testado no Mac.
 - Teste de campo com cinco aparelhos em três plataformas e envios contínuos: nenhuma mensagem perdida ([`docs/field-tests.md`](docs/field-tests.md)).
 
 **A seguir:**
 
-
-- Compilar e testar a app iPhone 0.9.69 (chamadas de grupo e qualidade do vídeo).
 - Distribuição pela Google Play e pela App Store (hoje a app é instalada à mão pelos testadores). Já preparado: [`docs/google-play.md`](docs/google-play.md).
 - Servidor de produção com backups e alertas.
 
@@ -188,7 +188,7 @@ Usa auscultadores (no PC não há cancelamento de eco).
 
 ```bash
 export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/<versao>
-ABIS="arm64-v8a armeabi-v7a x86_64" ./scripts/build-android.sh   # libqt_ffi.so (16 KB) + bindings Kotlin
+ABIS="arm64-v8a armeabi-v7a" ./scripts/build-android.sh   # libqt_ffi.so (16 KB) + bindings Kotlin
 cd android && ./sync-native.sh                                    # copia para a app
 # depois: abrir a pasta android/ no Android Studio
 ```
