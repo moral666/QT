@@ -1,6 +1,6 @@
 # Modelo de Ameaças
 
-> Descreve o que o código faz hoje (versão de testes, apps Android e iPhone 0.9.51), o que
+> Descreve o que o código faz hoje (versão de testes, apps Android e iPhone 0.9.69), o que
 > os testes demonstram e, com igual peso, o que **não** está protegido.
 
 ## 1. Ativos
@@ -49,7 +49,7 @@ Cada linha indica o mecanismo e **o teste que o demonstra** (corre com
 | Estado comprometido expõe mensagens futuras | Post-compromise security após um novo passo DH (limites em §4) | `post_compromise_security_cura_apos_novo_passo_dh` |
 | Cópia do ficheiro da base de dados | SQLCipher com chave binária de 32 bytes vinda do Android Keystore; sem cabeçalho SQLite em claro. O histórico de mensagens é guardado **só** dentro da base cifrada (com `secure_delete`), nunca em claro | `storage/tests/storage_extended.rs::texto_das_mensagens_nunca_fica_em_claro_no_ficheiro` |
 | Lixo / entradas malformadas | Todas as entradas de rede e disco devolvem erro (sem `unwrap` em caminhos de rede/cripto); limites de tamanho | `sessao_inexistente_e_lixo_nao_fazem_panic`, `limites_e_validacao_de_entrada`, fuzz do estado em `forward_secrecy.rs` |
-| Vídeo das chamadas passa pelo servidor (o operador vê quando e quanto vídeo cada sala envia; custo) | Desde a 0.9.53 o vídeo só vai pela ligação direta entre contactos mútuos (a mesma regra do áudio). O relay das chamadas nunca encaminha vídeo: deita-o fora e responde "sem vídeo pelo relay" às apps antigas | `call_relay::tests::video_nunca_passa_e_quem_envia_ouve_sem_video`, `call/tests/video_e2e.rs::video_so_pelo_direto_e_nunca_pelo_relay`, `direto_que_cai_pausa_o_video_e_volta` |
+| Vídeo das chamadas passa pelo servidor (o operador vê quando e quanto vídeo cada sala envia; custo) | Desde a 0.9.53 o vídeo nunca passa pelo relay; nas chamadas a dois só vai pela ligação direta entre contactos mútuos (a mesma regra do áudio). O relay das chamadas nunca encaminha vídeo: deita-o fora e responde "sem vídeo pelo relay" às apps antigas | `call_relay::tests::video_nunca_passa_e_quem_envia_ouve_sem_video`, `call/tests/video_e2e.rs::video_so_pelo_direto_e_nunca_pelo_relay`, `direto_que_cai_pausa_o_video_e_volta` |
 
 ### 3.1 Segurança pós-quântica: o que exatamente se afirma
 
@@ -94,15 +94,15 @@ e depois alimenta a root key do Double Ratchet.
   a ligação de quem envia é autenticada: um operador mal-intencionado pode associar
   a conta que envia a cada envelope no momento. Também não protege contra análise de
   tráfego/correlação temporal.
-* **Ligação direta nas chamadas** (automática desde o 0006, 23/10/2026): entre contactos mútuos e
+* **Ligação direta nas chamadas a dois** (automática desde o 0006, 23/10/2026): entre contactos mútuos e
   não bloqueados, já na primeira chamada e sem perguntar nada, **cada lado vê o IP do outro**
   (público e locais, com a porta), depois de atender. A app não tem janela de aviso nem opção para
   o evitar (decisão do Nuno). Não há verificação de contactos: confia-se que o ID guardado é de
   quem se pensa. Se um dos lados não tiver o outro nos contactos, ou o bloqueou, tudo passa pelo
   relay; bloquear, apagar ou tirar dos contactos a meio volta logo ao relay.
 * **Vídeo das chamadas (desde a 0.9.53): só pela ligação direta.** O vídeo nunca passa pelo relay,
-  por isso o relay não vê quando nem quanto vídeo há numa chamada. O preço é o da ligação direta:
-  só há vídeo entre contactos mútuos (e cada um vê o IP do outro, como no áudio). Sem direto (contacto
+  por isso o relay não vê quando nem quanto vídeo há numa chamada. Nas chamadas a dois, isso tem a
+  condição da ligação direta: só há vídeo entre contactos mútuos (e cada um vê o IP do outro, como no áudio). Sem direto (contacto
   não mútuo ou bloqueado, rede que não deixa) a chamada fica só com voz pelo relay. As fichas
   anónimas do 0006 saíram (e com elas a semente, o registo das fichas gastas no Redis e a chave
   publicada no site). As apps 0.9.37 a 0.9.52 ainda enviam vídeo e pacotes das fichas ao relay: o
@@ -122,6 +122,14 @@ e depois alimenta a root key do Double Ratchet.
     apps continuam a verificar o bundle contra o ID (ver secção 3): não consegue fingir ser a conta, só
     impedir que lhe cheguem mensagens.
   * Os dois relays são do mesmo operador.
+* **Conta nova no relay mais rápido (desde a 0.9.69):** ao criar a conta (e na recuperação, quando a
+  conta tem de ser criada de novo), a app abre e fecha uma ligação TCP a cada relay da lista para ver
+  qual responde mais depressa, sem TLS nem nenhum pedido. Os dois relays ficam a ver o IP de quem cria
+  a conta nesse momento, sem nada da conta.
+* **Chamadas de grupo (desde a 0.9.62):** até 5 pessoas de um grupo, cifradas ponta a ponta como as
+  chamadas a dois. As apps só aceitam pedidos de membros do grupo e ignoram os contactos bloqueados.
+  O nome que cada pessoa escolhe para a chamada é livre: um membro do grupo que não está nos teus
+  contactos pode escolher o nome de um contacto teu. Limitações em `known-limitations.md` (47).
 * **Spam / abuso:** qualquer conta registada pode enfileirar mensagens para
   qualquer `user_id` registado (limite de 1000 mensagens por fila; desde a 0.9.17
   o relay recusa escritas de contas sem registo). Desde a 0.9.3 há limites por

@@ -45,10 +45,11 @@ formato que já mudou outra vez.
 5. [Armazenamento local](#5-armazenamento-local-no-cliente-implementado-e-testado): SQLCipher
 6. [Bindings FFI](#6-bindings-ffi-androidiospython-implementado-e-testado): Kotlin/Swift/Python
 7. [Sealed sender](#7-sealed-sender-implementado-e-testado): esconder o remetente do servidor
-8. a 24. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v3,
-   envelope v2, protocolo do relay, mensagem dentro do ratchet, sessões cruzadas e
+8. a 27. Formatos atuais (no fim do ficheiro): qual fluxo estabelece a sessão, bundle v4,
+   envelope v3, protocolo do relay, mensagem dentro do ratchet, sessões cruzadas e
    eliminação, anexos (imagens, GIFs, voz e ficheiros), grupos, presença, notificações,
-   chamadas de voz e vídeo, foto de perfil, badges, denúncias, recuperação e acesso por conta
+   chamadas de voz e vídeo, foto de perfil, badges, denúncias, recuperação, acesso por conta,
+   federação de relays, Comunidade e chamadas de grupo
 
 *(Se preferires uma explicação sem jargão técnico, começa antes por
 o [`README.md`](../README.md). Este
@@ -1398,6 +1399,25 @@ avatar por omissão com a medalha. Código: `core/src/community.rs`, `ffi/src/co
 Testes: `core/src/community.rs`, `ffi/tests/community.rs`, `server/tests/relay_community.rs` e
 `server/tests/redis_acl.rs`; no Sealer Control, `tests/test_logic.py`.
 
+## 27. Chamadas de grupo (desde a app 0.9.62)
+
+O que as apps fazem:
+
+* **Até 5 pessoas** de um grupo de conversa, com voz e vídeo, cifradas ponta a ponta como as
+  chamadas a dois. Quem liga escolhe chamada de voz ou videochamada, e cada pessoa liga ou desliga a
+  sua câmara quando quiser.
+* **Convite a todos os membros do grupo:** a chamada toca a quem está com a app aberta.
+* **Um nome por chamada** (desde a 0.9.67): cada pessoa pode escolher o nome com que aparece nessa
+  chamada, até 32 caracteres. O nome vai cifrado só a quem está na chamada.
+* **Entrar depois** (desde a 0.9.65): quem não atendeu, ou saiu, pode voltar a entrar enquanto a
+  chamada decorre.
+* **Só membros do grupo:** as apps ignoram pedidos de quem não é membro do grupo e de contactos
+  bloqueados. Não se entra numa chamada de grupo durante uma chamada a dois.
+* **Apps antigas:** uma app que ainda não tem chamadas de grupo mostra "atualiza a app" uma vez por
+  chamada.
+
+As limitações estão em [`known-limitations.md`](known-limitations.md) (47).
+
 ## Documentos relacionados
 
 - [`threat-model.md`](threat-model.md): modelo de ameaças formal (quem
@@ -1410,25 +1430,3 @@ Ainda por escrever: `architecture-decisions/0001-escolha-x3dh-vs-pqxdh.md`,
 `architecture-decisions/0002-uniffi-ffi.md` (registos formais de decisões
 de arquitetura; por agora, essas decisões estão documentadas de forma
 menos formal ao longo das secções acima).
-
-## Chamadas de grupo (0.9.62)
-
-Até 5 pessoas. Uma chamada de grupo é uma malha de chamadas a dois ("pernas"): cada par tem as
-suas chaves (`qt_core::call`, da oferta e da resposta da perna) e a sua sala de 2 no relay das
-chamadas, que não muda. A voz de cada perna tenta a ligação direta e, sem ela, vai pelo relay; o
-vídeo só vai pela ligação direta. A ligação direta é com todos os participantes (o IP fica visível
-a eles): a app mostra o aviso uma vez, com "Aceitar", e sem isso não liga nem entra.
-
-Mensagens (payload v1, tipo 14, `msg_id` = id da chamada): `[1 op][16 id]` e
-* op 1 convite `[16 group_id][1 bit0 videochamada]` (a todos os membros; toca);
-* op 2 entrei `[16 group_id]` e op 3 saí `[16 group_id]` (a todos os membros);
-* op 4 oferta da perna `[16 leg_id][32 offer_secret][2 pad]` e, opcional, `[1 n][n nome do relay]`;
-* op 5 resposta da perna `[16 leg_id][32 answer_secret]`;
-* op 6 endereços `[16 leg_id][1 n ≤ 4][n × 19]`;
-* op 7 câmara `[1 bit0 ligada]`.
-* op 8 nome nesta chamada `[1 n][n UTF-8, até 32]` (0.9.67; a cada perna com chaves).
-
-Quem oferece cada perna é o participante com o id (hex) menor: quem entra conhece quem já está
-(convite e "entrei" recebidos), quem já está fica a saber pelo "entrei" de quem entra. Só se aceitam
-mensagens de membros do grupo, nunca de bloqueados. Uma app antiga mostra "atualiza a app" uma vez
-por chamada.

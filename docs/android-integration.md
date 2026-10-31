@@ -26,23 +26,23 @@ Pré-requisitos no PC de build: Rust ≥ 1.81 (`rustup`), Android NDK r27+ (com 
 
 ```bash
 export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/<versão>
-rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+rustup target add aarch64-linux-android armv7-linux-androideabi
 
-# tudo de uma vez (3 ABIs + bindings Kotlin):
-./scripts/build-android.sh app/src/main
+# tudo de uma vez (as 2 ABIs da app + bindings Kotlin):
+ABIS="arm64-v8a armeabi-v7a" ./scripts/build-android.sh app/src/main
 
 # ou à mão:
-cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -P 24 \
+cargo ndk -t arm64-v8a -t armeabi-v7a -P 24 \
   -o app/src/main/jniLibs \
   build --release -p qt_ffi --no-default-features --features android
 ./ffi/generate_bindings.sh           # gera ffi/bindings/kotlin/uniffi/qt_ffi/qt_ffi.kt
 cp -r ffi/bindings/kotlin/uniffi app/src/main/java/
 ```
 
-* `--features android` = `pq` (PQXDH) + SQLCipher/OpenSSL embebidos. **Sem**
+* `--features android` = `pq` (PQXDH) + `calls` + `video` + SQLCipher/OpenSSL embebidos. **Sem**
   `legacy-api`. Sem a feature embebida o `.so` ligaria a uma `libsqlcipher`
   que não existe no Android.
-* Resultado: `jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/libqt_ffi.so`.
+* Resultado: `jniLibs/{arm64-v8a,armeabi-v7a}/libqt_ffi.so`.
 * O `generate_bindings.sh` **falha** se o Kotlin gerado expuser alguma função
   que faça chaves privadas ou estados de ratchet atravessarem a FFI.
 
@@ -56,8 +56,9 @@ dependencies {
 android { defaultConfig { ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") } } }
 ```
 
-(A app de referência só leva as duas ABIs ARM; acrescenta `x86_64` se a
-compilares e quiseres um emulador sem tradução de ARM.)
+(A app só leva as duas ABIs ARM. Para um emulador x86_64, compila também essa ABI
+(`-t x86_64`, com o target `x86_64-linux-android` e um NDK r27 ou mais recente) e acrescenta-a
+ao `abiFilters`.)
 
 `proguard-rules.pro`:
 
