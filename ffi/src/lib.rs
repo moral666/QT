@@ -41,6 +41,7 @@ pub mod report;
 pub mod badges;
 pub mod community;
 pub mod history;
+pub mod relay_choice;
 #[cfg(feature = "pq")]
 pub use client::*;
 

@@ -1302,9 +1302,16 @@ continuam a fazer os mesmos pedidos ao seu relay.
   outros da federação (`qtRelaysOutros` / `QT_RELAYS_OTHERS`: `nome|wss://...|pin`, separados por `;`). Todas
   as chaves fixadas. A app guarda o nome do relay da conta (`relay_home`); sem ele, o principal (todas as contas
   antigas estão lá). Código: `Relays.kt` e `Relays.swift`.
-* **Contas novas** ficam no principal. Um relay com `RELAY_NOVAS_CONTAS=0` (decisão do operador, por
+* **Contas novas** (desde a 0.9.69) ficam no relay que responde mais depressa. Ao criar a conta, a app pede ao
+  núcleo a ordem (`relay_order_for_new_account`, `ffi/src/relay_choice.rs`): mede só a ligação TCP à porta de
+  cada relay da lista (aberta e fechada logo, sem TLS nem pedidos; duas vezes cada um, todos ao mesmo tempo, fica a menor; no
+  máximo 2 s no total) e ordena do mais rápido para o mais lento; os que não respondem ficam no fim e, sem
+  nenhuma resposta, fica a ordem da lista. Um relay com `RELAY_NOVAS_CONTAS=0` (decisão do operador, por
   exemplo cheio) recusa contas novas com `Error{"relay sem contas novas"}` (`relay_no_new_accounts_reason`) e
-  a app passa ao relay seguinte da lista. As contas que já lá estão continuam a renovar o registo.
+  a app passa ao seguinte dessa ordem (`relay_next_for_new_account`). Na recuperação com as 12 palavras a app
+  começa no relay guardado (ou no principal) e só mede se receber essa recusa (a conta tem de ser criada de
+  novo). Nunca depois: as contas que já existem ficam onde estão e continuam a renovar o registo. Nada disto
+  muda no relay nem no protocolo, e nada aparece no ecrã.
 * **Conta noutro relay.** O registo de uma conta que vive noutro relay (por exemplo, recuperada com as 12
   palavras num telemóvel novo) dá `Error{"conta noutro relay: <nome>"}` (`relay_elsewhere_name`). Só chega a
   quem prova ser a conta (registo assinado). A app guarda esse relay e volta a ligar-se a ele. A cópia de

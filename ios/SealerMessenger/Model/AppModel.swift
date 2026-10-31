@@ -798,13 +798,16 @@ final class AppModel: ObservableObject {
     func createIdentity() {
         Task {
             guard let client = qt else { return }
-            // Conta nova: comeca no relay principal (se estiver fechado a contas novas, o
-            // startLink passa ao seguinte da lista).
-            Relays.resetHome(prefs)
+            // Conta nova: comeca no relay que responde mais depressa (0.9.69; se estiver fechado
+            // a contas novas, o startLink passa ao seguinte dessa ordem). Nada disto aparece no ecra.
+            relaysTried.removeAll()
+            let order = await newAccountOrder()
+            Relays.setHome(prefs, (Relays.nextForNewAccount(order, []) ?? Relays.main).name)
+            log("SealerRelay", "conta nova: a registar em \(Relays.home(prefs).name)")
             let h = Relays.home(prefs)
             ui.relayUrl = h.url
             ui.relayKeyHex = h.pin
-            try? client.callSetRelay(name: nil)
+            try? client.callSetRelay(name: Relays.callName(prefs))
             do {
                 let me = try await background { try client.createIdentity() }
                 // Conta nova: "Mostrar quando estou online" comeca desligado (0.9.23).
@@ -832,13 +835,26 @@ final class AppModel: ObservableObject {
 
     /// Relays ja tentados nesta sessao por estarem fechados a contas novas.
     private var relaysTried = Set<String>()
+
+    /// Conta nova (0.9.69): a ordem dos relays medida pelo nucleo, so quando e precisa (ao criar a
+    /// conta, ou quando o relay responde "sem contas novas", ex.: na recuperacao de uma conta que
+    /// ja nao existe). Uma vez por sessao; as contas que ja existem nunca medem nem mudam por isto.
+    private var measuredOrder: [String]?
+    private func newAccountOrder() async -> [String] {
+        if let o = measuredOrder { return o }
+        let t0 = Date()
+        let o = await background { Relays.newAccountOrder() }
+        measuredOrder = o
+        log("SealerRelay", "conta nova: ordem dos relays \(o.joined(separator: ", ")) (\(Int(Date().timeIntervalSince(t0) * 1000)) ms)")
+        return o
+    }
     /// Mudancas de relay nesta sessao (nunca anda aos saltos entre relays sem fim).
     private var relayMoves = 0
 
     /// Federacao (fase 3): o relay diz que a conta vive noutro ("conta noutro relay: X", ex.: conta
     /// recuperada noutro telemovel), ou que ja nao aceita contas novas (tenta o seguinte da lista).
     /// Guarda o relay da conta e volta a ligar-se a ele. Verdadeiro se mudou.
-    private func moveRelay(_ reason: String) -> Bool {
+    private func moveRelay(_ reason: String) async -> Bool {
         guard relayMoves < 4 else { return false }
         let current = Relays.home(prefs)
         let target: RelayInfo?
@@ -846,7 +862,8 @@ final class AppModel: ObservableObject {
             target = Relays.byName(name)
         } else if reason == relayNoNewAccountsReason() {
             relaysTried.insert(current.name)
-            target = Relays.next(relaysTried)
+            let order = await newAccountOrder()
+            target = Relays.nextForNewAccount(order, relaysTried)
         } else {
             target = nil
         }
@@ -880,7 +897,9 @@ final class AppModel: ObservableObject {
                 let r = try await f.request(req)
                 if case .ack = r {} else { log("SealerRelay", "relay recusou o bundle: \(r.describe)") }
                 // Federacao: a conta vive noutro relay, ou este ja nao aceita contas novas.
-                if case .error(let reason) = r, moveRelay(reason) { return }
+                if case .error(let reason) = r {
+                    if await moveRelay(reason) { return }
+                }
             } catch {
                 log("SealerRelay", "bundle: \(safeMessage(error))")
             }

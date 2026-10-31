@@ -12,12 +12,15 @@ struct RelayInfo: Equatable {
 /// A conta vive num deles; a app fala so com esse.
 ///
 ///  * Sem escolha guardada, a conta esta no principal (todas as contas antigas estao la).
-///  * Conta nova num relay fechado a contas novas: o seguinte da lista.
+///  * Conta nova (0.9.69): no relay que responde mais depressa (`newAccountOrder`, medido pelo
+///    nucleo); se estiver fechado a contas novas, o seguinte dessa ordem. Nunca depois.
 ///  * O relay diz "conta noutro relay: X" (ex.: recuperada noutro telemovel): muda para X.
 ///
 /// Sempre os da build, tambem na Debug (o relay de teste editavel saiu na 0.9.53).
 enum Relays {
     private static let prefHome = "relay_home"
+    /// Tempo maximo da medida dos relays (conta nova), em ms.
+    private static let probeMs: UInt32 = 2_000
 
     static let all: [RelayInfo] = {
         var list = [RelayInfo(name: Config.relayName, url: Config.relayURL, pin: Config.relayPin)]
@@ -53,8 +56,18 @@ enum Relays {
     /// Conta nova: volta a comecar pelo principal.
     static func resetHome(_ prefs: UserDefaults) { prefs.removeObject(forKey: prefHome) }
 
-    /// O seguinte da lista que ainda nao foi tentado.
-    static func next(_ tried: Set<String>) -> RelayInfo? { all.first { !tried.contains($0.name) } }
+    /// CONTA NOVA (0.9.69): os relays do mais rapido para o mais lento. O nucleo mede so a ligacao
+    /// TCP a cada um (sem TLS nem pedidos, no maximo `probeMs`); os que nao respondem ficam no fim
+    /// e, sem nenhuma resposta, fica a ordem da lista. Bloqueia: chamar com `background`.
+    static func newAccountOrder() -> [String] {
+        let order = relayOrderForNewAccount(relays: all.map { RelayCandidate(name: $0.name, url: $0.url) }, timeoutMs: probeMs)
+        return order.isEmpty ? all.map(\.name) : order
+    }
+
+    /// CONTA NOVA: o primeiro de `order` ainda nao tentado (os tentados disseram "sem contas novas").
+    static func nextForNewAccount(_ order: [String], _ tried: Set<String>) -> RelayInfo? {
+        byName(relayNextForNewAccount(order: order, tried: Array(tried)))
+    }
 
     /// O nome que vai nas ofertas de chamada: so quando a conta nao esta no principal.
     static func callName(_ prefs: UserDefaults) -> String? {

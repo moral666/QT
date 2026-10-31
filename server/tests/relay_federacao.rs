@@ -519,3 +519,49 @@ async fn operador_num_relay_trata_contas_do_outro() {
     // fb fica vivo ate ao fim do teste.
     drop(fb);
 }
+
+// ---------------------------------------------------------------------------
+// 0.9.69: conta nova no relay mais proximo (`qt_ffi::relay_choice`)
+// ---------------------------------------------------------------------------
+
+/// Como as apps ao criar uma conta: regista-se no primeiro relay da ordem que ainda nao foi
+/// tentado; "sem contas novas" passa ao seguinte. Devolve onde ficou e os que foram tentados.
+async fn registar_pela_ordem(ordem: &[String], urls: &[(String, String)], s: &SigningKeyPair) -> (String, Vec<String>) {
+    let mut tentados: Vec<String> = Vec::new();
+    loop {
+        let nome = qt_ffi::relay_choice::relay_next_for_new_account(ordem.to_vec(), tentados.clone()).expect("algum relay aceita");
+        let url = &urls.iter().find(|(n, _)| *n == nome).expect("relay da lista").1;
+        match registar_em(url, s).await {
+            ServerMessage::Ack => return (nome, tentados),
+            ServerMessage::Error { reason } if reason == qt_ffi::relay_no_new_accounts_reason() => tentados.push(nome),
+            other => panic!("resposta inesperada de {nome}: {other:?}"),
+        }
+    }
+}
+
+/// A ordem medida pelo nucleo: o relay da lista que nao responde fica no fim (nunca e tentado);
+/// o relay fechado a contas novas e saltado e a conta fica no seguinte que aceita.
+#[tokio::test]
+async fn conta_nova_no_relay_mais_proximo_que_aceita() {
+    use qt_ffi::relay_choice::{relay_order_for_new_account, RelayCandidate};
+    assert_eq!(qt_ffi::relay_no_new_accounts_reason(), NO_NEW_ACCOUNTS, "as apps comparam com este texto");
+    let (a, fa, _ua, _b, _fb, ub) = par_federado().await;
+    // O relay "a" fechado a contas novas, o "b" aberto e um terceiro que nao responde.
+    let fechado = relay_com(&a, ServerConfig { federacao: Some(fa.clone()), novas_contas: false, ..fast_cfg() }).await;
+    let mudo = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        format!("ws://127.0.0.1:{}", l.local_addr().unwrap().port())
+    };
+    let urls: Vec<(String, String)> = vec![("mudo".into(), mudo), ("a".into(), fechado), ("b".into(), ub)];
+    let lista: Vec<RelayCandidate> = urls.iter().map(|(n, u)| RelayCandidate { name: n.clone(), url: u.clone() }).collect();
+    let ordem = tokio::task::spawn_blocking(move || relay_order_for_new_account(lista, 2_000)).await.unwrap();
+    assert_eq!(ordem.len(), 3);
+    assert_eq!(ordem.last().map(String::as_str), Some("mudo"), "quem nao responde fica no fim: {ordem:?}");
+    let (onde, tentados) = registar_pela_ordem(&ordem, &urls, &SigningKeyPair::generate()).await;
+    assert_eq!(onde, "b");
+    assert!(!tentados.contains(&"mudo".to_string()), "{tentados:?}");
+    // O fechado a frente (como se fosse o mais rapido): e tentado, recusa, e a conta fica no b.
+    let (onde, tentados) = registar_pela_ordem(&["a".into(), "b".into(), "mudo".into()], &urls, &SigningKeyPair::generate()).await;
+    assert_eq!((onde.as_str(), tentados), ("b", vec!["a".to_string()]));
+    drop(fa);
+}
