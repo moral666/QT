@@ -398,4 +398,8 @@ export default {
   'func.95': 'Les appels peuvent aussi avoir la vidéo, sur Android et iPhone. Ta vidéo n’apparaît qu’à la personne qui accepte de la voir, et tu peux éteindre la caméra quand tu veux.',
   'func.96': 'Deux serveurs, un seul réseau',
   'func.97': 'SEALER a deux serveurs reliés entre eux, l’un en Suède et l’autre en Espagne. Ton compte vit sur l’un d’eux, et tu parles avec les personnes de l’autre sans t’en rendre compte. Entre les deux, les messages voyagent scellés et sans dire qui les a envoyés.',
+  'func.98': 'Appels de groupe',
+  'func.99': 'Jusqu’à 5 personnes, avec la voix et la vidéo, chiffrés de bout en bout. Chacun choisit le nom sous lequel il apparaît, et qui n’a pas répondu peut rejoindre plus tard.',
+  'func.100': 'Une vidéo qui s’adapte au réseau',
+  'func.101': 'En Wi-Fi, l’image monte aussi haut que la connexion et les téléphones le permettent ; en données mobiles, elle reste jusqu’à 720p. Si le réseau se resserre, la vidéo baisse d’abord et la voix reste claire.',
 };

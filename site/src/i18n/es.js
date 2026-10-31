@@ -398,4 +398,8 @@ export default {
   'func.95': 'Las llamadas también pueden tener vídeo, en Android y en iPhone. Tu vídeo solo aparece a quien acepte verlo, y puedes apagar la cámara cuando quieras.',
   'func.96': 'Dos servidores, una sola red',
   'func.97': 'SEALER tiene dos servidores conectados entre sí, uno en Suecia y otro en España. Tu cuenta vive en uno de ellos, y hablas con quien está en el otro sin notarlo. Entre los dos, los mensajes viajan cerrados y sin decir quién los envió.',
+  'func.98': 'Llamadas de grupo',
+  'func.99': 'Hasta 5 personas, con voz y vídeo, cifradas de extremo a extremo. Cada uno elige el nombre con el que aparece, y quien no contestó puede unirse después.',
+  'func.100': 'Vídeo que se adapta a la red',
+  'func.101': 'En Wi-Fi, la imagen sube hasta donde lo permiten la conexión y los teléfonos; con datos móviles se queda en 720p como máximo. Si la red se aprieta, baja primero el vídeo y la voz sigue limpia.',
 };

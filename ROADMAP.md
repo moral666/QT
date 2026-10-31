@@ -65,6 +65,12 @@ seguir.
 - **Vídeo só pela ligação direta** (0.9.53, Android e iPhone): a imagem das videochamadas vai de
   telemóvel para telemóvel entre contactos mútuos e nunca passa pelo servidor (até 1080p no Wi-Fi).
   Sem ligação direta, a chamada continua só com voz.
+- **Qualidade do vídeo** (0.9.61): sem teto fixo no Wi-Fi (até 4K, conforme a ligação e os
+  telemóveis), até 720p com dados móveis; a voz manda (o vídeo desce antes de a voz chegar
+  atrasada); o atraso a mais da voz desce nos silêncios.
+- **Chamadas de grupo** (0.9.62 a 0.9.67, Android; iPhone por compilar): até 5 pessoas, voz e
+  vídeo, cifradas ponta a ponta; a minha câmara em cima e os outros na grelha; nome escolhido
+  para cada chamada; entrar depois de recusar; diagnóstico como nas chamadas a dois.
 
 ## A seguir: tornar isto usável no dia a dia
 

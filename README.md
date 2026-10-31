@@ -4,7 +4,7 @@
 
 **SEALER** é um mensageiro privado: sem número de telefone, sem email, com cifra ponta a ponta e proteção pós-quântica. **QT** é o nome do protocolo e deste repositório.
 
-**Estado:** versão de testes, em testes fechados. Apps Android e iPhone **0.9.51**, com dois relays em federação na União Europeia (Estocolmo e Espanha).
+**Estado:** versão de testes, em testes fechados. App Android **0.9.67** (iPhone 0.9.67 por compilar), com dois relays em federação na União Europeia (Estocolmo e Espanha).
 
 [Read this in English →](README.en.md)
 
@@ -30,6 +30,8 @@ Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens c
 
 - **Conversas a dois e em grupo** (até 10 pessoas, 3 administradores), entre Android e iPhone, com *Enviado / Entregue / Visto*.
 - **Chamadas de voz e videochamadas cifradas** no Android e no iPhone, também entre os dois. No Android tocam com a app fechada ou o telemóvel bloqueado, com toque próprio.
+- **Chamadas de grupo** (até 5 pessoas, voz e vídeo, cifradas ponta a ponta): cada um escolhe o nome com que aparece na chamada, e quem recusou pode entrar depois.
+- **Vídeo que se ajusta à rede:** no Wi-Fi sobe até ao que a ligação e os telemóveis aguentam (até 4K); com dados móveis fica até 720p. A voz tem sempre prioridade sobre o vídeo.
 - **Fotos, GIFs, mensagens de voz e ficheiros até 25 MB.** Cada ficheiro tem uma chave própria e sai do servidor quando é descarregado (ou ao fim de 24 horas).
 - **Notificações com a app fechada**, sempre genéricas ("Tens mensagens novas"): sem nome nem texto.
 - **Foto de perfil** só para os teus contactos, cifrada (o servidor nem sabe que é uma foto). Pode mudar-se de 72 em 72 horas.
@@ -83,8 +85,7 @@ O desenho aceita mais relays. O protocolo entre relays está na secção 25 de [
 **A seguir:**
 
 
-- No Android, testar nos telemóveis a integração com o sistema de chamadas (Bluetooth, carro, chamada normal ao mesmo tempo), feita na 0.9.52.
-- Testar nos telemóveis a Comunidade (as pessoas com medalha, só com foto e medalha), feita na 0.9.52 nas duas apps.
+- Compilar e testar a app iPhone 0.9.67 (chamadas de grupo e qualidade do vídeo).
 - Distribuição pela Google Play e pela App Store (hoje a app é instalada à mão pelos testadores). Já preparado: [`docs/google-play.md`](docs/google-play.md).
 - Servidor de produção com backups e alertas.
 
