@@ -92,6 +92,9 @@ export default {
   'index.86': '© 2026 SEALER, un progetto QT.',
 
   'index.87': 'Spagna',
+  'index.88': 'Architettura',
+  'index.89': 'Provato tra iPhone e Android',
+  'index.90': 'Messaggi, chiamate vocali, videochiamata di gruppo con 4 persone e recupero dell’account. Meno dello 0,1&nbsp;% di voce&nbsp;persa.',
   // ---------- Como funciona ----------
   'como._title': 'Come funziona · SEALER',
   'como.@0': 'In 5 semplici passi: come un messaggio viaggia chiuso in SEALER, dal telefono di chi scrive a quello di chi riceve.',
