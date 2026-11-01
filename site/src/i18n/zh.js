@@ -93,9 +93,9 @@ export default {
   'index.86': '© 2026 SEALER，QT项目。',
 
   'index.87': '西班牙',
-  'index.88': '架构',
-  'index.89': '已在iPhone与Android之间测试',
-  'index.90': '消息、语音通话、4人群组视频通话和账户恢复。丢失的语音不到0.1%。',
+  'index.88': 'iPhone与Android',
+  'index.89': '语音丢失不到0.1%',
+  'index.90': '测试了消息、语音通话、4人群组视频通话和账户恢复。',
   // ---------- Como funciona ----------
   'como._title': '工作原理 · SEALER',
   'como.@0': '用5个简单步骤，看一条消息如何在SEALER中加锁传输，从发送者的手机到达接收者的手机。',

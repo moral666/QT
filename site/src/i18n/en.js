@@ -92,9 +92,9 @@ export default {
   'index.86': '© 2026 SEALER, a QT project.',
 
   'index.87': 'Spain',
-  'index.88': 'Architecture',
-  'index.89': 'Tested between iPhone and Android',
-  'index.90': 'Messages, voice calls, a group video call with 4 people and account recovery. Less than 0.1% of voice&nbsp;lost.',
+  'index.88': 'iPhone and Android',
+  'index.89': 'Under 0.1% of voice&nbsp;lost',
+  'index.90': 'We tested messages, voice calls, a group video call with 4 people and account&nbsp;recovery.',
   // ---------- Como funciona ----------
   'como._title': 'How it works · SEALER',
   'como.@0': 'In 5 simple steps: how a message travels locked in SEALER, from the sender’s phone to the recipient’s.',

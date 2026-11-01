@@ -92,9 +92,9 @@ export default {
   'index.86': '© 2026 SEALER, ein QT-Projekt.',
 
   'index.87': 'Spanien',
-  'index.88': 'Architektur',
-  'index.89': 'Getestet zwischen iPhone und Android',
-  'index.90': 'Nachrichten, Sprachanrufe, ein Gruppen-Videoanruf mit 4 Personen und die Kontowiederherstellung. Weniger als 0,1&nbsp;% Sprache&nbsp;verloren.',
+  'index.88': 'iPhone und Android',
+  'index.89': 'Unter 0,1&nbsp;% Sprache verloren',
+  'index.90': 'Getestet: Nachrichten, Sprachanrufe, Gruppen-Videoanruf zu viert und&nbsp;Kontowiederherstellung.',
   // ---------- Como funciona ----------
   'como._title': 'So funktioniert es · SEALER',
   'como.@0': 'In 5 einfachen Schritten: wie eine Nachricht in SEALER verschlossen reist, vom Handy des Absenders bis zu dem des Empfängers.',
