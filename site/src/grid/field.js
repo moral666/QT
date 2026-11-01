@@ -155,7 +155,7 @@ export function createField({ field, layer, reducedMotion, onInteract }) {
 
     // A grelha tem de cobrir o ecrã (também quando recua ao pressionar, a 93%)
     // mais meia janela de cada lado, senão ver-se-iam buracos ao dar a volta.
-    // Em ecrãs muito grandes, a grelha base repete-se (múltiplos de 6 x 4,
+    // Em ecrãs muito grandes, a grelha base repete-se (múltiplos de 5 x 5,
     // para não haver janelas iguais lado a lado).
     const margin = cellSize + 2 * cfg.pointerShift;
     const needCols = Math.ceil((vw / 0.9 + margin) / pitch);

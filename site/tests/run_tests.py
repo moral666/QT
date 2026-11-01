@@ -709,7 +709,7 @@ def test_grid(browser):
     issues = problems(messages)
     passed = (
         pressed and exploring and hero_inert and moved and snapped and centred < 2 and arrow_ok and wheel_ok and home_ok
-        and in_list == 22 and in_grid_while_list == 0 and hash_list == "#lista" and back == s0["cells"] and not issues
+        and in_list == 24 and in_grid_while_list == 0 and hash_list == "#lista" and back == s0["cells"] and not issues
     )
     record(
         "Grelha de janelas (arrastar, recuo ao pressionar, encaixe, tocar, setas, roda, Esc, lista)",

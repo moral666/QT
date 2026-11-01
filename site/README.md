@@ -136,7 +136,7 @@ Todo o conteúdo das janelas está no `index.html`, dentro de `<main class="list
 </article>
 ```
 
-- `data-cell="linha-coluna"` diz onde fica a janela na grelha de 6 colunas por 4 linhas (linhas 0 a 3, colunas 0 a 5). Cada posição só pode ter uma janela. As quatro janelas à volta do centro no início são as das linhas 1 e 2, colunas 2 e 3.
+- `data-cell="linha-coluna"` diz onde fica a janela na grelha de 5 colunas por 5 linhas (linhas 0 a 4, colunas 0 a 4). Cada posição só pode ter uma janela. As quatro janelas à volta do centro no início são as das linhas 1 e 2, colunas 2 e 3.
 - A classe de categoria dá a cor: `tile--todos` e `tile--passo` (lilás), `tile--tecnico` e `tile--arquitetura` (azul frio), `tile--testes tile--figure` (número em destaque), `tile--proximo` (contorno tracejado, para o que ainda não está feito).
 - `tile__label--group` esconde o rótulo no modo lista, onde o título da secção já diz o mesmo.
 - O `id` do título tem de ser único e igual ao `aria-labelledby` da janela.
@@ -316,7 +316,7 @@ O quadro "Entre telemóveis" (Testes e números) continua com o tempo entre tele
 ## 13. Decisões técnicas e limitações conhecidas
 
 - **Grelha em DOM, e não em WebGL como no site da Phantom.** As janelas são texto: em DOM, a letra fica nítida em qualquer ecrã, pode ser selecionada, traduzida pelo navegador e lida pelos leitores de ecrã. Os efeitos (lente, recuo, desvio a seguir o rato, inércia) são calculados por janela, com transformações que não obrigam a recalcular o layout. A distorção é uma aproximação por janela: cada janela encolhe e aproxima-se do centro, mas as suas arestas continuam retas.
-- **Cópias de janelas em ecrãs grandes.** Para a grelha nunca mostrar buracos, em ecrãs muito altos ou muito largos a grelha base de 6 x 4 repete-se (48 a 96 janelas, das quais 24 são as verdadeiras). As cópias são só visuais: sem foco e escondidas dos leitores de ecrã.
+- **Cópias de janelas em ecrãs grandes.** Para a grelha nunca mostrar buracos, em ecrãs muito altos ou muito largos a grelha base de 5 x 5 repete-se (50 a 100 janelas, das quais 25 são as verdadeiras). As cópias são só visuais: sem foco e escondidas dos leitores de ecrã.
 - **A grelha monta-se depois do logótipo.** O logótipo é o conteúdo principal e não espera pela grelha. Num telemóvel lento, a grelha aparece cerca de meio segundo depois.
 - **Three.js em vez de `<model-viewer>`.** O objeto 3D é construído a partir da imagem e do contorno do logótipo, sem ficheiro GLB. É preciso controlar o primeiro fotograma (para coincidir com a imagem), a volta de apresentação, o arrasto com mola, a pausa e a qualidade adaptativa.
 - **As faces do 3D são a imagem.** A frente e o verso mostram a imagem original; a espessura vem das paredes extrudidas. O "S" e os três pontos não têm relevo próprio, e a luz desenhada na imagem não muda com a rotação.

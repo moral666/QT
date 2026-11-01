@@ -4,8 +4,8 @@
  */
 export const FIELD = {
   /** Grelha base: cada janela tem data-cell="linha-coluna" dentro destes limites. */
-  baseCols: 6,
-  baseRows: 4,
+  baseCols: 5,
+  baseRows: 5,
 
   /** Tamanho de cada janela quadrada. */
   cell: {
