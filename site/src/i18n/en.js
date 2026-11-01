@@ -94,7 +94,7 @@ export default {
   'index.87': 'Spain',
   'index.88': 'iPhone and Android',
   'index.89': 'Under 0.1% of voice&nbsp;lost',
-  'index.90': 'We tested messages, files, links, GIFs, profile photos, calls, a 4-person group video call, account recovery and 10&nbsp;languages.',
+  'index.90': 'We tested messages, files, links, GIFs, profile photos, calls, a 5-person group video call, account recovery and 10&nbsp;languages.',
   // ---------- Como funciona ----------
   'como._title': 'How it works · SEALER',
   'como.@0': 'In 5 simple steps: how a message travels locked in SEALER, from the sender’s phone to the recipient’s.',
