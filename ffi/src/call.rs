@@ -98,6 +98,8 @@ const V_DECLINED: u8 = 4;
 /// (`history.rs`), e 17 + 1 + 5 x 19 = 113. O motor da primeiro o IP publico.
 pub const MAX_P2P_ADDRS: usize = 5;
 const _: () = assert!(17 + 1 + MAX_P2P_ADDRS * ADDR_BYTES <= 128);
+/// Um sinal de chamada que nao saiu neste prazo ja nao serve para nada.
+const SIGNAL_TTL_MS: i64 = 2 * 60 * 1000;
 /// Esta nos meus contactos (a lista e da app: `call_contacts_sync`).
 const KV_CONTACT: &str = "call:contact:";
 /// Resposta a antiga janela de aviso da ligacao direta (0005). Ja nao se usa: apagada no
@@ -349,13 +351,15 @@ impl Calls {
     /// A chamada a dois ATENDIDA com `peer` passa a chamada de grupo: acaba deste lado sem
     /// avisar o outro (ele recebe o convite do grupo e faz o mesmo). Fica no historico como
     /// uma chamada atendida. Devolve se havia essa chamada.
-    pub(crate) fn detach_for_group(&mut self, c: &st::rusqlite::Connection, peer: &str) -> Result<bool, QtError> {
-        match self.cur.as_ref() {
-            Some(k) if k.state == State::Active && k.contact == peer => note_answered_end(c, k)?,
-            _ => return Ok(false),
-        }
+    /// A chamada a dois atendida com `peer` passa a chamada de grupo: acaba aqui, sem "desligou".
+    /// Devolve o estado da minha camara nela (`None`: nao havia essa chamada). A nota no historico
+    /// nao decide nada: a passagem faz-se mesmo que ela falhe.
+    pub(crate) fn detach_for_group(&mut self, c: &st::rusqlite::Connection, peer: &str) -> Option<bool> {
+        let k = self.cur.as_ref().filter(|k| k.state == State::Active && k.contact == peer)?;
+        let camera = k.video.camera;
+        let _ = note_answered_end(c, k);
         self.end_current(CallEndReason::Group);
-        Ok(true)
+        Some(camera)
     }
 
     /// Com quem e a chamada a dois atendida, se houver.
@@ -423,6 +427,11 @@ pub(crate) fn offer_fresh(sent_at: i64, now: i64) -> bool {
 /// Cifra uma mensagem de chamada para `cid` e poe-na na outbox. `wake`: a oferta e o
 /// cancelamento antes de atender tocam a campainha marcada; o resto vai `silent`.
 pub(crate) fn queue(client: &QtClient, c: &st::rusqlite::Connection, cid: &str, plain: &[u8], wake: Option<CallWake>) -> Result<OutboxItem, QtError> {
+    queue_until(client, c, cid, plain, wake, now_ms() + SIGNAL_TTL_MS)
+}
+
+/// `expires_ms`: ate quando vale a pena enviar (0 = sem prazo).
+fn queue_until(client: &QtClient, c: &st::rusqlite::Connection, cid: &str, plain: &[u8], wake: Option<CallWake>, expires_ms: i64) -> Result<OutboxItem, QtError> {
     let id = random::<16>()?;
     let blob = client.seal_with(c, cid, plain)?;
     let kind = match wake {
@@ -430,15 +439,21 @@ pub(crate) fn queue(client: &QtClient, c: &st::rusqlite::Connection, cid: &str, 
         Some(CallWake::CallEnd) => hm::OUTBOX_CALL_END,
         None => hm::OUTBOX_RECEIPT,
     };
-    hm::outbox_put(c, &id, cid, kind, &blob)?;
+    hm::outbox_put_expiring(c, &id, cid, kind, &blob, expires_ms)?;
     #[cfg(test)]
     crate::client::relock(&SENT_OPS).push((cid.to_string(), plain[HDR]));
     Ok(OutboxItem { outbox_id: hex(&id), contact_id: cid.to_string(), blob, silent: wake.is_none(), relay_id: None, wake })
 }
 
 /// O outro esta nos meus contactos (a lista que a app passa em `call_contacts_sync`)?
-fn is_contact(c: &st::rusqlite::Connection, cid: &str) -> Result<bool, QtError> {
+pub(crate) fn is_contact(c: &st::rusqlite::Connection, cid: &str) -> Result<bool, QtError> {
     Ok(st::kv_get(c, &format!("{KV_CONTACT}{cid}"))?.is_some())
+}
+
+/// Nos testes: acrescenta um contacto sem tocar nos outros.
+#[cfg(test)]
+pub(crate) fn mark_contact(c: &st::rusqlite::Connection, cid: &str) {
+    st::kv_set(c, &format!("{KV_CONTACT}{cid}"), &[1]).unwrap();
 }
 
 /// A REGRA da ligacao direta, deste lado: o outro esta nos meus contactos, nao esta
@@ -1162,10 +1177,12 @@ impl QtClient {
             if is_blocked_in(&tx, cid)? || st::load_session(&tx, cid)?.is_none() {
                 continue;
             }
-            queue(self, &tx, cid, &encode(OP_CAPS, &CAPS_ANNOUNCE_ID, &[caps]), None)?;
+            // Fora de uma chamada: fica na outbox ate sair (so se anuncia uma vez).
+            queue_until(self, &tx, cid, &encode(OP_CAPS, &CAPS_ANNOUNCE_ID, &[caps]), None, 0)?;
             st::kv_set(&tx, &key, &[caps])?;
             n += 1;
         }
+        crate::groups::apply_invites(&tx)?;
         tx.commit()?;
         drop(c);
         for cid in gone {

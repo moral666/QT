@@ -203,7 +203,8 @@ impl RatchetState {
     /// a signed pre-key publica de Bob como primeira chave DH remota.
     pub fn init_as_initiator(shared_secret: [u8; 32], their_dh_public: PublicKey) -> Self {
         let dh_send = DhKeyPair::generate();
-        let dh_out = crate::primitives::dh(&dh_send.private, &their_dh_public);
+        // A signed pre-key ja passou pela verificacao no aperto de mao.
+        let dh_out = crate::primitives::dh_unverified(&dh_send.private, &their_dh_public);
         let (new_root, sending_chain) = kdf_root_key(&shared_secret, &dh_out);
 
         Self {
@@ -249,11 +250,11 @@ impl RatchetState {
         self
     }
 
-    fn dh_ratchet_step(&mut self, their_new_dh_public: PublicKey) {
+    fn dh_ratchet_step(&mut self, their_new_dh_public: PublicKey) -> Result<(), RatchetError> {
         self.prev_send_n = self.send_n;
         // As saidas DH e as copias locais das chaves derivadas sao zeradas logo a seguir
         // (o estado guarda a sua propria copia).
-        let mut dh_out = crate::primitives::dh(&self.dh_send.private, &their_new_dh_public);
+        let mut dh_out = crate::primitives::dh(&self.dh_send.private, &their_new_dh_public)?;
         let (mut new_root, mut recv_chain) = kdf_root_key(&self.root_key, &dh_out);
         dh_out.zeroize();
         self.root_key = new_root;
@@ -264,7 +265,7 @@ impl RatchetState {
         self.recv_n = 0;
 
         self.dh_send = DhKeyPair::generate();
-        let mut dh_out2 = crate::primitives::dh(&self.dh_send.private, &their_new_dh_public);
+        let mut dh_out2 = crate::primitives::dh(&self.dh_send.private, &their_new_dh_public)?;
         let (mut new_root2, mut send_chain) = kdf_root_key(&self.root_key, &dh_out2);
         dh_out2.zeroize();
         self.root_key = new_root2;
@@ -272,6 +273,7 @@ impl RatchetState {
         new_root2.zeroize();
         send_chain.zeroize();
         self.send_n = 0;
+        Ok(())
     }
 
     pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<EncryptedMessage, RatchetError> {
@@ -354,7 +356,7 @@ impl RatchetState {
                     self.skip_message_keys(&old.to_bytes(), msg.pn)?;
                 }
             }
-            self.dh_ratchet_step(msg.dh_public);
+            self.dh_ratchet_step(msg.dh_public)?;
         }
 
         // 3. Cadeia atual: mensagem ja consumida (e nao guardada) = repetida.

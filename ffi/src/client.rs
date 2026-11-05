@@ -119,6 +119,9 @@ pub(crate) fn relock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T>
     })
 }
 
+/// Registos de deduplicacao sem cabecalho PQXDH ficam 60 dias (`st::prune_seen_envelopes`).
+const SEEN_ENVELOPE_SECS: i64 = 60 * 24 * 3600;
+
 pub(crate) fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{:02x}", x)).collect()
 }
@@ -288,6 +291,8 @@ impl QtClient {
             st::StorageError::InvalidStorageKey => bad("storage_key"),
             _ => QtError::Storage,
         })?;
+        // A tabela da deduplicacao nao cresce para sempre. Uma falha aqui nao impede a app de abrir.
+        let _ = st::prune_seen_envelopes(&conn, SEEN_ENVELOPE_SECS);
         Ok(Arc::new(QtClient {
             conn: Mutex::new(conn),
             files_dir: std::path::PathBuf::from(format!("{path}.anexos")),
@@ -867,7 +872,10 @@ impl QtClient {
         // `None`: a mensagem foi lida com a sessao do outro lado, mas a nossa fica (ver abaixo).
         let (state, plaintext) = match st::load_session(c, contact_id)? {
             None => {
-                let h = header.ok_or(QtError::UnknownSession)?;
+                let Some(h) = header else {
+                    crate::history::restart_lost_session(c, contact_id)?;
+                    return Err(QtError::UnknownSession);
+                };
                 let (mut s, opk) = self.establish_responder(c, contact_id, kind, h)?;
                 let p = s.decrypt(&msg).map_err(|_| QtError::Crypto)?;
                 used_opk = opk;
@@ -921,7 +929,7 @@ impl QtClient {
             st::save_session(&tx, contact_id, state)?;
             st::kv_delete(&tx, &format!("pending:{contact_id}"))?;
         }
-        st::record_envelope(&tx, contact_id, &env_id)?;
+        st::record_envelope_with(&tx, contact_id, &env_id, header.is_some())?;
         if let Some(id) = used_opk {
             st::delete_one_time_prekey(&tx, id)?;
         }

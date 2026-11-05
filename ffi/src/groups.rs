@@ -18,7 +18,11 @@
 //!     grupo que ja conheco, tem de vir de quem ja era administrador.
 //!   * Uma mensagem so e aceite de quem esta nos membros. Se chegar antes da info
 //!     do grupo (os envelopes de pessoas diferentes nao chegam por ordem), fica
-//!     guardada ate a info chegar (no maximo `MAX_PENDING` por telemovel).
+//!     guardada ate a info chegar (no maximo `MAX_PENDING` por telemovel e
+//!     `MAX_PENDING_PER_SENDER` por remetente).
+//!   * Grupo criado por quem nao esta nos meus contactos: fica como convite. Quem me adicionou
+//!     aparece como um convite normal, com o nome do grupo na conversa, e o grupo so entra
+//!     depois de Aceitar (`apply_invites`). Com Recusar, sai tudo (`forget_invites`).
 //!   * Quem nao e administrador sai com o tipo 8; os administradores que a
 //!     recebem publicam logo uma versao nova sem essa pessoa.
 //!   * Sem recibos de entregue/visto nos grupos (menos trafego); a mensagem passa
@@ -42,13 +46,22 @@ pub const MAX_GROUP_MEMBERS: usize = 10;
 pub const MAX_GROUP_ADMINS: usize = 3;
 /// Nome maximo do grupo (bytes UTF-8).
 pub const MAX_GROUP_NAME: usize = 100;
+/// O nome de um grupo so pode mudar de 24 em 24 horas (a primeira mudanca e logo).
+const GROUP_RENAME_COOLDOWN_MS: i64 = 24 * 60 * 60 * 1000;
 /// Nome de um grupo criado sem nome.
 pub const DEFAULT_GROUP_NAME: &str = "Grupo";
 /// Mensagens de grupos ainda desconhecidos guardadas a espera da info.
-const MAX_PENDING: usize = 100;
+const MAX_PENDING: usize = 300;
+/// O mesmo, por remetente: um desconhecido nao ocupa o lugar das mensagens dos outros.
+const MAX_PENDING_PER_SENDER: i64 = 5;
+/// Convites para grupos de quem nao esta nos contactos, por pessoa e no total.
+const MAX_INVITES_PER_SENDER: i64 = 3;
+const MAX_INVITES: i64 = 30;
 /// Prefixo da conversa de um grupo no historico.
 pub const GROUP_CONV_PREFIX: &str = "g:";
 const KV_PENDING: &str = "gpend:";
+/// `ginvite:<quem convidou>:<grupo>` = o JSON do grupo, a espera de Aceitar.
+const KV_INVITE: &str = "ginvite:";
 const KV_OUT: &str = "gout:";
 const KV_COUNT: &str = "gcnt:";
 
@@ -62,10 +75,25 @@ pub(crate) struct StoredMember {
 pub(crate) struct StoredGroup {
     pub v: u32,
     pub name: String,
+    /// Quando o nome mudou pela ultima vez (ms). 0: nunca mudou.
+    #[serde(default, skip_serializing_if = "name_never_changed")]
+    pub named_at: i64,
     pub members: Vec<StoredMember>,
 }
 
+fn name_never_changed(at: &i64) -> bool {
+    *at == 0
+}
+
 impl StoredGroup {
+    /// Quanto falta para o nome poder mudar outra vez.
+    fn rename_wait_ms(&self, now: i64) -> u64 {
+        if self.named_at <= 0 {
+            return 0;
+        }
+        (self.named_at + GROUP_RENAME_COOLDOWN_MS - now).clamp(0, GROUP_RENAME_COOLDOWN_MS) as u64
+    }
+
     fn valid(&self) -> bool {
         let admins = self.members.iter().filter(|m| m.admin).count();
         if self.name.trim().is_empty() || self.name.len() > MAX_GROUP_NAME || self.name.contains(['\n', '\r']) {
@@ -90,6 +118,7 @@ impl StoredGroup {
         StoredGroup {
             v: self.v,
             name: self.name.clone(),
+            named_at: self.named_at,
             members: self.members.iter().filter(|m| member_cid(&m.pid).as_deref() != Some(cid)).cloned().collect(),
         }
     }
@@ -122,6 +151,8 @@ pub struct GroupInfo {
     /// false: sai do grupo ou fui removido (o historico fica ate ser apagado).
     pub active: bool,
     pub version: u32,
+    /// Quanto falta para o nome poder mudar outra vez (0: pode mudar ja).
+    pub rename_wait_ms: u64,
 }
 
 /// Para criar ou mudar um grupo: um membro e se e administrador.
@@ -219,6 +250,7 @@ fn to_info(gid: &str, g: &StoredGroup, active: bool, me: &str) -> GroupInfo {
         i_am_admin: active && g.is_admin(me),
         active,
         version: g.v,
+        rename_wait_ms: g.rename_wait_ms(now_ms()),
     }
 }
 
@@ -354,8 +386,14 @@ pub(crate) fn on_group_msg(c: &st::rusqlite::Connection, from: &str, body: &[u8]
     match load(c, &gid)? {
         None => {
             // A info do grupo ainda nao chegou: guarda ate chegar.
-            let n: i64 = c.query_row("SELECT COUNT(*) FROM kv WHERE k LIKE ?1", [format!("{KV_PENDING}%")], |r| r.get(0))?;
-            if (n as usize) < MAX_PENDING {
+            let prefix = format!("{KV_PENDING}%");
+            let n: i64 = c.query_row("SELECT COUNT(*) FROM kv WHERE k LIKE ?1", [&prefix], |r| r.get(0))?;
+            let mine: i64 = c.query_row(
+                "SELECT COUNT(*) FROM kv WHERE k LIKE ?1 AND substr(v, 1, 64) = ?2",
+                st::rusqlite::params![prefix, from.as_bytes()],
+                |r| r.get(0),
+            )?;
+            if (n as usize) < MAX_PENDING && mine < MAX_PENDING_PER_SENDER {
                 let mut v = from.as_bytes().to_vec();
                 v.extend_from_slice(&body[16..]);
                 st::kv_set(c, &format!("{KV_PENDING}{gid}:{}", hex(&new_id()?)), &v)?;
@@ -435,7 +473,11 @@ pub(crate) fn on_group_info(c: &st::rusqlite::Connection, from: &str, body: &[u8
             if !g.is_admin(from) || !g.has(&me) {
                 return Ok(no_change(from));
             }
+            if !crate::call::is_contact(c, from)? {
+                return hold_invite(c, from, &gid, &g);
+            }
             save(c, &gid, &g, true)?;
+            forget_group_invites(c, &gid)?;
             replay_pending(c, &gid)?;
         }
         Some((old, _)) => {
@@ -448,6 +490,98 @@ pub(crate) fn on_group_info(c: &st::rusqlite::Connection, from: &str, body: &[u8
         }
     }
     Ok(ReceiveResult::Updated { contact_id: conv_of(&gid) })
+}
+
+/// Quem me adicionou nao esta nos meus contactos: o grupo fica a espera. Quem convida aparece
+/// como quem escreve pela primeira vez, com o nome do grupo na conversa (o id da mensagem e o do
+/// grupo, por isso uma versao nova nao a repete).
+fn hold_invite(c: &st::rusqlite::Connection, from: &str, gid: &str, g: &StoredGroup) -> Result<ReceiveResult, QtError> {
+    let key = format!("{KV_INVITE}{from}:{gid}");
+    match st::kv_get(c, &key)? {
+        Some(old) => {
+            if serde_json::from_slice::<StoredGroup>(&old).is_ok_and(|o| g.v <= o.v) {
+                return Ok(no_change(from));
+            }
+        }
+        None => {
+            let count = |pattern: String| -> Result<i64, QtError> {
+                Ok(c.query_row("SELECT COUNT(*) FROM kv WHERE k LIKE ?1", [pattern], |r| r.get(0))?)
+            };
+            if count(format!("{KV_INVITE}{from}:%"))? >= MAX_INVITES_PER_SENDER || count(format!("{KV_INVITE}%"))? >= MAX_INVITES {
+                return Ok(no_change(from));
+            }
+        }
+    }
+    st::kv_set(c, &key, &serde_json::to_vec(g).map_err(|_| QtError::Storage)?)?;
+    let Some(m) = g.members.iter().find(|m| member_cid(&m.pid).as_deref() == Some(from)) else { return Ok(no_change(from)) };
+    st::kv_set(c, &format!("{}{from}", crate::history::KV_INTRO), m.pid.as_bytes())?;
+    let id = parse_gid(gid)?;
+    let now = now_ms();
+    if hm::insert_message(c, &id, from, false, hm::KIND_TEXT, &g.name, now, now, hm::ST_RECEIVED)?.is_none() {
+        return Ok(no_change(from));
+    }
+    Ok(match hm::get_message(c, from, &id)? {
+        Some(m) => ReceiveResult::NewMessage { message: to_chat(&m) },
+        None => no_change(from),
+    })
+}
+
+/// Os convites guardados: (chave, quem convidou, grupo).
+fn invites(c: &st::rusqlite::Connection) -> Result<Vec<(String, String, String)>, QtError> {
+    let mut stmt = c.prepare("SELECT k FROM kv WHERE k LIKE ?1")?;
+    let rows = stmt.query_map([format!("{KV_INVITE}%")], |r| r.get::<_, String>(0))?;
+    let keys = rows.collect::<Result<Vec<_>, _>>()?;
+    Ok(keys
+        .into_iter()
+        .filter_map(|k| {
+            let (from, gid) = k[KV_INVITE.len()..].split_once(':')?;
+            let (from, gid) = (from.to_string(), gid.to_string());
+            Some((k, from, gid))
+        })
+        .collect())
+}
+
+/// O grupo entrou por outro caminho: os convites para ele ja nao servem.
+fn forget_group_invites(c: &st::rusqlite::Connection, gid: &str) -> Result<(), QtError> {
+    for (k, _, g) in invites(c)? {
+        if g == gid {
+            st::kv_delete(c, &k)?;
+        }
+    }
+    Ok(())
+}
+
+/// A lista de contactos mudou: quem aceitei ja pode pôr-me nos grupos que estavam a espera.
+pub(crate) fn apply_invites(c: &st::rusqlite::Connection) -> Result<(), QtError> {
+    let waiting = invites(c)?;
+    if waiting.is_empty() {
+        return Ok(());
+    }
+    let (me, _) = my_identity(c)?;
+    for (k, from, gid) in waiting {
+        if !crate::call::is_contact(c, &from)? || is_blocked_in(c, &from)? {
+            continue;
+        }
+        let json = st::kv_get(c, &k)?;
+        st::kv_delete(c, &k)?;
+        let Some(g) = json.and_then(|j| serde_json::from_slice::<StoredGroup>(&j).ok()) else { continue };
+        if load(c, &gid)?.is_none() && g.valid() && g.is_admin(&from) && g.has(&me) {
+            save(c, &gid, &g, true)?;
+            replay_pending(c, &gid)?;
+        }
+    }
+    Ok(())
+}
+
+/// Convite recusado (conversa apagada): sai o grupo e o que estava guardado para ele.
+pub(crate) fn forget_invites(c: &st::rusqlite::Connection, from: &str) -> Result<(), QtError> {
+    for (k, f, gid) in invites(c)? {
+        if f == from {
+            st::kv_delete(c, &k)?;
+            c.execute("DELETE FROM kv WHERE k LIKE ?1", [format!("{KV_PENDING}{gid}:%")])?;
+        }
+    }
+    Ok(())
 }
 
 /// Mensagens que chegaram antes da info do grupo: agora que o grupo existe.
@@ -513,7 +647,7 @@ impl QtClient {
                 members.push(StoredMember { pid, admin: false });
             }
         }
-        let g = StoredGroup { v: 1, name: clean_name(&name), members };
+        let g = StoredGroup { v: 1, name: clean_name(&name), named_at: 0, members };
         if !g.valid() {
             return Err(bad("group"));
         }
@@ -554,9 +688,15 @@ impl QtClient {
         if !active || !old.is_admin(&me) {
             return Err(bad("not_admin"));
         }
+        let name = clean_name(&name);
+        let renamed = name != old.name;
+        if renamed && old.rename_wait_ms(now_ms()) > 0 {
+            return Err(bad("group_rename_wait"));
+        }
         let g = StoredGroup {
             v: old.v + 1,
-            name: clean_name(&name),
+            name,
+            named_at: if renamed { now_ms() } else { old.named_at },
             members: members.into_iter().map(|m| StoredMember { pid: m.public_id, admin: m.admin }).collect(),
         };
         if !g.valid() || !g.has(&me) {

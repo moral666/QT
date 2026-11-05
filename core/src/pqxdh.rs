@@ -176,13 +176,14 @@ pub fn pqxdh_initiate(
 
     let ephemeral = DhKeyPair::generate();
 
-    let dh1 = dh(&my_identity.private, &their_bundle.signed_pre_key);
-    let dh2 = dh(&ephemeral.private, &their_bundle.identity_key);
-    let dh3 = dh(&ephemeral.private, &their_bundle.signed_pre_key);
+    let dh1 = dh(&my_identity.private, &their_bundle.signed_pre_key)?;
+    let dh2 = dh(&ephemeral.private, &their_bundle.identity_key)?;
+    let dh3 = dh(&ephemeral.private, &their_bundle.signed_pre_key)?;
     let dh4 = their_bundle
         .one_time_pre_key
         .as_ref()
-        .map(|opk| dh(&ephemeral.private, opk));
+        .map(|opk| dh(&ephemeral.private, opk))
+        .transpose()?;
 
     let (pq_ciphertext, pq_shared_secret) =
         their_bundle
@@ -215,10 +216,10 @@ pub fn pqxdh_respond(
     their_ephemeral_pub: &PublicKey,
     pq_ciphertext: &Ciphertext<MlKem768>,
 ) -> Result<[u8; 32], PqxdhError> {
-    let dh1 = dh(&my_signed_pre_key.private, their_identity_pub);
-    let dh2 = dh(&my_identity.private, their_ephemeral_pub);
-    let dh3 = dh(&my_signed_pre_key.private, their_ephemeral_pub);
-    let dh4 = my_one_time_pre_key.map(|opk| dh(&opk.private, their_ephemeral_pub));
+    let dh1 = dh(&my_signed_pre_key.private, their_identity_pub)?;
+    let dh2 = dh(&my_identity.private, their_ephemeral_pub)?;
+    let dh3 = dh(&my_signed_pre_key.private, their_ephemeral_pub)?;
+    let dh4 = my_one_time_pre_key.map(|opk| dh(&opk.private, their_ephemeral_pub)).transpose()?;
 
     let pq_shared_secret = my_pq_pre_key
         .decapsulation_key
@@ -320,12 +321,12 @@ pub fn pqxdh_initiate_v2(
     let ephemeral = DhKeyPair::generate();
 
     let mut dhs = vec![
-        dh(&my_identity.private, &spk),
-        dh(&ephemeral.private, &their_identity),
-        dh(&ephemeral.private, &spk),
+        dh(&my_identity.private, &spk)?,
+        dh(&ephemeral.private, &their_identity)?,
+        dh(&ephemeral.private, &spk)?,
     ];
     if let Some(opk) = one_time_pre_key {
-        dhs.push(dh(&ephemeral.private, opk));
+        dhs.push(dh(&ephemeral.private, opk)?);
     }
     let (pq_ciphertext, pq_shared_secret) =
         pq_pre_key.encapsulate(&mut OsRng).map_err(|_| PqxdhError::KemFailure)?;
@@ -361,12 +362,12 @@ pub fn pqxdh_respond_v2(
     pq_ciphertext: &Ciphertext<MlKem768>,
 ) -> Result<[u8; 32], PqxdhError> {
     let mut dhs = vec![
-        dh(&my_signed_pre_key.private, their_identity_pub),
-        dh(&my_identity.private, their_ephemeral_pub),
-        dh(&my_signed_pre_key.private, their_ephemeral_pub),
+        dh(&my_signed_pre_key.private, their_identity_pub)?,
+        dh(&my_identity.private, their_ephemeral_pub)?,
+        dh(&my_signed_pre_key.private, their_ephemeral_pub)?,
     ];
     if let Some(opk) = my_one_time_pre_key {
-        dhs.push(dh(&opk.private, their_ephemeral_pub));
+        dhs.push(dh(&opk.private, their_ephemeral_pub)?);
     }
     let pq_shared_secret = my_pq_pre_key
         .decapsulation_key

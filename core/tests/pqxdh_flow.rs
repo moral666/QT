@@ -118,3 +118,24 @@ fn v2_rejeita_bundle_com_assinatura_adulterada() {
     bundle.created_at += 1;
     assert!(pqxdh_initiate_v2(&DhKeyPair::generate(), &bundle, None).is_err());
 }
+
+#[test]
+fn one_time_prekey_de_ordem_pequena_e_recusada() {
+    let alice_identity = DhKeyPair::generate();
+    let bob_identity = DhKeyPair::generate();
+    let bob_identity_signing = SigningKeyPair::generate();
+    let bob_signed_pre_key = DhKeyPair::generate();
+    let bob_pq_pre_key = PqPreKeyPair::generate();
+    let signature = sign_pre_key(&bob_identity_signing, &bob_identity.public, &bob_signed_pre_key.public, &bob_pq_pre_key.public_key_bytes());
+    let bundle = |opk| PqPreKeyBundle {
+        identity_key: bob_identity.public,
+        identity_signing_key: bob_identity_signing.verifying_key,
+        signed_pre_key: bob_signed_pre_key.public,
+        signed_pre_key_signature: signature,
+        pq_pre_key: bob_pq_pre_key.encapsulation_key.clone(),
+        one_time_pre_key: opk,
+    };
+    let zero = x25519_dalek::PublicKey::from([0u8; 32]);
+    assert!(pqxdh_initiate(&alice_identity, &bundle(Some(zero))).is_err());
+    assert!(pqxdh_initiate(&alice_identity, &bundle(None)).is_ok());
+}

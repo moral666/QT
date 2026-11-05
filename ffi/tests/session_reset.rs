@@ -313,3 +313,21 @@ fn apagar_contacto_bloqueado_nao_avisa() {
     assert!(a.c.outbox().unwrap().is_empty());
     assert!(a.c.delete_contact_notify(b.cid(), "x".into()).is_err());
 }
+
+/// Mensagem de um contacto com quem perdi a sessao: marca que falta abrir uma nova, e o que ele
+/// nao viu confirmado volta a seguir por ela.
+#[test]
+fn mensagem_sem_sessao_de_um_contacto_abre_sessao_nova() {
+    let (a, b) = (peer("alice", 0x81), peer("bob", 0x82));
+    a.start_with(&b);
+    a.c.send_text(b.cid(), "ola".into()).unwrap();
+    relay(&a, &b);
+    // A Alice perde a sessao (ex.: reinstalou) e o Bob escreve-lhe com a sessao antiga.
+    a.c.delete_contact(b.cid()).unwrap();
+    a.c.call_contacts_sync(vec![b.cid()]).unwrap();
+    b.c.send_text(a.cid(), "ainda ai?".into()).unwrap();
+    for item in b.c.outbox().unwrap() {
+        assert!(matches!(a.c.receive_sealed(item.blob.clone()), Err(QtError::UnknownSession | QtError::Replay)));
+    }
+    assert_eq!(a.c.sessions_to_restart().unwrap(), vec![b.cid()]);
+}

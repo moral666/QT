@@ -140,8 +140,8 @@ fn lista_de_conversas_igual_a_consulta_antiga() {
             }
             n += 1;
             let id = [n.to_be_bytes().as_slice(), &[k as u8; 12]].concat();
-            let out = (n % 3) == 0;
-            let st = if out { ST_SENT } else if n % 4 == 0 { ST_READ_BY_ME } else { ST_RECEIVED };
+            let out = n.is_multiple_of(3);
+            let st = if out { ST_SENT } else if n.is_multiple_of(4) { ST_READ_BY_ME } else { ST_RECEIVED };
             insert_message(&c, &id, &format!("c{k:02}"), out, KIND_TEXT, &format!("m{n}"), n as i64, n as i64, st).unwrap();
         }
     }

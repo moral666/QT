@@ -82,6 +82,58 @@ fn words_err(_: qr::RecoveryError) -> QtError {
     bad("palavras")
 }
 
+/// O que vai na copia. Os campos ficam por ordem alfabetica: e a ordem em que sempre foram
+/// escritos, e o resumo da copia depende dela. As chaves vivem em `Zeroizing`, tal como o JSON.
+#[derive(serde::Serialize)]
+struct BackupOut<'a> {
+    badge: Option<&'a str>,
+    blocked: &'a [String],
+    contacts: &'a [serde_json::Value],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    created_at_ms: Option<i64>,
+    identity: &'a str,
+    signing: &'a str,
+    v: u8,
+}
+
+impl BackupOut<'_> {
+    fn to_json(&self, contacts: usize) -> Result<Zeroizing<Vec<u8>>, QtError> {
+        // Com lugar reservado, o JSON nao muda de sitio na memoria (nao ficam copias para tras).
+        let mut out = Zeroizing::new(Vec::with_capacity(4096 + contacts * 256 + self.blocked.len() * 80));
+        serde_json::to_writer(&mut *out, self).map_err(|_| QtError::Storage)?;
+        Ok(out)
+    }
+}
+
+/// O que se le da copia. So os campos usados: as chaves em `Zeroizing`.
+#[derive(serde::Deserialize)]
+struct BackupIn {
+    #[serde(deserialize_with = "secret_string")]
+    identity: Zeroizing<String>,
+    #[serde(deserialize_with = "secret_string")]
+    signing: Zeroizing<String>,
+    #[serde(default)]
+    contacts: Vec<serde_json::Value>,
+    #[serde(default)]
+    blocked: Vec<serde_json::Value>,
+    #[serde(default)]
+    badge: serde_json::Value,
+}
+
+fn secret_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Zeroizing<String>, D::Error> {
+    <String as serde::Deserialize>::deserialize(d).map(Zeroizing::new)
+}
+
+/// Hex de uma chave privada, em `Zeroizing` e sem o texto mudar de sitio na memoria.
+fn hex_secret(b: &[u8]) -> Zeroizing<String> {
+    use std::fmt::Write;
+    let mut s = Zeroizing::new(String::with_capacity(b.len() * 2));
+    for x in b {
+        let _ = write!(s, "{x:02x}");
+    }
+    s
+}
+
 fn unhex32(s: &str) -> Option<Zeroizing<[u8; 32]>> {
     if s.len() != 64 {
         return None;
@@ -182,17 +234,22 @@ impl QtClient {
             .filter(|x| valid_public_id(&x.public_id))
             .map(|x| serde_json::json!({"n": x.nickname.chars().take(NICK_MAX).collect::<String>(), "p": x.public_id}))
             .collect();
+        let (identity_key, signing_key) = (
+            hex_secret(&Zeroizing::new(ident.identity.private.to_bytes())[..]),
+            hex_secret(&Zeroizing::new(ident.identity_signing.to_bytes())[..]),
+        );
+        let mut body = BackupOut {
+            badge: badge.as_deref(),
+            blocked: &blocked,
+            contacts: &list,
+            created_at_ms: None,
+            identity: &identity_key,
+            signing: &signing_key,
+            v: 1,
+        };
         // Resumo do que vai na copia (sem a hora): se for igual ao ultimo enviado, nada a fazer.
-        let mut body = serde_json::json!({
-            "v": 1,
-            "identity": hex(&ident.identity.private.to_bytes()),
-            "signing": hex(&ident.identity_signing.to_bytes()),
-            "contacts": list,
-            "blocked": blocked,
-            "badge": badge,
-        });
         let digest = {
-            let plain = Zeroizing::new(serde_json::to_vec(&body).map_err(|_| QtError::Storage)?);
+            let plain = body.to_json(contacts.len())?;
             let mut h = Sha256::new();
             h.update(lookup.as_bytes());
             h.update(&*plain);
@@ -201,9 +258,8 @@ impl QtClient {
         if !force && st::kv_get(&c, KV_DIGEST)?.as_deref() == Some(digest.as_bytes()) {
             return Ok(BackupUpload { requests: vec![], digest });
         }
-        body["created_at_ms"] = serde_json::json!(now_ms());
-        let plain = Zeroizing::new(serde_json::to_vec(&body).map_err(|_| QtError::Storage)?);
-        drop(body);
+        body.created_at_ms = Some(now_ms());
+        let plain = body.to_json(contacts.len())?;
         let sealed = qr::seal(&key, &plain).map_err(|_| bad("copia"))?;
         let generation = hex(&crate::history::new_id()?[..8]);
         let chunks: Vec<&[u8]> = sealed.chunks(PART_MAX).collect();
@@ -254,13 +310,12 @@ impl QtClient {
         let keys = &pending.keys;
         let sealed = parts.concat();
         let plain = qr::open(&keys.key, &sealed).map_err(|_| bad("copia"))?;
-        let v: serde_json::Value = serde_json::from_slice(&plain).map_err(|_| bad("copia"))?;
-        let field = |k: &str| v[k].as_str().and_then(unhex32).ok_or_else(|| bad("copia"));
-        let (id_priv, sign_priv) = (field("identity")?, field("signing")?);
-        let contacts: Vec<BackupContact> = v["contacts"]
-            .as_array()
-            .into_iter()
-            .flatten()
+        let v: BackupIn = serde_json::from_slice(&plain).map_err(|_| bad("copia"))?;
+        let field = |k: &Zeroizing<String>| unhex32(k.as_str()).ok_or_else(|| bad("copia"));
+        let (id_priv, sign_priv) = (field(&v.identity)?, field(&v.signing)?);
+        let contacts: Vec<BackupContact> = v
+            .contacts
+            .iter()
             .filter_map(|x| {
                 let p = x["p"].as_str()?;
                 valid_public_id(p).then(|| BackupContact {
@@ -270,14 +325,13 @@ impl QtClient {
             })
             .take(MAX_CONTACTS)
             .collect();
-        let blocked: Vec<String> = v["blocked"]
-            .as_array()
-            .into_iter()
-            .flatten()
+        let blocked: Vec<String> = v
+            .blocked
+            .iter()
             .filter_map(|x| x.as_str().filter(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())))
             .map(str::to_string)
             .collect();
-        let badge = v["badge"].as_str().and_then(|h| {
+        let badge = v.badge.as_str().and_then(|h| {
             (h.len() % 2 == 0).then(|| (0..h.len()).step_by(2).map(|i| u8::from_str_radix(&h[i..i + 2], 16).ok()).collect::<Option<Vec<u8>>>())?
         });
 
@@ -489,6 +543,14 @@ mod tests {
         assert_eq!(novo.profile_photo_of(cid(&bob)).unwrap(), Some(foto));
         // So uma vez.
         assert_eq!(bob.badge_sync(vec![cid(&novo)]).unwrap(), 0);
+    }
+
+    #[test]
+    fn copia_escrita_pela_ordem_de_sempre() {
+        let (blocked, contacts) = (vec!["b".to_string()], vec![serde_json::json!({"n": "x", "p": "y"})]);
+        let body = BackupOut { badge: None, blocked: &blocked, contacts: &contacts, created_at_ms: None, identity: "i", signing: "s", v: 1 };
+        let old = serde_json::json!({"v": 1, "identity": "i", "signing": "s", "contacts": contacts, "blocked": blocked, "badge": null});
+        assert_eq!(*body.to_json(1).unwrap(), serde_json::to_vec(&old).unwrap(), "o resumo da copia depende disto");
     }
 
     #[test]
