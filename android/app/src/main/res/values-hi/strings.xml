@@ -433,7 +433,6 @@
     <string name="gcall_full">ग्रुप कॉल में पहले से 5 लोग हैं।</string>
     <string name="gcall_notice">ग्रुप कॉल में आपका नेटवर्क पता दूसरे प्रतिभागियों को दिखता है।</string>
     <string name="gcall_me">मैं</string>
-    <string name="gcall_join">कॉल में शामिल हों</string>
     <string name="gcall_name_title">इस कॉल में आपका नाम</string>
     <string name="gcall_name_text">जिनके संपर्कों में आप नहीं हैं, उन्हें यह नाम दिखेगा।</string>
 </resources>

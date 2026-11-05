@@ -6,6 +6,19 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 5 de novembro de 2026: grupos sem chamadas (Android e iPhone 0.9.70, build 70)
+
+- **Os grupos são só para mensagens:** texto, mensagens de voz, fotos, GIFs e ficheiros. Saem do
+  topo do grupo os botões de chamada e de videochamada e o "Entrar na chamada". O ecrã do grupo
+  volta ao desenho de antes da 0.9.62.
+- **Núcleo:** ligar a um grupo dá erro (`group_call_off`) e o tipo 14 que chegue de uma app 0.9.62 a
+  0.9.69 é ignorado em silêncio: não toca, não deixa o telemóvel "ocupado" para as chamadas a dois e
+  não mostra "Entrar na chamada". O motor da malha (até 5 pessoas) fica no núcleo: as chamadas de
+  grupo vão passar a começar numa chamada normal, com "Adicionar à ligação".
+- Sai o texto `gcall_join` (deixou de ser usado), nas dez línguas.
+- Testes: `grupos_sem_chamadas_e_convite_de_app_antiga_ignorado` (`ffi/src/group_call.rs`); os
+  testes do motor da malha continuam a correr com as chamadas nos grupos ligadas só nos testes.
+
 ### 31 de outubro de 2026: afinações dos relays (sem mudanças nas apps nem no protocolo)
 
 - **Redis sem fecho de clientes parados** (`timeout 0`, era 300): com poucas pessoas ligadas a

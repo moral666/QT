@@ -435,7 +435,6 @@
     <string name="gcall_full">Der Gruppenanruf hat bereits 5 Personen.</string>
     <string name="gcall_notice">Bei Gruppenanrufen ist deine Netzwerkadresse für die anderen Teilnehmer sichtbar.</string>
     <string name="gcall_me">Ich</string>
-    <string name="gcall_join">Anruf beitreten</string>
     <string name="gcall_name_title">Dein Name in diesem Anruf</string>
     <string name="gcall_name_text">Wer dich nicht in den Kontakten hat, sieht diesen Namen.</string>
 </resources>

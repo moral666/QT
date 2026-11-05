@@ -433,7 +433,6 @@
     <string name="gcall_full">المكالمة الجماعية تضم 5 أشخاص بالفعل.</string>
     <string name="gcall_notice">في المكالمات الجماعية، يكون عنوان شبكتك مرئيًا للمشاركين الآخرين.</string>
     <string name="gcall_me">أنا</string>
-    <string name="gcall_join">الانضمام إلى المكالمة</string>
     <string name="gcall_name_title">اسمك في هذه المكالمة</string>
     <string name="gcall_name_text">من ليس لديك في جهات اتصاله سيرى هذا الاسم.</string>
 </resources>

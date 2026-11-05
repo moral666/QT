@@ -1401,6 +1401,10 @@ Testes: `core/src/community.rs`, `ffi/tests/community.rs`, `server/tests/relay_c
 
 ## 27. Chamadas de grupo (desde a app 0.9.62)
 
+> **Desde a 0.9.70 os grupos não têm chamadas.** As apps não ligam a grupos e ignoram o tipo 14
+> que chegue de uma app 0.9.62 a 0.9.69 (não toca, nem dá "ocupado"). O formato abaixo fica como
+> registo; as chamadas de grupo vão começar numa chamada normal ("Adicionar à ligação").
+
 O que as apps fazem:
 
 * **Até 5 pessoas** de um grupo de conversa, com voz e vídeo, cifradas ponta a ponta como as

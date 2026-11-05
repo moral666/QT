@@ -39,7 +39,6 @@
 "full_screen_title" = "Anrufe im Vollbild";
 "gcall_from" = "%1$@ ruft an";
 "gcall_full" = "Der Gruppenanruf hat bereits 5 Personen.";
-"gcall_join" = "Anruf beitreten";
 "gcall_me" = "Ich";
 "gcall_name_text" = "Wer dich nicht in den Kontakten hat, sieht diesen Namen.";
 "gcall_name_title" = "Dein Name in diesem Anruf";

@@ -200,13 +200,7 @@ struct AppRoot: View {
                             onAddContact: { n, p in model.addContact(nickname: n, publicId: p) })
         } else if let g = openGroup {
             ChatScreen(model: model, ui: ui, conversationId: g.conversationId, group: g, onInfo: { showGroupInfo = true },
-                       onCall: { _ in },
-                       onGroupCall: { video in
-                           withGroupNotice { withMic { if video { withCamera { model.groupCalls.start(g.groupId, video: true) } } else { model.groupCalls.start(g.groupId, video: false) } } }
-                       },
-                       onJoinOngoing: model.groupCalls.ongoing[g.groupId] == nil ? nil : {
-                           withGroupNotice { withMic { withCamera { model.groupCalls.rejoin(g.groupId) } } }
-                       })
+                       onCall: { _ in })
                 .transition(.move(edge: .trailing))
         } else if let id = ui.openChatId, id.hasPrefix("g:") {
             // O grupo foi apagado (ou ainda nao carregou): volta a lista.
