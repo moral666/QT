@@ -14,32 +14,32 @@ import { L, locale } from './i18n.js';
 
 const INTERVAL_MS = 60_000;
 
-// A app está em testes fechados (versão 0.9.x): o marcador mostra o estado do serviço usado
-// pelos testadores, não quer dizer que a app já esteja disponível ao público.
-// Número de testadores: alterar aqui e no index.html (status-pill__count).
+// A app está em acesso antecipado, por convite: o marcador mostra o estado do serviço usado
+// por quem já foi convidado, não quer dizer que a app já esteja nas lojas.
+// Fase do serviço: alterar aqui e no index.html (status-pill__tag).
 const TESTING = L({
-  pt: 'A SEALER está em testes fechados: por agora só 5 testadores convidados têm acesso ao serviço.',
-  en: 'SEALER is in closed testing: for now only 5 invited testers have access to the service.',
-  fr: 'SEALER est en test fermé : pour l’instant, seuls 5 testeurs invités ont accès au service.',
-  es: 'SEALER está en pruebas cerradas: por ahora solo 5 probadores invitados tienen acceso al servicio.',
-  de: 'SEALER ist in einem geschlossenen Test: Vorerst haben nur 5 eingeladene Tester Zugang zum Dienst.',
-  it: 'SEALER è in test chiuso: per ora solo 5 tester invitati hanno accesso al servizio.',
-  ja: 'SEALERはクローズドテスト中です。現在、サービスを利用できるのは招待された5人のテスターだけです。',
-  zh: 'SEALER正在封闭测试中：目前只有5名受邀测试人员可以使用该服务。',
-  hi: 'SEALER क्लोज़्ड टेस्टिंग में है: अभी सिर्फ़ 5 आमंत्रित टेस्टर ही सेवा का इस्तेमाल कर सकते हैं।',
-  ar: 'تطبيق SEALER في مرحلة اختبار مغلق: حاليًا لا يصل إلى الخدمة إلا المختبرون المدعوون (العدد: 5).',
+  pt: 'A SEALER está em acesso antecipado: por agora entra-se por convite.',
+  en: 'SEALER is in early access: for now, entry is by invitation.',
+  fr: 'SEALER est en accès anticipé : pour l’instant, on y entre sur invitation.',
+  es: 'SEALER está en acceso anticipado: por ahora se entra por invitación.',
+  de: 'SEALER ist im Early Access: Der Zugang erfolgt vorerst auf Einladung.',
+  it: 'SEALER è in accesso anticipato: per ora si entra su invito.',
+  ja: 'SEALERは先行アクセス中です。現在は招待制で利用できます。',
+  zh: 'SEALER正处于抢先体验阶段：目前需凭邀请加入。',
+  hi: 'SEALER अर्ली एक्सेस में है: अभी इसमें सिर्फ़ आमंत्रण से शामिल हुआ जा सकता है।',
+  ar: 'تطبيق SEALER في مرحلة الوصول المبكر: الانضمام إليه حاليًا بدعوة فقط.',
 });
 const TAG = L({
-  pt: 'Testes fechados<span class="status-pill__count"> · 5 pessoas</span>',
-  en: 'Closed testing<span class="status-pill__count"> · 5 people</span>',
-  fr: 'Test fermé<span class="status-pill__count"> · 5 personnes</span>',
-  es: 'Pruebas cerradas<span class="status-pill__count"> · 5 personas</span>',
-  de: 'Geschlossener Test<span class="status-pill__count"> · 5 Personen</span>',
-  it: 'Test chiuso<span class="status-pill__count"> · 5 persone</span>',
-  ja: 'クローズドテスト<span class="status-pill__count"> · 5人</span>',
-  zh: '封闭测试<span class="status-pill__count"> · 5人</span>',
-  hi: 'क्लोज़्ड टेस्टिंग<span class="status-pill__count"> · 5 लोग</span>',
-  ar: 'اختبار مغلق<span class="status-pill__count"> · المختبرون: 5</span>',
+  pt: 'Acesso por convite',
+  en: 'Invitation only',
+  fr: 'Sur invitation',
+  es: 'Acceso por invitación',
+  de: 'Zugang per Einladung',
+  it: 'Accesso su invito',
+  ja: '招待制',
+  zh: '凭邀请加入',
+  hi: 'आमंत्रण से प्रवेश',
+  ar: 'الوصول بدعوة',
 });
 
 const TEXT = L({

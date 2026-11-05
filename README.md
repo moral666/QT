@@ -1,10 +1,10 @@
-# QT
+# SEALER (protocolo QT)
 
 <p align="center"><img src="branding/sealer-logo-transparente.png" width="140" alt="Logotipo SEALER"></p>
 
 **SEALER** é um mensageiro privado: sem número de telefone, sem email, com cifra ponta a ponta e proteção pós-quântica. **QT** é o nome do protocolo e deste repositório.
 
-**Estado:** versão de testes, em testes fechados. App Android **1.0.0** (iPhone 1.0.0 por compilar), com dois relays em federação na União Europeia (Estocolmo e Espanha).
+**Estado:** versão **1.0.0** para Android e iPhone, em acesso antecipado por convite, com dois relays em federação na União Europeia (Estocolmo e Espanha). A seguir: Google Play e App Store.
 
 [Read this in English →](README.en.md)
 
@@ -77,19 +77,14 @@ O desenho aceita mais relays. O protocolo entre relays está na secção 25 de [
 - Todo o núcleo em Rust (criptografia, transporte, servidor, armazenamento e ponte para as apps), com a suite de testes a passar.
 - Dois relays em federação na AWS: `wss://relay.sealerapp.com` (Estocolmo) e `wss://relay-es.sealerapp.com` (Espanha), cada um com o Redis só em `127.0.0.1` e protegido por ACL.
 - App Android *release* assinada, em três Samsung e no emulador.
-- **Android 0.9.16 com iPhone 0.9.15** (20/10/2026), sem erros: adicionar, apagar e voltar a adicionar contactos, código QR, botão de partilhar o ID, todos os menus, mensagens de texto e de voz, GIFs, envio de ficheiros, bloquear contactos, apagar conversas e chamadas de voz entre Androids, entre Android e iPhone e entre iPhones.
-- **Android 0.9.22** (22/10/2026): bloqueio da app, apps recentes e recuperação da conta.
-- **Android 0.9.31** (23/10/2026), sem erros: pedidos dos testadores (toque de quem liga, altifalante antes de atender, chamada minimizada, copiar as 12 palavras, links, medalhas depois de recuperar a conta) e as dez línguas revistas, árabe incluído.
-- **Android 0.9.67**: chamadas de grupo testadas em telemóveis.
-- **iPhone 0.9.69**: compilado e testado no Mac.
+- **Em telemóveis reais, Android e iPhone, ao longo das versões até à 1.0.0:** contactos (adicionar, apagar, código QR, partilhar o ID), mensagens de texto e de voz, GIFs, ficheiros, bloquear contactos, apagar conversas, chamadas de voz entre Androids, entre Android e iPhone e entre iPhones, chamadas de grupo, bloqueio da app, recuperação da conta com as 12 palavras e as dez línguas, árabe incluído. A app iPhone é compilada e testada num Mac.
 - Teste de campo com cinco aparelhos em três plataformas e envios contínuos: nenhuma mensagem perdida ([`docs/field-tests.md`](docs/field-tests.md)).
 
 **A seguir:**
 
-- Distribuição pela Google Play e pela App Store (hoje a app é instalada à mão pelos testadores). Já preparado: [`docs/google-play.md`](docs/google-play.md).
-- Servidor de produção com backups e alertas.
+- Distribuição pela Google Play e pela App Store (por agora, a app chega por convite). Já preparado: [`docs/google-play.md`](docs/google-play.md).
 
-**Etapas:** *testes fechados* (agora, 0.9.x) → *beta* nas lojas, com mais testadores → *1.0*. O plano completo está em [`ROADMAP.md`](ROADMAP.md).
+**Etapas:** *testes fechados* (0.9.x) → *1.0.0* em acesso antecipado, por convite (agora) → Google Play e App Store. O plano completo está em [`ROADMAP.md`](ROADMAP.md).
 
 ## Arquitetura
 
@@ -117,12 +112,12 @@ As duas apps usam o **mesmo núcleo em Rust** através do UniFFI. Toda a criptog
 
 **Entre telemóveis reais** (três Samsung em Portugal, servidor em Estocolmo, 19/10/2026):
 
-| | Mensagem típica (mediana) | 95 % das mensagens |
-|---|---|---|
-| Do telemóvel até ao servidor | **42 ms** | 57 ms |
-| Do servidor até ao outro telemóvel | **141 ms** | 18 s |
+| | Mensagem típica (mediana) |
+|---|---|
+| Do telemóvel até ao servidor | **42 ms** |
+| Do servidor até ao outro telemóvel | **141 ms** |
 
-As mensagens lentas são para telemóveis a dormir: a notificação acorda-os e a mensagem chega quando a app abre.
+Se o telemóvel de quem recebe estiver a dormir, a notificação acorda-o e a mensagem chega quando a app abre.
 
 **Chamadas:** cerca de 64 ms de rede num sentido entre Portugal e Estocolmo, e cerca de 35 MB por hora em cada sentido. Num teste com 15 % dos pacotes perdidos, o DRED reconstruiu todos. A passagem do Wi-Fi para os dados móveis não corta a chamada, e há uma reserva por `wss://relay.sealerapp.com/call` para redes que bloqueiam UDP. Formatos na secção 18 de [`docs/protocol-spec.md`](docs/protocol-spec.md).
 

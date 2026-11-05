@@ -39,11 +39,12 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   bytes, ligações sem conta com grupo próprio, e prova de trabalho verificada fora das threads do
   relay. Quando o Redis passa de 80 %, as contas novas esperam. Lista completa em
   `docs/protocol-spec.md`, secção 11. Nenhum limite afeta o uso normal e as apps 0.9.73 não mudam.
-- **Anexos:** quota e espaço próprios para quem não tem premium, envio parado perde o lugar ao fim
+- **Anexos:** quota e espaço próprios por conta, envio parado perde o lugar ao fim
   de 15 minutos e um número máximo de descargas por anexo.
 - **Federação:** anexos e cópias com vagas próprias (as mensagens têm sempre vaga), cache de anexos que
-  não existem, e o bloqueio premium acerta-se sozinho quando um relay volta. `AdminPremiumEnforce`
-  diz quantos relays confirmaram. Um relay por atualizar continua a funcionar ao lado de um novo.
+  não existem, e o controlo de acesso das contas acerta-se sozinho quando um relay volta (a
+  ferramenta do operador diz quantos relays confirmaram). Um relay por atualizar continua a funcionar
+  ao lado de um novo.
 - **Relay das chamadas:** salas só com um lado com teto próprio (uma sala com os dois lados nunca sai),
   teto de pedidos no relay inteiro, 60 pacotes/s e 256 bytes por pacote, pedido de entrada decifrado
   sem parar o áudio, e `CPUQuota=60%` para nunca tirar CPU ao relay das mensagens.
@@ -54,17 +55,14 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   `denuncias_guardadas`. O ACL do Redis passa a ter `+info`.
 - Testes: `server/tests/relay_protecoes.rs`, `relay_federacao.rs`, `relay_limits.rs` e `call_relay.rs`.
 
-### 5 de novembro de 2026: mensagens de voz grátis (Android e iPhone 0.9.73, build 73; relays)
+### 5 de novembro de 2026: mensagens de voz para todas as contas (Android e iPhone 0.9.73, build 73; relays)
 
-- **Contas sem premium:** enviam mensagens de texto e mensagens de voz (até 10 s, o limite de
-  sempre). Fotos, GIFs e ficheiros continuam pagos, como fazer chamadas e criar grupos. Receber tudo
-  e atender chamadas continua grátis.
-- **Apps:** o envio de voz deixa de pedir premium. Textos do ecrã Premium atualizados nas dez línguas
-  (`premium_perk_media`, `premium_perk_receive`).
-- **Relay:** o relay só vê o tamanho de um anexo (vai cifrado). Sem premium, aceita anexos até
-  `FREE_BLOB_MAX` (160 KB, a voz de 10 s tem ~65 KB cifrada); acima disso continua a pedir premium.
-  Teste: `bloqueio_premium_recusa_anexos_e_chamadas_a_quem_nao_tem` (`server/tests/relay_reports.rs`).
-- Ordem: primeiro os dois relays, depois as apps (com um relay antigo, a voz de uma conta grátis seria
+- **Mensagens de voz** passam a estar abertas a todas as contas, como o texto. Receber tudo e atender
+  chamadas continua aberto a todas.
+- **Apps:** o envio de voz deixa de ser uma função reservada. Textos atualizados nas dez línguas.
+- **Relay:** o relay só vê o tamanho de um anexo (vai cifrado) e aceita os anexos do tamanho de uma
+  mensagem de voz (até 160 KB; a voz tem ~65 KB cifrada). Teste em `server/tests/relay_reports.rs`.
+- Ordem: primeiro os dois relays, depois as apps (com um relay antigo, a voz de algumas contas seria
   recusada).
 
 ### 5 de novembro de 2026: mudar o nome de um contacto e compilação sem avisos (Android e iPhone 0.9.72, build 72)
@@ -87,7 +85,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 - **As chamadas de grupo começam numa chamada normal.** Na chamada a dois atendida (e na chamada de
   grupo) há o botão "Adicionar à ligação", que abre a lista de contactos. Qualquer participante pode
-  adicionar contactos seus, até 5 pessoas na chamada. Como fazer uma chamada, é premium.
+  adicionar contactos seus, até 5 pessoas na chamada. Como fazer uma chamada, é uma função reservada.
 - **Da chamada a dois para a de grupo:** a chamada a dois acaba dos dois lados sem o ecrã de
   "Chamada terminada" (`CallEndReason::Group`); quem estava na chamada entra sozinho na de grupo, sem
   tocar, e os contactos adicionados recebem o convite (toca).
@@ -288,36 +286,33 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   volta, atraso grande do jitter buffer sai depressa, salto nos silêncios, medidor do atraso do
   áudio, e ponta a ponta: Wi-Fi com aparelhos 4K sobe acima de 1080p sem nada no relay.
 
-### 30 de outubro de 2026: vídeo só pela ligação direta, sem fichas, sem relay de teste (Android e iPhone 0.9.53)
+### 30 de outubro de 2026: vídeo só pela ligação direta, sem relay de teste (Android e iPhone 0.9.53)
 
 - O vídeo das chamadas vai **só pela ligação direta** entre contactos mútuos e nunca pelo relay
   (nem imagens, nem relatórios, nem pedidos de imagem completa; na duplicação vai só pelo direto).
   Sem direto (contacto não mútuo ou bloqueado, rede que não deixa, caminho que caiu) a chamada
   continua só com voz pelo relay e o vídeo fica em pausa, sem nada no ecrã; volta sozinho com o
   direto, com uma imagem completa. A voz e a regra do direto (`p2p_allowed`) não mudam.
-- Saem as **fichas anónimas** do vídeo (0006): `core/src/fichas.rs`, `call/src/fichas.rs`,
-  `ffi/src/fichas.rs`, `server/src/fichas.rs`, a crate `voprf` (e a `elliptic-curve` e a
-  `crypto-bigint`, que só vinham com ela; sai o aviso RUSTSEC ignorado no `.cargo/audit.toml`) e os
-  testes delas. Saem também os tetos do vídeo pelo relay (360p e 240p): fica o do direto (1080p no
-  Wi-Fi sem limite de dados, 720p no resto).
-- Relay das mensagens: sem emissão de fichas, sem `AdminSetFichasQuota`, sem a semente e sem as
-  chaves `{p}:fichas:*`. `IssueFichas` (das apps antigas) responde sempre `FICHAS_OFF`.
+- Sai o **controlo anónimo do vídeo pelo relay** (0006), com o código no núcleo, nas chamadas, na
+  FFI e no servidor, a crate `voprf` (e a `elliptic-curve` e a `crypto-bigint`, que só vinham com
+  ela; sai o aviso RUSTSEC ignorado no `.cargo/audit.toml`) e os testes. Saem também os tetos do
+  vídeo pelo relay (360p e 240p): fica o do direto (1080p no Wi-Fi sem limite de dados, 720p no resto).
+- Relay das mensagens: deixa de emitir os tokens do vídeo e apaga a semente e as chaves deles; o pedido
+  das apps antigas responde sempre "desligado".
 - Relay das chamadas: só voz. Deita fora o vídeo das apps antigas e responde "sem vídeo pelo
-  relay" (modo 2, no máximo de 5 em 5 s) para elas pararem de enviar; os pacotes de resgate e da
-  chave do mês ficam sem resposta. Sem Redis (sai o utilizador `qt-fichas` da ACL), sem a semente
-  e sem a conta do mês em disco. Saem `CALL_RELAY_VIDEO`, `CALL_VIDEO_BYTES_PER_SEC`,
-  `CALL_MONTHLY_EGRESS_GB`, `CALL_FICHAS`, `CALL_FICHAS_SEED`, `CALL_REDIS_URL` e `CALL_STATE_FILE`.
-- Apps: sem pedido de fichas nem leitura do `estado.json` do site. Ao abrir, a base cifrada perde a
-  tabela `fichas` e as chaves `fichas:*` (`secure_delete`). Nenhuma string das fichas (nunca mostraram
-  texto).
+  relay" (modo 2, no máximo de 5 em 5 s) para elas pararem de enviar; os pacotes de resgate dos tokens
+  ficam sem resposta. Sem Redis, sem a semente e sem contadores em disco. Saem as variáveis do vídeo
+  pelo relay (`CALL_RELAY_VIDEO`, `CALL_VIDEO_BYTES_PER_SEC`, `CALL_MONTHLY_EGRESS_GB`, `CALL_REDIS_URL`,
+  `CALL_STATE_FILE` e as da semente).
+- Apps: sem pedido de tokens nem leitura do `estado.json` do site. Ao abrir, a base cifrada apaga os
+  tokens guardados (`secure_delete`). Não havia textos visíveis para retirar.
   `VideoPause::RelayLimit` passa a `NoDirect` (só com a câmara autorizada) e sai `limited_by_relay`
   da FFI (as apps não os usavam).
-- Deploy: o `setup-ec2.sh` deixa de tratar da semente, do `fichas.env`, do `sealer-estado.json` e
+- Deploy: o `setup-ec2.sh` deixa de tratar da semente, do `sealer-estado.json` e
   das variáveis do vídeo; o `limites.conf` fica só com os limites das salas. Site: o `estado.json`
   fica só com a versão.
 - Documentação: `docs/protocol-spec.md` (secção 18, vídeo, e secção 24, só a compatibilidade),
   `docs/threat-model.md`, `docs/known-limitations.md` (46), `docs/aws-orcamento.md`, README, ROADMAP.
-  Sai `docs/privacidade-fichas-rascunho.md`.
 - **Sai a opção "Relay (teste)"** das duas apps, com o código: a linha nas Definições, o ecrã, as
   "Opções de teste" do primeiro ecrã (URL e chave do relay) e o `RELAY_EDITABLE` (Android) /
   `Config.relayEditable` e `QTRelayEditable` (iPhone). O relay é sempre o fixo do
@@ -417,8 +412,8 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   vez por ligação (na autenticação, no mesmo pedido que a verificação de conta banida).
 - Confirmação (`AckMessages`): um pedido em vez de dois, com a página que a ligação acabou de entregar.
 - Registo do bundle: uma transação (bundle, one-time prekeys e cópia de recuperação) em vez de cinco a
-  sete pedidos, sem repetir a verificação de conta banida. Anexo novo (`BlobCreate`) e premium: um pedido
-  cada.
+  sete pedidos, sem repetir a verificação de conta banida. Anexo novo (`BlobCreate`) e verificação de
+  acesso: um pedido cada.
 - ACL do Redis (`deploy/redis/qt-redis.conf`): `+exists +ttl`, só leitura. Apps e protocolo sem mudanças.
 
 ### 29 de outubro de 2026: Redis do relay só com o AOF
@@ -450,13 +445,13 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - `ROADMAP.md`: federação feita (fases 1 a 4) e o que falta. `docs/known-limitations.md` (14) e
   `docs/threat-model.md`: o que a federação muda (o relay par, a confiança entre relays, a conta largada).
 - Endereços do sealer.pt trocados pelo sealerapp.com em `docs/google-play.md`, `docs/threat-model.md`,
-  `docs/protocol-spec.md`, `docs/performance.md`, `ios/README.md` e no rascunho das fichas.
+  `docs/protocol-spec.md`, `docs/performance.md` e `ios/README.md`.
 
 ### 29 de outubro de 2026: videochamadas no iPhone (iPhone e Android 0.9.50)
 
 - O iPhone passa a ter videochamadas, como o Android: botão da videochamada na conversa (só para contactos
   com vídeo), pedido "[Nome] quer mostrar vídeo" (Ver / Ligar a minha câmara / Agora não), trocar câmara,
-  vídeo pelo relay com as fichas anónimas (chaves verificadas no `estado.json` do site) e vídeo direto entre
+  vídeo pelo relay (chaves verificadas no `estado.json` do site) e vídeo direto entre
   contactos mútuos (teto conforme Wi-Fi ou dados móveis). Câmara e H.264 em hardware (AVFoundation e
   VideoToolbox); a cifra, os pacotes e o débito continuam no núcleo Rust (feature `video` na build iOS).
 - Ecrã de chamada do iPhone com o desenho do Android: "Sealer" e o tempo no topo, barra de controlos,
@@ -478,9 +473,9 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - As apps têm a lista dos relays da federação (o principal e os outros, com as chaves fixadas) e guardam o
   relay da conta. Contas novas ficam no principal, ou no seguinte se o principal estiver fechado a contas
   novas (`RELAY_NOVAS_CONTAS=0`). Uma conta recuperada noutro telemóvel volta sozinha ao seu relay.
-- O operador trata premium, quotas e banimentos de contas de qualquer relay a partir de um só.
+- O operador trata o acesso e os banimentos de contas de qualquer relay a partir de um só.
 - Chamadas entre contas de relays diferentes: as duas apps usam o relay das chamadas de quem liga (o nome vai
-  na oferta, só quando não é o principal). Todos os relays usam a mesma semente das fichas do vídeo.
+  na oferta, só quando não é o principal). Todos os relays usam a mesma semente do vídeo pelo relay.
 - Sem outros relays na build (`qtRelaysOutros` vazio), tudo funciona como antes.
 - Ver `docs/protocol-spec.md`, secções 25.2 e 25.3.
 
@@ -513,8 +508,8 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - Anexos em lotes de 4 blocos (~160 KB, antes 8): durante um envio grande, uma mensagem espera no máximo
   um lote. Entre lotes a app continua a receber.
 - Menos tráfego com a app aberta: um só ping de 25 em 25 s em vez de três.
-- Endereços do sealer.pt (desligado) trocados pelo sealerapp.com: chaves das fichas do vídeo
-  (`https://sealerapp.com/estado.json`; sem elas o vídeo pelo relay pausava a partir de novembro), links dos
+- Endereços do sealer.pt (desligado) trocados pelo sealerapp.com: chaves do vídeo pelo relay
+  (`https://sealerapp.com/estado.json`; sem elas o vídeo pelo relay pausava), links dos
   Termos e da Privacidade, email do "Reportar erro de tradução" (`privacidade@sealerapp.com`) e a verificação
   das chaves no `setup-ec2.sh`.
 
@@ -522,7 +517,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 - Diagnóstico para os testers (fase 5c): `CallAudio.diagnostic()` no núcleo dá os números da chamada
   (tempo em direto e pelo relay, perdas da voz e do vídeo, débito, resolução, pausas do vídeo, mudanças
-  de rede, fichas), sem IPs, IDs nem conteúdo, e o resumo final depois de desligar. Fica só no telemóvel.
+  de rede), sem IPs, IDs nem conteúdo, e o resumo final depois de desligar. Fica só no telemóvel.
   Android: toque longo no tempo da chamada abre o painel com "Copiar diagnóstico"; nas Definições,
   "Copiar diagnóstico da última chamada"; registos discretos no logcat (rede, caminho, codificador).
   Ligado por omissão nas builds de teste; desligar antes da Play Store com `-PqtCallDiag=false`.
@@ -570,15 +565,15 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - Política de privacidade (dez línguas): secção nova "Chamadas e videochamadas" (ligação direta entre
   contactos mútuos, e nesse caso cada um vê o IP do outro; nos outros casos pelo servidor, sem partilhar
   o IP; vídeo só para quem aceita), recuperação com as 12 palavras (contactos sim, mensagens antigas e
-  grupos não) e idade mínima de 16 anos. Saem os itens das funções pagas (guardados em
-  `docs/privacidade-fichas-rascunho.md`, que não entra no site).
+  grupos não) e idade mínima de 16 anos. Saem itens que ainda não se aplicam ao serviço (guardados
+  num rascunho interno, fora do site).
 - Site (dez línguas): chamadas de voz e videochamadas, ligação direta entre contactos; sai "chamadas
   sempre pelo servidor" (também do README).
 - `docs/aws-orcamento.md`: guia do orçamento mensal no AWS Budgets e do alarme do tráfego de saída da EC2.
 
 ### 24 de outubro de 2026: novo ecrã da videochamada (0007, app Android 0.9.38)
 
-- Só Android, só a interface da chamada (núcleo, relay e fichas sem mudanças). O esboço serviu de
+- Só Android, só a interface da chamada (núcleo e relay sem mudanças). O esboço serviu de
   referência de layout; o logótipo e as cores são os da app (tema 0.9.11, claro e escuro), com
   "Sealer" em Manrope Bold, parado.
 - Vídeo do outro em ecrã inteiro e a minha câmara num canto, com cantos arredondados.
@@ -593,40 +588,33 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - Acessibilidade: cada botão com descrição nas dez línguas (string nova `call_camera`); os de
   ligar/desligar são anunciados como interruptores. Ícones desenhados no código (sem bibliotecas novas).
 
-### 23 de outubro de 2026: fichas anónimas do vídeo pelo relay, P2P automático e chamada sem avisos (0006, app Android 0.9.37)
+### 23 de outubro de 2026: vídeo pelo relay com controlo anónimo, P2P automático e chamada sem avisos (0006, app Android 0.9.37)
 
-- Quota de vídeo pelo relay por conta e por mês, configurável no servidor, sem o relay saber quem está na sala:
-  fichas Privacy Pass com VOPRF (RFC 9497, ristretto255-SHA512, crate `voprf` 0.5), emitidas em lote
-  e cegas pelo relay das mensagens (só conta quantas deu a cada conta por mês) e gastas na sala
-  anónima por quem envia vídeo pelo relay (1 ficha = 1 minuto). Gasto duplo no Redis por mês
-  (utilizador `qt-fichas`, só `SET` em `fichas:*`), chave nova por mês derivada de uma semente,
-  prova DLEQ verificada na app, fichas guardadas na base cifrada e apagadas quando o mês acaba.
-  Sem fichas: só voz pelo relay; em ligação direta o vídeo continua sem gastar nada. Apps antigas:
-  só voz pelo relay. `docs/protocol-spec.md` secção 24.
-- Chave das fichas de cada mês publicada fora do relay, no site (`https://sealer.pt/estado.json`,
-  Cloudflare; gerada no deploy com `qt-relay chaves-fichas 24`). A app recusa emitir se a chave do
-  emissor for outra e não gasta fichas se a chave da sala for outra (ataque de partição de chaves);
-  sem a chave do site, o vídeo pelo relay fica em pausa (voz e direto normais).
-- O mês dito pelo relay só se segue se for o vizinho do relógio do telemóvel, a menos de 48 h da
-  viragem, e o motor só recebe as chaves publicadas desses meses (partição pelo mês: um relay que
-  dissesse a cada conta um dos 24 meses publicados separava-as em grupos).
-- Relay: `IssueFichas`, `AdminSetFichasQuota` (quota por conta, pelo operador),
-  `RELAY_FICHAS_POR_MES`, `FICHAS_SEED_PATH`; relay das
-  chamadas com `CALL_FICHAS`, `CALL_FICHAS_SEED` e `CALL_REDIS_URL` (`/etc/qt-call-relay/fichas.env`).
-  `setup-ec2.sh` cria a password do `qt-fichas` e mantém os valores entre atualizações.
+- **Vídeo pelo relay com controlo anónimo** (retirado na 0.9.53): tokens Privacy Pass com VOPRF
+  (RFC 9497, ristretto255-SHA512, crate `voprf` 0.5), emitidos às cegas pelo relay das mensagens e
+  gastos na sala anónima por quem envia vídeo pelo relay, sem o relay saber quem está na sala. Gasto
+  duplo verificado no Redis, prova DLEQ verificada na app, tokens guardados na base cifrada. Sem
+  tokens: só voz pelo relay; em ligação direta o vídeo não gasta nada. Apps antigas: só voz pelo
+  relay. `docs/protocol-spec.md` secção 24.
+- Chaves publicadas fora do relay, no site (`https://sealer.pt/estado.json`, Cloudflare). A app
+  recusa emitir se a chave do emissor for outra e não gasta tokens se a chave da sala for outra
+  (ataque de partição de chaves); sem a chave do site, o vídeo pelo relay fica em pausa (voz e direto
+  normais). A rotação das chaves só aceita a vizinha da data do telemóvel (partição pela data).
+- Relay e relay das chamadas: pedidos e variáveis novos para emitir e verificar os tokens, com um
+  utilizador próprio na ACL do Redis; `setup-ec2.sh` mantém os valores entre atualizações.
 - Ligação direta automática entre contactos mútuos e não bloqueados, já na primeira chamada
   (substitui a regra do 0005): saem a janela de aviso, a opção "Ligação direta nas chamadas" do menu
   da conversa, `call_direct_choice`, `call_set_direct_choice` e a chave `call:direct:` (apagada). Os
   endereços continuam a sair só depois de atender e só entre contactos mútuos; bloquear, apagar ou
   tirar dos contactos volta logo ao relay. Nessas chamadas cada lado vê o IP do outro.
-- Ecrã da chamada sem avisos de estado: saem "Vídeo em pausa · Rede fraca" e "Vídeo em pausa · Limite
-  do mês atingido" (dez línguas). Com o vídeo do outro parado, só a foto ou a inicial dele, sem texto.
+- Ecrã da chamada sem avisos de estado: saem os avisos "Vídeo em pausa" (dez línguas).
+  Com o vídeo do outro parado, só a foto ou a inicial dele, sem texto.
   Sai também "[Nome] não quis ver o vídeo": a câmara de quem enviou desliga-se em silêncio. Fica só
   "À espera de [Nome]…".
-- Testes: fichas válidas uma vez, repetidas, de outro mês, forjadas e de outra chave recusadas; teto
-  por conta e por mês (também com pedidos ao mesmo tempo); o relay não liga resgate a emissão; sem
-  fichas a voz continua e o vídeo pausa; ligação direta não gasta; relay antigo; ACL do `qt-fichas`;
-  chave diferente da do site na emissão e na sala recusada; sem a chave do site falha fechada.
+- Testes: tokens válidos uma vez; repetidos, forjados e de outra chave recusados; o relay não liga
+  resgate a emissão; sem tokens a voz continua e o vídeo pausa; ligação direta não gasta; relay antigo;
+  ACL do Redis; chave diferente da do site na emissão e na sala recusada; sem a chave do site falha
+  fechada.
 
 ### 23 de outubro de 2026: ligação direta entre contactos, videochamada e limpezas
 
@@ -645,9 +633,8 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 - Botão de videochamada na conversa, ao lado do de ligar, só para contactos com vídeo. Começa com a
   minha câmara ligada; quem recebe vê "Videochamada de [Nome]" e, ao atender, escolhe se vê o vídeo.
 - Limpezas: sai "Chamadas sempre pelo servidor" das Definições e a faixa "Qualidade limitada ·
-  Verifica o contacto"; pausas do vídeo com "·" ("Vídeo em pausa · Rede fraca", "Vídeo em pausa ·
-  Limite do mês atingido"); na recuperação de conta aparece antes de recuperar "Vais recuperar os teus
-  contactos. As mensagens antigas e os grupos não são recuperados."
+  Verifica o contacto"; pausas do vídeo com "·" ("Vídeo em pausa · Rede fraca" e afins); na
+  recuperação de conta aparece antes de recuperar "Vais recuperar os teus contactos. As mensagens antigas e os grupos não são recuperados."
 - Testes: nenhum endereço sai antes de atender nem para quem não é contacto mútuo com OK (só um lado
   com o outro nos contactos, sem resposta à janela, "Agora não"); bloquear, apagar e sair da lista a
   meio voltam ao relay; videochamada; anúncio do vídeo.
@@ -658,7 +645,7 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   outro vê "[Nome] quer mostrar vídeo" com Ver, Ligar a minha câmara e Agora não; quem pediu vê-se a si
   próprio com "À espera de [Nome]…". Nada do vídeo sai antes de o outro aceitar.
 - Vídeo do outro em ecrã inteiro e a minha câmara num canto; trocar câmara frontal/traseira; desligar
-  a câmara. Mensagens de pausa por rede fraca, de limite do mês pelo servidor e de qualidade limitada
+  a câmara. Mensagens de pausa por rede fraca, pelo servidor e de qualidade limitada
   (contacto por verificar).
 - Câmara (Camera2) e H.264 em hardware (MediaCodec): débito, resolução, imagens/s e imagens completas
   seguem o que o núcleo pede; rotação enviada com cada imagem; descodificador que recomeça e pede
@@ -678,8 +665,8 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   em dados móveis na ligação direta. O áudio tem sempre prioridade. Abaixo dos 240p o vídeo pausa e
   volta sozinho.
 - Relay: aceita vídeo com débito limitado por lado (150 kB/s), travão do mês (80 GB, depois 240p para
-  todos, contador em `/var/lib/qt-call-relay/mes`) e a porta para o teto por conta (fichas anónimas
-  numa sessão própria). Variáveis no drop-in `limites.conf` do `setup-ec2.sh`, que mantém os valores
+  todos, contador em `/var/lib/qt-call-relay/mes`) e a porta para um controlo por conta (numa
+  sessão própria). Variáveis no drop-in `limites.conf` do `setup-ec2.sh`, que mantém os valores
   já postos.
 - Só uma build com o ecrã do vídeo anuncia vídeo (feature `video`, ligada na build Android pela 5b); o
   iPhone continua só com voz (`case .video`).
@@ -834,10 +821,8 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   às 24 horas; a foto de perfil fica cifrada na fila até o contacto a receber; diferenças do iPhone
   (fotos só da galeria, idioma nas Definições do iPhone, notificações quando chegar à App Store);
   recibos só nas conversas a dois; data do teste dos 5 aparelhos.
-- Termos: o serviço inclui voz, ficheiros, grupos e chamadas; todas as funções gratuitas durante os
-  testes, com funções que poderão vir a ser pagas (as mensagens de texto ficam sempre grátis);
-  idade mínima de 16 anos; licença AGPL-3.0 ou posterior, com licença comercial à parte.
-- Política de privacidade: o acesso às funções pagas guardado no servidor e durante quanto tempo.
+- Termos: o serviço inclui voz, ficheiros, grupos e chamadas; idade mínima de 16 anos; licença AGPL-3.0 ou posterior, com licença comercial à parte.
+- Política de privacidade: o acesso de cada conta guardado no servidor e durante quanto tempo.
 - Modelo de ameaças, ROADMAP e limitações conhecidas (ponto 33) acertados da mesma forma.
 
 ### 22 de outubro de 2026: site e documentação
@@ -865,8 +850,8 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 - O acesso de cada conta às funções reservadas e o bloqueio passam a ser decididos só no relay, pela
   ferramenta do operador: bloqueio para todos, dar, tirar e lista.
-- Com o bloqueio ligado, o relay recusa anexos e ofertas de chamada de contas sem acesso
-  (`AdminPremiumEnforce`, `PREMIUM_REQUIRED`), mesmo de uma app alterada.
+- Com o bloqueio ligado, o relay recusa anexos e ofertas de chamada de contas sem acesso,
+  mesmo de uma app alterada.
 - As apps perguntam ao relay antes de cada ação reservada: tirar o acesso conta logo. Saíram o
   interruptor de teste e a simulação do acesso.
 
@@ -876,8 +861,8 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
   com acesso dado pelo relay. Texto sempre aberto; receber tudo também.
 - Bloqueio com interruptor de teste; com ele ligado, uma ação reservada sem acesso abre o ecrã
   próprio da app.
-- O relay guarda até quando cada conta tem acesso (`PremiumStatus`, `AdminGrantPremium`,
-  `AdminListPremium`). O operador dá ou tira o acesso (testadores) pela ferramenta `denuncias`.
+- O relay guarda até quando cada conta tem acesso. O operador dá ou tira o acesso (testadores) pela
+  ferramenta `denuncias`.
 
 ### 22 de outubro de 2026: chave de recuperação da conta (apps 0.9.19, Android e iPhone)
 
