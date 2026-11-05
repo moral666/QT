@@ -4,7 +4,7 @@
 
 **SEALER** is a private messenger: no phone number, no email, end-to-end encryption and post-quantum protection. **QT** is the name of the protocol and of this repository.
 
-**Status:** test version, in closed testing. Android app **0.9.72** (iPhone 0.9.72 not yet built), with two federated relays in the European Union (Stockholm and Spain).
+**Status:** test version, in closed testing. Android app **0.9.73** (iPhone 0.9.73 not yet built), with two federated relays in the European Union (Stockholm and Spain).
 
 [Ler em português →](README.md)
 

@@ -380,8 +380,8 @@
     <string name="premium_unlocks">Premiumで使えるようになる機能：</string>
     <string name="premium_perk_calls">暗号化された音声通話の発信</string>
     <string name="premium_perk_groups">グループの作成</string>
-    <string name="premium_perk_media">写真、GIF、ボイスメッセージ、25 MBまでのファイルの送信</string>
-    <string name="premium_perk_receive">Premiumがなくても、すべて受信でき、通話に応答できます</string>
+    <string name="premium_perk_media">写真、GIF、25 MBまでのファイルの送信</string>
+    <string name="premium_perk_receive">Premiumがなくても、テキストとボイスメッセージ（10秒まで）を送信でき、すべて受信でき、通話に応答できます</string>
     <string name="premium_active_short">Premium有効</string>
     <string name="premium_soon">Google Playで近日提供予定</string>
     <string name="premium_all_open">現在、すべての機能を誰でも使えます。</string>

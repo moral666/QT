@@ -380,8 +380,8 @@
     <string name="premium_unlocks">يتيح Premium:</string>
     <string name="premium_perk_calls">إجراء مكالمات صوتية مشفّرة</string>
     <string name="premium_perk_groups">إنشاء المجموعات</string>
-    <string name="premium_perk_media">إرسال الصور وGIF والرسائل الصوتية والملفات حتى 25 ميغابايت</string>
-    <string name="premium_perk_receive">دون Premium يمكنك مواصلة استلام كل شيء والرد على المكالمات</string>
+    <string name="premium_perk_media">إرسال الصور وGIF والملفات حتى 25 ميغابايت</string>
+    <string name="premium_perk_receive">دون Premium يمكنك مواصلة إرسال الرسائل النصية والصوتية (حتى 10 ثوانٍ) واستلام كل شيء والرد على المكالمات</string>
     <string name="premium_active_short">اشتراك Premium مفعّل</string>
     <string name="premium_soon">قريبًا على Google Play</string>
     <string name="premium_all_open">حاليًا، كل الميزات متاحة للجميع.</string>

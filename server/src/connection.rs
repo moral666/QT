@@ -736,18 +736,22 @@ async fn handle_client_message(
                 err(crate::protocol::NOT_REGISTERED)
             }
             Err(e) => internal(e),
-            // Enviar fotos, GIFs, voz e ficheiros e pago (0.9.21); receber continua gratis.
-            Ok(true) => match store.premium_allows(me).await {
-                Err(e) => internal(e),
-                Ok(false) => err(crate::protocol::PREMIUM_REQUIRED),
-                Ok(true) => match store.blob_create(me, size).await {
-                    Ok((blob_id, token)) => {
-                        stats::inc(&STATS.blob_uploads);
-                        ServerMessage::BlobCreated { blob_id, token }
-                    }
-                    Err(e) => blob_err(e),
-                },
-            },
+            // Enviar fotos, GIFs e ficheiros e pago (0.9.21); receber continua gratis. Desde a
+            // 0.9.73 as mensagens de voz sao gratis: ate `FREE_BLOB_MAX` nao se pede premium.
+            Ok(true) => {
+                let allowed = if size > crate::protocol::FREE_BLOB_MAX { store.premium_allows(me).await } else { Ok(true) };
+                match allowed {
+                    Err(e) => internal(e),
+                    Ok(false) => err(crate::protocol::PREMIUM_REQUIRED),
+                    Ok(true) => match store.blob_create(me, size).await {
+                        Ok((blob_id, token)) => {
+                            stats::inc(&STATS.blob_uploads);
+                            ServerMessage::BlobCreated { blob_id, token }
+                        }
+                        Err(e) => blob_err(e),
+                    },
+                }
+            }
         },
         ClientMessage::BlobPut { blob_id, token, offset, data } => {
             match store.blob_put(&blob_id, &token, offset, &data).await {

@@ -84,8 +84,8 @@
 "premium_free_text" = "As mensagens de texto são e serão sempre grátis.";
 "premium_perk_calls" = "Fazer chamadas de voz cifradas";
 "premium_perk_groups" = "Criar grupos";
-"premium_perk_media" = "Enviar fotos, GIFs, mensagens de voz e ficheiros até 25 MB";
-"premium_perk_receive" = "Sem Premium continuas a receber tudo e a atender chamadas";
+"premium_perk_media" = "Enviar fotos, GIFs e ficheiros até 25 MB";
+"premium_perk_receive" = "Sem Premium continuas a enviar mensagens de texto e de voz (até 10 s), a receber tudo e a atender chamadas";
 "premium_price" = "5 € por ano";
 "premium_soon" = "Em breve na Google Play";
 "premium_title" = "Sealer Premium";

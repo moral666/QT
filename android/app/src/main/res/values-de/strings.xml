@@ -382,8 +382,8 @@
     <string name="premium_unlocks">Premium schaltet frei:</string>
     <string name="premium_perk_calls">Verschlüsselte Sprachanrufe tätigen</string>
     <string name="premium_perk_groups">Gruppen erstellen</string>
-    <string name="premium_perk_media">Fotos, GIFs, Sprachnachrichten und Dateien bis 25 MB senden</string>
-    <string name="premium_perk_receive">Ohne Premium empfängst du weiterhin alles und nimmst Anrufe an</string>
+    <string name="premium_perk_media">Fotos, GIFs und Dateien bis 25 MB senden</string>
+    <string name="premium_perk_receive">Ohne Premium sendest du weiterhin Text- und Sprachnachrichten (bis 10 s), empfängst alles und nimmst Anrufe an</string>
     <string name="premium_active_short">Premium aktiv</string>
     <string name="premium_soon">Bald bei Google Play</string>
     <string name="premium_all_open">Derzeit stehen alle Funktionen allen offen.</string>

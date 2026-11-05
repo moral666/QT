@@ -84,8 +84,8 @@
 "premium_free_text" = "الرسائل النصية مجانية، وستبقى مجانية دائمًا.";
 "premium_perk_calls" = "إجراء مكالمات صوتية مشفّرة";
 "premium_perk_groups" = "إنشاء المجموعات";
-"premium_perk_media" = "إرسال الصور وGIF والرسائل الصوتية والملفات حتى 25 ميغابايت";
-"premium_perk_receive" = "دون Premium يمكنك مواصلة استلام كل شيء والرد على المكالمات";
+"premium_perk_media" = "إرسال الصور وGIF والملفات حتى 25 ميغابايت";
+"premium_perk_receive" = "دون Premium يمكنك مواصلة إرسال الرسائل النصية والصوتية (حتى 10 ثوانٍ) واستلام كل شيء والرد على المكالمات";
 "premium_price" = "5 يورو سنويًا";
 "premium_soon" = "قريبًا على Google Play";
 "premium_title" = "Sealer Premium";

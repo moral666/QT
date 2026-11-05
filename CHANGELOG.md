@@ -6,6 +6,19 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 5 de novembro de 2026: mensagens de voz grátis (Android e iPhone 0.9.73, build 73; relays)
+
+- **Contas sem premium:** enviam mensagens de texto e mensagens de voz (até 10 s, o limite de
+  sempre). Fotos, GIFs e ficheiros continuam pagos, como fazer chamadas e criar grupos. Receber tudo
+  e atender chamadas continua grátis.
+- **Apps:** o envio de voz deixa de pedir premium. Textos do ecrã Premium atualizados nas dez línguas
+  (`premium_perk_media`, `premium_perk_receive`).
+- **Relay:** o relay só vê o tamanho de um anexo (vai cifrado). Sem premium, aceita anexos até
+  `FREE_BLOB_MAX` (160 KB, a voz de 10 s tem ~65 KB cifrada); acima disso continua a pedir premium.
+  Teste: `bloqueio_premium_recusa_anexos_e_chamadas_a_quem_nao_tem` (`server/tests/relay_reports.rs`).
+- Ordem: primeiro os dois relays, depois as apps (com um relay antigo, a voz de uma conta grátis seria
+  recusada).
+
 ### 5 de novembro de 2026: mudar o nome de um contacto e compilação sem avisos (Android e iPhone 0.9.72, build 72)
 
 - **Mudar o nome de um contacto:** na conversa, no menu (⋮ no Android, … no iPhone), "Mudar o

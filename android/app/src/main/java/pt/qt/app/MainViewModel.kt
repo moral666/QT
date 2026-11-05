@@ -2018,9 +2018,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Envia uma mensagem de voz gravada (`file` e apagado no fim, cifrado ou nao). */
     fun sendVoice(contact: Contact, file: File, durationMs: Long) = sendVoiceTo(contact.contactId, file, durationMs)
 
-    /** Voz para uma conversa a dois ou de grupo ("g:..."). */
+    /**
+     * Voz para uma conversa a dois ou de grupo ("g:..."). Gratis desde a 0.9.73 (decisao do Nuno):
+     * as contas sem premium enviam texto e mensagens de voz ate 10 s; fotos, GIFs e ficheiros sao pagos.
+     */
     fun sendVoiceTo(conversationId: String, file: File, durationMs: Long) = io {
-        if (premiumBlocked()) { file.delete(); return@io }
         val client = qt ?: run { file.delete(); return@io }
         try {
             prepareTarget(client, conversationId)

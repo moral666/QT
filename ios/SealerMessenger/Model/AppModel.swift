@@ -1839,9 +1839,10 @@ final class AppModel: ObservableObject {
     /// Mensagem de voz (o ficheiro e apagado no fim, cifrado ou nao).
     func sendVoice(to conv: String, file: URL, durationMs: Int64) {
         guard let client = qt else { try? FileManager.default.removeItem(at: file); return }
+        // Gratis desde a 0.9.73 (decisao do Nuno): as contas sem premium enviam texto e mensagens de
+        // voz ate 10 s; fotos, GIFs e ficheiros sao pagos.
         Task {
             defer { try? FileManager.default.removeItem(at: file) }
-            if await premiumBlocked() { return }
             do {
                 try await prepareTarget(client, conv)
                 let ms = UInt32(min(max(durationMs, 1), Voice.maxMs))

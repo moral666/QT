@@ -281,6 +281,10 @@ pub const POW_REQUIRED: &str = "prova de trabalho em falta ou invalida";
 /// Motivo do `Error` quando uma conta passa o limite de pedidos.
 /// Acao paga (anexo ou chamada) de uma conta sem premium, com o bloqueio ligado (0.9.21).
 pub const PREMIUM_REQUIRED: &str = "precisa de premium";
+/// Anexo maximo de uma conta sem premium (0.9.73): as mensagens de voz (ate 10,5 s de AAC a 48 kb/s,
+/// ~65 KB cifrados) sao gratis. O relay so ve o tamanho (o anexo vai cifrado); acima disto, como
+/// fotos, GIFs e ficheiros, precisa de premium.
+pub const FREE_BLOB_MAX: u64 = 160 * 1024;
 
 pub const RATE_LIMITED: &str = "demasiados pedidos, tenta daqui a pouco";
 

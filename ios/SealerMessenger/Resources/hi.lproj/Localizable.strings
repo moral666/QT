@@ -84,8 +84,8 @@
 "premium_free_text" = "टेक्स्ट मैसेज मुफ़्त हैं और हमेशा मुफ़्त रहेंगे।";
 "premium_perk_calls" = "एन्क्रिप्टेड वॉइस कॉल करना";
 "premium_perk_groups" = "ग्रुप बनाना";
-"premium_perk_media" = "फ़ोटो, GIF, वॉइस मैसेज और 25 MB तक की फ़ाइलें भेजना";
-"premium_perk_receive" = "Premium के बिना भी आप सब कुछ रिसीव कर सकते हैं और कॉल का जवाब दे सकते हैं";
+"premium_perk_media" = "फ़ोटो, GIF और 25 MB तक की फ़ाइलें भेजना";
+"premium_perk_receive" = "Premium के बिना भी आप टेक्स्ट और वॉइस मैसेज (10 सेकंड तक) भेज सकते हैं, सब कुछ रिसीव कर सकते हैं और कॉल का जवाब दे सकते हैं";
 "premium_price" = "5 € प्रति वर्ष";
 "premium_soon" = "जल्द ही Google Play पर";
 "premium_title" = "Sealer Premium";
