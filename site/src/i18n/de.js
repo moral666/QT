@@ -111,7 +111,7 @@ export default {
   'como.15': '← Zurück',
   'como.17': 'Weiter →',
   'como.18': 'Und Sprach- und Videoanrufe?',
-  'como.19': 'Die Testversion hat bereits Sprach- und Videoanrufe, Ende-zu-Ende-verschlüsselt wie die Nachrichten, auf Android und iPhone, auch zwischen einem Android-Handy und einem iPhone. Gruppenanrufe bringen bis zu 5 Personen zusammen, mit Ton und Video, und wer nicht abgenommen hat, kann später dazukommen. Auf Android klingeln Anrufe zu zweit auch bei geschlossener App oder gesperrtem Handy.',
+  'como.19': 'Die Testversion hat bereits Sprach- und Videoanrufe, Ende-zu-Ende-verschlüsselt wie die Nachrichten, auf Android und iPhone, auch zwischen einem Android-Handy und einem iPhone. Während eines Anrufs kann jede teilnehmende Person Kontakte hinzufügen, bis zu 5 Personen, mit Ton und Video, und wer nicht abgenommen hat, kann später dazukommen. Auf Android klingeln Anrufe auch bei geschlossener App oder gesperrtem Handy.',
   'como.20': '<a href="./">Zurück zum Anfang</a>',
   'como.21': '© 2026 SEALER, ein QT-Projekt. <a href="./funcionalidades">Funktionen</a> · <a href="./privacidade">Datenschutz</a> · <a href="./politica-de-cookies">Cookie-Richtlinie</a>',
   'como.22': 'So sieht die App aus',

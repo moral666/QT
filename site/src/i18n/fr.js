@@ -111,7 +111,7 @@ export default {
   'como.15': '← Précédent',
   'como.17': 'Suivant →',
   'como.18': 'Et les appels vocaux et vidéo ?',
-  'como.19': 'La version de test a déjà des appels vocaux et vidéo, chiffrés de bout en bout comme les messages, sur Android et iPhone, y compris entre un téléphone Android et un iPhone. Les appels de groupe réunissent jusqu’à 5 personnes, avec la voix et la vidéo, et qui n’a pas répondu peut rejoindre plus tard. Sur Android, les appels en tête-à-tête sonnent même avec l’app fermée ou le téléphone verrouillé.',
+  'como.19': 'La version de test a déjà des appels vocaux et vidéo, chiffrés de bout en bout comme les messages, sur Android et iPhone, y compris entre un téléphone Android et un iPhone. Pendant un appel, chaque participant peut ajouter des contacts, jusqu’à 5 personnes, avec la voix et la vidéo, et qui n’a pas répondu peut rejoindre plus tard. Sur Android, les appels sonnent même avec l’app fermée ou le téléphone verrouillé.',
   'como.20': '<a href="./">Revenir au début</a>',
   'como.21': '© 2026 SEALER, un projet QT. <a href="./funcionalidades">Fonctionnalités</a> · <a href="./privacidade">Confidentialité</a> · <a href="./politica-de-cookies">Politique de cookies</a>',
   'como.22': 'À quoi ressemble l’app',

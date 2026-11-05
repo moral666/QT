@@ -111,7 +111,7 @@ export default {
   'como.15': '← Precedente',
   'como.17': 'Successivo →',
   'como.18': 'E le chiamate e videochiamate?',
-  'como.19': 'La versione di prova ha già chiamate vocali e videochiamate, cifrate end-to-end come i messaggi, su Android e iPhone, anche tra un telefono Android e un iPhone. Le chiamate di gruppo riuniscono fino a 5 persone, con voce e video, e chi non ha risposto può entrare dopo. Su Android le chiamate a due squillano anche con l’app chiusa o il telefono bloccato.',
+  'como.19': 'La versione di prova ha già chiamate vocali e videochiamate, cifrate end-to-end come i messaggi, su Android e iPhone, anche tra un telefono Android e un iPhone. Durante una chiamata, ogni partecipante può aggiungere contatti, fino a 5 persone, con voce e video, e chi non ha risposto può entrare dopo. Su Android le chiamate squillano anche con l’app chiusa o il telefono bloccato.',
   'como.20': '<a href="./">Torna all’inizio</a>',
   'como.21': '© 2026 SEALER, un progetto QT. <a href="./funcionalidades">Funzionalità</a> · <a href="./privacidade">Privacy</a> · <a href="./politica-de-cookies">Cookie policy</a>',
   'como.22': 'Com’è l’app',

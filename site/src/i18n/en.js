@@ -111,7 +111,7 @@ export default {
   'como.15': '← Previous',
   'como.17': 'Next →',
   'como.18': 'What about voice and video calls?',
-  'como.19': 'The test version already has voice and video calls, end-to-end encrypted like messages, on Android and iPhone, including between an Android phone and an iPhone. Group calls bring together up to 5 people, with voice and video, and anyone who didn’t answer can join later. On Android, one-to-one calls ring even with the app closed or the phone locked.',
+  'como.19': 'The test version already has voice and video calls, end-to-end encrypted like messages, on Android and iPhone, including between an Android phone and an iPhone. During a call, anyone in it can add contacts, up to 5 people, with voice and video, and anyone who didn’t answer can join later. On Android, calls ring even with the app closed or the phone locked.',
   'como.20': '<a href="./">Back to the start</a>',
   'como.21': '© 2026 SEALER, a QT project. <a href="./funcionalidades">Features</a> · <a href="./privacidade">Privacy</a> · <a href="./politica-de-cookies">Cookie policy</a>',
   'como.22': 'What the app looks like',
