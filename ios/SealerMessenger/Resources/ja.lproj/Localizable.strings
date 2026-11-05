@@ -10,6 +10,7 @@
 "badge_support" = "Support";
 "badge_tester" = "Tester";
 "badge_troll" = "Troll";
+"call_add" = "通話に追加";
 "call_banner_back" = "タップして通話に戻る";
 "call_camera" = "カメラ";
 "call_diag_copied" = "診断をコピーしました";
@@ -39,6 +40,7 @@
 "full_screen_title" = "全画面での着信表示";
 "gcall_from" = "%1$@さんが発信中";
 "gcall_full" = "このグループ通話はすでに5人です。";
+"gcall_join" = "通話に参加";
 "gcall_me" = "自分";
 "gcall_name_text" = "あなたを連絡先に登録していない人にはこの名前が表示されます。";
 "gcall_name_title" = "この通話での名前";

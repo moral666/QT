@@ -1,10 +1,12 @@
 //! Chamadas de GRUPO (0.9.62): ate 5 pessoas (eu e mais 4), voz e video.
 //!
-//! 0.9.70 (decisao do Nuno, 05/11/2026): os GRUPOS deixam de ter chamadas. Os grupos sao so
-//! para mensagens (texto, voz, fotos, GIFs e ficheiros). Ligar a um grupo da erro
-//! (`group_call_off`) e o tipo 14 que chegue de uma app 0.9.62 a 0.9.69 e ignorado em silencio
-//! (nao toca, nao fica "ocupado", nao aparece "Entrar na chamada"). O motor da malha fica:
-//! as chamadas de grupo vao comecar numa chamada normal ("Adicionar a ligacao").
+//! 0.9.70 (decisao do Nuno, 05/11/2026): os GRUPOS deixam de ter chamadas (so mensagens).
+//! 0.9.71: a chamada de grupo comeca numa chamada a dois, com "Adicionar a ligacao"
+//! (`group_call_add`). Qualquer participante pode adicionar contactos seus, ate 5 na chamada.
+//! A chamada tem a SUA lista de quem pode estar nela (`roster`: id da conversa -> public ID),
+//! que vai no convite e no "adicionado". Quem nao e contacto de outro participante abre a
+//! sessao com ele pelo public ID da lista (`group_call_needing_session`), como nos grupos.
+//! Os ops 1, 2 e 3 (convite, entrei e sai com o id do grupo, 0.9.62 a 0.9.69) sao ignorados.
 //!
 //! DESENHO (aprovado pelo Nuno a 30/10/2026):
 //!   * Uma chamada de grupo e uma MALHA de chamadas a dois ("pernas"): cada par de
@@ -29,9 +31,12 @@
 //!
 //! FORMATO: payload v1, tipo 14; `msg_id` = id da chamada (uma app antiga mostra "atualiza a
 //! app" uma so vez por chamada). Corpo: [1 op][16 id da chamada] e:
-//!   op 1 convite:  [16 group_id][1 bit0 = videochamada]  (a todos os membros; toca)
-//!   op 2 entrei:   [16 group_id]                          (a todos os membros)
-//!   op 3 sai:      [16 group_id]                          (a todos os membros)
+//!   (ops 1 a 3: so ate a 0.9.69, com o id do grupo; ignorados)
+//!   op 9  convite:    [1 bit0 = video, bit1 = vem da chamada a dois][lista] (toca, menos bit1)
+//!   op 10 entrei:     vazio                                (a todos da lista)
+//!   op 11 sai:        vazio                                (a todos da lista)
+//!   op 12 adicionado: [lista dos novos]                    (de quem esta na chamada, aos outros)
+//!   lista: [1 n, 1..=5][n x 64 public ID]
 //!   op 4 oferta da perna:   [16 leg_id][32 offer_secret][2 pad BE] e, opcional, [1 n][n nome
 //!                  do relay das chamadas de quem oferece] (federacao, como no tipo 11)
 //!   op 5 resposta da perna: [16 leg_id][32 answer_secret]
@@ -50,9 +55,16 @@ use crate::client::{bad, hex, unhex, QtClient, QtError};
 use crate::history::{is_blocked_in, now_ms, CallWake, OutboxItem, ReceiveResult, HDR, PAYLOAD_V1};
 
 pub(crate) const T_GROUP_CALL: u8 = 14;
-const OP_INVITE: u8 = 1;
-const OP_JOINED: u8 = 2;
-const OP_LEFT: u8 = 3;
+const OP_INVITE: u8 = 9;
+const OP_JOINED: u8 = 10;
+const OP_LEFT: u8 = 11;
+const OP_ADDED: u8 = 12;
+/// Convite: videochamada.
+const F_VIDEO: u8 = 1;
+/// Convite a quem ja estava comigo numa chamada a dois: entra sozinho, sem tocar.
+const F_FROM_CALL: u8 = 2;
+/// Bytes de um public ID na lista.
+const PID_BYTES: usize = 64;
 const OP_LEG_OFFER: u8 = 4;
 const OP_LEG_ANSWER: u8 = 5;
 const OP_ADDRS: u8 = 6;
@@ -66,9 +78,10 @@ pub const MAX_CALL_NAME: usize = 32;
 pub const MAX_GROUP_CALL: usize = 5;
 /// Enderecos por mensagem (o corpo do tipo 14 tem no maximo 192 bytes).
 const MAX_ADDRS: usize = 4;
-const _: () = assert!(17 + 16 + 1 + MAX_ADDRS * ADDR_BYTES <= 192);
-/// Corpo maximo do tipo 14 (`history.rs`).
-pub(crate) const MAX_BODY: usize = 192;
+const _: () = assert!(17 + 16 + 1 + MAX_ADDRS * ADDR_BYTES <= MAX_BODY);
+/// Corpo maximo do tipo 14 (`history.rs`): o convite com a lista de 5 cabe.
+pub(crate) const MAX_BODY: usize = 512;
+const _: () = assert!(17 + 2 + MAX_GROUP_CALL * PID_BYTES <= MAX_BODY);
 /// O aviso do IP foi aceite.
 const KV_NOTICE: &str = "gcall:notice";
 const MAX_EVENTS: usize = 64;
@@ -93,14 +106,18 @@ pub enum GroupCallEndReason {
 /// O que aconteceu as chamadas de grupo desde a ultima vez (`group_call_events`).
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum GroupCallEvent {
-    /// Convidaram-me: tocar ("Chamada de grupo: [grupo]").
-    Incoming { call_id: String, group_id: String, from: String, video: bool },
+    /// Convidaram-me: tocar ("Chamada de grupo: [quem convidou]"). `from_call`: quem convidou
+    /// estava comigo numa chamada a dois, que ja acabou do meu lado: entrar logo, sem tocar.
+    Incoming { call_id: String, from: String, video: bool, from_call: bool },
     /// Mudou quem esta na chamada ou o estado de alguem (ligado, camara): atualizar o ecra.
+    /// Tambem quando entra alguem novo na lista: abrir as sessoes que faltam
+    /// (`group_call_needing_session`).
     Changed { call_id: String },
     /// Acabou para mim.
-    Ended { call_id: String, group_id: String, reason: GroupCallEndReason },
-    /// Mudou a chamada a decorrer num grupo em que nao estou (`group_call_ongoing`).
-    Ongoing { group_id: String },
+    Ended { call_id: String, reason: GroupCallEndReason },
+    /// Mudou a chamada a decorrer em que nao estou, a que `contact_id` me convidou
+    /// (`group_call_ongoing`): a conversa com essa pessoa mostra ou tira "Entrar na chamada".
+    Ongoing { contact_id: String },
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -162,9 +179,23 @@ struct Leg {
     heard_at: i64,
 }
 
+/// Uma chamada de grupo em que nao estou mas a que posso voltar (`GroupCalls::known`).
+struct Known {
+    from: String,
+    roster: BTreeMap<String, String>,
+    present: BTreeSet<String>,
+    video: bool,
+    at: i64,
+}
+
 struct GroupCall {
     id: [u8; 16],
-    group: String,
+    /// Quem me convidou (ou eu, se comecei).
+    from: String,
+    /// Quem pode estar nesta chamada, sem mim: id da conversa -> public ID.
+    roster: BTreeMap<String, String>,
+    /// O convite veio da chamada a dois com quem convidou (entra sem tocar).
+    from_call: bool,
     state: State,
     video: bool,
     since: i64,
@@ -176,6 +207,9 @@ struct GroupCall {
     my_name: Option<String>,
     /// Estao na chamada mas ainda sem perna comigo (era a vez deles de oferecer): desde quando.
     waiting: BTreeMap<String, i64>,
+    /// "Entrei" de quem ainda nao estava na lista (o "adicionado" de quem o convidou pode chegar
+    /// depois): fica a espera, no maximo `MAX_GROUP_CALL`.
+    early: BTreeSet<String>,
 }
 
 #[derive(Default)]
@@ -184,31 +218,16 @@ pub(crate) struct GroupCalls {
     events: VecDeque<GroupCallEvent>,
     ended: VecDeque<[u8; 16]>,
     /// Chamadas de grupo a decorrer em que NAO estou (recusei ou nao atendi a tempo): da para
-    /// entrar depois, enquanto houver alguem (0.9.65). id -> (grupo, quem esta, video, ultima noticia).
-    known: BTreeMap<[u8; 16], (String, BTreeSet<String>, bool, i64)>,
+    /// entrar depois, enquanto houver alguem (0.9.65).
+    known: BTreeMap<[u8; 16], Known>,
     #[cfg(feature = "calls")]
     audio: Option<Arc<GroupAudio>>,
     /// So nos testes: outro prazo para `LEG_SILENT_MS`.
     #[cfg(all(test, feature = "calls"))]
     leg_timeout: Option<i64>,
-    /// So nos testes do motor da malha: as chamadas nos grupos ligadas (como ate a 0.9.69).
-    #[cfg(test)]
-    in_groups_for_tests: bool,
 }
 
 impl GroupCalls {
-    /// Ha chamadas nos grupos? Desde a 0.9.70 nunca (so os testes do motor as ligam).
-    fn in_groups(&self) -> bool {
-        #[cfg(test)]
-        {
-            self.in_groups_for_tests
-        }
-        #[cfg(not(test))]
-        {
-            false
-        }
-    }
-
     pub(crate) fn in_call(&self) -> bool {
         self.cur.as_ref().is_some_and(|g| g.state == State::Joined)
     }
@@ -257,24 +276,26 @@ impl GroupCalls {
             }
             // Recusei (ou nao atendi) e ainda ha gente na chamada: fica para poder entrar depois.
             if g.state == State::Ringing && !g.present.is_empty() {
-                self.known.insert(g.id, (g.group.clone(), g.present.clone(), g.video, now_ms()));
+                let k = Known { from: g.from.clone(), roster: g.roster.clone(), present: g.present.clone(), video: g.video, at: now_ms() };
+                self.known.insert(g.id, k);
+                self.changed_known(&g.from);
             } else {
                 self.remember_ended(g.id);
             }
-            self.push(GroupCallEvent::Ended { call_id: hex(&g.id), group_id: g.group, reason });
+            self.push(GroupCallEvent::Ended { call_id: hex(&g.id), reason });
         }
     }
 
     /// Esquece as chamadas sem noticias ha mais de 3 h (alguem saiu sem avisar).
     fn prune_known(&mut self) {
         let now = now_ms();
-        self.known.retain(|_, k| now - k.3 < 3 * 3600 * 1000);
+        self.known.retain(|_, k| now - k.at < 3 * 3600 * 1000);
     }
 
-    /// Uma chamada do grupo `gid` em que nao estou mudou (a conversa do grupo mostra ou tira
-    /// o "Entrar na chamada").
-    fn changed_known(&mut self, gid: &str) {
-        let e = GroupCallEvent::Ongoing { group_id: gid.to_string() };
+    /// Uma chamada em que nao estou, a que `from` me convidou, mudou (a conversa com essa pessoa
+    /// mostra ou tira o "Entrar na chamada").
+    fn changed_known(&mut self, from: &str) {
+        let e = GroupCallEvent::Ongoing { contact_id: from.to_string() };
         if self.events.back() != Some(&e) {
             self.push(e);
         }
@@ -393,14 +414,55 @@ fn relay_tail(tail: &[u8]) -> Option<Option<String>> {
     }
 }
 
-/// Os outros membros do grupo (ids das conversas) e o meu id, se eu fizer parte dele.
-fn members(c: &st::rusqlite::Connection, gid: &str) -> Result<Option<(Vec<String>, String)>, QtError> {
-    crate::groups::call_members(c, gid)
+/// O meu id (da conversa) e o meu public ID.
+fn me(c: &st::rusqlite::Connection) -> Result<(String, String), QtError> {
+    crate::groups::my_identity(c)
 }
 
-/// Os membros do grupo da chamada a quem os avisos vao (todos menos eu).
-fn others(c: &st::rusqlite::Connection, g: &GroupCall) -> Result<Vec<String>, QtError> {
-    Ok(members(c, &g.group)?.map(|(o, _)| o).unwrap_or_default())
+/// Os da lista da chamada a quem os avisos vao (todos menos eu).
+fn others(g: &GroupCall) -> Vec<String> {
+    g.roster.keys().cloned().collect()
+}
+
+/// Um public ID em bytes (64) e o id da conversa dele.
+fn pid_bytes(pid: &str) -> Result<([u8; PID_BYTES], String), QtError> {
+    let (a, b) = crate::client::parse_public_id(pid)?;
+    let mut out = [0u8; PID_BYTES];
+    out[..32].copy_from_slice(&a);
+    out[32..].copy_from_slice(&b);
+    Ok((out, hex(&a)))
+}
+
+/// A lista: `[1 n][n x 64]` (id da conversa -> public ID).
+fn encode_roster<'a>(pids: impl Iterator<Item = &'a String>) -> Result<Vec<u8>, QtError> {
+    let mut items = Vec::new();
+    for p in pids {
+        items.push(pid_bytes(p)?.0);
+    }
+    if items.is_empty() || items.len() > MAX_GROUP_CALL {
+        return Err(bad("public_id"));
+    }
+    let mut out = vec![items.len() as u8];
+    for i in items {
+        out.extend_from_slice(&i);
+    }
+    Ok(out)
+}
+
+fn decode_roster(b: &[u8]) -> Option<BTreeMap<String, String>> {
+    let (&n, rest) = b.split_first()?;
+    let n = n as usize;
+    if n == 0 || n > MAX_GROUP_CALL || rest.len() != n * PID_BYTES {
+        return None;
+    }
+    let mut out = BTreeMap::new();
+    for ch in rest.chunks(PID_BYTES) {
+        let pid = format!("qt1:{}", hex(ch));
+        let cid = hex(&ch[..32]);
+        crate::client::parse_public_id(&pid).ok()?;
+        out.insert(cid, pid);
+    }
+    Some(out)
 }
 
 impl Leg {
@@ -489,6 +551,48 @@ fn full(g: &GroupCall) -> bool {
     g.present.len() + 1 > MAX_GROUP_CALL
 }
 
+/// Um convite (op 9) valido: as flags e a lista (sem mim). Quem convida e eu temos de la estar.
+struct Invite {
+    video: bool,
+    from_call: bool,
+    roster: BTreeMap<String, String>,
+}
+
+fn parse_invite(c: &st::rusqlite::Connection, cid: &str, rest: &[u8]) -> Result<Option<Invite>, QtError> {
+    let Some((&flags, list)) = rest.split_first() else { return Ok(None) };
+    let Some(mut roster) = decode_roster(list) else { return Ok(None) };
+    let (my_cid, _) = me(c)?;
+    if roster.remove(&my_cid).is_none() || !roster.contains_key(cid) {
+        return Ok(None);
+    }
+    Ok(Some(Invite { video: flags & F_VIDEO != 0, from_call: flags & F_FROM_CALL != 0, roster }))
+}
+
+/// `cid` (da lista) disse "entrei" na chamada em que estou.
+fn on_joined(gc: &mut GroupCalls, client: &QtClient, c: &st::rusqlite::Connection, own_relay: &Option<String>, my_cid: &str, cid: &str) -> Result<(), QtError> {
+    let Some(g) = gc.cur.as_mut() else { return Ok(()) };
+    let id = g.id;
+    let new = g.present.insert(cid.to_string());
+    if g.state == State::Joined && !g.legs.contains_key(cid) && g.legs.len() + 1 < MAX_GROUP_CALL {
+        if my_cid < cid {
+            let plain = g.offer_leg(own_relay, cid)?;
+            queue(client, c, cid, &plain, None)?;
+            #[cfg(feature = "calls")]
+            if let Some(a) = gc.audio.clone() {
+                start_leg_engine(gc, &a, cid);
+            }
+        } else if new {
+            // Quem oferece e ele (id menor), mas pode nao saber que eu ja estou: o meu "entrei"
+            // pode nao lhe ter chegado (entrei antes de termos sessao). Repito-o so a ele, uma vez.
+            queue(client, c, cid, &encode(OP_JOINED, &id, &[]), None)?;
+        }
+    }
+    if new {
+        gc.changed();
+    }
+    Ok(())
+}
+
 /// Tipo 14 recebido de `cid` (ja decifrado, dentro da transacao da rececao).
 pub(crate) fn on_group_call(client: &QtClient, c: &st::rusqlite::Connection, cid: &str, body: &[u8], sent_at: i64) -> Result<ReceiveResult, QtError> {
     let no_change = ReceiveResult::NoChange { contact_id: cid.to_string() };
@@ -498,117 +602,133 @@ pub(crate) fn on_group_call(client: &QtClient, c: &st::rusqlite::Connection, cid
     let op = body[0];
     let id: [u8; 16] = body[1..17].try_into().map_err(|_| QtError::InvalidEnvelope)?;
     let rest = &body[17..];
-    // Uma chamada a dois a decorrer: ocupado (a ordem dos locks e sempre chamadas -> grupo).
-    let (one_to_one, own_relay) = {
-        let calls = crate::client::relock(&client.calls);
-        (calls.in_call(), calls.own_relay.clone())
-    };
+    let now = now_ms();
+    let invite = if op == OP_INVITE { parse_invite(c, cid, rest)? } else { None };
+    // A ordem dos locks e sempre chamadas -> grupo.
+    let mut calls = crate::client::relock(&client.calls);
+    let own_relay = calls.own_relay.clone();
     let mut gc = crate::client::relock(&client.group_calls);
-    // 0.9.70: sem chamadas nos grupos. Tudo o que chegue de uma app antiga fica por aqui.
-    if !gc.in_groups() {
-        return Ok(no_change);
-    }
     // Um toque antigo (recebido em segundo plano, sem `group_call_events`) acaba antes de
     // decidir: senao um convite novo dava "ocupado".
     expire(&mut gc);
     if gc.ended.contains(&id) {
         return Ok(no_change);
     }
-    let now = now_ms();
     let is_cur = gc.cur.as_ref().is_some_and(|g| g.id == id);
+    let (my_cid, _) = me(c)?;
 
     match op {
-        OP_INVITE | OP_JOINED => {
-            if rest.len() < 16 {
+        OP_INVITE => {
+            let Some(inv) = invite else { return Ok(no_change) };
+            if is_cur || gc.known.contains_key(&id) || !crate::call::offer_fresh(sent_at, now) {
                 return Ok(no_change);
             }
-            let gid = hex(&rest[..16]);
-            // So de membros do grupo, num grupo de que faco parte.
-            let Some((others, _)) = members(c, &gid)? else { return Ok(no_change) };
-            if !others.iter().any(|o| o == cid) {
+            // Quem estava comigo numa chamada a dois adicionou alguem: essa chamada acaba ja do
+            // meu lado (sem "desligou") e entro na de grupo sem tocar.
+            let from_call = inv.from_call && gc.cur.is_none() && calls.detach_for_group(c, cid)?;
+            if gc.cur.is_some() || calls.in_call() {
+                gc.remember_ended(id);
+                gc.push(GroupCallEvent::Ended { call_id: hex(&id), reason: GroupCallEndReason::Busy });
                 return Ok(no_change);
             }
-            if is_cur {
-                let Some(g) = gc.cur.as_mut() else { return Ok(no_change) };
-                if g.group != gid {
-                    return Ok(no_change);
-                }
-                let new = g.present.insert(cid.to_string());
-                if op == OP_JOINED && g.state == State::Joined && !g.legs.contains_key(cid) && g.legs.len() + 1 < MAX_GROUP_CALL {
-                    let (_, me) = members(c, &gid)?.unwrap_or_default();
-                    if me.as_str() < cid {
-                        let plain = g.offer_leg(&own_relay, cid)?;
-                        queue(client, c, cid, &plain, None)?;
-                        #[cfg(feature = "calls")]
-                        if let Some(a) = gc.audio.clone() {
-                            start_leg_engine(&mut gc, &a, cid);
-                        }
-                    } else if new {
-                        // Quem oferece e ele (id menor), mas pode nao saber que eu ja estou: o meu
-                        // "entrei" pode nao lhe ter chegado (entrei antes de termos sessao). Repito-o
-                        // so a ele, uma vez (0.9.67).
-                        let mut extra = rest[..16].to_vec();
-                        extra.truncate(16);
-                        queue(client, c, cid, &encode(OP_JOINED, &id, &extra), None)?;
-                    }
-                }
-                if new {
-                    gc.changed();
-                }
-                return Ok(no_change);
-            }
-            // Uma chamada que recusei: so muda quem esta (nao volta a tocar).
-            if let Some(k) = gc.known.get_mut(&id) {
-                k.1.insert(cid.to_string());
-                k.3 = now;
-                gc.changed_known(&gid);
-                return Ok(no_change);
-            }
-            // Um convite (ou "entrei") de uma chamada que nao e a minha.
-            if !crate::call::offer_fresh(sent_at, now) {
-                return Ok(no_change);
-            }
-            if gc.cur.is_some() || one_to_one {
-                if op == OP_INVITE {
-                    gc.remember_ended(id);
-                    gc.push(GroupCallEvent::Ended { call_id: hex(&id), group_id: gid, reason: GroupCallEndReason::Busy });
-                }
-                return Ok(no_change);
-            }
-            let video = op == OP_INVITE && rest.get(16).is_some_and(|f| f & 1 == 1);
             let mut present = BTreeSet::new();
             present.insert(cid.to_string());
             gc.cur = Some(GroupCall {
                 id,
-                group: gid.clone(),
+                from: cid.to_string(),
+                roster: inv.roster,
+                from_call,
                 state: State::Ringing,
-                video,
+                video: inv.video,
                 since: now,
                 present,
                 legs: BTreeMap::new(),
                 camera: false,
                 my_name: None,
                 waiting: BTreeMap::new(),
+                early: BTreeSet::new(),
             });
-            gc.push(GroupCallEvent::Incoming { call_id: hex(&id), group_id: gid, from: cid.to_string(), video });
+            gc.push(GroupCallEvent::Incoming { call_id: hex(&id), from: cid.to_string(), video: inv.video, from_call });
+            Ok(no_change)
+        }
+        OP_JOINED => {
+            if is_cur {
+                let Some(g) = gc.cur.as_mut() else { return Ok(no_change) };
+                if !g.roster.contains_key(cid) {
+                    if g.early.len() < MAX_GROUP_CALL {
+                        g.early.insert(cid.to_string());
+                    }
+                    return Ok(no_change);
+                }
+                on_joined(&mut gc, client, c, &own_relay, &my_cid, cid)?;
+                return Ok(no_change);
+            }
+            // Uma chamada que recusei: so muda quem esta (nao volta a tocar).
+            if let Some(k) = gc.known.get_mut(&id) {
+                if k.roster.contains_key(cid) {
+                    k.present.insert(cid.to_string());
+                    k.at = now;
+                    let from = k.from.clone();
+                    gc.changed_known(&from);
+                }
+            }
+            Ok(no_change)
+        }
+        OP_ADDED => {
+            let Some(mut added) = decode_roster(rest) else { return Ok(no_change) };
+            added.remove(&my_cid);
+            if !is_cur {
+                if let Some(k) = gc.known.get_mut(&id) {
+                    if k.roster.contains_key(cid) {
+                        for (a, p) in added {
+                            if k.roster.len() + 1 < MAX_GROUP_CALL {
+                                k.roster.entry(a).or_insert(p);
+                            }
+                        }
+                    }
+                }
+                return Ok(no_change);
+            }
+            let Some(g) = gc.cur.as_mut() else { return Ok(no_change) };
+            if !g.roster.contains_key(cid) {
+                return Ok(no_change);
+            }
+            let mut early = Vec::new();
+            for (a, p) in added {
+                if g.roster.contains_key(&a) || g.roster.len() + 1 >= MAX_GROUP_CALL || is_blocked_in(c, &a)? {
+                    continue;
+                }
+                if g.early.remove(&a) {
+                    early.push(a.clone());
+                }
+                g.roster.insert(a, p);
+            }
+            for a in early {
+                on_joined(&mut gc, client, c, &own_relay, &my_cid, &a)?;
+            }
+            gc.changed();
             Ok(no_change)
         }
         OP_LEFT => {
             if !is_cur {
                 if let Some(k) = gc.known.get_mut(&id) {
-                    k.1.remove(cid);
-                    k.3 = now;
-                    let gid = k.0.clone();
-                    if k.1.is_empty() {
+                    k.present.remove(cid);
+                    k.at = now;
+                    let (from, empty) = (k.from.clone(), k.present.is_empty());
+                    if empty {
                         gc.known.remove(&id);
                         gc.remember_ended(id);
                     }
-                    gc.changed_known(&gid);
+                    gc.changed_known(&from);
                 }
                 return Ok(no_change);
             }
             let Some(g) = gc.cur.as_mut() else { return Ok(no_change) };
+            if !g.roster.contains_key(cid) {
+                return Ok(no_change);
+            }
             g.present.remove(cid);
+            g.early.remove(cid);
             if let Some(leg) = g.legs.remove(cid) {
                 #[cfg(feature = "calls")]
                 leg.stop();
@@ -635,14 +755,13 @@ pub(crate) fn on_group_call(client: &QtClient, c: &st::rusqlite::Connection, cid
             }
             let Some(relay) = relay_tail(&rest[50..]) else { return Ok(no_change) };
             let Some(g) = gc.cur.as_mut() else { return Ok(no_change) };
-            let Some((others, me)) = members(c, &g.group)? else { return Ok(no_change) };
-            // So de membros do grupo, como o convite e o "entrei": quem sabe o id da chamada mas
-            // nao e do grupo (ex.: tirado do grupo a meio) nao entra na malha nem fica com o meu IP.
-            if !others.iter().any(|o| o == cid) {
+            // So de quem esta na lista da chamada: quem sabe o id da chamada mas nao foi
+            // adicionado nao entra na malha nem fica com o meu IP.
+            if !g.roster.contains_key(cid) {
                 return Ok(no_change);
             }
             // Oferece sempre o id menor; so com a chamada aceite e com lugar.
-            if g.state != State::Joined || cid >= me.as_str() || (!g.legs.contains_key(cid) && g.legs.len() + 1 >= MAX_GROUP_CALL) {
+            if g.state != State::Joined || cid >= my_cid.as_str() || (!g.legs.contains_key(cid) && g.legs.len() + 1 >= MAX_GROUP_CALL) {
                 return Ok(no_change);
             }
             let pad = u16::from_be_bytes([rest[48], rest[49]]);
@@ -862,38 +981,101 @@ impl QtClient {
         Ok(())
     }
 
-    /// LIGAR a um grupo (de que faco parte). Os convites ficam na outbox (tocam a campainha
-    /// de cada membro). Eu fico ja na chamada, a espera de quem entrar.
-    pub fn group_call_start(&self, group_id: String, video: bool) -> Result<GroupCallStart, QtError> {
-        if !crate::client::relock(&self.group_calls).in_groups() {
-            return Err(bad("group_call_off"));
-        }
+    /// ADICIONAR A LIGACAO (0.9.71): convida contactos meus (public IDs, com sessao) para a
+    /// chamada. Numa chamada a dois atendida, ela passa a chamada de grupo: acaba deste lado
+    /// sem "desligou", o outro entra sozinho (sem tocar) e os novos recebem o convite (tocam).
+    /// Numa chamada de grupo em que estou, os novos entram na lista de todos. Sem chamada
+    /// nenhuma, comeca uma chamada de grupo so com os convidados. No maximo 5 na chamada.
+    /// Numa chamada a dois, `public_ids` leva tambem o public ID de quem esta comigo.
+    /// `video`: a minha camara esta ligada (o convite diz videochamada).
+    pub fn group_call_add(&self, public_ids: Vec<String>, video: bool) -> Result<GroupCallStart, QtError> {
         let c = self.lock()?;
         if !notice_accepted(&c)? {
             return Err(bad("group_call_notice"));
         }
-        if crate::client::relock(&self.calls).in_call() {
-            return Err(bad("call_busy"));
+        let (my_cid, my_pid) = me(&c)?;
+        let mut new: BTreeMap<String, String> = BTreeMap::new();
+        for pid in public_ids {
+            let (_, cid) = pid_bytes(&pid)?;
+            if cid == my_cid {
+                continue;
+            }
+            if is_blocked_in(&c, &cid)? || st::load_session(&c, &cid)?.is_none() {
+                return Err(bad("public_id"));
+            }
+            new.insert(cid, pid.trim().to_ascii_lowercase());
         }
+        if new.is_empty() {
+            return Err(bad("public_id"));
+        }
+        let mut calls = crate::client::relock(&self.calls);
         let mut gc = crate::client::relock(&self.group_calls);
         expire(&mut gc);
-        if gc.cur.is_some() {
-            return Err(bad("call_busy"));
-        }
-        let gid = unhex(&group_id).filter(|b| b.len() == 16).ok_or_else(|| bad("group_id"))?;
-        let Some((others, _)) = members(&c, &group_id)? else { return Err(bad("group_id")) };
-        let id = random::<16>()?;
-        let mut extra = gid.clone();
-        extra.push(video as u8);
         let tx = c.unchecked_transaction()?;
-        let items = broadcast(self, &tx, &others, &encode(OP_INVITE, &id, &extra), Some(CallWake::Call))?;
-        tx.commit()?;
-        if items.is_empty() {
-            return Err(bad("group_id"));
+        let mut items = Vec::new();
+        let id;
+        if let Some(g) = gc.cur.as_mut() {
+            if g.state != State::Joined {
+                return Err(bad("call_busy"));
+            }
+            new.retain(|k, _| !g.roster.contains_key(k));
+            if new.is_empty() {
+                return Ok(GroupCallStart { call_id: hex(&g.id), items });
+            }
+            if g.roster.len() + new.len() + 1 > MAX_GROUP_CALL {
+                return Err(bad("group_call_full"));
+            }
+            id = g.id;
+            let existing = others(g);
+            items.extend(broadcast(self, &tx, &existing, &encode(OP_ADDED, &id, &encode_roster(new.values())?), None)?);
+            g.roster.extend(new.clone());
+            let mut all: Vec<&String> = g.roster.values().collect();
+            all.push(&my_pid);
+            let mut extra = vec![if video { F_VIDEO } else { 0 }];
+            extra.extend_from_slice(&encode_roster(all.into_iter())?);
+            let to: Vec<String> = new.keys().cloned().collect();
+            items.extend(broadcast(self, &tx, &to, &encode(OP_INVITE, &id, &extra), Some(CallWake::Call))?);
+            tx.commit()?;
+            gc.changed();
+            return Ok(GroupCallStart { call_id: hex(&id), items });
         }
+        // Uma chamada a dois: so atendida passa a grupo.
+        let peer = match (calls.in_call(), calls.active_peer()) {
+            (false, _) => None,
+            (true, Some(p)) => Some(p),
+            (true, None) => return Err(bad("call_busy")),
+        };
+        // O public ID de quem esta comigo vem na lista (o nucleo so guarda o id da conversa).
+        let roster = new.clone();
+        if let Some(p) = &peer {
+            if new.remove(p).is_none() {
+                return Err(bad("public_id"));
+            }
+        }
+        if roster.len() + 1 > MAX_GROUP_CALL {
+            return Err(bad("group_call_full"));
+        }
+        id = random::<16>()?;
+        let mut all: Vec<&String> = roster.values().collect();
+        all.push(&my_pid);
+        let list = encode_roster(all.into_iter())?;
+        let flags = if video { F_VIDEO } else { 0 };
+        if let Some(p) = &peer {
+            let mut extra = vec![flags | F_FROM_CALL];
+            extra.extend_from_slice(&list);
+            items.push(queue(self, &tx, p, &encode(OP_INVITE, &id, &extra), None)?);
+            calls.detach_for_group(&tx, p)?;
+        }
+        let mut extra = vec![flags];
+        extra.extend_from_slice(&list);
+        let to: Vec<String> = new.keys().cloned().collect();
+        items.extend(broadcast(self, &tx, &to, &encode(OP_INVITE, &id, &extra), Some(CallWake::Call))?);
+        tx.commit()?;
         gc.cur = Some(GroupCall {
             id,
-            group: group_id,
+            from: my_cid,
+            roster,
+            from_call: false,
             state: State::Joined,
             video,
             since: now_ms(),
@@ -902,16 +1084,44 @@ impl QtClient {
             camera: video,
             my_name: None,
             waiting: BTreeMap::new(),
+            early: BTreeSet::new(),
         });
         Ok(GroupCallStart { call_id: hex(&id), items })
     }
 
-    /// A chamada de grupo a decorrer neste grupo em que nao estou (recusei ou nao atendi), se
-    /// houver: a conversa do grupo mostra "Entrar na chamada" (0.9.65).
-    pub fn group_call_ongoing(&self, group_id: String) -> Result<Option<String>, QtError> {
+    /// Public IDs da lista da chamada com quem ainda nao ha sessao (a app abre-as antes de
+    /// entrar e sempre que a lista muda, como `group_members_needing_session`).
+    pub fn group_call_needing_session(&self, call_id: String) -> Result<Vec<String>, QtError> {
+        let id = parse_id(&call_id)?;
+        let c = self.lock()?;
+        let gc = crate::client::relock(&self.group_calls);
+        let roster = match (gc.cur.as_ref(), gc.known.get(&id)) {
+            (Some(g), _) if g.id == id => g.roster.clone(),
+            (_, Some(k)) => k.roster.clone(),
+            _ => return Ok(Vec::new()),
+        };
+        drop(gc);
+        let mut out = Vec::new();
+        for (cid, pid) in roster {
+            if !is_blocked_in(&c, &cid)? && st::load_session(&c, &cid)?.is_none() {
+                out.push(pid);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Quem me convidou para a chamada (ou eu, se a comecei).
+    pub fn group_call_from(&self, call_id: String) -> Result<Option<String>, QtError> {
+        let id = parse_id(&call_id)?;
+        Ok(crate::client::relock(&self.group_calls).cur.as_ref().filter(|g| g.id == id).map(|g| g.from.clone()))
+    }
+
+    /// A chamada de grupo a decorrer, a que `contact_id` me convidou, em que nao estou (recusei
+    /// ou nao atendi), se houver: a conversa com essa pessoa mostra "Entrar na chamada".
+    pub fn group_call_ongoing(&self, contact_id: String) -> Result<Option<String>, QtError> {
         let mut gc = crate::client::relock(&self.group_calls);
         gc.prune_known();
-        Ok(gc.known.iter().find(|(_, k)| k.0 == group_id && !k.1.is_empty()).map(|(id, _)| hex(id)))
+        Ok(gc.known.iter().find(|(_, k)| k.from == contact_id && !k.present.is_empty()).map(|(id, _)| hex(id)))
     }
 
     /// ENTRAR DEPOIS numa chamada que recusei (ou nao atendi): como atender o convite.
@@ -925,18 +1135,21 @@ impl QtClient {
             if gc.cur.is_some() {
                 return Err(bad("call_busy"));
             }
-            let Some((group, present, video, _)) = gc.known.remove(&id) else { return Err(bad("call_id")) };
+            let Some(k) = gc.known.remove(&id) else { return Err(bad("call_id")) };
             gc.cur = Some(GroupCall {
                 id,
-                group,
+                from: k.from,
+                roster: k.roster,
+                from_call: false,
                 state: State::Ringing,
-                video,
+                video: k.video,
                 since: now_ms(),
-                present,
+                present: k.present,
                 legs: BTreeMap::new(),
                 camera: false,
                 my_name: None,
                 waiting: BTreeMap::new(),
+                early: BTreeSet::new(),
             });
         }
         self.group_call_join(call_id)
@@ -966,10 +1179,9 @@ impl QtClient {
         if full(g) {
             return Err(bad("group_call_full"));
         }
-        let Some((others, me)) = members(&c, &g.group)? else { return Err(bad("group_id")) };
-        let gid = unhex(&g.group).unwrap_or_default();
+        let (me, _) = me(&c)?;
         let tx = c.unchecked_transaction()?;
-        broadcast(self, &tx, &others, &encode(OP_JOINED, &id, &gid), None)?;
+        broadcast(self, &tx, &others(g), &encode(OP_JOINED, &id, &[]), None)?;
         g.state = State::Joined;
         g.since = now_ms();
         // A videochamada: a minha camara comeca ligada, como a de quem ligou.
@@ -1003,12 +1215,11 @@ impl QtClient {
         let mut gc = crate::client::relock(&self.group_calls);
         let Some(g) = gc.cur.as_ref().filter(|g| g.id == id) else { return Ok(()) };
         if g.state == State::Joined {
-            let to = others(&c, g)?;
-            let gid = unhex(&g.group).unwrap_or_default();
+            let to = others(g);
             // O ultimo a sair para a campainha de quem ainda esta a tocar.
             let wake = g.present.is_empty().then_some(CallWake::CallEnd);
             let tx = c.unchecked_transaction()?;
-            broadcast(self, &tx, &to, &encode(OP_LEFT, &id, &gid), wake)?;
+            broadcast(self, &tx, &to, &encode(OP_LEFT, &id, &[]), wake)?;
             tx.commit()?;
         }
         if let Some(g) = gc.cur.as_ref() {
@@ -1110,12 +1321,6 @@ impl QtClient {
     /// A chamada de grupo a decorrer (a tocar ou dentro), se houver.
     pub fn group_call_current(&self) -> Result<Option<String>, QtError> {
         Ok(crate::client::relock(&self.group_calls).cur.as_ref().map(|g| hex(&g.id)))
-    }
-
-    /// O grupo da chamada.
-    pub fn group_call_group(&self, call_id: String) -> Result<Option<String>, QtError> {
-        let id = parse_id(&call_id)?;
-        Ok(crate::client::relock(&self.group_calls).cur.as_ref().filter(|g| g.id == id).map(|g| g.group.clone()))
     }
 
     /// Videochamada de grupo (a camara de quem liga comeca ligada)?
@@ -1533,7 +1738,6 @@ mod ring_tests {
         let _ = std::fs::remove_file(&path);
         let c = QtClient::open(path, vec![0x60 + n as u8; 32]).unwrap();
         let id = c.create_identity().unwrap();
-        crate::client::relock(&c.group_calls).in_groups_for_tests = true;
         Peer { c, id }
     }
 
@@ -1559,49 +1763,6 @@ mod ring_tests {
         flush(b, &[a]);
     }
 
-    /// 0.9.70: sem chamadas nos grupos. Ligar a um grupo da erro, e o convite (e o \"entrei\")
-    /// de uma app 0.9.62 a 0.9.69 nao toca, nao deixa \"ocupado\" nem mostra \"Entrar na chamada\".
-    #[test]
-    fn grupos_sem_chamadas_e_convite_de_app_antiga_ignorado() {
-        let peers: Vec<Peer> = (0..3).map(|i| peer(&format!("s{i}"))).collect();
-        for i in 0..3 {
-            for j in i + 1..3 {
-                connect(&peers[i], &peers[j]);
-            }
-        }
-        let members = peers[1..].iter().map(|p| p.id.public_id.clone()).collect();
-        let gid = peers[0].c.group_create("Amigos".into(), members).unwrap().group_id;
-        let all: Vec<&Peer> = peers.iter().collect();
-        for p in &all {
-            flush(p, &all);
-        }
-        for p in &peers {
-            p.c.group_call_accept_notice().unwrap();
-        }
-        // B e C ja sao 0.9.70; A faz de app antiga (com as chamadas nos grupos).
-        for p in &peers[1..] {
-            crate::client::relock(&p.c.group_calls).in_groups_for_tests = false;
-            assert!(p.c.group_call_start(gid.clone(), true).is_err(), "nao se liga a um grupo");
-            assert!(p.c.outbox().unwrap().is_empty(), "nenhum convite saiu");
-        }
-        peers[0].c.group_call_start(gid.clone(), true).unwrap();
-        flush(&peers[0], &all);
-        for p in &peers[1..] {
-            assert_eq!(p.c.group_call_current().unwrap(), None, "o convite antigo nao toca");
-            assert!(p.c.group_call_events().unwrap().is_empty(), "sem eventos de grupo");
-            assert_eq!(p.c.group_call_ongoing(gid.clone()).unwrap(), None, "sem \"Entrar na chamada\"");
-        }
-        // E nao fica \"ocupado\": uma chamada a dois de C para B toca.
-        let call = peers[2].c.call_start(cid(&peers[1])).unwrap();
-        flush(&peers[2], &all);
-        let ev = peers[1].c.call_events().unwrap();
-        assert!(
-            ev.iter().any(|e| matches!(e, CallEvent::Incoming { call_id, .. } if *call_id == call.call_id)),
-            "a chamada a dois toca em B: {ev:?}"
-        );
-        peers[1].c.call_hangup(call.call_id).unwrap();
-    }
-
     /// Um convite de grupo chega com a app em segundo plano: ninguem chama
     /// `group_call_events`, o toque passa do prazo e o telemovel tem de deixar de estar
     /// "ocupado" (antes, as chamadas a dois e os convites novos davam "ocupado" ate o ecra abrir).
@@ -1613,8 +1774,7 @@ mod ring_tests {
                 connect(&peers[i], &peers[j]);
             }
         }
-        let members = peers[1..].iter().map(|p| p.id.public_id.clone()).collect();
-        let gid = peers[0].c.group_create("Amigos".into(), members).unwrap().group_id;
+        let gid: Vec<String> = peers.iter().map(|p| p.id.public_id.clone()).collect();
         let all: Vec<&Peer> = peers.iter().collect();
         for p in &all {
             flush(p, &all);
@@ -1623,7 +1783,7 @@ mod ring_tests {
             p.c.group_call_accept_notice().unwrap();
         }
         // A liga ao grupo; B recebe o convite em segundo plano (so `receive_sealed`).
-        peers[0].c.group_call_start(gid.clone(), false).unwrap();
+        peers[0].c.group_call_add(gid.clone(), false).unwrap();
         flush(&peers[0], &all);
         assert!(peers[1].c.group_call_current().unwrap().is_some(), "o convite chegou a B");
         // O toque passa do prazo sem ninguem perguntar.
@@ -1648,13 +1808,13 @@ mod ring_tests {
 
         // O mesmo com um convite de grupo novo durante um toque de grupo esquecido: A liga (X), C
         // recusa, o toque de B passa do prazo sem ninguem perguntar e C liga outra vez (Y).
-        let x = peers[0].c.group_call_start(gid.clone(), false).unwrap();
+        let x = peers[0].c.group_call_add(gid.clone(), false).unwrap();
         flush(&peers[0], &all);
         let _ = peers[2].c.group_call_events().unwrap();
         peers[2].c.group_call_leave(x.call_id.clone()).unwrap();
         flush(&peers[2], &all);
         crate::client::relock(&peers[1].c.group_calls).cur.as_mut().unwrap().since -= crate::call::RING_TIMEOUT_MS + 1;
-        let y = peers[2].c.group_call_start(gid, false).unwrap();
+        let y = peers[2].c.group_call_add(gid, false).unwrap();
         flush(&peers[2], &all);
         let ev = peers[1].c.group_call_events().unwrap();
         assert!(
@@ -1688,8 +1848,7 @@ mod ring_tests {
         };
         let victim = peers.iter().find(|p| cid(p) == top).unwrap();
         connect(&intruder, victim);
-        let members = peers[1..].iter().map(|p| p.id.public_id.clone()).collect();
-        let gid = peers[0].c.group_create("Amigos".into(), members).unwrap().group_id;
+        let gid: Vec<String> = peers.iter().map(|p| p.id.public_id.clone()).collect();
         let all: Vec<&Peer> = peers.iter().collect();
         for p in &all {
             flush(p, &all);
@@ -1697,7 +1856,7 @@ mod ring_tests {
         for p in &peers {
             p.c.group_call_accept_notice().unwrap();
         }
-        let start = peers[0].c.group_call_start(gid, false).unwrap();
+        let start = peers[0].c.group_call_add(gid, false).unwrap();
         flush(&peers[0], &all);
         for p in &peers[1..] {
             p.c.group_call_join(start.call_id.clone()).unwrap();
@@ -1730,8 +1889,7 @@ mod ring_tests {
                 connect(&peers[i], &peers[j]);
             }
         }
-        let members = peers[1..].iter().map(|p| p.id.public_id.clone()).collect();
-        let gid = peers[0].c.group_create("Amigos".into(), members).unwrap().group_id;
+        let gid: Vec<String> = peers.iter().map(|p| p.id.public_id.clone()).collect();
         let all: Vec<&Peer> = peers.iter().collect();
         for p in &all {
             flush(p, &all);
@@ -1739,7 +1897,7 @@ mod ring_tests {
         for p in &peers {
             p.c.group_call_accept_notice().unwrap();
         }
-        let start = peers[0].c.group_call_start(gid, false).unwrap();
+        let start = peers[0].c.group_call_add(gid, false).unwrap();
         flush(&peers[0], &all);
         assert!(peers[1].c.group_call_current().unwrap().is_some(), "toca em B");
         peers[1].c.call_start(cid(&peers[2])).unwrap();
@@ -1756,6 +1914,7 @@ mod ring_tests {
 #[cfg(all(test, feature = "calls"))]
 mod mesh_tests {
     use super::*;
+    use crate::call::{CallEndReason, CallEvent};
     use crate::client::{peer_bundle_from_relay_bytes, PublicIdentity};
     use std::time::{Duration, Instant};
 
@@ -1772,7 +1931,6 @@ mod mesh_tests {
             let _ = std::fs::remove_file(&path);
             let c = QtClient::open(path, vec![0x40 + n as u8; 32]).unwrap();
             let id = c.create_identity().unwrap();
-            crate::client::relock(&c.group_calls).in_groups_for_tests = true;
             Peer { c, id }
         }
         fn cid(&self) -> String {
@@ -1806,21 +1964,20 @@ mod mesh_tests {
     }
 
     /// `n` pessoas, todas com sessao umas com as outras, num grupo criado pela primeira.
-    fn group(n: usize) -> (Vec<Peer>, String) {
+    fn group(n: usize) -> (Vec<Peer>, Vec<String>) {
         let peers: Vec<Peer> = (0..n).map(|i| Peer::new(&format!("p{i}"))).collect();
         for i in 0..n {
             for j in i + 1..n {
                 connect(&peers[i], &peers[j]);
             }
         }
-        let members = peers[1..].iter().map(|p| p.id.public_id.clone()).collect();
-        let g = peers[0].c.group_create("Amigos".into(), members).unwrap();
+        let gid: Vec<String> = peers.iter().map(|p| p.id.public_id.clone()).collect();
         let all: Vec<&Peer> = peers.iter().collect();
         flush_all(&all);
         for p in &peers {
             p.c.group_call_accept_notice().unwrap();
         }
-        (peers, g.group_id)
+        (peers, gid)
     }
 
     fn incoming(p: &Peer) -> Option<String> {
@@ -1861,7 +2018,7 @@ mod mesh_tests {
         let (peers, gid) = group(2);
         let p = Peer::new("novo");
         assert!(!p.c.group_call_notice_accepted().unwrap());
-        assert!(matches!(p.c.group_call_start(gid.clone(), false), Err(QtError::InvalidInput { .. })));
+        assert!(matches!(p.c.group_call_add(gid.clone(), false), Err(QtError::InvalidInput { .. })));
         assert!(peers[0].c.group_call_notice_accepted().unwrap());
     }
 
@@ -1869,7 +2026,7 @@ mod mesh_tests {
     fn tres_pessoas_ouvem_se_todas_pelo_direto() {
         let (peers, gid) = group(3);
         let all: Vec<&Peer> = peers.iter().collect();
-        let start = peers[0].c.group_call_start(gid, false).unwrap();
+        let start = peers[0].c.group_call_add(gid, false).unwrap();
         assert_eq!(start.items.len(), 2, "um convite para cada membro");
         let a0 = audio(&peers[0], &start.call_id);
         flush_all(&all);
@@ -1934,7 +2091,7 @@ mod mesh_tests {
     fn video_vai_para_todos_e_cada_um_ve_os_outros() {
         let (peers, gid) = group(3);
         let all: Vec<&Peer> = peers.iter().collect();
-        let start = peers[0].c.group_call_start(gid, true).unwrap();
+        let start = peers[0].c.group_call_add(gid, true).unwrap();
         let a0 = audio(&peers[0], &start.call_id);
         a0.set_network(crate::call_audio::NetworkKind::Wifi);
         flush_all(&all);
@@ -1980,27 +2137,30 @@ mod mesh_tests {
     fn no_maximo_cinco_e_o_ultimo_a_sair_para_o_toque() {
         let (peers, gid) = group(6);
         let all: Vec<&Peer> = peers.iter().collect();
-        let start = peers[0].c.group_call_start(gid, false).unwrap();
+        // Seis de uma vez: nao da (eu e mais 4).
+        assert!(matches!(peers[0].c.group_call_add(gid.clone(), false), Err(QtError::InvalidInput { .. })));
+        let start = peers[0].c.group_call_add(gid[..5].to_vec(), false).unwrap();
         flush_all(&all);
-        let ids: Vec<String> = peers[1..].iter().map(|p| incoming(p).unwrap()).collect();
-        for (p, id) in peers[1..5].iter().zip(&ids) {
+        assert!(incoming(&peers[5]).is_none(), "o sexto nao foi convidado");
+        let ids: Vec<String> = peers[1..5].iter().map(|p| incoming(p).unwrap()).collect();
+        for (p, id) in peers[1..4].iter().zip(&ids) {
             p.c.group_call_join(id.clone()).unwrap();
             flush_all(&all);
         }
         run(&all, 2, || false);
-        // Cinco na chamada: o sexto ja nao entra.
-        assert!(matches!(peers[5].c.group_call_join(ids[4].clone()), Err(QtError::InvalidInput { .. })));
-        for p in &peers[..5] {
+        // Cinco na lista: ninguem adiciona um sexto.
+        assert!(matches!(peers[1].c.group_call_add(vec![gid[5].clone()], false), Err(QtError::InvalidInput { .. })));
+        for p in &peers[..4] {
             let parts = p.c.group_call_participants(start.call_id.clone()).unwrap();
-            assert_eq!(parts.len(), 4, "cada um ve os outros 4");
+            assert_eq!(parts.len(), 3, "cada um ve os outros 3 que entraram");
             assert!(parts.iter().all(|x| x.connected), "todas as pernas com chaves");
         }
-        // Saem todos: ao sexto, que ainda estava a tocar, o toque para.
-        for (p, id) in peers[..5].iter().zip(std::iter::once(&start.call_id).chain(&ids)) {
+        // Saem todos: ao quinto, que ainda estava a tocar, o toque para.
+        for (p, id) in peers[..4].iter().zip(std::iter::once(&start.call_id).chain(&ids)) {
             p.c.group_call_leave(id.clone()).unwrap();
             flush_all(&all);
         }
-        let ev = peers[5].c.group_call_events().unwrap();
+        let ev = peers[4].c.group_call_events().unwrap();
         assert!(ev.iter().any(|e| matches!(e, GroupCallEvent::Ended { reason: GroupCallEndReason::Missed, .. })), "{ev:?}");
     }
 
@@ -2010,7 +2170,7 @@ mod mesh_tests {
     fn quem_desaparece_sem_avisar_sai_da_chamada() {
         let (peers, gid) = group(3);
         let all: Vec<&Peer> = peers.iter().collect();
-        let start = peers[0].c.group_call_start(gid, false).unwrap();
+        let start = peers[0].c.group_call_add(gid, false).unwrap();
         let call = start.call_id.clone();
         let mut auds = vec![audio(&peers[0], &call)];
         flush_all(&all);
@@ -2077,7 +2237,7 @@ mod mesh_tests {
     #[test]
     fn fechar_o_nucleo_para_o_microfone() {
         let (mut peers, gid) = group(2);
-        let start = peers[0].c.group_call_start(gid, false).unwrap();
+        let start = peers[0].c.group_call_add(gid, false).unwrap();
         let call = start.call_id.clone();
         let a0 = audio(&peers[0], &call);
         flush_all(&peers.iter().collect::<Vec<_>>());
@@ -2123,7 +2283,7 @@ mod mesh_tests {
     fn quem_recusou_pode_entrar_depois() {
         let (peers, gid) = group(3);
         let all: Vec<&Peer> = peers.iter().collect();
-        let start = peers[0].c.group_call_start(gid.clone(), false).unwrap();
+        let start = peers[0].c.group_call_add(gid.clone(), false).unwrap();
         flush_all(&all);
         let id1 = incoming(&peers[1]).unwrap();
         let id2 = incoming(&peers[2]).unwrap();
@@ -2133,12 +2293,12 @@ mod mesh_tests {
         flush_all(&all);
         run(&all, 1, || false);
         assert_eq!(peers[2].c.group_call_current().unwrap(), None);
-        assert_eq!(peers[2].c.group_call_ongoing(gid.clone()).unwrap(), Some(start.call_id.clone()));
+        assert_eq!(peers[2].c.group_call_ongoing(peers[0].cid()).unwrap(), Some(start.call_id.clone()));
         assert!(incoming(&peers[2]).is_none(), "o \"entrei\" de B nao volta a tocar");
         // C entra depois: fica com as duas pernas ligadas.
         peers[2].c.group_call_rejoin(start.call_id.clone()).unwrap();
         assert!(run(&all, 5, || peers[2].c.group_call_participants(start.call_id.clone()).unwrap().iter().filter(|p| p.connected).count() == 2));
-        assert_eq!(peers[2].c.group_call_ongoing(gid.clone()).unwrap(), None);
+        assert_eq!(peers[2].c.group_call_ongoing(peers[0].cid()).unwrap(), None);
         // Saem todos: a chamada deixa de estar "a decorrer" para quem nao esta nela.
         for p in &peers {
             p.c.group_call_leave(start.call_id.clone()).unwrap();
@@ -2155,14 +2315,13 @@ mod mesh_tests {
             let peers: Vec<Peer> = (0..3).map(|i| Peer::new(&format!("s{i}"))).collect();
             connect(&peers[0], &peers[1]);
             connect(&peers[0], &peers[2]);
-            let members = peers[1..].iter().map(|p| p.id.public_id.clone()).collect();
-            let gid = peers[0].c.group_create("Amigos".into(), members).unwrap().group_id;
+            let gid: Vec<String> = peers.iter().map(|p| p.id.public_id.clone()).collect();
             let all: Vec<&Peer> = peers.iter().collect();
             flush_all(&all);
             for p in &peers {
                 p.c.group_call_accept_notice().unwrap();
             }
-            let start = peers[0].c.group_call_start(gid, false).unwrap();
+            let start = peers[0].c.group_call_add(gid, false).unwrap();
             flush_all(&all);
             let (id1, id2) = (incoming(&peers[1]).unwrap(), incoming(&peers[2]).unwrap());
             peers[1].c.group_call_join(id1).unwrap();
@@ -2187,7 +2346,84 @@ mod mesh_tests {
         connect(&intruso, &peers[1]);
         intruso.c.group_call_accept_notice().unwrap();
         // O intruso nao faz parte do grupo: nao consegue ligar-lhe.
-        assert!(intruso.c.group_call_start(gid, false).is_err());
+        assert!(intruso.c.group_call_add(gid, false).is_err());
         assert!(incoming(&peers[1]).is_none());
+    }
+
+    /// "Adicionar a ligacao" (0.9.71): A e B numa chamada a dois atendida; A adiciona C. A
+    /// chamada a dois acaba dos dois lados sem "desligou", B entra sozinho (sem tocar), C toca.
+    #[test]
+    fn chamada_a_dois_passa_a_grupo_ao_adicionar() {
+        let (peers, pids) = group(3);
+        let all: Vec<&Peer> = peers.iter().collect();
+        let call = peers[0].c.call_start(peers[1].cid()).unwrap();
+        flush_all(&all);
+        peers[1].c.call_accept(call.call_id.clone()).unwrap();
+        flush_all(&all);
+        peers[0].c.call_events().unwrap();
+        peers[1].c.call_events().unwrap();
+        // Sem o public ID de quem esta comigo nao da (o nucleo nao o guarda).
+        assert!(peers[0].c.group_call_add(vec![pids[2].clone()], false).is_err());
+        let start = peers[0].c.group_call_add(vec![pids[1].clone(), pids[2].clone()], false).unwrap();
+        let ended = |p: &Peer| p.c.call_events().unwrap().into_iter().any(|e| matches!(e, CallEvent::Ended { reason: CallEndReason::Group, .. }));
+        assert!(ended(&peers[0]), "a chamada a dois acabou do lado de A");
+        flush_all(&all);
+        assert!(ended(&peers[1]), "e do lado de B, sem \"desligou\"");
+        let evb = peers[1].c.group_call_events().unwrap();
+        let evc = peers[2].c.group_call_events().unwrap();
+        let inc = |ev: &[GroupCallEvent]| {
+            ev.iter().find_map(|e| match e {
+                GroupCallEvent::Incoming { call_id, from_call, .. } => Some((call_id.clone(), *from_call)),
+                _ => None,
+            })
+        };
+        assert_eq!(inc(&evb), Some((start.call_id.clone(), true)), "B entra sem tocar: {evb:?}");
+        assert_eq!(inc(&evc), Some((start.call_id.clone(), false)), "C toca: {evc:?}");
+        peers[1].c.group_call_join(start.call_id.clone()).unwrap();
+        peers[2].c.group_call_join(start.call_id.clone()).unwrap();
+        let ok = run(&all, 5, || {
+            peers.iter().all(|p| p.c.group_call_participants(start.call_id.clone()).unwrap().iter().filter(|x| x.connected).count() == 2)
+        });
+        assert!(ok, "os tres ligados");
+        assert_eq!(peers[1].c.call_current().unwrap(), None, "B ja nao tem a chamada a dois");
+        for p in &peers {
+            p.c.group_call_leave(start.call_id.clone()).unwrap();
+        }
+    }
+
+    /// Qualquer participante adiciona um contacto SEU: D so conhece B. D abre a sessao com A pela
+    /// lista (`group_call_needing_session`) e liga-se a todos; quem nao esta na lista nao entra.
+    #[test]
+    fn qualquer_participante_adiciona_quem_os_outros_nao_conhecem() {
+        let peers: Vec<Peer> = (0..3).map(|i| Peer::new(&format!("q{i}"))).collect();
+        connect(&peers[0], &peers[1]);
+        connect(&peers[1], &peers[2]);
+        let all: Vec<&Peer> = peers.iter().collect();
+        for p in &peers {
+            p.c.group_call_accept_notice().unwrap();
+        }
+        let pid = |i: usize| peers[i].id.public_id.clone();
+        let start = peers[0].c.group_call_add(vec![pid(1)], false).unwrap();
+        flush_all(&all);
+        peers[1].c.group_call_join(incoming(&peers[1]).unwrap()).unwrap();
+        assert!(run(&all, 5, || peers[0].c.group_call_participants(start.call_id.clone()).unwrap().iter().any(|x| x.connected)));
+        // A nao conhece C: nao o pode adicionar. B pode.
+        assert!(peers[0].c.group_call_add(vec![pid(2)], false).is_err());
+        peers[1].c.group_call_add(vec![pid(2)], false).unwrap();
+        flush_all(&all);
+        let id = incoming(&peers[2]).unwrap();
+        assert_eq!(id, start.call_id);
+        assert_eq!(peers[2].c.group_call_needing_session(id.clone()).unwrap(), vec![pid(0)], "falta a sessao com A");
+        // A app de C abre a sessao com A pelo public ID (aqui: `connect`) e entra.
+        connect(&peers[2], &peers[0]);
+        assert!(peers[2].c.group_call_needing_session(id.clone()).unwrap().is_empty());
+        peers[2].c.group_call_join(id).unwrap();
+        let ok = run(&all, 5, || {
+            peers.iter().all(|p| p.c.group_call_participants(start.call_id.clone()).unwrap().iter().filter(|x| x.connected).count() == 2)
+        });
+        assert!(ok, "C ligado a A e a B");
+        for p in &peers {
+            p.c.group_call_leave(start.call_id.clone()).unwrap();
+        }
     }
 }

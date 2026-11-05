@@ -30,6 +30,9 @@ import uniffi.qt_ffi.QtClient
  *
  * Antes da primeira chamada de grupo, a app mostra o aviso do IP com "Aceitar" (sem isso o Rust
  * recusa ligar ou entrar). Durante a chamada nao aparece nada sobre isto.
+ *
+ * 0.9.71: a chamada de grupo comeca numa chamada a dois, com "Adicionar a ligacao" ([add]). Os
+ * grupos de conversa nao tem chamadas (0.9.70).
  */
 private const val TAG = "SealerGroupCall"
 
@@ -46,8 +49,9 @@ data class GroupTile(
 
 data class GroupCallUi(
     val callId: String,
-    val groupId: String,
-    val groupName: String,
+    /** Quem me convidou (ou com quem eu estava na chamada a dois): a foto e o nome no topo. */
+    val fromId: String,
+    val title: String,
     /** Ja estou dentro (false: esta a tocar). */
     val joined: Boolean,
     /** Videochamada de grupo (a camara de quem liga comecou ligada). */
@@ -75,18 +79,16 @@ class GroupCallController(
     private val flush: suspend () -> Unit,
     /** Nome a mostrar de um contactId (alcunha, ou o nome no grupo). */
     private val nameOf: (String) -> String,
-    private val groupNameOf: (String) -> String,
     private val sounds: CallSounds,
     /** Ha uma chamada a dois no ecra (o convite e recusado em silencio). */
     private val busy: () -> Boolean,
     private val visible: () -> Boolean,
     private val onError: (String) -> Unit,
     /**
-     * Cria as sessoes cifradas que faltam com os membros do grupo (0.9.67), como antes de enviar
-     * uma mensagem ao grupo. Sem sessao, duas pessoas que nao sao contactos (e nunca escreveram no
-     * grupo) nao tinham ligacao entre si: nao se viam nem se ouviam.
+     * Cria as sessoes cifradas que faltam com quem esta na lista da chamada (public IDs), como
+     * nos grupos. Sem sessao, duas pessoas que nao sao contactos nao se viam nem se ouviam.
      */
-    private val ensureGroupSessions: suspend (String) -> Unit = {},
+    private val ensureSessions: suspend (List<String>) -> Unit = {},
     /** Esta nos meus contactos (entao mostra-se o nome que eu lhe dei, nao o da chamada). */
     private val isContact: (String) -> Boolean = { false },
 ) {
@@ -108,7 +110,7 @@ class GroupCallController(
     private val _ui = MutableStateFlow<GroupCallUi?>(null)
     val ui: StateFlow<GroupCallUi?> = _ui.asStateFlow()
 
-    /** Chamadas a decorrer em grupos onde nao estou (recusei ou nao atendi): grupo -> chamada. */
+    /** Chamadas a decorrer em que nao estou (recusei ou nao atendi): quem convidou -> chamada. */
     private val _ongoing = MutableStateFlow<Map<String, String>>(emptyMap())
     val ongoing: StateFlow<Map<String, String>> = _ongoing.asStateFlow()
 
@@ -129,19 +131,49 @@ class GroupCallController(
 
     // ------------------------------------------------------------ acoes
 
-    /** LIGAR ao grupo (com o aviso ja aceite e as permissoes dadas). */
-    fun start(groupId: String, video: Boolean) = launch {
+    /** As sessoes que faltam com a lista da chamada (antes de entrar). */
+    private suspend fun ensureCallSessions(c: QtClient, callId: String) {
+        val ids = runCatching { c.groupCallNeedingSession(callId) }.getOrDefault(emptyList())
+        if (ids.isNotEmpty()) runCatching { ensureSessions(ids) }
+    }
+
+    /**
+     * ADICIONAR A LIGACAO (0.9.71), com o aviso ja aceite. Numa chamada de grupo: os novos entram
+     * na lista de todos. Numa chamada a dois atendida (`peer` = esse contacto): ela passa a
+     * chamada de grupo; `detach` para o microfone e o ecra da chamada a dois antes de o audio do
+     * grupo arrancar.
+     */
+    fun add(publicIds: List<String>, peer: Contact?, video: Boolean, detach: () -> Unit) = launch {
         val c = client() ?: return@launch
-        if (_ui.value != null || busy()) return@launch
-        runCatching { ensureGroupSessions(groupId) }
-        val st = c.groupCallStart(groupId, video)
+        val cur = _ui.value
+        if (cur != null) {
+            if (!cur.joined) return@launch
+            try {
+                c.groupCallAdd(publicIds, cur.camera)
+            } catch (e: Exception) {
+                onError(s(R.string.gcall_full))
+                return@launch
+            }
+            flush()
+            refresh(c)
+            return@launch
+        }
+        val p = peer ?: return@launch
+        val st = try {
+            c.groupCallAdd(publicIds + p.publicId, video)
+        } catch (e: Exception) {
+            onError(s(R.string.gcall_full))
+            return@launch
+        }
+        detach()
         _ui.value = GroupCallUi(
-            st.callId, groupId, groupNameOf(groupId), joined = true, video = video, camera = video,
+            st.callId, p.contactId, nameOf(p.contactId), joined = true, video = video, camera = video,
             startedAt = SystemClock.elapsedRealtime(),
         )
         sendName(c, st.callId)
         flush()
         startMedia(c, st.callId)
+        refresh(c)
         ensureTicker()
     }
 
@@ -152,7 +184,7 @@ class GroupCallController(
         sounds.stop()
         CallNotify.clear(app)
         try {
-            runCatching { ensureGroupSessions(g.groupId) }
+            ensureCallSessions(c, g.callId)
             c.groupCallJoin(g.callId)
         } catch (e: Exception) {
             // Cheia (5 pessoas) ou ja acabou.
@@ -167,25 +199,25 @@ class GroupCallController(
         refresh(c)
     }
 
-    /** ENTRAR DEPOIS numa chamada que recusei (ou nao atendi): o botao na conversa do grupo. */
-    fun rejoin(groupId: String) = launch {
+    /** ENTRAR DEPOIS numa chamada que recusei (ou nao atendi): o botao na conversa com quem convidou. */
+    fun rejoin(fromId: String) = launch {
         val c = client() ?: return@launch
-        val id = _ongoing.value[groupId] ?: return@launch
+        val id = _ongoing.value[fromId] ?: return@launch
         if (_ui.value != null || busy()) return@launch
         try {
-            runCatching { ensureGroupSessions(groupId) }
+            ensureCallSessions(c, id)
             c.groupCallRejoin(id)
         } catch (e: Exception) {
             onError(s(R.string.gcall_full))
-            updateOngoing(c, groupId)
+            updateOngoing(c, fromId)
             return@launch
         }
         val video = runCatching { c.groupCallIsVideo(id) }.getOrDefault(false)
         _ui.value = GroupCallUi(
-            id, groupId, groupNameOf(groupId), joined = true, video = video, camera = video,
+            id, fromId, nameOf(fromId), joined = true, video = video, camera = video,
             startedAt = SystemClock.elapsedRealtime(),
         )
-        updateOngoing(c, groupId)
+        updateOngoing(c, fromId)
         sendName(c, id)
         flush()
         startMedia(c, id)
@@ -193,9 +225,9 @@ class GroupCallController(
         ensureTicker()
     }
 
-    private fun updateOngoing(c: QtClient, groupId: String) {
-        val id = runCatching { c.groupCallOngoing(groupId) }.getOrNull()
-        _ongoing.update { m -> if (id == null) m - groupId else m + (groupId to id) }
+    private fun updateOngoing(c: QtClient, fromId: String) {
+        val id = runCatching { c.groupCallOngoing(fromId) }.getOrNull()
+        _ongoing.update { m -> if (id == null) m - fromId else m + (fromId to id) }
     }
 
     /** SAIR (ou recusar o convite). */
@@ -308,23 +340,28 @@ class GroupCallController(
                         continue
                     }
                     _ui.value = GroupCallUi(
-                        ev.callId, ev.groupId, groupNameOf(ev.groupId), joined = false, video = ev.video,
+                        ev.callId, ev.from, nameOf(ev.from), joined = false, video = ev.video,
                         fromName = nameOf(ev.from),
                     )
-                    sounds.ringIncoming()
-                    if (!visible()) CallNotify.ringing(app, groupNameOf(ev.groupId), sound = false, video = ev.video)
                     ensureTicker()
+                    // Vinha da chamada a dois com quem me adicionou: entro logo, sem tocar (com o
+                    // aviso ja aceite; senao fica a tocar para o aceitar).
+                    if (ev.fromCall && noticeAccepted()) {
+                        join()
+                        continue
+                    }
+                    sounds.ringIncoming()
+                    if (!visible()) CallNotify.ringing(app, nameOf(ev.from), sound = false, video = ev.video)
                 }
                 is GroupCallEvent.Changed -> refresh(c)
                 is GroupCallEvent.Ended -> {
                     val cur = _ui.value
                     if (cur != null && cur.callId == ev.callId) {
-                        if (ev.reason == GroupCallEndReason.MISSED && !cur.joined) CallNotify.missed(app, cur.groupName)
+                        if (ev.reason == GroupCallEndReason.MISSED && !cur.joined) CallNotify.missed(app, cur.title)
                         end()
                     }
-                    updateOngoing(c, ev.groupId)
                 }
-                is GroupCallEvent.Ongoing -> updateOngoing(c, ev.groupId)
+                is GroupCallEvent.Ongoing -> updateOngoing(c, ev.contactId)
             }
         }
     }

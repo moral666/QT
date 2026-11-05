@@ -24,6 +24,8 @@ struct AppRoot: View {
     /// Depois do aviso: o nome para esta chamada (0.9.67), ja com o ultimo que usei.
     @State private var askName: (() -> Void)?
     @State private var nameText = ""
+    /// "Adicionar a ligacao" (0.9.71): a lista de contactos aberta.
+    @State private var addingToCall = false
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -62,6 +64,13 @@ struct AppRoot: View {
         }
         .sheet(isPresented: Binding(get: { showPhoto && !ui.locked }, set: { if !$0 { model.cancelProfilePhoto(); showPhoto = false } })) {
             ProfilePhotoSheet(model: model)
+        }
+        .sheet(isPresented: Binding(get: { addingToCall && !ui.locked }, set: { addingToCall = $0 })) {
+            let inCall: Set<String> = model.groupCalls.ui.map { Set($0.tiles.map(\.contactId)) } ?? Set([ui.call?.contactId].compactMap { $0 })
+            AddToCallSheet(ui: ui, inCall: inCall, room: callMaxPeople - 1 - inCall.count) { chosen in
+                addingToCall = false
+                withGroupNotice { model.addToCall(chosen) }
+            }
         }
         .sheet(isPresented: Binding(get: { model.ui.wipeServerFailed != nil }, set: { if !$0 { model.dismissWipeServerFailed() } })) {
             WipeServerFailedSheet(reason: ui.wipeServerFailed ?? "", onRetry: { model.wipeAllData() },
@@ -169,7 +178,8 @@ struct AppRoot: View {
                 onSwitchCamera: model.groupCalls.switchCamera,
                 selfSession: model.groupCalls.selfSession,
                 remoteLayer: model.groupCalls.layer(for:),
-                diagnostic: model.groupCalls.diagnostic
+                diagnostic: model.groupCalls.diagnostic,
+                onAdd: g.joined && g.tiles.count < callMaxPeople - 1 ? { addingToCall = true } : nil
             )
         } else if let call = ui.call, !ui.locked, !showCallBar(ui) {
             CallScreen(call: call, onAccept: { withMic { model.acceptCall() } }, onHangup: model.hangupCall,
@@ -179,7 +189,8 @@ struct AppRoot: View {
                        onSwitchCamera: model.switchCamera,
                        onVideoRespond: { r in if r == .viewAndCamera { withCamera { model.respondVideo(r) } } else { model.respondVideo(r) } },
                        selfSession: model.selfVideoSession, remoteLayer: model.remoteVideoLayer,
-                       diagnostic: model.callDiagnostic)
+                       diagnostic: model.callDiagnostic,
+                       onAddToCall: { addingToCall = true })
         } else if ui.locked {
             LockScreen(ui: ui, onCode: model.unlockWithCode, onBio: model.requestBioUnlock, onWipe: model.wipeLockedData)
         } else if !ui.termsAccepted {
@@ -208,7 +219,10 @@ struct AppRoot: View {
         } else if let id = ui.openChatId {
             ChatScreen(model: model, ui: ui, conversationId: id, group: nil, onInfo: {},
                        onCall: { c in withMic { model.startCall(c) } },
-                       onVideoCall: { c in withMic { withCamera { model.startCall(c, video: true) } } })
+                       onVideoCall: { c in withMic { withCamera { model.startCall(c, video: true) } } },
+                       onJoinOngoing: model.groupCalls.ongoing[id] == nil ? nil : {
+                           withGroupNotice { withMic { withCamera { model.groupCalls.rejoin(id) } } }
+                       })
                 .transition(.move(edge: .trailing))
         } else if showRecovery {
             RecoveryScreen(ui: ui, onBack: { showRecovery = false }, onCreate: model.recoveryCreate,

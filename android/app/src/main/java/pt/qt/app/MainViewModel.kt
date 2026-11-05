@@ -320,12 +320,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // Nunca o QT ID: o nome nos contactos ou "Membro" (como na conversa do grupo).
             _ui.value.contacts.firstOrNull { it.contactId == cid }?.nickname ?: s(R.string.t_membro, cid.take(6))
         },
-        groupNameOf = { gid -> _ui.value.groups.firstOrNull { it.groupId == gid }?.name ?: "" },
         sounds = callSounds,
         busy = { _ui.value.call?.let { it.phase != CallPhase.ENDED } == true },
         visible = { visible },
         onError = { e -> error(e) },
-        ensureGroupSessions = { gid -> qt?.let { c -> ensureSessions(c, c.groupMembersNeedingSession(gid)) } },
+        ensureSessions = { ids -> qt?.let { c -> ensureSessions(c, ids) } },
         isContact = { cid -> _ui.value.contacts.any { it.contactId == cid } },
     )
     /** Atender, desligar, silenciar e saidas do som vindos do sistema de chamadas (auricular, carro). */
@@ -2886,6 +2885,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         CallEndReason.NO_ANSWER -> if (incoming) s(R.string.t_chamada_perdida) else s(R.string.t_sem_resposta)
         CallEndReason.CANCELLED -> if (incoming) s(R.string.t_chamada_perdida) else s(R.string.t_chamada_cancelada)
         CallEndReason.EXPIRED -> s(R.string.t_chamada_perdida)
+        CallEndReason.GROUP -> s(R.string.t_chamada_terminada)
     }
 
     /** Como acabou (do outro lado ou pelo Rust), para o sistema de chamadas. */
@@ -2896,6 +2896,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         CallEndReason.NO_ANSWER -> if (incoming) CallEnd.MISSED else CallEnd.REMOTE
         CallEndReason.CANCELLED -> if (incoming) CallEnd.MISSED else CallEnd.CANCELED
         CallEndReason.EXPIRED -> if (incoming) CallEnd.MISSED else CallEnd.REMOTE
+        CallEndReason.GROUP -> CallEnd.LOCAL
+    }
+
+    /** A chamada a dois passou a chamada de grupo: para o microfone e sai do ecra, sem "terminada". */
+    private fun leaveCallForGroup() {
+        if (_ui.value.call == null) return
+        stopCallMedia(CallEnd.LOCAL)
+        _ui.update { it.copy(call = null, answerNow = null) }
+    }
+
+    /**
+     * ADICIONAR A LIGACAO (0.9.71): contactos para a chamada a dois atendida (passa a chamada de
+     * grupo) ou para a chamada de grupo em que estou. Como ligar, e premium.
+     */
+    fun addToCall(chosen: List<Contact>) = io {
+        if (premiumBlocked() || chosen.isEmpty()) return@io
+        val ids = chosen.map { it.publicId }
+        if (groupCalls.ui.value != null) {
+            groupCalls.add(ids, peer = null, video = false) {}
+            return@io
+        }
+        val call = _ui.value.call?.takeIf { it.phase == CallPhase.ACTIVE } ?: return@io
+        val peer = _ui.value.contacts.firstOrNull { it.contactId == call.contactId } ?: return@io
+        groupCalls.add(ids, peer, video = call.video.camera) { leaveCallForGroup() }
     }
 
     /**
@@ -3014,7 +3038,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 is CallEvent.Ended -> {
                     val c = _ui.value.call
-                    if (c != null && c.callId == ev.callId && c.phase != CallPhase.ENDED) {
+                    if (c != null && c.callId == ev.callId && c.phase != CallPhase.ENDED && ev.reason == CallEndReason.GROUP) {
+                        // Passou a chamada de grupo (0.9.71): sem o ecra de "terminada".
+                        leaveCallForGroup()
+                    } else if (c != null && c.callId == ev.callId && c.phase != CallPhase.ENDED) {
                         val incoming = c.phase == CallPhase.INCOMING
                         endCallLocal(endText(ev.reason, incoming), endCause(ev.reason, c.incoming))
                     }

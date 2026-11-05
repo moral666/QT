@@ -18,6 +18,8 @@ struct GroupCallScreen: View {
     let remoteLayer: (String) -> AVSampleBufferDisplayLayer?
     /// Premir o tempo da chamada abre os numeros (como nas chamadas a dois).
     var diagnostic: (() -> String?)? = nil
+    /// "Adicionar a ligacao" (0.9.71): qualquer participante. `nil` = sem o botao (chamada cheia).
+    var onAdd: (() -> Void)? = nil
 
     @Environment(\.chat) private var c
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
@@ -56,8 +58,8 @@ struct GroupCallScreen: View {
     private var ringing: some View {
         VStack(spacing: 0) {
             Spacer().frame(height: 112)
-            Avatar(name: g.groupName, seed: g.groupId, size: 120)
-            Text(g.groupName).font(Jakarta.font(28, .semibold)).lineLimit(1).foregroundStyle(c.onTopBar).padding(.top, 20)
+            Avatar(name: g.title, seed: g.fromId, size: 120)
+            Text(g.title).font(Jakarta.font(28, .semibold)).lineLimit(1).foregroundStyle(c.onTopBar).padding(.top, 20)
             Text(s(g.video ? "gcall_video_title" : "gcall_title") + " · " + s("gcall_from", g.fromName))
                 .font(.sTitleMedium).foregroundStyle(c.onTopBar.opacity(0.85)).multilineTextAlignment(.center).padding(.top, 8)
             Spacer()
@@ -108,7 +110,7 @@ struct GroupCallScreen: View {
             VStack {
                 if shown || !autoHide {
                     HStack {
-                        Text(g.groupName).font(.sTitleMedium).foregroundStyle(.white).lineLimit(1)
+                        Text(g.title).font(.sTitleMedium).foregroundStyle(.white).lineLimit(1)
                         Spacer()
                         GroupCallClock(since: g.startedAt)
                             .onLongPressGesture { if diagnostic != nil { showDiag = true } }
@@ -125,6 +127,9 @@ struct GroupCallScreen: View {
                             ToggleRound(icon: g.camera ? "video.fill" : "video.slash.fill", label: s("call_camera"), on: g.camera) { touches += 1; onCamera() }
                             ToggleRound(icon: "arrow.triangle.2.circlepath.camera", label: s("video_switch"), on: false) { touches += 1; onSwitchCamera() }
                                 .disabled(!g.camera).opacity(g.camera ? 1 : 0.45)
+                            if let onAdd {
+                                ToggleRound(icon: "person.badge.plus", label: s("call_add"), on: false) { touches += 1; onAdd() }
+                            }
                         }
                         .padding(.horizontal, 12).padding(.vertical, 10)
                         .background(Capsule().fill(Color.black.opacity(0.65)))

@@ -62,8 +62,9 @@ struct GroupTile: Equatable {
 
 struct GroupCallUi: Equatable {
     let callId: String
-    let groupId: String
-    let groupName: String
+    /// Quem me convidou (ou com quem eu estava na chamada a dois): a foto e o nome no topo.
+    let fromId: String
+    let title: String
     /// Ja estou dentro (false: esta a tocar).
     var joined: Bool
     let video: Bool
@@ -88,18 +89,17 @@ struct GroupCallUi: Equatable {
 @MainActor
 final class GroupCallModel: ObservableObject {
     @Published private(set) var ui: GroupCallUi?
-    /// Chamadas a decorrer em grupos onde nao estou (recusei ou nao atendi): grupo -> chamada.
+    /// Chamadas a decorrer em que nao estou (recusei ou nao atendi): quem convidou -> chamada.
     @Published private(set) var ongoing: [String: String] = [:]
 
     private var client: () -> QtClient? = { nil }
     private var flush: () async -> Void = {}
     private var nameOf: (String) -> String = { $0 }
-    private var groupNameOf: (String) -> String = { _ in "" }
     private var busy: () -> Bool = { false }
     private var onError: (String) -> Void = { _ in }
-    /// Cria as sessoes cifradas que faltam com os membros do grupo (0.9.67), como antes de enviar
-    /// uma mensagem ao grupo: sem sessao, dois membros que nao sao contactos nao tinham ligacao.
-    private var ensureGroupSessions: (String) async -> Void = { _ in }
+    /// Cria as sessoes cifradas que faltam com quem esta na lista da chamada (public IDs), como
+    /// nos grupos: sem sessao, duas pessoas que nao sao contactos nao tinham ligacao.
+    private var ensureSessions: ([String]) async -> Void = { _ in }
     private var isContact: (String) -> Bool = { _ in false }
 
     /// O nome que escolhi para as chamadas de grupo (0.9.67; so neste iPhone).
@@ -126,18 +126,16 @@ final class GroupCallModel: ObservableObject {
         client: @escaping () -> QtClient?,
         flush: @escaping () async -> Void,
         nameOf: @escaping (String) -> String,
-        groupNameOf: @escaping (String) -> String,
         busy: @escaping () -> Bool,
         onError: @escaping (String) -> Void,
-        ensureGroupSessions: @escaping (String) async -> Void = { _ in },
+        ensureSessions: @escaping ([String]) async -> Void = { _ in },
         isContact: @escaping (String) -> Bool = { _ in false }
     ) {
-        self.ensureGroupSessions = ensureGroupSessions
+        self.ensureSessions = ensureSessions
         self.isContact = isContact
         self.client = client
         self.flush = flush
         self.nameOf = nameOf
-        self.groupNameOf = groupNameOf
         self.busy = busy
         self.onError = onError
     }
@@ -152,22 +150,49 @@ final class GroupCallModel: ObservableObject {
 
     // ------------------------------------------------------------ acoes
 
-    /// LIGAR ao grupo (com o aviso ja aceite e as permissoes dadas).
-    func start(_ groupId: String, video: Bool) {
-        guard let c = client(), ui == nil, !busy() else { return }
-        Task {
-            do {
-                await ensureGroupSessions(groupId)
-                let st = try await background { try c.groupCallStart(groupId: groupId, video: video) }
-                ui = GroupCallUi(callId: st.callId, groupId: groupId, groupName: groupNameOf(groupId), joined: true,
-                                 video: video, camera: video, startedAt: monotonicSeconds())
-                sendName(c, st.callId)
+    /// As sessoes que faltam com a lista da chamada (antes de entrar).
+    private func ensureCallSessions(_ c: QtClient, _ callId: String) async {
+        let ids = (try? await background { try c.groupCallNeedingSession(callId: callId) }) ?? []
+        if !ids.isEmpty { await ensureSessions(ids) }
+    }
+
+    /// ADICIONAR A LIGACAO (0.9.71), com o aviso ja aceite. Numa chamada de grupo: os novos entram
+    /// na lista de todos. Numa chamada a dois atendida (`peer` = esse contacto): ela passa a
+    /// chamada de grupo; `detach` para o microfone e o ecra da chamada a dois antes do audio do grupo.
+    func add(_ publicIds: [String], peer: Contact?, video: Bool, detach: @escaping () -> Void) {
+        guard let c = client() else { return }
+        if let cur = ui {
+            guard cur.joined else { return }
+            let cam = cur.camera
+            Task {
+                do {
+                    _ = try await background { try c.groupCallAdd(publicIds: publicIds, video: cam) }
+                } catch {
+                    onError(s("gcall_full"))
+                    return
+                }
                 await flush()
-                startMedia(c, st.callId)
-                ensureTicker()
-            } catch {
-                onError(s("t_erro", safeMessage(error)))
+                await refresh(c)
             }
+            return
+        }
+        guard let p = peer else { return }
+        Task {
+            let st: GroupCallStart
+            do {
+                st = try await background { try c.groupCallAdd(publicIds: publicIds + [p.publicId], video: video) }
+            } catch {
+                onError(s("gcall_full"))
+                return
+            }
+            detach()
+            ui = GroupCallUi(callId: st.callId, fromId: p.contactId, title: nameOf(p.contactId), joined: true,
+                             video: video, camera: video, startedAt: monotonicSeconds())
+            sendName(c, st.callId)
+            await flush()
+            startMedia(c, st.callId)
+            await refresh(c)
+            ensureTicker()
         }
     }
 
@@ -178,7 +203,7 @@ final class GroupCallModel: ObservableObject {
         let id = g.callId
         Task {
             do {
-                await ensureGroupSessions(g.groupId)
+                await ensureCallSessions(c, id)
                 try await background { try c.groupCallJoin(callId: id) }
             } catch {
                 onError(s("gcall_full"))
@@ -195,22 +220,22 @@ final class GroupCallModel: ObservableObject {
         }
     }
 
-    /// ENTRAR DEPOIS numa chamada que recusei (ou nao atendi): o botao na conversa do grupo.
-    func rejoin(_ groupId: String) {
-        guard let c = client(), let id = ongoing[groupId], ui == nil, !busy() else { return }
+    /// ENTRAR DEPOIS numa chamada que recusei (ou nao atendi): o botao na conversa com quem convidou.
+    func rejoin(_ fromId: String) {
+        guard let c = client(), let id = ongoing[fromId], ui == nil, !busy() else { return }
         Task {
             do {
-                await ensureGroupSessions(groupId)
+                await ensureCallSessions(c, id)
                 try await background { try c.groupCallRejoin(callId: id) }
             } catch {
                 onError(s("gcall_full"))
-                await updateOngoing(c, groupId)
+                await updateOngoing(c, fromId)
                 return
             }
             let video = (try? c.groupCallIsVideo(callId: id)) ?? false
-            ui = GroupCallUi(callId: id, groupId: groupId, groupName: groupNameOf(groupId), joined: true,
+            ui = GroupCallUi(callId: id, fromId: fromId, title: nameOf(fromId), joined: true,
                              video: video, camera: video, startedAt: monotonicSeconds())
-            await updateOngoing(c, groupId)
+            await updateOngoing(c, fromId)
             sendName(c, id)
             await flush()
             startMedia(c, id)
@@ -219,9 +244,9 @@ final class GroupCallModel: ObservableObject {
         }
     }
 
-    private func updateOngoing(_ c: QtClient, _ groupId: String) async {
-        let id = try? await background { try c.groupCallOngoing(groupId: groupId) }
-        if let id = id ?? nil { ongoing[groupId] = id } else { ongoing[groupId] = nil }
+    private func updateOngoing(_ c: QtClient, _ fromId: String) async {
+        let id = try? await background { try c.groupCallOngoing(contactId: fromId) }
+        if let id = id ?? nil { ongoing[fromId] = id } else { ongoing[fromId] = nil }
     }
 
     /// SAIR (ou recusar o convite).
@@ -285,22 +310,27 @@ final class GroupCallModel: ObservableObject {
         guard let events = try? await background({ try c.groupCallEvents() }), !events.isEmpty else { return }
         for ev in events {
             switch ev {
-            case .incoming(let callId, let groupId, let from, let video):
+            case .incoming(let callId, let from, let video, let fromCall):
                 if busy() || ui != nil {
                     _ = try? await background { () -> Void in try c.groupCallLeave(callId: callId) }
                     continue
                 }
-                ui = GroupCallUi(callId: callId, groupId: groupId, groupName: groupNameOf(groupId), joined: false,
+                ui = GroupCallUi(callId: callId, fromId: from, title: nameOf(from), joined: false,
                                  video: video, fromName: nameOf(from))
-                startRing()
                 ensureTicker()
+                // Vinha da chamada a dois com quem me adicionou: entro logo, sem tocar (com o aviso
+                // ja aceite; senao fica a tocar para o aceitar).
+                if fromCall && noticeAccepted() {
+                    join()
+                    continue
+                }
+                startRing()
             case .changed:
                 await refresh(c)
-            case .ended(let callId, let groupId, _):
+            case .ended(let callId, _):
                 if ui?.callId == callId { end() }
-                await updateOngoing(c, groupId)
-            case .ongoing(let groupId):
-                await updateOngoing(c, groupId)
+            case .ongoing(let contactId):
+                await updateOngoing(c, contactId)
             }
         }
     }

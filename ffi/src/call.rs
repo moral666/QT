@@ -134,6 +134,8 @@ pub enum CallEndReason {
     Cancelled,
     /// A oferta chegou tarde demais (telemovel sem rede): chamada perdida.
     Expired,
+    /// Passou a chamada de grupo (0.9.71, "Adicionar a ligacao"): sem ecra de "terminada".
+    Group,
 }
 
 impl CallEndReason {
@@ -145,6 +147,8 @@ impl CallEndReason {
             CallEndReason::NoAnswer => 4,
             CallEndReason::Cancelled => 5,
             CallEndReason::Expired => 6,
+            // Nunca vai na rede: do outro lado acaba com o convite do grupo.
+            CallEndReason::Group => 1,
         }
     }
     fn from_byte(b: u8) -> Option<Self> {
@@ -338,6 +342,23 @@ impl Calls {
         }
         self.ended.push_back(id);
     }
+    /// A chamada a dois ATENDIDA com `peer` passa a chamada de grupo: acaba deste lado sem
+    /// avisar o outro (ele recebe o convite do grupo e faz o mesmo). Fica no historico como
+    /// uma chamada atendida. Devolve se havia essa chamada.
+    pub(crate) fn detach_for_group(&mut self, c: &st::rusqlite::Connection, peer: &str) -> Result<bool, QtError> {
+        match self.cur.as_ref() {
+            Some(k) if k.state == State::Active && k.contact == peer => note_answered_end(c, k)?,
+            _ => return Ok(false),
+        }
+        self.end_current(CallEndReason::Group);
+        Ok(true)
+    }
+
+    /// Com quem e a chamada a dois atendida, se houver.
+    pub(crate) fn active_peer(&self) -> Option<String> {
+        self.cur.as_ref().filter(|k| k.state == State::Active).map(|k| k.contact.clone())
+    }
+
     fn end_current(&mut self, reason: CallEndReason) {
         if let Some(call) = self.cur.take() {
             #[cfg(feature = "calls")]
