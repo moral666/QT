@@ -189,7 +189,22 @@ final class AppModel: ObservableObject {
                 guard let self, let client = self.qt else { return }
                 await self.ensureSessions(client, ids)
             },
-            isContact: { [weak self] cid in self?.ui.contacts.contains { $0.contactId == cid } ?? false }
+            isContact: { [weak self] cid in self?.ui.contacts.contains { $0.contactId == cid } ?? false },
+            takeHandover: { [weak self] in self?.takeHandover() },
+            takePendingRing: { [weak self] in
+                guard let self, let pr = self.pendingRing else { return nil }
+                self.pendingRing = nil
+                return pr.uuid
+            },
+            consumeAnswer: { [weak self] in
+                guard let self, self.answerRequested() else { return false }
+                self.answerRequestedAt = 0
+                return true
+            },
+            callKitName: { [weak self] cid in
+                guard let self, let c = self.ui.contact(cid) else { return "" }
+                return self.callKitName(c)
+            }
         )
         groupCallsSink = m.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         return m
@@ -239,6 +254,8 @@ final class AppModel: ObservableObject {
     private var callStatsTick = 0
     /// Chamada mostrada pelo CallKit (callId -> UUID).
     private var callKitIds: [String: UUID] = [:]
+    /// O que a chamada a dois deixou para a de grupo, ate o grupo ficar com isso.
+    private var handover: CallHandover?
     /// Push VoIP que ainda nao se sabe de que chamada e (bloqueio da app, ou a oferta ainda a chegar).
     private var pendingRing: (uuid: UUID, at: Double)?
     /// Carregou-se em "Atender" no CallKit antes de a app saber qual era a chamada.
@@ -329,6 +346,7 @@ final class AppModel: ObservableObject {
 
     private func setupClient(_ client: QtClient) async throws {
         qt = client
+        groupCalls.moveNameToCore(client)
         guard let ck = contactsKey else { throw SecureStoreError(message: "sem a chave dos contactos") }
         // O relay da conta, da lista fixa da build (federacao, `Relays`), em todas as builds. O relay
         // de teste das builds Debug ate a 0.9.52 (`relay_url`/`relay_key`) ja nao conta: sai.
@@ -2308,6 +2326,7 @@ final class AppModel: ObservableObject {
         guard let items = try? await background({ try client.outbox() }) else { return }
         var members: [String: String]?
         var changed = false
+        var retried = false
         for item in items {
             var relayId = item.relayId ?? ui.contact(item.contactId)?.relayId
             if relayId == nil {
@@ -2321,12 +2340,17 @@ final class AppModel: ObservableObject {
                 if let pid = members?[item.contactId] { relayId = try? relayIdOfPublicId(publicId: pid) }
             }
             guard let rid = relayId else { continue }
+            guard let req = try? await background({ try client.relayRequestSendItem(toRelayId: rid, item: item) }) else { break }
             let r: RelayResponse
             do {
-                let req = try await background { try client.relayRequestSendItem(toRelayId: rid, item: item) }
                 r = try await l.request(req)
             } catch {
-                break   // sem rede: tenta no proximo ciclo, mantendo a ordem
+                // A ligacao estava morta (ex.: a app parada muito tempo): mais uma tentativa, ja por
+                // uma ligacao nova. Repetir e seguro: o destinatario ignora o que ja recebeu.
+                if retried { break }
+                retried = true
+                guard let again = try? await l.request(req) else { break }   // sem rede: fica para o proximo ciclo
+                r = again
             }
             switch r {
             case .ack:
@@ -2525,6 +2549,7 @@ final class AppModel: ObservableObject {
         diag("CallKit ativou o audio")
         audioSessionActive = true
         startCallIOIfReady()
+        groupCalls.audioSessionActivated()
     }
 
     /// Ha casos em que o CallKit nao chega a avisar que ativou o audio (por exemplo, a sessao
@@ -2571,6 +2596,7 @@ final class AppModel: ObservableObject {
         audioSessionActive = false
         callIO?.stop()
         callIO = nil
+        groupCalls.audioSessionDeactivated()
     }
 
     private func stopCallMedia() {
@@ -2690,6 +2716,10 @@ final class AppModel: ObservableObject {
 
     /// O CallKit mudou o "silenciar" (botao do ecra de chamada do iPhone).
     func setMutedFromSystem(_ muted: Bool) {
+        if groupCalls.ui != nil {
+            groupCalls.setMutedFromSystem(muted)
+            return
+        }
         guard var c = ui.call, c.muted != muted else { return }
         c.muted = muted
         callIO?.muted = muted
@@ -2749,11 +2779,31 @@ final class AppModel: ObservableObject {
     }
 
     /// A chamada a dois passou a chamada de grupo: para o microfone e sai do ecra, sem "terminada".
+    /// A chamada no CallKit nao acaba aqui: passa para o grupo, e assim a sessao de audio nunca muda
+    /// de dono (acabar uma e arrancar a outra podia deixar a chamada sem som, sobretudo bloqueado).
     private func leaveCallForGroup() {
-        guard let c = ui.call else { return }
+        guard ui.call != nil else { return }
+        handover = takeHandover()
         stopCallMedia()
-        if let uuid = callKitIds.removeValue(forKey: c.callId) { CallKitBridge.shared.reportEnded(uuid, reason: .remoteEnded) }
         ui.call = nil
+        // Se a chamada de grupo nao chegar a arrancar, a chamada no CallKit acaba aqui.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard let self, let h = self.handover else { return }
+            self.handover = nil
+            if self.groupCalls.ui != nil || self.ui.call != nil { return }
+            if let uuid = h.callKitId { CallKitBridge.shared.reportEnded(uuid, reason: .remoteEnded) }
+        }
+    }
+
+    /// O que a chamada a dois deixa para a de grupo (uma so vez).
+    private func takeHandover() -> CallHandover? {
+        if let h = handover {
+            handover = nil
+            return h
+        }
+        guard let c = ui.call, c.phase != .ended else { return nil }
+        return CallHandover(muted: c.muted, speaker: c.speaker, callKitId: callKitIds.removeValue(forKey: c.callId), audioActive: audioSessionActive)
     }
 
     /// ADICIONAR A LIGACAO (0.9.71): contactos para a chamada a dois atendida (passa a chamada de
@@ -3106,7 +3156,7 @@ final class AppModel: ObservableObject {
     /// mostra "Chamada SEALER" (o iOS obriga); aqui descobre-se de quem e e, se ninguem estiver
     /// a ligar (chamada ja acabada), termina-se.
     func onVoipPush(_ uuid: UUID) {
-        if let c = ui.call, c.phase != .ended {
+        if ui.call.map({ $0.phase != .ended }) == true || groupCalls.ui != nil {
             CallKitBridge.shared.reportEnded(uuid, reason: .failed)   // ocupado: o Rust responde ao outro
             return
         }
@@ -3149,6 +3199,10 @@ final class AppModel: ObservableObject {
 
     /// "Atender" no ecra do iPhone (CallKit).
     func answerFromSystem(_ uuid: UUID) {
+        if groupCalls.ownsSystem(uuid) {
+            groupCalls.join()
+            return
+        }
         if let callId = callKitIds.first(where: { $0.value == uuid })?.key, ui.call?.callId == callId {
             if ui.call?.phase == .incoming { acceptCall() }
             return
@@ -3159,6 +3213,10 @@ final class AppModel: ObservableObject {
 
     /// "Desligar" / "Recusar" no ecra do iPhone (CallKit).
     func endFromSystem(_ uuid: UUID) {
+        if groupCalls.ownsSystem(uuid) {
+            groupCalls.leaveFromSystem()
+            return
+        }
         if let pr = pendingRing, pr.uuid == uuid {
             pendingRing = nil
             answerRequestedAt = 0

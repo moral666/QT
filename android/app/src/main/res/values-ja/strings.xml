@@ -374,7 +374,7 @@
     <string name="recovery_restored">アカウントを復元しました。チャットは自動的に再開されます。</string>
     <string name="premium_title">Sealer Premium</string>
     <string name="premium_title_on">Sealer Premium（有効）</string>
-    <string name="premium_price">年額5ユーロ</string>
+    <string name="premium_price">年額6ユーロ</string>
     <string name="premium_active">Premiumは有効です。Sealerを応援していただき、ありがとうございます。</string>
     <string name="premium_free_text">テキストメッセージは、今もこれからもずっと無料です。</string>
     <string name="premium_unlocks">Premiumで使えるようになる機能：</string>

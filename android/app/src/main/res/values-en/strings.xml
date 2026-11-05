@@ -376,7 +376,7 @@
     <string name="recovery_restored">Account recovered. Conversations restart by themselves.</string>
     <string name="premium_title">Sealer Premium</string>
     <string name="premium_title_on">Sealer Premium (active)</string>
-    <string name="premium_price">€5 per year</string>
+    <string name="premium_price">€6 per year</string>
     <string name="premium_active">Your Premium is active. Thank you for supporting Sealer.</string>
     <string name="premium_free_text">Text messages are and will always be free.</string>
     <string name="premium_unlocks">Premium unlocks:</string>

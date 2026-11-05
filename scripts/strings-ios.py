@@ -113,6 +113,13 @@ PLIST = {
         "Para desbloquear SEALER sin escribir el código.",
         "Um SEALER ohne Code-Eingabe zu entsperren.",
         "Per sbloccare SEALER senza digitare il codice."),
+    "NSLocalNetworkUsageDescription": (
+        "Para as chamadas terem melhor qualidade quando estás na mesma rede Wi-Fi.",
+        "For better call quality when you are on the same Wi-Fi network.",
+        "Pour une meilleure qualité d'appel lorsque vous êtes sur le même réseau Wi-Fi.",
+        "Para que las llamadas tengan mejor calidad cuando estás en la misma red wifi.",
+        "Für eine bessere Anrufqualität, wenn du im selben WLAN bist.",
+        "Per una migliore qualità delle chiamate quando sei sulla stessa rete Wi-Fi."),
 }
 
 # Japones, chines simplificado e hindi (22/10/2026): mesma ordem de chaves, acrescentados
@@ -162,6 +169,10 @@ PLIST_JA_ZH_HI = {
         "音声通話とボイスメッセージに使用します。",
         "用于语音通话和语音消息。",
         "वॉइस कॉल और वॉइस मैसेज के लिए।"),
+    "NSLocalNetworkUsageDescription": (
+        "同じWi-Fiネットワークにいるときの通話品質を高めるために使用します。",
+        "用于在同一 Wi-Fi 网络中提升通话质量。",
+        "एक ही वाई-फ़ाई नेटवर्क पर होने पर कॉल की गुणवत्ता बेहतर करने के लिए।"),
     "NSFaceIDUsageDescription": (
         "パスコードを入力せずにSEALERのロックを解除するために使用します。",
         "使用面容 ID 解锁SEALER，无需输入密码。",
@@ -194,6 +205,7 @@ PLIST_AR = {
     "NSCameraUsageDescription": "لمسح رمز QR الخاص بشخص آخر ولمكالمات الفيديو.",
     "NSMicrophoneUsageDescription": "للمكالمات الصوتية والرسائل الصوتية.",
     "NSFaceIDUsageDescription": "لفتح قفل تطبيق SEALER دون كتابة رمز المرور.",
+    "NSLocalNetworkUsageDescription": "لتحسين جودة المكالمات عندما تكون على شبكة Wi-Fi نفسها.",
 }
 for _k, _v in EXTRA_AR.items():
     EXTRA[_k] = EXTRA[_k] + (_v,)

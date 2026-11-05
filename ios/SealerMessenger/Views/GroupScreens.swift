@@ -93,7 +93,10 @@ struct GroupInfoScreen: View {
                         Text(group.name).font(Jakarta.font(22, .semibold)).multilineTextAlignment(.center).padding(.top, 6)
                         Text(s("t_de_pessoas", group.members.count, groupMaxMembers)).font(.sBodyMedium).foregroundStyle(c.onSurfaceVariant)
                         if group.iAmAdmin {
-                            Button(s("t_mudar_o_nome")) { newName = group.name; renaming = true }.font(.sLabelLarge)
+                            // O nome so pode mudar de 24 em 24 horas (o nucleo diz quanto falta).
+                            Button(s("t_mudar_o_nome")) { newName = group.name; renaming = true }
+                                .font(.sLabelLarge)
+                                .disabled(group.renameWaitMs > 0)
                         }
                         if !group.active {
                             Text(s("t_ja_nao_fazes_parte_deste_grupo")).font(.sBodyMedium).foregroundStyle(c.error)

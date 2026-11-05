@@ -2,3 +2,4 @@
 "NSCameraUsageDescription" = "相手のQRコードを読み取るため、およびビデオ通話に使用します。";
 "NSMicrophoneUsageDescription" = "音声通話とボイスメッセージに使用します。";
 "NSFaceIDUsageDescription" = "パスコードを入力せずにSEALERのロックを解除するために使用します。";
+"NSLocalNetworkUsageDescription" = "同じWi-Fiネットワークにいるときの通話品質を高めるために使用します。";

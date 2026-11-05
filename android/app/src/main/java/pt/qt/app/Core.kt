@@ -17,6 +17,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.qt_ffi.CallEvent
+import uniffi.qt_ffi.GroupCallEndReason
+import uniffi.qt_ffi.GroupCallEvent
 import uniffi.qt_ffi.QtClient
 import uniffi.qt_ffi.QtException
 import uniffi.qt_ffi.ReceiveResult
@@ -163,6 +165,22 @@ object SealerCore {
         out
     }
 
+    /** Eventos das chamadas de grupo que o segundo plano leu e nao eram dele. */
+    private val pendingGroupEvents = ArrayDeque<GroupCallEvent>()
+
+    /** Eventos das chamadas de grupo: os guardados primeiro, depois os novos do Rust. */
+    fun groupCallEvents(c: QtClient): List<GroupCallEvent> = synchronized(pendingGroupEvents) {
+        val out = ArrayList<GroupCallEvent>(pendingGroupEvents)
+        pendingGroupEvents.clear()
+        out.addAll(c.groupCallEvents())
+        out
+    }
+
+    private fun giveBackGroup(events: List<GroupCallEvent>) = synchronized(pendingGroupEvents) {
+        pendingGroupEvents.addAll(events)
+        while (pendingGroupEvents.size > 64) pendingGroupEvents.removeFirst()
+    }
+
     private fun giveBack(events: List<CallEvent>) = synchronized(pendingEvents) {
         for (e in events.asReversed()) pendingEvents.addFirst(e)
         while (pendingEvents.size > 64) pendingEvents.removeLast()
@@ -175,7 +193,7 @@ object SealerCore {
      * chamada). `video`: videochamada ("Videochamada de [Nome]" no aviso); pode passar a true
      * depois de comecar a tocar, se a op do video chegar noutro lote ([upgradeToVideo]).
      */
-    class Ringing(val callId: String?, val contactId: String?, val name: String?, video: Boolean = false) {
+    class Ringing(val callId: String?, val contactId: String?, val name: String?, video: Boolean = false, val group: Boolean = false) {
         @Volatile var video: Boolean = video
             internal set
         /** A mesma chamada no sistema de chamadas do Android (SystemCalls), tambem quando o ecra fica com ela. */
@@ -275,7 +293,7 @@ object SealerCore {
         val c = client ?: return
         withTimeoutOrNull(8_000L) {
             try {
-                c.callHangup(id)
+                if (r.group) c.groupCallLeave(id) else c.callHangup(id)
                 val l = newLink(ctx, c)
                 try { flush(ctx, c, l) } finally { l.shutdown() }
             } catch (e: CancellationException) {
@@ -303,7 +321,8 @@ object SealerCore {
         try {
             while (ringing === r && SystemClock.elapsedRealtime() < until) {
                 // Ja nao e a chamada do Rust (desligou, ou o ecra leu o "acabou"): para.
-                if (runCatching { c.callCurrent() }.getOrNull() != r.callId) break
+                val current = runCatching { if (r.group) c.groupCallCurrent() else c.callCurrent() }.getOrNull()
+                if (current != r.callId) break
                 try {
                     val got = l.request(c.relayRequestWait(2u), 8_000L)
                     if (got is RelayResponse.Messages && got.messages.isNotEmpty()) syncOnce(ctx, c, l)
@@ -512,8 +531,41 @@ object SealerCore {
         }
     }
 
+    /**
+     * Convites de grupo no segundo plano: tocam como uma chamada a dois (so de contactos, e o Rust
+     * que o garante). O ecra, quando volta, fica com o toque ([takeRinging]).
+     */
+    private fun handleGroupCallEvents(ctx: Context, c: QtClient) {
+        if (uiReceiving) return
+        val events = runCatching { groupCallEvents(c) }.getOrDefault(emptyList())
+        if (events.isEmpty()) return
+        val contacts by lazy { loadContacts(ctx) }
+        val locked by lazy { runCatching { storageKeys(ctx).lockEnabled() }.getOrDefault(true) }
+        val leftover = mutableListOf<GroupCallEvent>()
+        for (ev in events) {
+            when (ev) {
+                is GroupCallEvent.Incoming -> {
+                    ringing?.let { stopRinging(ctx, it, missed = false) }
+                    val name = if (locked) null else contacts.firstOrNull { it.contactId == ev.from }?.nickname
+                    startRinging(ctx, Ringing(ev.callId, ev.from, name, ev.video, group = true))
+                }
+                is GroupCallEvent.Ended -> {
+                    val r = ringing
+                    if (r != null && r.callId == ev.callId) {
+                        stopRinging(ctx, r, missed = ev.reason == GroupCallEndReason.MISSED)
+                    } else {
+                        leftover += ev
+                    }
+                }
+                else -> leftover += ev
+            }
+        }
+        if (leftover.isNotEmpty()) giveBackGroup(leftover)
+    }
+
     /** Eventos das chamadas no segundo plano: toca (contactos guardados) ou para de tocar. */
     private fun handleCallEvents(ctx: Context, c: QtClient) {
+        handleGroupCallEvents(ctx, c)
         val events = callEvents(c)
         if (events.isEmpty()) return
         if (uiReceiving) {

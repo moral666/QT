@@ -2,3 +2,4 @@
 "NSCameraUsageDescription" = "用于扫描他人的二维码以及视频通话。";
 "NSMicrophoneUsageDescription" = "用于语音通话和语音消息。";
 "NSFaceIDUsageDescription" = "使用面容 ID 解锁SEALER，无需输入密码。";
+"NSLocalNetworkUsageDescription" = "用于在同一 Wi-Fi 网络中提升通话质量。";

@@ -88,7 +88,7 @@ android {
         buildConfigField("String", "FCM_SENDER_ID", "\"${fcm?.senderId ?: ""}\"")
         // Diagnostico das chamadas para os testers (fase 5c): painel com os numeros (toque longo no
         // tempo da chamada), "Copiar diagnostico" nas Definicoes e registos discretos no logcat.
-        // Desligar ANTES da Play Store: -PqtCallDiag=false (ou no gradle.properties).
+        // Nas builds de testes fica ligado; na release so com -PqtCallDiag=true.
         buildConfigField("boolean", "CALL_DIAG", ((project.findProperty("qtCallDiag") as String?) ?: "true").toBoolean().toString())
     }
 
@@ -132,6 +132,8 @@ android {
             isDebuggable = false
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
+            isShrinkResources = true
+            buildConfigField("boolean", "CALL_DIAG", ((project.findProperty("qtCallDiag") as String?) ?: "false").toBoolean().toString())
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

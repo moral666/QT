@@ -284,7 +284,8 @@ fun GroupInfoScreen(
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (group.iAmAdmin) {
-                        TextButton(onClick = { rename = true }) { Text(s(R.string.t_mudar_o_nome)) }
+                        // O nome so pode mudar de 24 em 24 horas (o nucleo diz quanto falta).
+                        TextButton(onClick = { rename = true }, enabled = group.renameWaitMs == 0uL) { Text(s(R.string.t_mudar_o_nome)) }
                     }
                     if (!group.active) {
                         Text(s(R.string.t_ja_nao_fazes_parte_deste_grupo), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)

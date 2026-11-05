@@ -27,6 +27,8 @@
 	<string>Para as chamadas de voz e as mensagens de voz.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Para desbloquear a SEALER sem escrever o código.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Para as chamadas terem melhor qualidade quando estás na mesma rede Wi-Fi.</string>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>pt-PT</string>
