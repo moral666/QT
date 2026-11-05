@@ -111,7 +111,7 @@ export default {
   'como.15': '← Anterior',
   'como.17': 'Siguiente →',
   'como.18': '¿Y las llamadas y videollamadas?',
-  'como.19': 'La versión de pruebas ya tiene llamadas de voz y videollamadas, cifradas de extremo a extremo como los mensajes, en Android y en iPhone, también entre un Android y un iPhone. Las llamadas de grupo reúnen hasta 5 personas, con voz y vídeo, y quien no contestó puede entrar después. En Android, las llamadas entre dos suenan incluso con la app cerrada o el móvil bloqueado.',
+  'como.19': 'La versión de pruebas ya tiene llamadas de voz y videollamadas, cifradas de extremo a extremo como los mensajes, en Android y en iPhone, también entre un Android y un iPhone. Durante una llamada, cualquier participante puede añadir contactos, hasta 5 personas, con voz y vídeo, y quien no contestó puede entrar después. En Android, las llamadas suenan incluso con la app cerrada o el móvil bloqueado.',
   'como.20': '<a href="./">Volver al inicio</a>',
   'como.21': '© 2026 SEALER, un proyecto QT. <a href="./funcionalidades">Funciones</a> · <a href="./privacidade">Privacidad</a> · <a href="./politica-de-cookies">Política de cookies</a>',
   'como.22': 'El aspecto de la app',

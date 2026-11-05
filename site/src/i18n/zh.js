@@ -114,7 +114,7 @@ export default {
   'como.15': '← 上一步',
   'como.17': '下一步 →',
   'como.18': '语音通话和视频通话呢？',
-  'como.19': '测试版已经支持语音通话和视频通话，和消息一样端到端加密，适用于Android和iPhone，也可以在Android手机和iPhone之间通话。群组通话最多可容纳5人，支持语音和视频，没有接听的人也可以稍后加入。在Android上，即使应用已关闭或手机已锁定，一对一来电也会响铃。',
+  'como.19': '测试版已经支持语音通话和视频通话，和消息一样端到端加密，适用于Android和iPhone，也可以在Android手机和iPhone之间通话。通话中，任何参与者都可以添加联系人，最多5人，支持语音和视频，没有接听的人也可以稍后加入。在Android上，即使应用已关闭或手机已锁定，来电也会响铃。',
   'como.20': '<a href="./">返回首页</a>',
   'como.21': '© 2026 SEALER，QT项目。<a href="./funcionalidades">功能</a> · <a href="./privacidade">隐私</a> · <a href="./politica-de-cookies">Cookie政策</a>',
   'como.22': '应用界面',
