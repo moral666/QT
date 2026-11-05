@@ -28,7 +28,8 @@
 //!
 //! LIMITES (para nao servir de tunel gratis): 2 lados por sala; a sala fecha se o
 //! segundo nao entrar em 60 s ou ao fim de 30 s sem pacotes; salas por IP e no total;
-//! pedidos de entrada por IP; pacotes por segundo por lado; tamanhos validos. O
+//! salas so com um lado, das quais sai a mais antiga (uma sala com os 2 lados nunca sai);
+//! pedidos de entrada por IP e no total; pacotes por segundo por lado; tamanhos validos. O
 //! relay nunca responde com mais bytes do que recebeu.
 //!
 //! A logica (`CallRelay`) nao faz rede (testes simples); `serve` liga-a aos sockets.
@@ -41,7 +42,7 @@ use std::time::{Duration, Instant};
 
 use qt_core::call::{
     addr_ok, addr_request_room, join_ok, parse_header, parse_join_payload, parse_video_header, relay_tag_valid,
-    relay_video_notice, RelayVideo, Role, ADDR_KIND, ADDR_LEN, JOIN_KIND, JOIN_PAYLOAD_LEN, JOIN_PROLOGUE, MAX_PAD,
+    relay_video_notice, RelayVideo, Role, RoomKeys, ADDR_KIND, ADDR_LEN, JOIN_KIND, JOIN_PAYLOAD_LEN, JOIN_PROLOGUE, MAX_PAD,
     MEDIA_OVERHEAD, ROOM_ID_LEN, VIDEO_KIND, VIDEO_MAX_PACKET,
 };
 use zeroize::Zeroizing;
@@ -53,6 +54,8 @@ pub const MAX_AUDIO_PACKET: usize = MEDIA_OVERHEAD + MAX_PAD;
 /// Maior pacote aceite: o de video das apps antigas (recusado, mas sem fechar a ligacao
 /// WebSocket delas, que tambem leva a voz).
 pub const MAX_PACKET: usize = if VIDEO_MAX_PACKET > MAX_AUDIO_PACKET { VIDEO_MAX_PACKET } else { MAX_AUDIO_PACKET };
+/// IPs guardados para o limite de pedidos de entrada (limpos de 5 em 5 s).
+const MAX_JOIN_IPS: usize = 100_000;
 /// "Sem video pelo relay" a quem ainda o envia (apps antigas), no maximo de tanto em tanto tempo.
 const VIDEO_NOTICE_EVERY: Duration = Duration::from_secs(5);
 
@@ -70,8 +73,15 @@ pub struct CallLimits {
     pub rooms_per_ip: u32,
     /// Pedidos de entrada por IP a cada 10 s (cada um custa uma operacao X25519).
     pub joins_per_ip: u32,
+    /// Pedidos de entrada por segundo, em todo o relay.
+    pub joins_per_sec: u32,
     /// Pacotes por segundo de cada lado (o audio usa 50).
     pub packets_per_sec: u32,
+    /// Salas so com um lado, no maximo. Quando chega a isto, sai a mais antiga: quem esta mesmo
+    /// a ligar volta a pedir a entrada e a sala reaparece.
+    pub max_half_open: usize,
+    /// Maior pacote de voz (169 bytes nas apps, com folga).
+    pub max_packet: usize,
     pub join_timeout: Duration,
     pub idle_timeout: Duration,
 }
@@ -82,7 +92,10 @@ impl Default for CallLimits {
             max_rooms: 2_000,
             rooms_per_ip: 20,
             joins_per_ip: 60,
-            packets_per_sec: 100,
+            joins_per_sec: 500,
+            packets_per_sec: 60,
+            max_half_open: 500,
+            max_packet: 256,
             join_timeout: Duration::from_secs(60),
             idle_timeout: Duration::from_secs(30),
         }
@@ -104,6 +117,8 @@ pub struct CallStats {
     pub video_refused: AtomicU64,
     /// Avisos "sem video pelo relay" enviados a essas apps.
     pub video_notices: AtomicU64,
+    /// Salas so com um lado que sairam para dar lugar a outras.
+    pub half_open_evicted: AtomicU64,
 }
 
 struct Slot {
@@ -135,6 +150,9 @@ pub struct CallRelay {
     rooms: HashMap<[u8; ROOM_ID_LEN], Room>,
     rooms_by_ip: HashMap<IpAddr, u32>,
     join_rate: HashMap<IpAddr, (Instant, u32)>,
+    /// Balde dos pedidos de entrada de todo o relay.
+    join_tokens: f64,
+    join_refill_at: Instant,
     pub stats: Arc<CallStats>,
 }
 
@@ -146,14 +164,23 @@ fn idx(role: Role) -> usize {
     role as usize
 }
 
+/// Decifra um pedido de entrada. E a parte cara (X25519): corre fora do lock em `process`.
+fn open_join(static_private: &[u8], data: &[u8]) -> Option<(Role, RoomKeys)> {
+    let plain = Zeroizing::new(qt_transport::noise_n_open(static_private, JOIN_PROLOGUE, &data[1..]).ok()?);
+    parse_join_payload(&plain)
+}
+
 impl CallRelay {
     pub fn new(static_private: &[u8], limits: CallLimits) -> Self {
+        let limits_joins_per_sec = limits.joins_per_sec;
         CallRelay {
             static_private: Zeroizing::new(static_private.to_vec()),
             limits,
             rooms: HashMap::new(),
             rooms_by_ip: HashMap::new(),
             join_rate: HashMap::new(),
+            join_tokens: limits_joins_per_sec as f64,
+            join_refill_at: Instant::now(),
             stats: Arc::new(CallStats::default()),
         }
     }
@@ -165,11 +192,17 @@ impl CallRelay {
     /// Um pacote chegou de `from` (IP real `ip`). Devolve o que enviar e para onde.
     pub fn handle(&mut self, data: &[u8], from: Endpoint, ip: IpAddr, now: Instant) -> Vec<(Endpoint, Vec<u8>)> {
         let out = match data.first() {
-            Some(&JOIN_KIND) if data.len() == JOIN_LEN => self.on_join(data, from, ip, now),
+            Some(&JOIN_KIND) if data.len() == JOIN_LEN => {
+                if !self.join_gate(ip, now) {
+                    return Vec::new();
+                }
+                let opened = open_join(&self.static_private, data);
+                return self.join_finish(opened, from, ip, now);
+            }
             Some(&ADDR_KIND) if data.len() == ADDR_LEN => self.on_addr(data, from, ip, now),
             // Video (so das apps antigas): nunca passa; conta a parte, nao como descartado.
             Some(k) if k & !1 == VIDEO_KIND && data.len() <= VIDEO_MAX_PACKET => return self.on_video(data, from, now),
-            Some(_) if data.len() <= MAX_AUDIO_PACKET => self.on_media(data, from, now),
+            Some(_) if data.len() <= self.limits.max_packet.min(MAX_AUDIO_PACKET) => self.on_media(data, from, now),
             _ => Vec::new(),
         };
         if out.is_empty() {
@@ -179,33 +212,85 @@ impl CallRelay {
     }
 
     fn join_allowed(&mut self, ip: IpAddr, now: Instant) -> bool {
+        if self.join_rate.len() >= MAX_JOIN_IPS && !self.join_rate.contains_key(&ip) {
+            return false;
+        }
         let e = self.join_rate.entry(ip).or_insert((now, 0));
         if now.duration_since(e.0) >= Duration::from_secs(10) {
             *e = (now, 0);
         }
         e.1 += 1;
-        e.1 <= self.limits.joins_per_ip
+        if e.1 > self.limits.joins_per_ip {
+            return false;
+        }
+        let rate = self.limits.joins_per_sec as f64;
+        self.join_tokens = (self.join_tokens + now.duration_since(self.join_refill_at).as_secs_f64() * rate).min(rate);
+        self.join_refill_at = now;
+        if self.join_tokens < 1.0 {
+            return false;
+        }
+        self.join_tokens -= 1.0;
+        true
     }
 
-    fn on_join(&mut self, data: &[u8], from: Endpoint, ip: IpAddr, now: Instant) -> Vec<(Endpoint, Vec<u8>)> {
-        if !self.join_allowed(ip, now) {
-            self.stats.joins_rejected.fetch_add(1, Relaxed);
-            return Vec::new();
+    /// Primeira parte de um pedido de entrada: os limites, antes de decifrar.
+    pub fn join_gate(&mut self, ip: IpAddr, now: Instant) -> bool {
+        let ok = self.join_allowed(ip, now);
+        if !ok {
+            self.join_refused();
         }
-        let Ok(plain) = qt_transport::noise_n_open(&self.static_private, JOIN_PROLOGUE, &data[1..]) else {
-            self.stats.joins_rejected.fetch_add(1, Relaxed);
-            return Vec::new();
-        };
-        let plain = Zeroizing::new(plain);
-        let Some((role, keys)) = parse_join_payload(&plain) else {
-            self.stats.joins_rejected.fetch_add(1, Relaxed);
-            return Vec::new();
-        };
+        ok
+    }
+
+    fn join_refused(&self) -> Vec<(Endpoint, Vec<u8>)> {
+        self.stats.joins_rejected.fetch_add(1, Relaxed);
+        self.stats.dropped.fetch_add(1, Relaxed);
+        Vec::new()
+    }
+
+    fn release_ip(&mut self, ip: IpAddr) {
+        if let Some(n) = self.rooms_by_ip.get_mut(&ip) {
+            *n -= 1;
+            if *n == 0 {
+                self.rooms_by_ip.remove(&ip);
+            }
+        }
+    }
+
+    /// Ha lugar para uma sala nova? Sem lugar, sai a sala so com um lado mais antiga. Uma sala com
+    /// os dois lados nunca sai.
+    fn make_room(&mut self) -> bool {
+        // So olha para as salas todas quando ja ha muitas (com poucas, nada a fazer).
+        if self.rooms.len() < self.limits.max_half_open.min(self.limits.max_rooms) {
+            return true;
+        }
+        let (mut half_open, mut oldest) = (0, None);
+        for (id, r) in &self.rooms {
+            if r.slots.iter().all(Option::is_some) {
+                continue;
+            }
+            half_open += 1;
+            if oldest.is_none_or(|(at, _, _)| r.created < at) {
+                oldest = Some((r.created, *id, r.creator_ip));
+            }
+        }
+        if half_open < self.limits.max_half_open && self.rooms.len() < self.limits.max_rooms {
+            return true;
+        }
+        let Some((_, id, ip)) = oldest else { return false };
+        self.rooms.remove(&id);
+        self.release_ip(ip);
+        self.stats.half_open_evicted.fetch_add(1, Relaxed);
+        true
+    }
+
+    /// Segunda parte de um pedido de entrada (`opened` = `None`: nao decifrou).
+    pub fn join_finish(&mut self, opened: Option<(Role, RoomKeys)>, from: Endpoint, ip: IpAddr, now: Instant) -> Vec<(Endpoint, Vec<u8>)> {
+        let Some((role, keys)) = opened else { return self.join_refused() };
         if !self.rooms.contains_key(&keys.room_id) {
             let per_ip = self.rooms_by_ip.get(&ip).copied().unwrap_or(0);
-            if self.rooms.len() >= self.limits.max_rooms || per_ip >= self.limits.rooms_per_ip {
-                self.stats.joins_rejected.fetch_add(1, Relaxed);
-                return Vec::new();
+            if per_ip >= self.limits.rooms_per_ip || !self.make_room() {
+                return self.join_refused();
             }
             self.rooms.insert(
                 keys.room_id,
@@ -216,8 +301,7 @@ impl CallRelay {
         }
         let room = self.rooms.get_mut(&keys.room_id).expect("sala acabada de ver");
         if !ct_eq(&room.relay_key[..], &keys.relay_key) {
-            self.stats.joins_rejected.fetch_add(1, Relaxed);
-            return Vec::new();
+            return self.join_refused();
         }
         self.stats.joins.fetch_add(1, Relaxed);
         room.last_activity = now;
@@ -322,12 +406,7 @@ impl CallRelay {
             keep
         });
         for ip in &closed {
-            if let Some(n) = self.rooms_by_ip.get_mut(ip) {
-                *n -= 1;
-                if *n == 0 {
-                    self.rooms_by_ip.remove(ip);
-                }
-            }
+            self.release_ip(*ip);
         }
         self.join_rate.retain(|_, (t, _)| now.duration_since(*t) < Duration::from_secs(10));
         closed.len()
@@ -351,6 +430,7 @@ type WsSenders = Mutex<HashMap<u64, tokio::sync::mpsc::Sender<Vec<u8>>>>;
 
 struct Shared {
     relay: Mutex<CallRelay>,
+    static_private: Zeroizing<Vec<u8>>,
     udp: Arc<tokio::net::UdpSocket>,
     ws: WsSenders,
     next_ws: AtomicU64,
@@ -374,6 +454,21 @@ fn deliver(shared: &Shared, out: Vec<(Endpoint, Vec<u8>)>) {
 }
 
 fn process(shared: &Shared, data: &[u8], from: Endpoint, ip: IpAddr) {
+    // Decifrar um pedido de entrada e a unica parte cara: faz-se sem segurar o estado das salas,
+    // para nao atrasar o audio de quem ja esta em chamada.
+    if data.first() == Some(&JOIN_KIND) && data.len() == JOIN_LEN {
+        let now = Instant::now();
+        if !matches!(shared.relay.lock().map(|mut r| r.join_gate(ip, now)), Ok(true)) {
+            return;
+        }
+        let opened = open_join(&shared.static_private, data);
+        if let Ok(mut r) = shared.relay.lock() {
+            let out = r.join_finish(opened, from, ip, Instant::now());
+            drop(r);
+            deliver(shared, out);
+        }
+        return;
+    }
     let out = match shared.relay.lock() {
         Ok(mut r) => r.handle(data, from, ip, Instant::now()),
         Err(_) => return,
@@ -476,7 +571,13 @@ pub fn serve(udp: tokio::net::UdpSocket, ws: Option<tokio::net::TcpListener>, st
     let max_ws = limits.max_rooms * 2;
     let relay = CallRelay::new(static_private, limits);
     let stats = relay.stats.clone();
-    let shared = Arc::new(Shared { relay: Mutex::new(relay), udp: Arc::new(udp), ws: Mutex::new(HashMap::new()), next_ws: AtomicU64::new(1) });
+    let shared = Arc::new(Shared {
+        relay: Mutex::new(relay),
+        static_private: Zeroizing::new(static_private.to_vec()),
+        udp: Arc::new(udp),
+        ws: Mutex::new(HashMap::new()),
+        next_ws: AtomicU64::new(1),
+    });
     tokio::spawn(udp_loop(shared.clone()));
     if let Some(l) = ws {
         tokio::spawn(ws_loop(shared.clone(), l, max_ws));
@@ -506,11 +607,12 @@ pub fn take_line(stats: &CallStats) -> Option<String> {
         stats.addr_answered.swap(0, Relaxed),
         stats.video_refused.swap(0, Relaxed),
         stats.video_notices.swap(0, Relaxed),
+        stats.half_open_evicted.swap(0, Relaxed),
     ];
     (v.iter().any(|x| *x > 0)).then(|| {
         format!(
-            "chamadas: entradas={} recusadas={} salas_novas={} pacotes={} descartados={} mudancas_de_ip={} enderecos={} video_recusado={} avisos_sem_video={}",
-            v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]
+            "chamadas: entradas={} recusadas={} salas_novas={} pacotes={} descartados={} mudancas_de_ip={} enderecos={} video_recusado={} avisos_sem_video={} salas_retiradas={}",
+            v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9]
         )
     })
 }
@@ -577,6 +679,77 @@ mod tests {
         let q = b.media.seal(b"ola!").unwrap();
         assert_eq!(r.handle(&q, ep(2), ip(), t), vec![(ep(1), q)]);
         assert_eq!(r.rooms(), 1);
+    }
+
+    #[test]
+    fn salas_so_com_um_lado_saem_a_mais_antiga_primeiro() {
+        let limits = CallLimits { max_half_open: 2, max_rooms: 3, rooms_per_ip: 100, joins_per_ip: 100, ..CallLimits::default() };
+        let (mut r, pk) = setup(limits);
+        let t = Instant::now();
+        // Uma chamada com os dois lados.
+        let (a, b) = sides(1);
+        r.handle(&join(&pk, &a), ep(1), ip(), t);
+        r.handle(&join(&pk, &b), ep(2), ip(), t);
+        // Duas salas so com um lado: a segunda enche o limite.
+        let (c, _) = sides(2);
+        let (d, _) = sides(3);
+        r.handle(&join(&pk, &c), ep(3), ip(), t);
+        r.handle(&join(&pk, &d), ep(4), ip(), t + Duration::from_secs(1));
+        assert_eq!(r.rooms(), 3);
+        // A seguinte tira a mais antiga so com um lado; a chamada fica.
+        let (e, _) = sides(4);
+        assert_eq!(r.handle(&join(&pk, &e), ep(5), ip(), t + Duration::from_secs(2)).len(), 1);
+        assert_eq!(r.rooms(), 3);
+        assert!(r.rooms.contains_key(&a.room.room_id), "a sala com os dois lados nunca sai");
+        assert!(!r.rooms.contains_key(&c.room.room_id));
+        assert!(r.rooms.contains_key(&d.room.room_id));
+        assert_eq!(r.rooms_by_ip[&ip()], 3);
+        // Quem foi retirado volta a pedir e a sala reaparece.
+        assert_eq!(r.handle(&join(&pk, &c), ep(3), ip(), t + Duration::from_secs(3)).len(), 1);
+        assert!(r.rooms.contains_key(&c.room.room_id));
+    }
+
+    #[test]
+    fn so_chamadas_cheias_nao_cabe_mais_nenhuma() {
+        let limits = CallLimits { max_half_open: 1, max_rooms: 1, ..CallLimits::default() };
+        let (mut r, pk) = setup(limits);
+        let t = Instant::now();
+        let (a, b) = sides(1);
+        r.handle(&join(&pk, &a), ep(1), ip(), t);
+        r.handle(&join(&pk, &b), ep(2), ip(), t);
+        let (c, _) = sides(2);
+        assert!(r.handle(&join(&pk, &c), ep(3), ip(), t).is_empty());
+        assert_eq!(r.rooms(), 1);
+    }
+
+    #[test]
+    fn pedidos_de_entrada_limitados_em_todo_o_relay() {
+        let (mut r, pk) = setup(CallLimits { joins_per_sec: 2, ..CallLimits::default() });
+        let t = Instant::now();
+        let ips: Vec<IpAddr> = (1..=3).map(|i| IpAddr::from([10, 0, 0, i])).collect();
+        for (i, a) in ips.iter().enumerate() {
+            let (s, _) = sides(10 + i as u8);
+            let out = r.handle(&join(&pk, &s), ep(1 + i as u16), *a, t);
+            assert_eq!(out.is_empty(), i == 2, "{i}");
+        }
+        // Um segundo depois ha vaga outra vez.
+        let (s, _) = sides(30);
+        assert_eq!(r.handle(&join(&pk, &s), ep(9), ips[2], t + Duration::from_secs(1)).len(), 1);
+    }
+
+    #[test]
+    fn pacote_de_voz_acima_do_teto_nao_passa() {
+        let (mut r, pk) = setup(CallLimits::default());
+        let (mut a, b) = sides(1);
+        let t = Instant::now();
+        r.handle(&join(&pk, &a), ep(1), ip(), t);
+        r.handle(&join(&pk, &b), ep(2), ip(), t);
+        let p = a.media.seal(b"x").unwrap();
+        assert_eq!(p.len(), MEDIA_OVERHEAD + 64, "o tamanho das apps cabe no teto");
+        assert_eq!(r.handle(&p, ep(1), ip(), t).len(), 1);
+        let mut big = p.clone();
+        big.resize(CallLimits::default().max_packet + 1, 0);
+        assert!(r.handle(&big, ep(1), ip(), t).is_empty());
     }
 
     #[test]

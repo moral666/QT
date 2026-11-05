@@ -465,12 +465,13 @@ Um pedido ↔ uma resposta, sequenciais.
    `one_time_pre_keys` (até 200, `[4 número BE][32 pública]` cada) substitui as guardadas.
    O bundle expira ao fim de 90 dias; as apps voltam a publicá-lo sempre que abrem
    (arranque, desbloqueio ou ID novo), por isso só expira para quem não abre a app há 90 dias.
-3. `FetchPreKeyBundle{user_id}`: qualquer utilizador autenticado. A resposta
+3. `FetchPreKeyBundle{user_id}`: só contas registadas. A resposta
    `PreKeyBundle{bundle_bytes, one_time_pre_key?}` leva uma one-time prekey do dono (já
-   apagada do relay), se ainda houver. Limite: 60 pedidos seguidos e 60 por minuto por conta.
+   apagada do relay), se ainda houver (no máximo 20 por hora de cada conta; acima disso vai o
+   bundle sem prekey). Limite: 60 pedidos seguidos e 60 por minuto por conta.
 4. `SendMessage{to, sealed_from, ciphertext, silent, wake}`: `to` = 64 hex minúsculos;
    `ciphertext` 1…14 000 bytes; `sealed_from` ≤ 1024 (vazio no modo `QtClient`,
-   que envia o blob selado inteiro em `ciphertext`); fila ≤ 1000 mensagens.
+   que envia o blob selado inteiro em `ciphertext`); fila ≤ 1000 mensagens e 2 MB.
    `silent` (opcional, `false` se faltar): entregue igual, mas sem campainha (secção 17).
    `wake` (opcional, desde a app 0.9.6): `"Call"` ou `"CallEnd"`, campainha marcada de uma
    chamada de voz (secção 17).
@@ -517,6 +518,26 @@ Timeouts do servidor (omissão): handshake 5 s, autenticação 5 s, inatividade 
 Limites (omissão): no máximo 2 000 ligações por autenticar no relay inteiro (as seguintes são
 fechadas logo) e 8 ligações autenticadas por conta: uma 9.ª fecha a mais antiga dessa conta.
 À frente do relay, o HAProxy limita cada IP a 100 ligações abertas e 100 novas a cada 10 s.
+
+Limites de uso (`server/src/limits.rs`, omissão; só contagens em memória, sem IPs nem destinatários):
+
+| Limite | Valor |
+|---|---|
+| Ligações autenticadas sem conta neste relay | 2 000, 30 s de inatividade, 120 s no máximo, 200 pedidos; são as primeiras a fechar com o relay cheio |
+| Pedidos sem conta | registo, fila, confirmações, token vazio, premium, `BackupGet`, `BackupDelete`, `DeleteAccount`; os outros respondem `NOT_REGISTERED` |
+| Registo | 20 seguidos e 10 por minuto por conta; a prova corre fora das threads do relay, 2 de cada vez, até 10/s; 3 provas erradas fecham a ligação |
+| Contas novas | 30 por minuto por relay (rajada de 300), resposta `NO_NEW_ACCOUNTS`: a app passa ao relay seguinte |
+| Primeiras 24 h da conta | 60 envelopes por minuto, 5 MB/dia em filas, 400 KB/dia de cópias, 200 MB/dia de saída, 20 one-time prekeys, bundle com 7 dias (90 quando a app volta depois das 24 h ou confirma mensagens) |
+| Por conta, por dia | 20 MB em filas, 3 MB de cópias, 2 GB de saída (acabando, ficam só as mensagens) |
+| Saída | 2 MB/s por ligação; páginas de mensagens acima de 240 por minuto demoram mais 1 s |
+| Filas | a parte final (200 mensagens, 20 % dos bytes) fica para contas com mais de 7 dias; conta que nunca confirmou nada: 7 dias em vez de 30 |
+| Cópias | uma por acabar por conta: a seguinte apaga a anterior |
+| Anexos sem premium | 20 MB/dia, 60 por hora, 25 % do espaço |
+| Anexos | envio parado 15 min perde o lugar; cada um serve até 15 vezes o seu tamanho |
+| Notificações | 1 a cada 10 s; depois de 500 num dia, 1 por minuto |
+| Redis acima de 80 % da memória | contas novas fechadas; contas com menos de 24 h não escrevem |
+
+Com o bloqueio premium desligado, só as contas com menos de 24 h contam como "sem premium".
 Qualquer frame Noise inválido/repetido/fora de ordem encerra a sessão.
 Entrega *at-least-once*: o cliente tem de deduplicar (o `QtClient` faz-o).
 
@@ -842,7 +863,9 @@ redes que bloqueiam UDP: `wss://<relay>/call` (WebSocket sem conta, pelo HAProxy
   repetido de outro sítio não desvia a sala. Um novo pedido de entrada também muda o endereço.
 * Limites: 2 lados por sala; a sala fecha se o segundo não entrar em 60 s ou ao fim de 30 s sem
   nada; 2 000 salas no total e 20 por IP (redes móveis com CGNAT); 60 pedidos de entrada por IP a
-  cada 10 s; 100 pacotes/s por lado. Sem registos com IPs: uma linha por minuto só com contagens.
+  cada 10 s, 500 por segundo no relay inteiro; 500 salas só com um lado (ao chegar a esse número sai
+  a mais antiga, e quem está a ligar volta a pedir a entrada; uma sala com os dois lados nunca sai);
+  60 pacotes/s por lado, até 256 bytes. Sem registos com IPs: uma linha por minuto só com contagens.
 * Vídeo: nunca passa pelo relay (desde a 0.9.53; ver "Vídeo" abaixo). Um pacote de vídeo (só as
   apps 0.9.37 a 0.9.52 o enviam) é deitado fora; quem o enviou (lado válido da sala, do endereço
   atual, etiqueta válida) recebe o aviso "sem vídeo pelo relay" (modo 2), no máximo de 5 em 5 s, e
@@ -1136,7 +1159,8 @@ operador: o relay guarda-a sem a conseguir ler e sem saber quem denunciou.
 - **App:** menu da conversa → Denunciar → motivo e mensagens (vêm marcadas as 10 mais recentes da
   outra pessoa) → `SubmitReport`. Se o relay aceitar, a app bloqueia o contacto.
 - **Relay** (`SubmitReport { sealed }`): só contas registadas, até 10 por conta e por dia, até
-  5 000 guardadas. Fica `{p}:report:{id}` = `[8 recebida_em ms][denúncia]` com TTL de 30 dias. O
+  5 000 guardadas (as últimas 2 000 vagas ficam para contas com mais de 30 dias). De uma conta com
+  menos de 7 dias, a resposta é `Ack` e nada fica guardado. Fica `{p}:report:{id}` = `[8 recebida_em ms][denúncia]` com TTL de 30 dias. O
   contador diário `{p}:reportday:{conta}:{dia}` (TTL 2 dias) é o único sítio onde aparece quem
   denunciou, e não diz qual denúncia.
 - **Operador:** a ferramenta autentica-se com a chave Ed25519 do operador. Só essa conta faz
@@ -1145,6 +1169,8 @@ operador: o relay guarda-a sem a conseguir ler e sem saber quem denunciou.
   recebem `Error` "so o operador". Banir apaga o bundle, as one-time prekeys, a fila e a
   campainha, fecha as ligações abertas e passa a recusar a autenticação e o registo ("conta
   banida"). Limite: sem número de telefone, a pessoa pode criar um ID novo (com prova de trabalho).
+  O texto de uma denúncia é escrito pelo telemóvel de quem denuncia: uma denúncia sozinha não é
+  prova e nunca chega para banir.
 
 - **Pessoas online** (27/10/2026): `AdminOnline` (só o operador) → `Online { users }`, o número de
   contas diferentes com a app ligada ao relay agora (não ligações; sem o operador). Contado em
@@ -1171,7 +1197,7 @@ vão na cópia.
   máximo 8). Só contas registadas; só a conta dona substitui a cópia daquele `lookup`. A cópia
   nova só substitui a anterior quando chega a última parte. Palavras novas apagam a cópia das
   antigas. Guardada 90 dias, renovados quando a app regista o bundle; apagada com
-  `BackupDelete`, com a conta (`DeleteAccount`) e ao banir. `BackupGet { lookup, part }`
+  `BackupDelete` e com a conta (`DeleteAccount`). Ao banir, fica mais 30 dias. `BackupGet { lookup, part }`
   (resposta `BackupPart` ou `BackupNotFound`) serve qualquer ligação autenticada: num telemóvel
   sem identidade, a app autentica-se com uma chave temporária só em memória.
 - **Quando é enviada:** ao confirmar as palavras, quando os contactos ou os bloqueados mudam e
@@ -1282,7 +1308,8 @@ O relay de quem pede encaminha para o relay de casa da conta (descoberto como ac
 continuam a fazer os mesmos pedidos ao seu relay.
 
 * `SendMessage` para uma conta que não está neste relay (`RecipientUnknown`, ou apagada aqui e viva
-  noutro): pedido `Entregar { to, sealed_from, ciphertext, silent, wake }` (binários em base64) →
+  noutro): pedido `Entregar { to, sealed_from, ciphertext, silent, wake, jovem }` (binários em base64;
+  `jovem`: conta com menos de 7 dias, opcional) →
   `Feito` ou `Recusado { motivo }`. O relay de casa põe na fila sem verificar quem envia (está registado no
   outro relay, que já aplicou os limites e o premium), acorda quem está à espera e toca a campainha como
   num envio local. Só sai de quem está registado no relay local. O relay de casa só sabe que a mensagem veio
@@ -1292,10 +1319,14 @@ continuam a fazer os mesmos pedidos ao seu relay.
   one-time prekey no relay de casa) ou `SemBundle`.
 * Anexos: ficam no relay de quem os enviou. `BlobInfo`, `BlobGet` e `BlobDelete` de um anexo que não está
   aqui: `InfoBlob` a todos os pares (o primeiro que o tem fica em memória 24 h), depois `LerBlob { blob_id,
-  offset }` → `BlobDados` (blocos de 40 KB, como as apps) e `ApagarBlob`.
+  offset }` → `BlobDados` (blocos de 40 KB, como as apps) e `ApagarBlob`. "Nenhum par o tem" fica 60 s em
+  memória. Perguntas novas: 60 seguidas e 120 por minuto por conta. Anexos e cópias usam no máximo 16 das
+  64 perguntas em curso por par.
 * Cópia de recuperação: `BackupGet` que não está aqui → `LerCopia { lookup, part }` a todos os pares (o que
   a tem fica em memória 10 min, para as outras partes). `BackupPut` só no relay da conta.
-* Registos: só contagens (`fed_enviadas`, `fed_recebidas`, `fed_pedidos`).
+* Bloqueio premium: ao ligar, cada relay envia `Bloqueio { on, at }` (`at`: quando o operador decidiu, em ms)
+  e fica a decisão mais recente. Um relay por atualizar não responde e nada muda.
+* Registos: só contagens (`fed_enviadas`, `fed_recebidas`, `fed_pedidos`, `fed_indisponivel`).
 
 ### 25.2 Fase 3: vários relays nas apps
 

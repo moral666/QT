@@ -22,13 +22,15 @@ Environment=CALL_WS_BIND=127.0.0.1:9445
 # Limites: no drop-in qt-call-relay.service.d/limites.conf, gerado pelo setup-ec2.sh. Para
 # mudar, passa o valor ao script uma vez (ex.: sudo CALL_MAX_ROOMS=4000 bash setup-ec2.sh);
 # as atualizacoes seguintes mantem-no.
-#   CALL_MAX_ROOMS (2000), CALL_ROOMS_PER_IP (20), CALL_PACKETS_PER_SEC (100)
+#   CALL_MAX_ROOMS (2000), CALL_ROOMS_PER_IP (20), CALL_PACKETS_PER_SEC (60)
 ExecStart=/usr/local/bin/qt-call-relay
 Restart=on-failure
 RestartSec=2
 
 LimitNOFILE=16384
 LimitCORE=0
+# Nunca tira CPU ao relay das mensagens.
+CPUQuota=60%
 
 # --- Isolamento ---
 # So a permissao para abrir a porta 443 (abaixo de 1024) sem ser root.

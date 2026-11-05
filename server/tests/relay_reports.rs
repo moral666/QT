@@ -49,8 +49,9 @@ async fn list(op: &mut RelayClient) -> Vec<StoredReport> {
 async fn denuncia_guardada_cifrada_e_lida_so_pelo_operador() {
     let relay = TestRelay::start(cfg()).await;
     let alice = SigningKeyPair::generate();
+    // Conta antiga (uma conta nova nao chega a guardar denuncias: ver relay_protecoes.rs).
+    registar(&relay, &uid(&alice)).await;
     let mut a = client(&relay, &alice).await.unwrap();
-    a.register_bundle(valid_bundle(&alice, 1)).await.unwrap();
 
     let r = a.request(ClientMessage::SubmitReport { sealed: sealed("spam do bob") }).await.unwrap();
     assert!(matches!(r, ServerMessage::Ack), "{r:?}");
@@ -80,7 +81,7 @@ async fn denuncias_invalidas_sem_conta_ou_a_mais_sao_recusadas() {
     let r = a.request(ClientMessage::SubmitReport { sealed: sealed("x") }).await.unwrap();
     assert!(matches!(r, ServerMessage::Error { ref reason } if reason == NOT_REGISTERED), "{r:?}");
 
-    a.register_bundle(valid_bundle(&alice, 2)).await.unwrap();
+    registar(&relay, &uid(&alice)).await;
     for bad in [vec![], vec![1u8; 10], vec![9u8; 200], vec![1u8; report::MAX_SEALED + 1]] {
         let r = a.request(ClientMessage::SubmitReport { sealed: bad }).await.unwrap();
         assert!(matches!(r, ServerMessage::Error { .. }), "{r:?}");
@@ -202,9 +203,9 @@ async fn bloqueio_premium_recusa_anexos_e_chamadas_a_quem_nao_tem() {
     assert!(matches!(r, ServerMessage::Error { ref reason } if reason == NOT_OPERATOR), "{r:?}");
     let mut op = client(&relay, &operator()).await.unwrap();
     let r = op.request(ClientMessage::AdminPremiumEnforce { on: Some(true) }).await.unwrap();
-    assert!(matches!(r, ServerMessage::PremiumEnforce { on: true }), "{r:?}");
+    assert!(matches!(r, ServerMessage::PremiumEnforce { on: true, .. }), "{r:?}");
     let r = op.request(ClientMessage::AdminPremiumEnforce { on: None }).await.unwrap();
-    assert!(matches!(r, ServerMessage::PremiumEnforce { on: true }), "{r:?}");
+    assert!(matches!(r, ServerMessage::PremiumEnforce { on: true, .. }), "{r:?}");
 
     // Sem premium: anexos grandes e chamadas recusados; texto, voz (anexo pequeno, 0.9.73), fim de
     // chamada e receber continuam.
@@ -228,6 +229,6 @@ async fn bloqueio_premium_recusa_anexos_e_chamadas_a_quem_nao_tem() {
 
     // Desligar o bloqueio: o Bob (sem premium) volta a enviar anexos.
     let r = op.request(ClientMessage::AdminPremiumEnforce { on: Some(false) }).await.unwrap();
-    assert!(matches!(r, ServerMessage::PremiumEnforce { on: false }), "{r:?}");
+    assert!(matches!(r, ServerMessage::PremiumEnforce { on: false, .. }), "{r:?}");
     assert!(matches!(b.request(ClientMessage::BlobCreate { size: big }).await.unwrap(), ServerMessage::BlobCreated { .. }));
 }

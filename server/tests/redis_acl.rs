@@ -78,7 +78,7 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     // 0024 (EXISTS e TTL na lista): estado ao autenticar, envio num so pedido, recusa
     // desfeita com o prazo da fila reposto, confirmacao com a pagina guardada, registo numa
     // transacao (MULTI/EXEC) e premium num so pedido.
-    assert_eq!(store.auth_state(&alice).await.unwrap(), (false, true));
+    assert_eq!(store.auth_state(&alice).await.unwrap(), (false, true, 0));
     assert!(store.is_registered(&alice).await.unwrap());
     store.enqueue(qt_server::store::Sender::Registered, alice.clone(), vec![], vec![3; 10]).await.unwrap();
     let page = store.peek_messages_raw(&alice, 40_000).await.unwrap();
@@ -93,7 +93,8 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
         store.enqueue_message(&alice, bob.clone(), vec![], vec![1]).await,
         Err(qt_server::store::StoreError::RecipientUnknown)
     ));
-    assert_eq!(store.register_full(&alice, vec![1, 2, 3], Some(&[vec![4; 36]])).await.unwrap(), None);
+    let age = qt_server::store::NewAccount::No;
+    assert_eq!(store.register_full(&alice, vec![1, 2, 3], Some(&[vec![4; 36]]), age).await.unwrap(), None);
     assert!(store.premium_allows(&alice).await.unwrap());
 
     // One-time prekeys (0.9.3): DEL + RPUSH + EXPIRE numa transacao (MULTI/EXEC), LPOP e LLEN.
@@ -132,7 +133,7 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     store.enqueue_message(&alice, alice.clone(), vec![], vec![1; 4]).await.unwrap();
 
     // Denuncias e banimentos (operador).
-    let id = store.submit_report(&alice, vec![1; 100]).await.unwrap();
+    let id = store.submit_report(&alice, vec![1; 100], true).await.unwrap();
     let (reports, more) = store.list_reports(0, 40_000).await.unwrap();
     assert_eq!((reports.len(), more, reports[0].id), (1, false, id));
     store.delete_report(id).await.unwrap();
@@ -159,7 +160,7 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     assert_eq!(store.premium_until(&alice).await.unwrap(), 0);
 
     // Comunidade (0.9.52): envios como as denuncias e a lista com GET, SET, EXPIRE e MULTI/EXEC.
-    let id = store.submit_community(&alice, vec![2; 100]).await.unwrap();
+    let id = store.submit_community(&alice, vec![2; 100], true).await.unwrap();
     let (subs, more) = store.list_community(0, 40_000).await.unwrap();
     assert_eq!((subs.len(), more, subs[0].0), (1, false, id));
     store.delete_community(id).await.unwrap();

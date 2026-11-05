@@ -23,8 +23,8 @@ use crate::store::{Store, StoreError};
 use ed25519_dalek::{Signature, VerifyingKey};
 use qt_core::primitives::verify_signature;
 use qt_transport::ws_transport::{self, TransportError};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::net::TcpStream;
 
@@ -34,6 +34,21 @@ pub const MAX_SEALED_FROM: usize = 1024;
 pub const MAX_CIPHERTEXT: usize = 14_000;
 pub const MAX_BUNDLE: usize = 24_000;
 pub const MAX_ACK_IDS: usize = 200;
+/// Idades das contas, em segundos.
+const DAY: u64 = 24 * 3600;
+const WEEK: u64 = 7 * DAY;
+const MONTH: u64 = 30 * DAY;
+/// Provas de trabalho erradas numa ligacao antes de ela fechar.
+const MAX_WRONG_POW: u8 = 3;
+/// Verificacoes de prova de trabalho ao mesmo tempo, em todo o relay.
+const POW_AT_ONCE: usize = 2;
+
+fn pow_slots() -> &'static tokio::sync::Semaphore {
+    static SLOTS: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
+    SLOTS.get_or_init(|| tokio::sync::Semaphore::new(POW_AT_ONCE))
+}
+
+const MB: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -48,6 +63,41 @@ pub struct ServerConfig {
     pub require_pow: bool,
     /// Envelopes enviados por conta (`SendMessage`).
     pub send_rate: crate::limits::Rate,
+    /// O mesmo nas primeiras 24 horas da conta.
+    pub send_rate_new: crate::limits::Rate,
+    /// Bytes postos em filas por conta, por dia.
+    pub send_bytes: crate::limits::DailyRate,
+    pub send_bytes_new: crate::limits::DailyRate,
+    /// Bytes de copias de recuperacao por conta, por dia.
+    pub backup_bytes: crate::limits::DailyRate,
+    pub backup_bytes_new: crate::limits::DailyRate,
+    /// Bytes por segundo enviados em cada ligacao (0 = sem limite).
+    pub egress_per_sec: u64,
+    /// Bytes enviados a cada conta, por dia.
+    pub egress_bytes: crate::limits::DailyRate,
+    pub egress_bytes_new: crate::limits::DailyRate,
+    /// Paginas de mensagens entregues por conta. Acima disto, a resposta demora mais.
+    pub fetch_rate: crate::limits::Rate,
+    /// `RegisterPreKeyBundle` por conta.
+    pub register_rate: crate::limits::Rate,
+    /// Provas de trabalho verificadas em todo o relay.
+    pub pow_rate: crate::limits::Rate,
+    /// Contas novas em todo o relay.
+    pub new_accounts: crate::limits::Rate,
+    /// Ligacoes autenticadas sem conta neste relay, no total (0 = sem limites para elas).
+    pub max_unregistered: usize,
+    /// Tempo de inatividade de uma ligacao sem conta.
+    pub unregistered_idle: Duration,
+    /// Tempo maximo de uma ligacao sem conta.
+    pub unregistered_life: Duration,
+    /// Pedidos por ligacao sem conta.
+    pub unregistered_requests: u32,
+    /// Anexos novos por hora de uma conta sem premium (0 = sem limite).
+    pub free_blobs_per_hour: u32,
+    /// Perguntas a outro relay por anexos que ainda nao conhece, por conta.
+    pub fed_lookup_rate: crate::limits::Rate,
+    /// One-time prekeys entregues de uma conta, por hora (0 = sem limite).
+    pub otpks_per_hour: u32,
     /// Pedidos de bundle por conta (`FetchPreKeyBundle`).
     pub fetch_bundle_rate: crate::limits::Rate,
     /// Partes de copias de recuperacao enviadas ou pedidas por conta (`BackupPut`, `BackupGet`).
@@ -76,6 +126,25 @@ impl Default for ServerConfig {
             // 300 seguidos e 300 por minuto: chega para conversas e grupos muito ativos
             // (e para avisar todos os contactos ao abrir a app), nao para spam em massa.
             send_rate: crate::limits::Rate { burst: 300, per_minute: 300 },
+            send_rate_new: crate::limits::Rate { burst: 60, per_minute: 60 },
+            send_bytes: crate::limits::DailyRate { per_day: 20 * MB },
+            send_bytes_new: crate::limits::DailyRate { per_day: 5 * MB },
+            backup_bytes: crate::limits::DailyRate { per_day: 3 * MB },
+            backup_bytes_new: crate::limits::DailyRate { per_day: 400 * 1024 },
+            egress_per_sec: 2 * MB,
+            egress_bytes: crate::limits::DailyRate { per_day: 2048 * MB },
+            egress_bytes_new: crate::limits::DailyRate { per_day: 200 * MB },
+            fetch_rate: crate::limits::Rate { burst: 120, per_minute: 240 },
+            register_rate: crate::limits::Rate { burst: 20, per_minute: 10 },
+            pow_rate: crate::limits::Rate { burst: 120, per_minute: 600 },
+            new_accounts: crate::limits::Rate { burst: 300, per_minute: 30 },
+            max_unregistered: 2000,
+            unregistered_idle: Duration::from_secs(30),
+            unregistered_life: Duration::from_secs(120),
+            unregistered_requests: 200,
+            free_blobs_per_hour: 60,
+            fed_lookup_rate: crate::limits::Rate { burst: 60, per_minute: 120 },
+            otpks_per_hour: crate::federation::OTPKS_POR_HORA,
             fetch_bundle_rate: crate::limits::Rate { burst: 60, per_minute: 60 },
             // Uma copia tem ate 8 partes: chega para refazer a copia algumas vezes por minuto.
             backup_rate: crate::limits::Rate { burst: 40, per_minute: 20 },
@@ -153,7 +222,7 @@ pub async fn handle_connection_with(
     // pedidos falha na mesma e uma avaria nao deve fechar o relay a toda a gente). No mesmo
     // pedido: a conta tem bundle? (marca da ligacao, para o `SendMessage` nao o verificar
     // a cada mensagem nem o registo voltar a perguntar se esta banida).
-    let (banned, registered) = store.auth_state(&user_id).await.unwrap_or((false, false));
+    let (banned, registered, created_ms) = store.auth_state(&user_id).await.unwrap_or((false, false, 0));
     if banned {
         stats::inc(&STATS.auth_failed);
         reply(&mut ws, &mut noise, &err(crate::protocol::BANNED)).await?;
@@ -165,23 +234,64 @@ pub async fn handle_connection_with(
     // No maximo `max_connections_per_user` por conta: as mais antigas fecham.
     let (slot, closed) = crate::limits::UserSlot::register(&user_id, cfg.max_connections_per_user);
     slot.set_registered(registered);
+    slot.set_created_ms(created_ms);
     stats::add(&STATS.closed_oldest, closed as u64);
+    // Sem conta aqui (a registar-se ou a buscar a copia): grupo proprio, mais pequeno e com menos
+    // tempo. O operador nao tem conta nem precisa de ter.
+    let limited = !registered && cfg.max_unregistered > 0 && cfg.operator.as_deref() != Some(user_id.as_str());
+    let mut unregistered = None;
+    if limited {
+        match crate::limits::UnregisteredSlot::try_acquire(cfg.max_unregistered, slot.close_handle()) {
+            Some(s) => unregistered = Some(s),
+            None => {
+                stats::inc(&STATS.unregistered_closed);
+                ws_transport::close_gracefully(&mut ws).await;
+                return Ok(());
+            }
+        }
+    }
+    // Conta que passou das 24 horas e voltou: o bundle fica com o prazo normal.
+    if registered && created_ms != 0 && !slot.younger_than(DAY) {
+        let _ = store.renew_bundle(&user_id).await;
+    }
     reply(&mut ws, &mut noise, &ServerMessage::Ack).await?;
 
     // ---------- Loop principal ----------
     // Pedido que chegou a meio de uma espera (WaitMessages): tratado a seguir.
     let mut pending: Option<Vec<u8>> = None;
-    let mut session = Session { slot: &slot, delivered: Vec::new(), probe: IdaProbe::default() };
+    let mut session = Session {
+        slot: &slot,
+        delivered: Vec::new(),
+        probe: IdaProbe::default(),
+        pow_wrong: 0,
+        close: false,
+        read: false,
+        unregistered_left: cfg.unregistered_requests,
+        out_tokens: cfg.egress_per_sec as f64,
+        out_at: Instant::now(),
+    };
     let main_loop = async {
         loop {
+            // Acabou de se registar: passa a ser uma ligacao normal.
+            if unregistered.is_some() && slot.registered() {
+                unregistered = None;
+            }
+            let idle = if unregistered.is_some() { cfg.unregistered_idle } else { cfg.idle_timeout };
             let payload = match pending.take() {
                 Some(p) => p,
-                None => match next_request(&mut ws, &mut noise, cfg.idle_timeout, &mut session.probe).await {
+                None => match next_request(&mut ws, &mut noise, idle, &mut session.probe).await {
                     Some(p) => p,
                     // Fecho normal, timeout de inatividade ou frame invalido: encerra a sessao.
                     None => break,
                 },
             };
+            if unregistered.is_some() {
+                if session.unregistered_left == 0 {
+                    stats::inc(&STATS.unregistered_closed);
+                    break;
+                }
+                session.unregistered_left -= 1;
+            }
             let mut sent_message = false;
             let response = match deserialize_client_message(&payload) {
                 Ok(ClientMessage::WaitMessages { user_id: asked, timeout_secs }) => {
@@ -203,7 +313,18 @@ pub async fn handle_connection_with(
                     err("mensagem invalida")
                 }
             };
-            if reply(&mut ws, &mut noise, &response).await.is_err() {
+            // Muitas paginas seguidas: esta demora mais a sair.
+            if matches!(&response, ServerMessage::Messages { messages } if !messages.is_empty())
+                && !crate::limits::allow(crate::limits::Limited::Fetch, &user_id, cfg.fetch_rate)
+            {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            let bytes = serialize_server_message(&response);
+            session.pace(bytes.len(), cfg, &user_id).await;
+            if ws_transport::send_encrypted(&mut ws, &mut noise, &bytes).await.is_err() {
+                break;
+            }
+            if session.close {
                 break;
             }
             // Acabou de enviar uma mensagem: mede a ida e volta ate este telemovel.
@@ -216,10 +337,19 @@ pub async fn handle_connection_with(
             }
         }
     };
+    // Ligacao sem conta: tempo maximo.
+    let life_end = async {
+        tokio::time::sleep(cfg.unregistered_life).await;
+        if !limited || slot.registered() {
+            std::future::pending::<()>().await;
+        }
+        stats::inc(&STATS.unregistered_closed);
+    };
     // Termina com o loop ou quando uma ligacao mais nova da mesma conta ocupa a vaga.
     tokio::select! {
         _ = main_loop => {}
         _ = slot.must_close() => {}
+        _ = life_end => {}
     }
     ws_transport::close_gracefully(&mut ws).await;
     drop(slot);
@@ -392,9 +522,50 @@ struct Session<'a> {
     delivered: Vec<(u64, Vec<u8>)>,
     /// Medicao do tempo de ida ate este telemovel (`IdaProbe`).
     probe: IdaProbe,
+    /// Provas de trabalho erradas nesta ligacao.
+    pow_wrong: u8,
+    /// Fechar a ligacao depois desta resposta.
+    close: bool,
+    /// Ja confirmou mensagens nesta ligacao.
+    read: bool,
+    /// Pedidos que uma ligacao sem conta ainda pode fazer.
+    unregistered_left: u32,
+    /// Balde de bytes de saida desta ligacao.
+    out_tokens: f64,
+    out_at: Instant,
 }
 
 impl Session<'_> {
+    /// Conta os bytes que vao sair e espera o que for preciso para nao passar do ritmo da ligacao.
+    async fn pace(&mut self, len: usize, cfg: &ServerConfig, me: &str) {
+        stats::add(&STATS.egress_bytes, len as u64);
+        crate::limits::charge_daily(crate::limits::Limited::Egress, me, self.egress_rate(cfg), len as u64);
+        if cfg.egress_per_sec == 0 {
+            return;
+        }
+        let rate = cfg.egress_per_sec as f64;
+        let now = Instant::now();
+        self.out_tokens = (self.out_tokens + now.duration_since(self.out_at).as_secs_f64() * rate).min(rate);
+        self.out_at = now;
+        self.out_tokens -= len as f64;
+        if self.out_tokens < 0.0 {
+            tokio::time::sleep(Duration::from_secs_f64(-self.out_tokens / rate)).await;
+        }
+    }
+
+    fn egress_rate(&self, cfg: &ServerConfig) -> crate::limits::DailyRate {
+        if self.slot.younger_than(DAY) {
+            cfg.egress_bytes_new
+        } else {
+            cfg.egress_bytes
+        }
+    }
+
+    /// Esta conta ainda pode descarregar anexos e dados da Comunidade hoje?
+    fn egress_left(&self, cfg: &ServerConfig, me: &str) -> bool {
+        crate::limits::charge_daily(crate::limits::Limited::Egress, me, self.egress_rate(cfg), 0)
+    }
+
     /// Resposta `Messages` com a pagina, que fica guardada para a confirmacao.
     fn page(&mut self, page: Vec<(crate::store::QueuedMessage, Vec<u8>)>) -> ServerMessage {
         self.delivered.clear();
@@ -448,11 +619,38 @@ async fn handle_client_message(
     cfg: &ServerConfig,
     session: &mut Session<'_>,
 ) -> ServerMessage {
+    // Estes so com conta neste relay. O operador nao tem conta.
+    let needs_account = matches!(
+        msg,
+        ClientMessage::FetchPreKeyBundle { .. }
+            | ClientMessage::BlobGet { .. }
+            | ClientMessage::BlobInfo { .. }
+            | ClientMessage::BlobPut { .. }
+            | ClientMessage::BlobDelete { .. }
+            | ClientMessage::CommunityVersion
+            | ClientMessage::CommunityIndex
+            | ClientMessage::CommunityPhotos { .. }
+    );
+    if needs_account && cfg.operator.as_deref() != Some(me) {
+        match session.registered(store, me).await {
+            Ok(true) => {}
+            Ok(false) => {
+                stats::inc(&STATS.not_registered);
+                return err(crate::protocol::NOT_REGISTERED);
+            }
+            Err(e) => return internal(e),
+        }
+    }
+    let young = session.slot.younger_than(DAY);
     match msg {
         ClientMessage::Authenticate { .. } => err("ja autenticado"),
         ClientMessage::RegisterPreKeyBundle { user_id, bundle_bytes, pow, one_time_pre_keys } => {
             if user_id != me {
                 return err("so podes registar o teu proprio bundle");
+            }
+            if !crate::limits::allow(crate::limits::Limited::Register, me, cfg.register_rate) {
+                stats::inc(&STATS.rate_limited);
+                return err(crate::protocol::RATE_LIMITED);
             }
             if bundle_bytes.is_empty() || bundle_bytes.len() > MAX_BUNDLE {
                 return err("bundle com tamanho invalido");
@@ -482,16 +680,31 @@ async fn handle_client_message(
                 Ok(yes) => !yes,
                 Err(e) => return internal(e),
             };
-            if nova
-                && cfg.require_pow
-                && !pow.is_some_and(|n| qt_core::pow::pow_verify(&signing, n, qt_core::pow::POW_BITS))
-            {
-                stats::inc(&STATS.pow_rejected);
-                return err(crate::protocol::POW_REQUIRED);
+            if nova && cfg.require_pow {
+                match check_pow(signing, pow, cfg).await {
+                    PowCheck::Valid => {}
+                    PowCheck::Busy => {
+                        stats::inc(&STATS.pow_limited);
+                        return err(crate::protocol::NO_NEW_ACCOUNTS);
+                    }
+                    PowCheck::Wrong => {
+                        stats::inc(&STATS.pow_rejected);
+                        session.pow_wrong += 1;
+                        session.close = session.pow_wrong >= MAX_WRONG_POW;
+                        return err(crate::protocol::POW_REQUIRED);
+                    }
+                }
+            }
+            // Teto de contas novas por relay: quem chega passa ao relay seguinte da lista.
+            let cap = nova
+                && cfg.novas_contas
+                && (crate::limits::redis_tight() || !crate::limits::allow(crate::limits::Limited::NewAccount, "*", cfg.new_accounts));
+            if cap {
+                stats::inc(&STATS.accounts_new_refused);
             }
             // Relay fechado a contas novas (operador): se a conta ja existir noutro relay, diz
             // qual (sem reservar nada, para o registo la nao encontrar uma reserva daqui).
-            if nova && !cfg.novas_contas {
+            if nova && (cap || !cfg.novas_contas) {
                 if let Some(fed) = &cfg.federacao {
                     if let crate::federation::Onde::Par(n) = fed.onde_esta(me).await {
                         return err(&crate::protocol::elsewhere(Some(&n)));
@@ -511,7 +724,12 @@ async fn handle_client_message(
                 }
             }
             // Bundle, fim de uma eliminacao anterior e one-time prekeys numa so transacao.
-            let registo = store.register_full(me, bundle_bytes, one_time_pre_keys.as_deref()).await;
+            let age = match (nova, young) {
+                (true, _) => crate::store::NewAccount::Created,
+                (false, true) => crate::store::NewAccount::Young,
+                (false, false) => crate::store::NewAccount::No,
+            };
+            let registo = store.register_full(me, bundle_bytes, one_time_pre_keys.as_deref(), age).await;
             if registo.is_ok() && por_verificar {
                 // Algum relay nao respondeu: fica para verificar quando ele voltar (A1).
                 let _ = store.fed_marcar_por_verificar(me).await;
@@ -523,6 +741,10 @@ async fn handle_client_message(
                 Ok(backup) => {
                     session.slot.set_registered(true);
                     stats::inc(&STATS.bundles_registered);
+                    if nova {
+                        session.slot.set_created_ms(crate::store::now_ms());
+                        stats::inc(&STATS.accounts_new);
+                    }
                     // A app abriu: a copia de recuperacao (se houver) fica mais 90 dias.
                     if let Some(lookup) = backup {
                         let _ = store.renew_backup_of(me, &lookup).await;
@@ -545,9 +767,14 @@ async fn handle_client_message(
             match store.get_bundle(&user_id).await {
                 Ok(Some(bundle_bytes)) => {
                     stats::inc(&STATS.bundles_fetched);
-                    let one_time_pre_key = match store.pop_one_time_prekey(&user_id).await {
-                        Ok(k) => k.filter(|k| k.len() == crate::protocol::OTPK_LEN),
-                        Err(e) => return internal(e),
+                    // Por alvo: quem pede muitas vezes o bundle de alguem nao lhe gasta as prekeys.
+                    let one_time_pre_key = if crate::limits::allow_per_hour(crate::limits::Limited::Otpk, &user_id, cfg.otpks_per_hour) {
+                        match store.pop_one_time_prekey(&user_id).await {
+                            Ok(k) => k.filter(|k| k.len() == crate::protocol::OTPK_LEN),
+                            Err(e) => return internal(e),
+                        }
+                    } else {
+                        None
                     };
                     if one_time_pre_key.is_some() {
                         stats::inc(&STATS.otpks_served);
@@ -576,7 +803,11 @@ async fn handle_client_message(
             if sealed_from.len() > MAX_SEALED_FROM || ciphertext.is_empty() || ciphertext.len() > MAX_CIPHERTEXT {
                 return err("mensagem com tamanho invalido");
             }
-            if !crate::limits::allow(crate::limits::Limited::Send, me, cfg.send_rate) {
+            let (rate, bytes) = if young { (cfg.send_rate_new, cfg.send_bytes_new) } else { (cfg.send_rate, cfg.send_bytes) };
+            if !crate::limits::allow(crate::limits::Limited::Send, me, rate)
+                || !crate::limits::allow_daily(crate::limits::Limited::SendBytes, me, bytes, ciphertext.len() as u64)
+                || (young && crate::limits::redis_tight())
+            {
                 stats::inc(&STATS.rate_limited);
                 return err(crate::protocol::RATE_LIMITED);
             }
@@ -596,7 +827,8 @@ async fn handle_client_message(
                 true => crate::store::Sender::Registered,
                 false => crate::store::Sender::Check(me),
             };
-            let local = store.enqueue(sender, to, sealed_from, ciphertext).await;
+            let new_sender = session.slot.younger_than(WEEK);
+            let local = store.enqueue_seats(sender, to, sealed_from, ciphertext, new_sender).await;
             if local.is_ok() {
                 session.slot.set_registered(true);
             }
@@ -606,13 +838,18 @@ async fn handle_client_message(
                 (&cfg.federacao, &fed_copy, &local)
             {
                 if matches!(local, Err(StoreError::RecipientUnknown)) || matches!(session.registered(store, me).await, Ok(true)) {
-                    match fed.entregar(&recipient, sf, ct, silent, wake).await {
+                    match fed.entregar(&recipient, sf, ct, silent, wake, new_sender).await {
                         crate::federation::Entrega::Entregue => {
                             stats::inc(&STATS.sends);
                             stats::inc(&STATS.fed_out);
                             return ServerMessage::Ack;
                         }
-                        crate::federation::Entrega::Recusado(motivo) => return err(&motivo),
+                        crate::federation::Entrega::Recusado(motivo) => {
+                            if motivo == crate::protocol::FED_UNAVAILABLE {
+                                stats::inc(&STATS.fed_unavailable);
+                            }
+                            return err(&motivo);
+                        }
                         crate::federation::Entrega::NaoEsta => {}
                     }
                 }
@@ -723,6 +960,11 @@ async fn handle_client_message(
                 Ok(removed) => {
                     stats::add(&STATS.acked, removed.len() as u64);
                     crate::latency::acked(&removed);
+                    // Primeira confirmacao de uma conta recente: esta em uso.
+                    if !session.read && !removed.is_empty() && session.slot.younger_than(MONTH) {
+                        session.read = true;
+                        let _ = store.mark_read(me).await;
+                    }
                     ServerMessage::Ack
                 }
                 Err(e) => internal(e),
@@ -738,20 +980,25 @@ async fn handle_client_message(
             Err(e) => internal(e),
             // Enviar fotos, GIFs e ficheiros e pago (0.9.21); receber continua gratis. Desde a
             // 0.9.73 as mensagens de voz sao gratis: ate `FREE_BLOB_MAX` nao se pede premium.
-            Ok(true) => {
-                let allowed = if size > crate::protocol::FREE_BLOB_MAX { store.premium_allows(me).await } else { Ok(true) };
-                match allowed {
-                    Err(e) => internal(e),
-                    Ok(false) => err(crate::protocol::PREMIUM_REQUIRED),
-                    Ok(true) => match store.blob_create(me, size).await {
+            Ok(true) => match store.premium_allows(me).await {
+                Err(e) => internal(e),
+                Ok(false) if size > crate::protocol::FREE_BLOB_MAX => err(crate::protocol::PREMIUM_REQUIRED),
+                Ok(premium) => {
+                    // Sem premium: limites proprios, para o espaco nunca faltar a quem paga.
+                    let free = !premium || young;
+                    if free && !crate::limits::allow_per_hour(crate::limits::Limited::BlobCreate, me, cfg.free_blobs_per_hour) {
+                        stats::inc(&STATS.rate_limited);
+                        return err(crate::protocol::RATE_LIMITED);
+                    }
+                    match store.blob_create_as(me, size, free).await {
                         Ok((blob_id, token)) => {
                             stats::inc(&STATS.blob_uploads);
                             ServerMessage::BlobCreated { blob_id, token }
                         }
                         Err(e) => blob_err(e),
-                    },
+                    }
                 }
-            }
+            },
         },
         ClientMessage::BlobPut { blob_id, token, offset, data } => {
             match store.blob_put(&blob_id, &token, offset, &data).await {
@@ -764,35 +1011,50 @@ async fn handle_client_message(
             Ok(s) => ServerMessage::BlobStatus { size: s.size, received: s.received, complete: s.complete },
             Err(BlobError::NotFound) if cfg.federacao.is_some() => {
                 let fed = cfg.federacao.as_ref().unwrap();
+                if !fed_lookup_allowed(fed, &blob_id, me, cfg) {
+                    return err(crate::protocol::RATE_LIMITED);
+                }
                 fed.info_anexo(&blob_id).await.unwrap_or(ServerMessage::BlobNotFound)
             }
             Err(e) => blob_err(e),
         },
-        ClientMessage::BlobGet { blob_id, offset } => match store.blob_get(&blob_id, offset).await {
-            Ok((size, data)) => {
-                if offset == 0 {
-                    stats::inc(&STATS.blob_downloads);
-                }
-                ServerMessage::BlobData { offset, size, data: b64().encode(data) }
+        ClientMessage::BlobGet { blob_id, offset } => {
+            if !session.egress_left(cfg, me) {
+                stats::inc(&STATS.rate_limited);
+                return err(crate::protocol::RATE_LIMITED);
             }
-            Err(BlobError::NotFound) if cfg.federacao.is_some() => {
-                let fed = cfg.federacao.as_ref().unwrap();
-                match fed.ler_anexo(&blob_id, offset).await {
-                    Some(r) => {
-                        if offset == 0 {
-                            stats::inc(&STATS.blob_downloads);
-                            stats::inc(&STATS.fed_lookups);
-                        }
-                        r
+            match store.blob_get(&blob_id, offset).await {
+                Ok((size, data)) => {
+                    if offset == 0 {
+                        stats::inc(&STATS.blob_downloads);
                     }
-                    None => ServerMessage::BlobNotFound,
+                    ServerMessage::BlobData { offset, size, data: b64().encode(data) }
                 }
+                Err(BlobError::NotFound) if cfg.federacao.is_some() => {
+                    let fed = cfg.federacao.as_ref().unwrap();
+                    if !fed_lookup_allowed(fed, &blob_id, me, cfg) {
+                        return err(crate::protocol::RATE_LIMITED);
+                    }
+                    match fed.ler_anexo(&blob_id, offset).await {
+                        Some(r) => {
+                            if offset == 0 {
+                                stats::inc(&STATS.blob_downloads);
+                                stats::inc(&STATS.fed_lookups);
+                            }
+                            r
+                        }
+                        None => ServerMessage::BlobNotFound,
+                    }
+                }
+                Err(e) => blob_err(e),
             }
-            Err(e) => blob_err(e),
-        },
+        }
         ClientMessage::BlobDelete { blob_id } => {
             if let Some(fed) = &cfg.federacao {
                 if matches!(store.blob_info(&blob_id).await, Err(BlobError::NotFound)) {
+                    if !fed_lookup_allowed(fed, &blob_id, me, cfg) {
+                        return err(crate::protocol::RATE_LIMITED);
+                    }
                     fed.apagar_anexo(&blob_id).await;
                     return ServerMessage::Ack;
                 }
@@ -815,7 +1077,11 @@ async fn handle_client_message(
                 }
                 Err(e) => return internal(e),
             }
-            match store.submit_report(me, sealed).await {
+            // Conta com menos de 7 dias: fica sem efeito.
+            if session.slot.younger_than(WEEK) {
+                return ServerMessage::Ack;
+            }
+            match store.submit_report(me, sealed, !session.slot.younger_than(MONTH)).await {
                 Ok(_) => {
                     stats::inc(&STATS.reports);
                     ServerMessage::Ack
@@ -840,7 +1106,10 @@ async fn handle_client_message(
                 }
                 Err(e) => return internal(e),
             }
-            match store.submit_community(me, sealed).await {
+            if session.slot.younger_than(WEEK) {
+                return ServerMessage::Ack;
+            }
+            match store.submit_community(me, sealed, !session.slot.younger_than(MONTH)).await {
                 Ok(_) => ServerMessage::Ack,
                 Err(StoreError::CommunityLimit) => err(crate::protocol::COMMUNITY_LIMIT),
                 Err(StoreError::CommunityFull) => err("demasiados envios, tenta mais tarde"),
@@ -851,16 +1120,26 @@ async fn handle_client_message(
             Ok(version) => ServerMessage::CommunityVersion { version },
             Err(e) => internal(e),
         },
-        ClientMessage::CommunityIndex => match store.community_index().await {
-            Ok(Some((version, data))) => ServerMessage::CommunityIndex { version, data: b64().encode(data) },
-            Ok(None) => ServerMessage::CommunityNone,
-            Err(e) => internal(e),
-        },
+        ClientMessage::CommunityIndex => {
+            if !session.egress_left(cfg, me) {
+                stats::inc(&STATS.rate_limited);
+                return err(crate::protocol::RATE_LIMITED);
+            }
+            match store.community_index().await {
+                Ok(Some((version, data))) => ServerMessage::CommunityIndex { version, data: b64().encode(data) },
+                Ok(None) => ServerMessage::CommunityNone,
+                Err(e) => internal(e),
+            }
+        }
         ClientMessage::CommunityPhotos { hashes } => {
             if hashes.len() > crate::protocol::MAX_COMMUNITY_PHOTOS_PER_REQUEST
                 || !hashes.iter().all(|h| crate::protocol::is_hex_of_len(h, 64))
             {
                 return err("pedido invalido");
+            }
+            if !session.egress_left(cfg, me) {
+                stats::inc(&STATS.rate_limited);
+                return err(crate::protocol::RATE_LIMITED);
             }
             let mut photos = Vec::new();
             let mut budget = 0usize;
@@ -964,7 +1243,7 @@ async fn handle_client_message(
             }
             match store.ban(&user_id).await {
                 Ok(()) => {
-                    let _ = store.delete_backup(&user_id).await;
+                    let _ = store.expire_backup_of_banned(&user_id).await;
                     crate::limits::UserSlot::close_all(&user_id);
                     stats::inc(&STATS.bans);
                     ServerMessage::Ack
@@ -1024,7 +1303,11 @@ async fn handle_client_message(
             if bytes.is_empty() || bytes.len() > BACKUP_PART_MAX {
                 return err("copia invalida");
             }
-            if !crate::limits::allow(crate::limits::Limited::Backup, me, cfg.backup_rate) {
+            let daily = if young { cfg.backup_bytes_new } else { cfg.backup_bytes };
+            if !crate::limits::allow(crate::limits::Limited::Backup, me, cfg.backup_rate)
+                || !crate::limits::allow_daily(crate::limits::Limited::BackupBytes, me, daily, bytes.len() as u64)
+                || (young && crate::limits::redis_tight())
+            {
                 stats::inc(&STATS.rate_limited);
                 return err(crate::protocol::RATE_LIMITED);
             }
@@ -1088,17 +1371,22 @@ async fn handle_client_message(
             (Err(e), _) | (_, Err(e)) => internal(e),
         },
         ClientMessage::AdminPremiumEnforce { on } => {
+            let pares = cfg.federacao.as_ref().map_or(0, |f| f.pares().len()) as u32;
+            let mut confirmados = 0;
             if let Some(on) = on {
-                if let Err(e) = store.set_premium_enforced(on).await {
+                let at = crate::store::now_ms();
+                if let Err(e) = store.set_premium_enforced_at(on, at).await {
                     return internal(e);
                 }
-                // O bloqueio vale para todos os relays da federacao.
+                // O bloqueio vale para todos os relays da federacao. Um relay em baixo acerta-se
+                // quando voltar a ligar (`acertar_bloqueio`).
                 if let Some(fed) = &cfg.federacao {
-                    fed.admin_todos(crate::federation::AdminFed::BloqueioPremium { on }).await;
+                    let respostas = fed.admin_todos(crate::federation::AdminFed::BloqueioPremium { on, at }).await;
+                    confirmados = respostas.iter().filter(|r| matches!(r, crate::federation::Resposta::Feito)).count() as u32;
                 }
             }
             match store.premium_enforced().await {
-                Ok(on) => ServerMessage::PremiumEnforce { on },
+                Ok(on) => ServerMessage::PremiumEnforce { on, pares, confirmados },
                 Err(e) => internal(e),
             }
         }
@@ -1133,6 +1421,36 @@ async fn handle_client_message(
         // Apps antigas (0.9.37 a 0.9.52): as fichas do video acabaram. O erro que elas ja tratam.
         ClientMessage::IssueFichas { .. } => err(crate::protocol::FICHAS_OFF),
     }
+}
+
+enum PowCheck {
+    Valid,
+    Wrong,
+    /// Demasiadas provas a verificar ao mesmo tempo em todo o relay.
+    Busy,
+}
+
+/// Verifica a prova de trabalho fora das threads do relay, poucas de cada vez.
+async fn check_pow(signing: [u8; 32], pow: Option<u64>, cfg: &ServerConfig) -> PowCheck {
+    let Some(nonce) = pow else { return PowCheck::Wrong };
+    if !crate::limits::allow(crate::limits::Limited::Pow, "*", cfg.pow_rate) {
+        return PowCheck::Busy;
+    }
+    let Ok(_slot) = pow_slots().try_acquire() else { return PowCheck::Busy };
+    let check = tokio::task::spawn_blocking(move || qt_core::pow::pow_verify(&signing, nonce, qt_core::pow::POW_BITS));
+    match check.await {
+        Ok(true) => PowCheck::Valid,
+        _ => PowCheck::Wrong,
+    }
+}
+
+/// Esta conta pode perguntar aos outros relays por este anexo? Respostas ja em memoria sao gratis.
+fn fed_lookup_allowed(fed: &crate::federation::Federacao, blob_id: &str, me: &str, cfg: &ServerConfig) -> bool {
+    if fed.anexo_conhecido(blob_id) || crate::limits::allow(crate::limits::Limited::FedLookup, me, cfg.fed_lookup_rate) {
+        return true;
+    }
+    stats::inc(&STATS.rate_limited);
+    false
 }
 
 /// Federacao (fase 3): pedido do operador para uma conta que vive noutro relay. `None`: a conta

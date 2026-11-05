@@ -207,12 +207,12 @@ async fn pedido_a_meio_da_espera_acaba_a_espera_e_e_tratado() {
     let wait = ClientMessage::WaitMessages { user_id: uid(&bob), timeout_secs: 10 };
     ws_transport::send_encrypted(&mut ws, &mut n, &serialize_client_message(&wait)).await.unwrap();
     tokio::time::sleep(Duration::from_millis(300)).await;
-    let outro = ClientMessage::FetchPreKeyBundle { user_id: uid(&bob) };
+    let outro = ClientMessage::PremiumStatus;
     ws_transport::send_encrypted(&mut ws, &mut n, &serialize_client_message(&outro)).await.unwrap();
 
     let r1 = ws_transport::receive_encrypted_timeout(&mut ws, &mut n, Duration::from_secs(3)).await.unwrap();
     let r2 = ws_transport::receive_encrypted_timeout(&mut ws, &mut n, Duration::from_secs(3)).await.unwrap();
     assert!(matches!(deserialize_server_message(&r1).unwrap(), ServerMessage::Messages { ref messages } if messages.is_empty()));
-    assert!(matches!(deserialize_server_message(&r2).unwrap(), ServerMessage::PreKeyBundleNotFound));
+    assert!(matches!(deserialize_server_message(&r2).unwrap(), ServerMessage::Premium { .. }));
     assert!(t.elapsed() < Duration::from_secs(2), "a espera devia ter acabado com o pedido novo: {:?}", t.elapsed());
 }

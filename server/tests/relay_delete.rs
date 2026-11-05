@@ -55,6 +55,7 @@ async fn so_se_apaga_a_propria_conta() {
     let bundle = valid_bundle(&bob, 7);
     b.register_bundle(bundle.clone()).await.unwrap();
 
+    registar(&relay, &uid(&eve)).await;
     let mut e = client(&relay, &eve).await;
     let r = e.request(ClientMessage::DeleteAccount { user_id: uid(&bob) }).await.unwrap();
     assert!(matches!(r, ServerMessage::Error { .. }), "{r:?}");

@@ -10,7 +10,8 @@
 //!   NOISE_KEY_PATH   chave estatica do relay (tem de existir; nunca gera uma nova)
 //!   CALL_UDP_BIND    UDP publico (por omissao 0.0.0.0:443)
 //!   CALL_WS_BIND     reserva por WebSocket, atras do HAProxy (por omissao 127.0.0.1:9445)
-//!   CALL_MAX_ROOMS, CALL_ROOMS_PER_IP, CALL_PACKETS_PER_SEC  limites
+//!   CALL_MAX_ROOMS, CALL_ROOMS_PER_IP, CALL_PACKETS_PER_SEC, CALL_MAX_HALF_OPEN,
+//!   CALL_MAX_PACKET  limites
 
 use qt_server::call_relay::{serve, take_line, CallLimits};
 use std::time::Duration;
@@ -50,6 +51,8 @@ async fn main() {
         max_rooms: env_num("CALL_MAX_ROOMS", defaults.max_rooms),
         rooms_per_ip: env_num("CALL_ROOMS_PER_IP", defaults.rooms_per_ip),
         packets_per_sec: env_num("CALL_PACKETS_PER_SEC", defaults.packets_per_sec),
+        max_half_open: env_num("CALL_MAX_HALF_OPEN", defaults.max_half_open),
+        max_packet: env_num("CALL_MAX_PACKET", defaults.max_packet),
         ..defaults
     };
 
@@ -63,8 +66,8 @@ async fn main() {
     println!("Relay das chamadas: UDP {udp_bind}, reserva WebSocket {ws_bind}");
     println!("Chave publica (igual ao pin do relay das mensagens): {}", hex(&keys.public));
     println!(
-        "Limites: {} salas, {} por IP, {} pacotes/s por lado",
-        limits.max_rooms, limits.rooms_per_ip, limits.packets_per_sec
+        "Limites: {} salas ({} so com um lado), {} por IP, {} pacotes/s por lado, pacote ate {} bytes",
+        limits.max_rooms, limits.max_half_open, limits.rooms_per_ip, limits.packets_per_sec, limits.max_packet
     );
     println!("Video: nunca pelo relay (so voz; o video vai pela ligacao direta entre contactos mutuos)");
 

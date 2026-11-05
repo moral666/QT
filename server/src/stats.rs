@@ -62,6 +62,24 @@ pub struct Stats {
     pub fed_in: AtomicU64,
     /// Federacao: pedidos encaminhados (bundles, anexos, copias) para outros relays.
     pub fed_lookups: AtomicU64,
+    /// Federacao: entregas que falharam porque o outro relay nao respondeu.
+    pub fed_unavailable: AtomicU64,
+    /// Contas novas registadas e recusadas (teto do relay ou memoria).
+    pub accounts_new: AtomicU64,
+    pub accounts_new_refused: AtomicU64,
+    /// Provas de trabalho por verificar porque o limite do relay chegou.
+    pub pow_limited: AtomicU64,
+    /// Bytes enviados aos clientes.
+    pub egress_bytes: AtomicU64,
+    /// Ligacoes sem conta fechadas (fim do prazo, ou para dar lugar a outras).
+    pub unregistered_closed: AtomicU64,
+    // Valores atuais (nao sao contagens do intervalo).
+    /// Memoria do Redis, em percentagem de `maxmemory`.
+    pub redis_mem_pct: AtomicU64,
+    /// MB reservados para anexos.
+    pub blobs_reserved_mb: AtomicU64,
+    /// Denuncias guardadas.
+    pub reports_stored: AtomicU64,
 }
 
 pub static STATS: Stats = Stats {
@@ -103,6 +121,15 @@ pub static STATS: Stats = Stats {
     fed_out: AtomicU64::new(0),
     fed_in: AtomicU64::new(0),
     fed_lookups: AtomicU64::new(0),
+    fed_unavailable: AtomicU64::new(0),
+    accounts_new: AtomicU64::new(0),
+    accounts_new_refused: AtomicU64::new(0),
+    pow_limited: AtomicU64::new(0),
+    egress_bytes: AtomicU64::new(0),
+    unregistered_closed: AtomicU64::new(0),
+    redis_mem_pct: AtomicU64::new(0),
+    blobs_reserved_mb: AtomicU64::new(0),
+    reports_stored: AtomicU64::new(0),
 };
 
 pub fn inc(c: &AtomicU64) {
@@ -155,13 +182,26 @@ pub fn take_line(s: &Stats) -> Option<String> {
         ("fed_enviadas", t(&s.fed_out)),
         ("fed_recebidas", t(&s.fed_in)),
         ("fed_pedidos", t(&s.fed_lookups)),
+        ("fed_indisponivel", t(&s.fed_unavailable)),
+        ("contas_novas", t(&s.accounts_new)),
+        ("contas_novas_recusadas", t(&s.accounts_new_refused)),
+        ("provas_por_verificar", t(&s.pow_limited)),
+        ("saida_kb", t(&s.egress_bytes) / 1024),
+        ("sem_conta_fechadas", t(&s.unregistered_closed)),
     ];
     let active = s.active.load(Relaxed);
     if active == 0 && v.iter().all(|(_, n)| *n == 0) {
         return None;
     }
     let body: Vec<String> = v.iter().map(|(k, n)| format!("{k}={n}")).collect();
-    Some(format!("stats 60s: ativas={active} {}", body.join(" ")))
+    let now = format!(
+        "sem_conta={} redis_mem_pct={} anexos_reservados_mb={} denuncias_guardadas={}",
+        crate::limits::UnregisteredSlot::now(),
+        s.redis_mem_pct.load(Relaxed),
+        s.blobs_reserved_mb.load(Relaxed),
+        s.reports_stored.load(Relaxed),
+    );
+    Some(format!("stats 60s: ativas={active} {} {now}", body.join(" ")))
 }
 
 #[cfg(test)]

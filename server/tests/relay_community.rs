@@ -70,7 +70,8 @@ async fn envio_guardado_selado_e_lido_so_pelo_operador() {
     let me = StaticSecret::from([7u8; 32]);
     let r = a.request(ClientMessage::CommunitySubmit { sealed: submission(&me, None) }).await.unwrap();
     assert!(matches!(r, ServerMessage::Error { ref reason } if reason == NOT_REGISTERED), "{r:?}");
-    a.register_bundle(valid_bundle(&alice, 11)).await.unwrap();
+    // Conta antiga (uma conta nova nao chega a guardar envios: ver relay_protecoes.rs).
+    registar(&relay, &user_id_from_signing_public(&alice.verifying_key.to_bytes())).await;
 
     let photo = webp(9_973, 3);
     let r = a.request(ClientMessage::CommunitySubmit { sealed: submission(&me, Some(&photo)) }).await.unwrap();
@@ -123,6 +124,7 @@ async fn envio_guardado_selado_e_lido_so_pelo_operador() {
 async fn lista_publicada_lida_por_qualquer_conta_e_so_as_fotos_pedidas() {
     let relay = TestRelay::start(cfg()).await;
     let bob = SigningKeyPair::generate();
+    registar(&relay, &user_id_from_signing_public(&bob.verifying_key.to_bytes())).await;
     let mut b = client(&relay, &bob).await;
 
     // Ainda sem lista.

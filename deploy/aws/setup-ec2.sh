@@ -182,6 +182,9 @@ V_MAX_CONNECTIONS=$(env_val RELAY_MAX_CONNECTIONS 10000)
 V_BLOB_TOTAL=$(env_val RELAY_BLOB_MAX_TOTAL_MB 2048)
 V_BLOB_DAILY=$(env_val RELAY_BLOB_USER_DAILY_MB 1024)
 V_BLOB_FREE=$(env_val RELAY_BLOB_MIN_FREE_MB 1024)
+V_BLOB_FREE_DAILY=$(env_val RELAY_BLOB_FREE_DAILY_MB 20)
+V_NEW_ACCOUNTS=$(env_val RELAY_NEW_ACCOUNTS_PER_MIN 30)
+V_UNREGISTERED=$(env_val RELAY_MAX_UNREGISTERED 2000)
 umask 027
 cat > "$ENV_FILE" <<EOF
 RELAY_BIND_ADDR=127.0.0.1:9443
@@ -193,6 +196,12 @@ RELAY_STATUS_FILE=/var/lib/qt-estado/estado.json
 RELAY_BLOB_MAX_TOTAL_MB=$V_BLOB_TOTAL
 RELAY_BLOB_USER_DAILY_MB=$V_BLOB_DAILY
 RELAY_BLOB_MIN_FREE_MB=$V_BLOB_FREE
+# Quota diaria de anexos de quem nao tem premium.
+RELAY_BLOB_FREE_DAILY_MB=$V_BLOB_FREE_DAILY
+# Contas novas por minuto neste relay (rajada de 300). Acima disto as apps passam ao relay seguinte.
+RELAY_NEW_ACCOUNTS_PER_MIN=$V_NEW_ACCOUNTS
+# Ligacoes autenticadas de quem ainda nao tem conta aqui.
+RELAY_MAX_UNREGISTERED=$V_UNREGISTERED
 # Ligacoes em simultaneo (uma por app aberta desde a 0.9.45). No teste de carga de 29/10/2026,
 # ~42 KB por pessoa ligada (relay, HAProxy e Redis). Travao decidido a 29/10/2026: 25 000 por
 # relay. 10 000 so na primeira instalacao; nas atualizacoes fica o que estava. Para mudar:
@@ -292,7 +301,7 @@ cp "$SRC/deploy/systemd/qt-call-relay.service" /etc/systemd/system/qt-call-relay
 # password do Redis). Ficam no drop-in limites.conf. Para mudar um valor, passa-o ao script
 # UMA vez (ex.: sudo CALL_MAX_ROOMS=4000 bash setup-ec2.sh): as atualizacoes seguintes mantem
 # o que ja esta no ficheiro. A omissao so vale quando ainda nao ha valor.
-#   CALL_MAX_ROOMS (2000), CALL_ROOMS_PER_IP (20), CALL_PACKETS_PER_SEC (100)
+#   CALL_MAX_ROOMS (2000), CALL_ROOMS_PER_IP (20), CALL_PACKETS_PER_SEC (60)
 # Desde a 0.9.53 o relay das chamadas so leva voz: as variaveis antigas do video e das fichas
 # (CALL_VIDEO_BYTES_PER_SEC, CALL_MONTHLY_EGRESS_GB, CALL_RELAY_VIDEO, CALL_FICHAS,
 # CALL_STATE_FILE) saem do limites.conf ao reescreve-lo.
@@ -315,7 +324,7 @@ call_val() {
 }
 V_MAX_ROOMS=$(call_val CALL_MAX_ROOMS 2000)
 V_ROOMS_PER_IP=$(call_val CALL_ROOMS_PER_IP 20)
-V_PACKETS_PER_SEC=$(call_val CALL_PACKETS_PER_SEC 100)
+V_PACKETS_PER_SEC=$(call_val CALL_PACKETS_PER_SEC 60)
 mkdir -p "$CALL_DROPIN"
 cat > "$CALL_CONF.novo" <<EOF_CALL
 # Gerado pelo setup-ec2.sh. Para mudar, passa o valor ao script uma vez (ex.:

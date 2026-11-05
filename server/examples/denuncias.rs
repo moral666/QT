@@ -315,9 +315,11 @@ async fn main() {
             let seed = load_seed();
             let mut c = connect(&seed).await;
             match ask(&mut c, ClientMessage::AdminPremiumEnforce { on }).await {
-                ServerMessage::PremiumEnforce { on } if flag("--json") => println!("{}", serde_json::json!({ "ligado": on })),
-                ServerMessage::PremiumEnforce { on: true } => println!("Bloqueio premium LIGADO."),
-                ServerMessage::PremiumEnforce { on: false } => println!("Bloqueio premium desligado."),
+                ServerMessage::PremiumEnforce { on, pares, confirmados } if flag("--json") => {
+                    println!("{}", serde_json::json!({ "ligado": on, "pares": pares, "confirmados": confirmados }))
+                }
+                ServerMessage::PremiumEnforce { on: true, .. } => println!("Bloqueio premium LIGADO."),
+                ServerMessage::PremiumEnforce { on: false, .. } => println!("Bloqueio premium desligado."),
                 other => fail(&format!("resposta inesperada: {other:?}")),
             }
         }

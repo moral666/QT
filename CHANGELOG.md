@@ -6,6 +6,28 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 5 de novembro de 2026: relays: limites de uso por conta (sem atualizar as apps)
+
+- **Relay das mensagens:** limites por conta em bytes por dia (filas, cópias de recuperação, saída),
+  teto de contas novas por relay, limites mais baixos nas primeiras 24 horas de cada conta, fila em
+  bytes, ligações sem conta com grupo próprio, e prova de trabalho verificada fora das threads do
+  relay. Quando o Redis passa de 80 %, as contas novas esperam. Lista completa em
+  `docs/protocol-spec.md`, secção 11. Nenhum limite afeta o uso normal e as apps 0.9.73 não mudam.
+- **Anexos:** quota e espaço próprios para quem não tem premium, envio parado perde o lugar ao fim
+  de 15 minutos e um número máximo de descargas por anexo.
+- **Federação:** anexos e cópias com vagas próprias (as mensagens têm sempre vaga), cache de anexos que
+  não existem, e o bloqueio premium acerta-se sozinho quando um relay volta. `AdminPremiumEnforce`
+  diz quantos relays confirmaram. Um relay por atualizar continua a funcionar ao lado de um novo.
+- **Relay das chamadas:** salas só com um lado com teto próprio (uma sala com os dois lados nunca sai),
+  teto de pedidos no relay inteiro, 60 pacotes/s e 256 bytes por pacote, pedido de entrada decifrado
+  sem parar o áudio, e `CPUQuota=60%` para nunca tirar CPU ao relay das mensagens.
+- **Banir:** a cópia de recuperação fica mais 30 dias em vez de sair logo.
+- **Contas com menos de 7 dias:** denúncias e envios para a Comunidade ficam sem efeito, sem erro novo.
+- **`stats 60s`:** `fed_indisponivel`, `contas_novas`, `contas_novas_recusadas`, `provas_por_verificar`,
+  `saida_kb`, `sem_conta_fechadas`, `sem_conta`, `redis_mem_pct`, `anexos_reservados_mb`,
+  `denuncias_guardadas`. O ACL do Redis passa a ter `+info`.
+- Testes: `server/tests/relay_protecoes.rs`, `relay_federacao.rs`, `relay_limits.rs` e `call_relay.rs`.
+
 ### 5 de novembro de 2026: mensagens de voz grátis (Android e iPhone 0.9.73, build 73; relays)
 
 - **Contas sem premium:** enviam mensagens de texto e mensagens de voz (até 10 s, o limite de

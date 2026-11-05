@@ -44,6 +44,8 @@ pub const CACHE_MAX: usize = 200_000;
 pub const MAX_IDS: usize = 100;
 /// Perguntas em curso por par (as outras esperam dentro do `TEMPO_PERGUNTA`).
 pub const EM_CURSO: usize = 64;
+/// Dessas, no maximo estas para anexos e copias: as mensagens e os registos tem sempre vaga.
+pub const EM_CURSO_ANEXOS: usize = 16;
 /// Ligacoes ao `/fed` por autenticar ao mesmo tempo.
 const MAX_POR_AUTENTICAR: usize = 16;
 /// Ping a cada 30 s; sem nada do par em 90 s, a ligacao e dada como morta.
@@ -57,6 +59,8 @@ const CACHE_ANEXO: Duration = Duration::from_secs(24 * 3600);
 const CACHE_COPIA: Duration = Duration::from_secs(600);
 /// Entradas nas caches de anexos e copias, no maximo.
 const CACHE_LOCAL_MAX: usize = 50_000;
+/// One-time prekeys entregues por conta, por hora; acima disto vai o bundle sem prekey.
+pub const OTPKS_POR_HORA: u32 = 20;
 
 // ---------------------------------------------------------------------------
 // Configuracao
@@ -166,6 +170,9 @@ pub enum Pedido {
         silent: bool,
         #[serde(default)]
         wake: Option<WakeKind>,
+        /// Conta com menos de 7 dias: nao usa a parte final da fila.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        jovem: bool,
     },
     /// Bundle de uma conta deste relay (gasta uma one-time prekey). `Bundle` ou `SemBundle`.
     PedirBundle { id: UserId },
@@ -181,6 +188,9 @@ pub enum Pedido {
     /// O operador so fala com um relay; este passa o pedido ao relay da conta. So relays da
     /// lista chegam aqui (federacao fechada).
     Admin { a: AdminFed },
+    /// Ao ligar: o bloqueio premium de quem pergunta. Resposta: `Bloqueio`, com o deste relay.
+    /// Fica a decisao mais recente dos dois. Um relay sem isto nao responde.
+    Bloqueio { on: bool, at: u64 },
 }
 
 /// Pedidos do operador encaminhados entre relays (fase 3).
@@ -189,8 +199,12 @@ pub enum AdminFed {
     Premium { id: UserId, until_ms: u64 },
     Banir { id: UserId },
     Desbanir { id: UserId },
-    /// O bloqueio premium vale para todos os relays.
-    BloqueioPremium { on: bool },
+    /// O bloqueio premium vale para todos os relays. `at`: quando o operador decidiu (ms).
+    BloqueioPremium {
+        on: bool,
+        #[serde(default)]
+        at: u64,
+    },
     /// Contas com a app ligada a este relay. Resposta: `Contagem`.
     Online,
     /// Resposta: `ListaPremium`.
@@ -232,6 +246,7 @@ pub enum Resposta {
     Contagem { n: u64 },
     ListaPremium { entries: Vec<PremiumEntry> },
     ListaBanidas { ids: Vec<UserId> },
+    Bloqueio { on: bool, at: u64 },
 }
 
 /// Resultado de entregar uma mensagem noutro relay.
@@ -248,6 +263,11 @@ fn b64() -> base64::engine::GeneralPurpose {
     base64::engine::general_purpose::STANDARD
 }
 
+/// Os mapas abaixo ficam validos mesmo que uma tarefa pare a meio: o relay continua a usa-los.
+fn tranca<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Cache "chave -> nome do relay" (anexos, copias), so em memoria.
 struct CacheNomes {
     mapa: Mutex<HashMap<String, (String, Instant)>>,
@@ -260,7 +280,7 @@ impl CacheNomes {
     }
 
     fn get(&self, k: &str) -> Option<String> {
-        let mut m = self.mapa.lock().unwrap();
+        let mut m = tranca(&self.mapa);
         match m.get(k) {
             Some((v, ate)) if Instant::now() < *ate => Some(v.clone()),
             Some(_) => {
@@ -272,7 +292,7 @@ impl CacheNomes {
     }
 
     fn put(&self, k: &str, v: &str) {
-        let mut m = self.mapa.lock().unwrap();
+        let mut m = tranca(&self.mapa);
         if m.len() >= CACHE_LOCAL_MAX {
             let agora = Instant::now();
             m.retain(|_, (_, ate)| *ate > agora);
@@ -284,7 +304,7 @@ impl CacheNomes {
     }
 
     fn forget(&self, k: &str) {
-        self.mapa.lock().unwrap().remove(k);
+        tranca(&self.mapa).remove(k);
     }
 }
 
@@ -348,6 +368,7 @@ pub struct Par {
     tx: mpsc::Sender<Envio>,
     ligado: AtomicBool,
     vagas: Semaphore,
+    vagas_anexos: Semaphore,
 }
 
 impl Par {
@@ -363,6 +384,8 @@ pub struct Federacao {
     reservas: Mutex<HashMap<UserId, (Origem, Instant)>>,
     cache: Mutex<HashMap<UserId, (Onde, Instant)>>,
     anexos: CacheNomes,
+    /// Anexos que nenhum par tem.
+    sem_anexo: CacheNomes,
     copias: CacheNomes,
 }
 
@@ -392,6 +415,7 @@ impl Federacao {
                     tx,
                     ligado: AtomicBool::new(false),
                     vagas: Semaphore::new(EM_CURSO),
+                    vagas_anexos: Semaphore::new(EM_CURSO_ANEXOS),
                 })
             })
             .collect::<Vec<_>>();
@@ -402,6 +426,7 @@ impl Federacao {
             reservas: Mutex::new(HashMap::new()),
             cache: Mutex::new(HashMap::new()),
             anexos: CacheNomes::new(CACHE_ANEXO),
+            sem_anexo: CacheNomes::new(CACHE_NEGATIVA),
             copias: CacheNomes::new(CACHE_COPIA),
         });
         for (par, rx) in fed.pares.iter().cloned().zip(filas) {
@@ -429,7 +454,9 @@ impl Federacao {
         if !par.ligado() {
             return None;
         }
+        let lenta = matches!(p, Pedido::InfoBlob { .. } | Pedido::LerBlob { .. } | Pedido::ApagarBlob { .. } | Pedido::LerCopia { .. });
         let pedido = async {
+            let _lenta = if lenta { Some(par.vagas_anexos.acquire().await.ok()?) } else { None };
             let _vaga = par.vagas.acquire().await.ok()?;
             let (tx, rx) = oneshot::channel();
             par.tx.try_send(Envio { p, resp: tx }).ok()?;
@@ -462,7 +489,7 @@ impl Federacao {
     /// Chamar `libertar` depois do registo (ou da recusa).
     pub async fn reservar(&self, id: &str) -> Reserva {
         {
-            let mut r = self.reservas.lock().unwrap();
+            let mut r = tranca(&self.reservas);
             let agora = Instant::now();
             r.retain(|_, (_, t)| agora.duration_since(*t) < RESERVA);
             match r.get(id) {
@@ -502,7 +529,7 @@ impl Federacao {
 
     /// Acaba a reserva local (a conta ja tem bundle aqui, ou o registo foi recusado).
     pub fn libertar(&self, id: &str) {
-        let mut r = self.reservas.lock().unwrap();
+        let mut r = tranca(&self.reservas);
         if matches!(r.get(id), Some((Origem::Local, _))) {
             r.remove(id);
         }
@@ -519,7 +546,7 @@ impl Federacao {
             Ok(_) => {}
             Err(_) => return Resposta::Erro { motivo: "erro interno".into() },
         }
-        let mut r = self.reservas.lock().unwrap();
+        let mut r = tranca(&self.reservas);
         let agora = Instant::now();
         let origem = Origem::Par(par.to_string());
         match r.get(id) {
@@ -590,11 +617,11 @@ impl Federacao {
 
     /// Esquece o que sabia desta conta (ex.: o relay de casa disse que ja nao a tem).
     pub fn esquecer(&self, id: &str) {
-        self.cache.lock().unwrap().remove(id);
+        tranca(&self.cache).remove(id);
     }
 
     fn da_cache(&self, id: &str) -> Option<Onde> {
-        let mut c = self.cache.lock().unwrap();
+        let mut c = tranca(&self.cache);
         let (onde, ate) = c.get(id)?.clone();
         if Instant::now() < ate {
             Some(onde)
@@ -606,7 +633,7 @@ impl Federacao {
 
     fn para_cache(&self, id: &str, onde: Onde) {
         let dura = if matches!(onde, Onde::Par(_)) { CACHE_POSITIVA } else { CACHE_NEGATIVA };
-        let mut c = self.cache.lock().unwrap();
+        let mut c = tranca(&self.cache);
         if c.len() >= CACHE_MAX {
             let agora = Instant::now();
             c.retain(|_, (_, ate)| *ate > agora);
@@ -685,6 +712,7 @@ impl Federacao {
         ciphertext: &[u8],
         silent: bool,
         wake: Option<WakeKind>,
+        jovem: bool,
     ) -> Entrega {
         for tentativa in 0..2 {
             let nome = match self.onde_esta(to).await {
@@ -699,6 +727,7 @@ impl Federacao {
                 ciphertext: b64().encode(ciphertext),
                 silent,
                 wake,
+                jovem,
             };
             match self.perguntar(par, pedido).await {
                 Some(Resposta::Feito) => return Entrega::Entregue,
@@ -735,19 +764,35 @@ impl Federacao {
         }
     }
 
+    /// A resposta sobre este anexo ja esta em memoria (nao vai perguntar a nenhum par)?
+    pub fn anexo_conhecido(&self, blob_id: &str) -> bool {
+        self.anexos.get(blob_id).is_some() || self.sem_anexo.get(blob_id).is_some()
+    }
+
     /// Que par tem este anexo (pergunta a todos e guarda a resposta). Devolve tambem o estado.
     async fn par_do_anexo(&self, blob_id: &str) -> Option<(Arc<Par>, Option<Resposta>)> {
         if let Some(par) = self.anexos.get(blob_id).and_then(|n| self.par(&n).cloned()) {
             return Some((par, None));
         }
+        if self.sem_anexo.get(blob_id).is_some() {
+            return None;
+        }
         let perguntas = self.pares.iter().map(|par| async move {
             (par.clone(), self.perguntar(par, Pedido::InfoBlob { blob_id: blob_id.to_string() }).await)
         });
+        let mut todos_responderam = true;
         for (par, r) in join_all(perguntas).await {
-            if let Some(r @ Resposta::BlobEstado { .. }) = r {
-                self.anexos.put(blob_id, &par.nome);
-                return Some((par, Some(r)));
+            match r {
+                Some(r @ Resposta::BlobEstado { .. }) => {
+                    self.anexos.put(blob_id, &par.nome);
+                    return Some((par, Some(r)));
+                }
+                Some(_) => {}
+                None => todos_responderam = false,
             }
+        }
+        if todos_responderam {
+            self.sem_anexo.put(blob_id, "");
         }
         None
     }
@@ -841,6 +886,31 @@ impl Federacao {
             .collect()
     }
 
+    /// O par disse o bloqueio dele: fica a decisao mais recente. Devolve a que ficou.
+    async fn bloqueio_recebido(&self, on: bool, at: u64) -> Resposta {
+        let Ok((meu, meu_at)) = self.store.premium_enforce_state().await else {
+            return Resposta::Erro { motivo: "erro interno".into() };
+        };
+        if at > meu_at {
+            return match self.store.set_premium_enforced_at(on, at).await {
+                Ok(()) => Resposta::Bloqueio { on, at },
+                Err(_) => Resposta::Erro { motivo: "erro interno".into() },
+            };
+        }
+        Resposta::Bloqueio { on: meu, at: meu_at }
+    }
+
+    /// Ligacao nova a um par: acerta o bloqueio premium (o par pode ter estado em baixo quando o
+    /// operador o mudou). Se ele ainda nao souber disto, nao responde e fica tudo como esta.
+    async fn acertar_bloqueio(&self, par: &Par) {
+        let Ok((on, at)) = self.store.premium_enforce_state().await else { return };
+        if let Some(Resposta::Bloqueio { on: dele, at: dele_at }) = self.perguntar(par, Pedido::Bloqueio { on, at }).await {
+            if dele_at > at && self.store.set_premium_enforced_at(dele, dele_at).await.is_ok() {
+                println!("federacao: bloqueio acertado com {}", par.nome);
+            }
+        }
+    }
+
     async fn admin_pedido(&self, a: AdminFed) -> Resposta {
         let feito = |r: Result<(), crate::store::StoreError>| match r {
             Ok(()) => Resposta::Feito,
@@ -852,14 +922,17 @@ impl Federacao {
             AdminFed::Banir { id } if valido(&id) => {
                 let r = self.store.ban(&id).await;
                 if r.is_ok() {
-                    let _ = self.store.delete_backup(&id).await;
+                    let _ = self.store.expire_backup_of_banned(&id).await;
                     crate::limits::UserSlot::close_all(&id);
                     crate::stats::inc(&crate::stats::STATS.bans);
                 }
                 feito(r)
             }
             AdminFed::Desbanir { id } if valido(&id) => feito(self.store.unban(&id).await),
-            AdminFed::BloqueioPremium { on } => feito(self.store.set_premium_enforced(on).await),
+            // Sem hora (relay por atualizar): o operador decidiu agora.
+            AdminFed::BloqueioPremium { on, at } => {
+                feito(self.store.set_premium_enforced_at(on, if at == 0 { crate::store::now_ms() } else { at }).await)
+            }
             AdminFed::Online => Resposta::Contagem { n: crate::limits::UserSlot::users_online(None) as u64 },
             AdminFed::ListarPremium => match self.store.list_premium().await {
                 Ok(entries) => Resposta::ListaPremium { entries },
@@ -896,16 +969,21 @@ impl Federacao {
                 Resposta::Aqui { estados }
             }
             Pedido::Admin { a } => self.admin_pedido(a).await,
-            Pedido::Entregar { to, sealed_from, ciphertext, silent, wake } => {
-                self.entrega_pedida(to, &sealed_from, &ciphertext, silent, wake).await
+            Pedido::Entregar { to, sealed_from, ciphertext, silent, wake, jovem } => {
+                self.entrega_pedida(to, &sealed_from, &ciphertext, silent, wake, jovem).await
             }
+            Pedido::Bloqueio { on, at } => self.bloqueio_recebido(on, at).await,
             Pedido::PedirBundle { id } => {
                 if !is_valid_user_id(&id) {
                     return Resposta::SemBundle;
                 }
                 match self.store.get_bundle(&id).await {
                     Ok(Some(bundle)) => {
-                        let otpk = self.store.pop_one_time_prekey(&id).await.ok().flatten();
+                        let otpk = if crate::limits::allow_per_hour(crate::limits::Limited::Otpk, &id, OTPKS_POR_HORA) {
+                            self.store.pop_one_time_prekey(&id).await.ok().flatten()
+                        } else {
+                            None
+                        };
                         Resposta::Bundle { bundle: b64().encode(bundle), otpk: otpk.map(|k| b64().encode(k)) }
                     }
                     Ok(None) => Resposta::SemBundle,
@@ -950,6 +1028,7 @@ impl Federacao {
         ciphertext: &str,
         silent: bool,
         wake: Option<WakeKind>,
+        jovem: bool,
     ) -> Resposta {
         use crate::connection::{MAX_CIPHERTEXT, MAX_SEALED_FROM};
         use crate::store::StoreError;
@@ -959,7 +1038,7 @@ impl Federacao {
         if !is_valid_user_id(&to) || sealed_from.len() > MAX_SEALED_FROM || ciphertext.is_empty() || ciphertext.len() > MAX_CIPHERTEXT {
             return Resposta::Recusado { motivo: "mensagem com tamanho invalido".into() };
         }
-        match self.store.enqueue_from_peer(to.clone(), sealed_from, ciphertext).await {
+        match self.store.enqueue_from_peer(to.clone(), sealed_from, ciphertext, jovem).await {
             Ok(_) => {
                 crate::stats::inc(&crate::stats::STATS.fed_in);
                 crate::waiters::wake(&to);
@@ -1019,6 +1098,10 @@ async fn manter_ligacao(fed: Arc<Federacao>, par: Arc<Par>, mut rx: mpsc::Receiv
         espera = Duration::from_secs(1);
         par.ligado.store(true, Ordering::Relaxed);
         println!("federacao: ligado a {}", par.nome);
+        {
+            let (fed, par) = (fed.clone(), par.clone());
+            tokio::spawn(async move { fed.acertar_bloqueio(&par).await });
+        }
         let mut pendentes: HashMap<u64, oneshot::Sender<Resposta>> = HashMap::new();
         let mut n: u64 = 0;
         let mut visto = Instant::now();

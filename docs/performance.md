@@ -210,7 +210,11 @@ redis-server --port 6390 --save '' --appendonly no --daemonize yes
 ulimit -n 20000
 RELAY_BIND_ADDR=127.0.0.1:9450 REDIS_URL=redis://127.0.0.1:6390 \
   NOISE_KEY_PATH=/tmp/relay_noise_key.bin RELAY_MAX_CONNECTIONS=20000 \
+  RELAY_MAX_UNREGISTERED=0 RELAY_NEW_ACCOUNTS_PER_MIN=0 \
   cargo run --release -p qt_server --bin relay_server &
+# Sem conta, as ligacoes do conntest ficariam no grupo limitado: RELAY_MAX_UNREGISTERED=0 tira-o.
+# Para medir com muitas contas novas ou muitos bytes: RELAY_SEND_PER_MIN_NEW, RELAY_SEND_DAILY_MB,
+# RELAY_SEND_DAILY_MB_NEW (0 = sem limite) e RELAY_EGRESS_MB_PER_SEC (0 = sem limite).
 
 # noutro terminal (tambem com ulimit -n 20000):
 cargo run --release -p qt_server --example conntest -- \
