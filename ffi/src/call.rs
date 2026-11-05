@@ -62,6 +62,8 @@
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 
+// `encode_addr` e os dois `may_*`: so com o motor das chamadas (`calls`).
+#[cfg_attr(not(feature = "calls"), allow(unused_imports))]
 use qt_core::call::{
     decode_addr, encode_addr, join_payload, parse_join_ok, CallKeys, MediaSession, Role, RoomKeys, ADDR_BYTES, JOIN_KIND,
     JOIN_PROLOGUE, MAX_PAD, MIN_PAD,
@@ -263,10 +265,12 @@ impl VideoSig {
         (self.camera as u8 * V_CAMERA) | (self.accept as u8 * V_ACCEPT) | (self.declined as u8 * V_DECLINED)
     }
     /// Envio autorizado: a minha camara ligada E o outro aceitou ver.
+    #[cfg_attr(not(feature = "calls"), allow(dead_code))]
     fn may_send(&self) -> bool {
         self.camera && self.peer_accept
     }
     /// Rececao autorizada: aceitei E a camara dele esta ligada.
+    #[cfg_attr(not(feature = "calls"), allow(dead_code))]
     fn may_receive(&self) -> bool {
         self.accept && self.peer_camera
     }

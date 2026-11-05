@@ -433,6 +433,7 @@
     <string name="gcall_full">群组通话已有 5 人。</string>
     <string name="gcall_join">加入通话</string>
     <string name="call_add">添加到通话</string>
+    <string name="contact_rename_wait">%1$s 分钟后可以再次更改名字。</string>
     <string name="gcall_notice">在群组通话中，其他参与者可以看到你的网络地址。</string>
     <string name="gcall_me">我</string>
     <string name="gcall_name_title">你在本次通话中的名字</string>

@@ -435,6 +435,7 @@
     <string name="gcall_full">L’appel de groupe compte déjà 5 personnes.</string>
     <string name="gcall_join">Rejoindre l’appel</string>
     <string name="call_add">Ajouter à l’appel</string>
+    <string name="contact_rename_wait">Tu pourras changer le nom à nouveau dans %1$s min.</string>
     <string name="gcall_notice">Dans les appels de groupe, ton adresse réseau est visible par les autres participants.</string>
     <string name="gcall_me">Moi</string>
     <string name="gcall_name_title">Ton nom dans cet appel</string>

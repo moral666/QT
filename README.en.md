@@ -4,7 +4,7 @@
 
 **SEALER** is a private messenger: no phone number, no email, end-to-end encryption and post-quantum protection. **QT** is the name of the protocol and of this repository.
 
-**Status:** test version, in closed testing. Android app **0.9.71** (iPhone 0.9.71 not yet built), with two federated relays in the European Union (Stockholm and Spain).
+**Status:** test version, in closed testing. Android app **0.9.72** (iPhone 0.9.72 not yet built), with two federated relays in the European Union (Stockholm and Spain).
 
 [Ler em português →](README.md)
 
@@ -30,7 +30,7 @@ It is also a working example of "data protection by design", as the GDPR asks: e
 
 - **One-to-one and group chats** (up to 10 people, 3 admins), between Android and iPhone, with *Sent / Delivered / Read*.
 - **Encrypted voice and video calls** on Android and iPhone, also between the two. On Android, one-to-one calls ring with the app closed or the phone locked, with their own ringtone, and go to your Bluetooth headset and your car, with nothing in the phone’s call log.
-- **Group calls** (up to 5 people, voice and video, end-to-end encrypted): everyone picks the name shown in the call, and whoever declined can join later.
+- **Group calls** (up to 5 people, voice and video, end-to-end encrypted): they start from a normal call, with "Add to call" (any participant can add their own contacts); everyone picks the name shown in the call, and whoever declined can join later.
 - **Video that adapts to the network:** on Wi-Fi it goes as high as the connection and the phones allow (up to 4K); on mobile data it stays at up to 720p. Voice always comes before video.
 - **Photos, GIFs, voice messages and files up to 25 MB.** Each file has its own key and leaves the server once downloaded (or after 24 hours).
 - **Notifications with the app closed**, always generic ("You have new messages"): no name, no text.

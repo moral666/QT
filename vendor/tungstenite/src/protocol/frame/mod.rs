@@ -152,7 +152,7 @@ impl FrameCodec {
     where
         Stream: Read,
     {
-        let max_size = max_size.unwrap_or_else(usize::max_value);
+        let max_size = max_size.unwrap_or(usize::MAX);
 
         let payload = loop {
             {

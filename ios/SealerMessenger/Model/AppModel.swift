@@ -1472,8 +1472,17 @@ final class AppModel: ObservableObject {
             // Em minusculas: "QT1:ABC..." e o mesmo ID, e o contactId tem de ser igual ao do nucleo.
             let id = publicId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard let relayId = try? relayIdOfPublicId(publicId: id) else { showError(s("t_public_id_invalido")); return }
-            let name = nickname.trimmingCharacters(in: .whitespaces)
-            let c = Contact(nickname: name.isEmpty ? s("t_contacto") : name, publicId: id, relayId: relayId)
+            let typed = nickname.trimmingCharacters(in: .whitespaces)
+            let prev = ui.contacts.first { $0.publicId == id }
+            let name = typed.isEmpty ? (prev?.nickname ?? s("t_contacto")) : typed
+            // Ja e meu contacto: guardar outra vez com outro nome e mudar o nome (0.9.72), com o mesmo
+            // intervalo entre mudancas.
+            if let prev, prev.nickname != name, prev.renameWaitMs() > 0 {
+                showError(s("contact_rename_wait", renameWaitMinutes(prev.renameWaitMs())))
+                return
+            }
+            let renamedAt: Int64 = (prev != nil && prev?.nickname != name) ? nowMs() : (prev?.renamedAt ?? 0)
+            let c = Contact(nickname: name, publicId: id, relayId: relayId, renamedAt: renamedAt)
             if c.publicId == ui.publicId { showError(s("t_esse_e_o_teu_proprio_id")); return }
             do {
                 try await saveContacts(ui.contacts.filter { $0.contactId != c.contactId } + [c])
@@ -1491,6 +1500,28 @@ final class AppModel: ObservableObject {
                 await refreshViews(q)
             }
             await flushOutbox()   // recibos que estavam a espera de saber o endereco deste contacto
+        }
+    }
+
+    /// MUDAR O NOME de um contacto (0.9.72): so neste iPhone (o nome nunca sai dele, a nao ser
+    /// cifrado na copia da chave de recuperacao). A primeira mudanca e logo; depois, de 10 em 10
+    /// minutos (`contactRenameCooldownMs`). Igual ao Android.
+    func renameContact(_ contactId: String, nickname: String) {
+        let name = nickname.trimmingCharacters(in: .whitespaces)
+        guard let old = ui.contacts.first(where: { $0.contactId == contactId }), !name.isEmpty, name != old.nickname else { return }
+        let wait = old.renameWaitMs()
+        if wait > 0 { showError(s("contact_rename_wait", renameWaitMinutes(wait))); return }
+        let c = Contact(nickname: name, publicId: old.publicId, relayId: old.relayId, renamedAt: nowMs())
+        Task {
+            do {
+                try await saveContacts(ui.contacts.map { $0.contactId == contactId ? c : $0 })
+            } catch is ContactsUnreadableError {
+                return
+            } catch {
+                showError(s("t_erro", safeMessage(error))); return
+            }
+            ui.error = nil
+            if let q = qt { await refreshViews(q) }
         }
     }
 

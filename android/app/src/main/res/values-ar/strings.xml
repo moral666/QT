@@ -433,6 +433,7 @@
     <string name="gcall_full">المكالمة الجماعية تضم 5 أشخاص بالفعل.</string>
     <string name="gcall_join">الانضمام إلى المكالمة</string>
     <string name="call_add">إضافة إلى المكالمة</string>
+    <string name="contact_rename_wait">يمكنك تغيير الاسم مرة أخرى بعد %1$s دقيقة.</string>
     <string name="gcall_notice">في المكالمات الجماعية، يكون عنوان شبكتك مرئيًا للمشاركين الآخرين.</string>
     <string name="gcall_me">أنا</string>
     <string name="gcall_name_title">اسمك في هذه المكالمة</string>

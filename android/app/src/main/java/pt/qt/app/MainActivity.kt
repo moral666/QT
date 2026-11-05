@@ -87,6 +87,7 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Warning
@@ -689,6 +690,7 @@ fun AppRoot(
                 onVideoCall = { c -> requestCall(c, true) },
                 canReport = reportsAvailable(), onReport = vm::reportContact,
                 onDraftRestored = vm::draftRestored,
+                onRename = { n -> vm.renameContact(chatId, n) },
                 onJoinOngoing = if (chatId in ongoingCalls) ({
                     withGroupNotice { withMic { withCamera { vm.groupCalls.rejoin(chatId) } } }
                 }) else null,
@@ -1426,12 +1428,15 @@ fun ChatScreen(
     onDraftRestored: () -> Unit = {},
     /** Ha uma chamada de grupo a que esta pessoa me convidou e em que nao estou: "Entrar na chamada". */
     onJoinOngoing: (() -> Unit)? = null,
+    /** "Mudar o nome" do contacto (0.9.72), com o intervalo de 10 minutos entre mudancas. */
+    onRename: (String) -> Unit = {},
 ) {
     val colors = LocalChatColors.current
     var viewing by remember { mutableStateOf<ChatMessage?>(null) }
     var showReport by remember { mutableStateOf(false) }
     var showAdd by rememberSaveable { mutableStateOf(false) }
     var chatMenu by remember { mutableStateOf(false) }
+    var showRename by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
     var confirmBlock by remember { mutableStateOf(false) }
     var reactingTo by remember { mutableStateOf<ChatMessage?>(null) }
@@ -1510,6 +1515,13 @@ fun ChatScreen(
                                     text = { Text(s(R.string.report)) },
                                     leadingIcon = { Icon(Icons.Filled.Warning, contentDescription = null) },
                                     onClick = { chatMenu = false; showReport = true },
+                                )
+                            }
+                            if (contact != null) {
+                                DropdownMenuItem(
+                                    text = { Text(s(R.string.t_mudar_o_nome)) },
+                                    leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                                    onClick = { chatMenu = false; showRename = true },
                                 )
                             }
                             DropdownMenuItem(
@@ -1599,6 +1611,13 @@ fun ChatScreen(
     }
     if (showAdd) AddContactDialog(onDismiss = { showAdd = false }, onAdd = { n, p -> onAdd(n, p); showAdd = false })
     viewing?.let { m -> AttachmentOverlay(m, loadAttachment, onDismiss = { viewing = null }) }
+    if (showRename && contact != null) {
+        RenameContactDialog(
+            contact,
+            onSave = { n -> showRename = false; onRename(n) },
+            onDismiss = { showRename = false },
+        )
+    }
     if (showDelete) {
         DeleteActions(
             name = name,

@@ -1361,7 +1361,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // ao do nucleo (0.9.23).
             val id = publicId.trim().lowercase()
             val relayId = relayIdOfPublicId(id)               // valida o formato no Rust
-            val c = Contact(nickname.trim().ifBlank { s(R.string.t_contacto) }, id, relayId)
+            val prev = _ui.value.contacts.firstOrNull { it.publicId == id }
+            val name = nickname.trim().ifBlank { prev?.nickname ?: s(R.string.t_contacto) }
+            // Ja e meu contacto: guardar outra vez com outro nome e mudar o nome (0.9.72), com o mesmo
+            // intervalo entre mudancas.
+            if (prev != null && prev.nickname != name && prev.renameWaitMs() > 0L) {
+                error(s(R.string.contact_rename_wait, renameWaitMinutes(prev.renameWaitMs())))
+                return@io
+            }
+            val renamedAt = if (prev != null && prev.nickname != name) System.currentTimeMillis() else prev?.renamedAt ?: 0L
+            val c = Contact(name, id, relayId, renamedAt)
             if (c.publicId == _ui.value.publicId) { error(s(R.string.t_esse_e_o_teu_proprio_id)); return@io }
             val list = (_ui.value.contacts.filter { it.contactId != c.contactId }) + c
             if (!saveContacts(list)) return@io
@@ -1378,6 +1387,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: QtException) {
             error(s(R.string.t_public_id_invalido))
         }
+    }
+
+    /**
+     * MUDAR O NOME de um contacto (0.9.72): so neste telemovel (o nome nunca sai dele, a nao ser
+     * cifrado na copia da chave de recuperacao). A primeira mudanca e logo; depois, de 10 em 10
+     * minutos ([CONTACT_RENAME_COOLDOWN_MS]).
+     */
+    fun renameContact(contactId: String, nickname: String) = io {
+        val name = nickname.trim()
+        val old = _ui.value.contacts.firstOrNull { it.contactId == contactId } ?: return@io
+        if (name.isBlank() || name == old.nickname) return@io
+        val wait = old.renameWaitMs()
+        if (wait > 0L) {
+            error(s(R.string.contact_rename_wait, renameWaitMinutes(wait)))
+            return@io
+        }
+        val c = old.copy(nickname = name, renamedAt = System.currentTimeMillis())
+        val list = _ui.value.contacts.map { if (it.contactId == contactId) c else it }
+        if (!saveContacts(list)) return@io
+        _ui.update { it.copy(contacts = list, error = null) }
+        scheduleBackup()
+        qt?.let { refreshViews(it) }
     }
 
     // ---------------------------------------------------------- safety numbers

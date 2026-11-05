@@ -45,9 +45,12 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::net::SocketAddr;
+#[cfg_attr(not(feature = "calls"), allow(unused_imports))]
 use std::sync::{Arc, Mutex};
 
-use qt_core::call::{decode_addr, encode_addr, CallKeys, MediaSession, Role, RoomKeys, ADDR_BYTES, MAX_PAD, MIN_PAD};
+#[cfg_attr(not(feature = "calls"), allow(unused_imports))]
+use qt_core::call::encode_addr;
+use qt_core::call::{decode_addr, CallKeys, MediaSession, Role, RoomKeys, ADDR_BYTES, MAX_PAD, MIN_PAD};
 use qt_storage as st;
 use zeroize::Zeroizing;
 
@@ -154,7 +157,8 @@ enum State {
     Joined,
 }
 
-/// A perna com um participante.
+/// A perna com um participante. Sem o motor (`calls`), parte dela fica por ler.
+#[cfg_attr(not(feature = "calls"), allow(dead_code))]
 struct Leg {
     id: [u8; 16],
     role: Role,
@@ -194,8 +198,6 @@ struct GroupCall {
     from: String,
     /// Quem pode estar nesta chamada, sem mim: id da conversa -> public ID.
     roster: BTreeMap<String, String>,
-    /// O convite veio da chamada a dois com quem convidou (entra sem tocar).
-    from_call: bool,
     state: State,
     video: bool,
     since: i64,
@@ -206,6 +208,7 @@ struct GroupCall {
     /// O meu nome nesta chamada (vai a cada perna quando tem chaves).
     my_name: Option<String>,
     /// Estao na chamada mas ainda sem perna comigo (era a vez deles de oferecer): desde quando.
+    #[cfg_attr(not(feature = "calls"), allow(dead_code))]
     waiting: BTreeMap<String, i64>,
     /// "Entrei" de quem ainda nao estava na lista (o "adicionado" de quem o convidou pode chegar
     /// depois): fica a espera, no maximo `MAX_GROUP_CALL`.
@@ -381,6 +384,7 @@ fn parse_name(b: &[u8]) -> Option<String> {
     clean_name(std::str::from_utf8(rest).ok()?)
 }
 
+#[cfg_attr(not(feature = "calls"), allow(dead_code))]
 fn encode_addrs(addrs: &[SocketAddr]) -> Vec<u8> {
     let n = addrs.len().min(MAX_ADDRS);
     let mut out = vec![n as u8];
@@ -637,7 +641,6 @@ pub(crate) fn on_group_call(client: &QtClient, c: &st::rusqlite::Connection, cid
                 id,
                 from: cid.to_string(),
                 roster: inv.roster,
-                from_call,
                 state: State::Ringing,
                 video: inv.video,
                 since: now,
@@ -1075,7 +1078,6 @@ impl QtClient {
             id,
             from: my_cid,
             roster,
-            from_call: false,
             state: State::Joined,
             video,
             since: now_ms(),
@@ -1140,8 +1142,7 @@ impl QtClient {
                 id,
                 from: k.from,
                 roster: k.roster,
-                from_call: false,
-                state: State::Ringing,
+                    state: State::Ringing,
                 video: k.video,
                 since: now_ms(),
                 present: k.present,

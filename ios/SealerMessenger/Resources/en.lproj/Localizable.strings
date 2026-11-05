@@ -27,6 +27,7 @@
 "community_title" = "Community";
 "confirm_word" = "DELETE";
 "confirm_word_alt" = "";
+"contact_rename_wait" = "You can change the name again in %1$@ min.";
 "contacts_unreadable_new" = "Start a new list";
 "contacts_unreadable_text" = "The saved contact list could not be read. So that it is not lost, the app will not save anything over it. Close and reopen the app. If this keeps happening, you can start a new list (the old one is kept aside).";
 "contacts_unreadable_title" = "Contacts could not be opened";

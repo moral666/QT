@@ -27,6 +27,7 @@
 "community_title" = "社区";
 "confirm_word" = "删除";
 "confirm_word_alt" = "";
+"contact_rename_wait" = "%1$@ 分钟后可以再次更改名字。";
 "contacts_unreadable_new" = "新建列表";
 "contacts_unreadable_text" = "无法读取已保存的联系人列表。为避免丢失，应用不会覆盖它。请关闭并重新打开应用。如果仍然出现此提示，你可以新建一个列表（旧列表会另外保存）。";
 "contacts_unreadable_title" = "无法打开联系人";
