@@ -672,15 +672,20 @@ conversa, o contacto, o grupo ou todos os dados apaga os ficheiros.
 sessões 1 a 1 (PQXDH + Double Ratchet + Sealed Sender). O relay não muda e não sabe que
 existe um grupo: vê envelopes 1 a 1 como os outros (no máximo 9 por mensagem).
 
-**Info do grupo** (tipo 7): `{"v": versão, "name": nome, "members": [{"pid": Public ID,
-"admin": bool}]}`. Válida com 1 a 10 membros, 1 a 3 administradores, sem repetidos e nome
+**Info do grupo** (tipo 7): `{"v": versão, "name": nome, "named_at": quando o nome mudou (ms,
+opcional), "members": [{"pid": Public ID, "admin": bool}]}`. Válida com 1 a 10 membros, 1 a 3 administradores, sem repetidos e nome
 até 100 bytes. Um grupo desconhecido só é aceite se a info vier de um administrador que ela
-própria nomeia e se eu estiver nos membros. Num grupo conhecido, a info tem de vir de quem
+própria nomeia e se eu estiver nos membros. Se esse administrador não estiver nos meus contactos, o
+grupo fica à espera: quem me adicionou aparece como um convite normal, com o nome do grupo na
+conversa. Com Aceitar, o grupo entra; com Recusar, sai tudo. Num grupo conhecido, a info tem de vir de quem
 já era administrador e com versão maior (uma versão sem ele próprio é um administrador a
-sair). Quem é removido recebe a versão nova e fica com o grupo inativo.
+sair). Quem é removido recebe a versão nova e fica com o grupo inativo. Desde a 0.9.74, o nome só
+muda de 24 em 24 horas (a primeira mudança é logo): `group_update` recusa e `rename_wait_ms` diz
+quanto falta. Mudar os membros não tem prazo.
 
 **Mensagens** (tipo 6) só são aceites de membros. Uma que chegue antes da info (envelopes
-de pessoas diferentes não chegam por ordem) fica guardada até a info chegar (no máximo 100).
+de pessoas diferentes não chegam por ordem) fica guardada até a info chegar (no máximo 300, e 5 por
+remetente).
 Vão texto, reações e, desde a app 0.9.0, anexos (fotos, GIFs, voz e ficheiros); outros tipos
 aparecem como "atualiza a app".
 
@@ -1438,6 +1443,13 @@ Testes: `core/src/community.rs`, `ffi/tests/community.rs`, `server/tests/relay_c
 > dois][lista]`, op 10 entrei (vazio), op 11 sai (vazio), op 12 adicionado `[lista dos novos]`; lista
 > = `[1 n, 1..=5][n x 64 public ID]`. Os ops 4 a 8 (pernas, endereços, câmara, nome) ficam iguais.
 > Os ops 1 a 3 (com o id do grupo, 0.9.62 a 0.9.69) são ignorados. O texto abaixo é o da 0.9.62.
+>
+> **Desde a 0.9.74:** o convite só toca se vier de um contacto meu, como nas chamadas a dois, e toca
+> também com a app fechada. Na passagem de uma chamada a dois, a câmara, o microfone e a saída do som
+> ficam como estavam, e a chamada no sistema (CallKit, Telecom) continua. O bit0 do convite só diz como
+> tocar. Os sinais levam o endereço no relay tirado da lista, por isso quem não se conhece recebe-os.
+> Se duas pessoas adicionarem alguém ao mesmo tempo, fica a chamada com o id menor. Um sinal de chamada
+> que não saiu em 2 minutos sai da fila.
 
 O que as apps fazem:
 

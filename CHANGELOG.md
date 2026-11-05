@@ -6,6 +6,28 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 5 de novembro de 2026: chamadas de grupo e grupos (Android e iPhone 0.9.74, build 74)
+
+- **Passar de uma chamada a dois para grupo:** a câmara, o microfone e a saída do som ficam como
+  estavam. A chamada continua no sistema (CallKit no iPhone, Telecom e serviço no Android), por isso
+  a passagem é contínua, também com o ecrã apagado ou o iPhone bloqueado.
+- **Convites de grupo:** tocam com a app fechada, nas duas apps, e só de contactos, como as chamadas a
+  dois. No iPhone tocam pelo CallKit e aparece a chamada perdida, como no Android.
+- **Quem não se conhece:** duas pessoas adicionadas à mesma chamada passam a ouvir-se.
+- **Adicionar ao mesmo tempo:** a chamada já não se parte em duas.
+- **Mensagens de erro:** a chamada cheia, a que já acabou e o estar ocupado têm cada um o seu texto.
+- **Nome nas chamadas de grupo:** fica na base cifrada, sem caracteres invisíveis.
+- **iPhone:** o microfone entrega blocos de ~10 ms, com melhor som. Texto da rede local nas 10 línguas.
+- **Grupos:** quem te adiciona sem estar nos teus contactos aparece como convite, e o grupo só entra
+  depois de aceitares. O nome de um grupo só muda de 24 em 24 horas: até lá, o botão fica indisponível.
+- **Mensagens:** ao receber uma mensagem de um contacto com quem já não há sessão, abre-se uma nova e
+  o que faltava volta a seguir. A primeira mensagem depois de a app estar parada sai logo.
+- **Núcleo:** recusa chaves X25519 de ordem pequena, zera as chaves depois de preparar a cópia de
+  recuperação, limpa a tabela de deduplicação e os sinais de chamada que não saíram.
+- **Android:** painel de diagnóstico desligado nas builds de publicação (`-PqtCallDiag=true` para o
+  ligar) e `isShrinkResources` ligado.
+- **CI:** `cargo clippy --all-targets`. README: o servidor não guarda quem enviou (texto corrigido).
+
 ### 5 de novembro de 2026: relays: limites de uso por conta (sem atualizar as apps)
 
 - **Relay das mensagens:** limites por conta em bytes por dia (filas, cópias de recuperação, saída),

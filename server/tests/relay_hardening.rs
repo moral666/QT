@@ -43,7 +43,7 @@ async fn recv(ws: &mut ws_transport::ClientWsStream, n: &mut qt_transport::Noise
     deserialize_server_message(&b).map_err(|_| ())
 }
 async fn authenticate(ws: &mut ws_transport::ClientWsStream, n: &mut qt_transport::NoiseTransport, s: &SigningKeyPair) {
-    let m = auth_msg(s, &n.handshake_hash().to_vec());
+    let m = auth_msg(s, n.handshake_hash());
     send(ws, n, &m).await;
 }
 fn auth_msg(s: &SigningKeyPair, hash: &[u8]) -> ClientMessage {
