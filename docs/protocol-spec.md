@@ -1401,9 +1401,12 @@ Testes: `core/src/community.rs`, `ffi/tests/community.rs`, `server/tests/relay_c
 
 ## 27. Chamadas de grupo (desde a app 0.9.62)
 
-> **Desde a 0.9.70 os grupos não têm chamadas.** As apps não ligam a grupos e ignoram o tipo 14
-> que chegue de uma app 0.9.62 a 0.9.69 (não toca, nem dá "ocupado"). O formato abaixo fica como
-> registo; as chamadas de grupo vão começar numa chamada normal ("Adicionar à ligação").
+> **Desde a 0.9.70 os grupos não têm chamadas.** Desde a 0.9.71 a chamada de grupo começa numa
+> chamada a dois, com "Adicionar à ligação", e tem a sua própria lista de participantes. Corpo do
+> tipo 14: `[1 op][16 id da chamada]` e: op 9 convite `[1 flags: bit0 vídeo, bit1 vem da chamada a
+> dois][lista]`, op 10 entrei (vazio), op 11 sai (vazio), op 12 adicionado `[lista dos novos]`; lista
+> = `[1 n, 1..=5][n x 64 public ID]`. Os ops 4 a 8 (pernas, endereços, câmara, nome) ficam iguais.
+> Os ops 1 a 3 (com o id do grupo, 0.9.62 a 0.9.69) são ignorados. O texto abaixo é o da 0.9.62.
 
 O que as apps fazem:
 

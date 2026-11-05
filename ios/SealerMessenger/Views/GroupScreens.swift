@@ -240,3 +240,58 @@ struct AddMembersSheet: View {
         .presentationBackground(c.surface)
     }
 }
+
+/// Na chamada: eu e mais 4 (como no nucleo, `MAX_GROUP_CALL`).
+let callMaxPeople = 5
+
+/// "ADICIONAR A LIGACAO" (0.9.71): escolher contactos para a chamada, com o desenho do
+/// "Adicionar pessoas" dos grupos. `inCall`: quem ja esta (nao aparece); `room`: quantos cabem.
+struct AddToCallSheet: View {
+    let ui: UiState
+    let inCall: Set<String>
+    let room: Int
+    let onAdd: ([Contact]) -> Void
+    @State private var chosen = Set<String>()
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.chat) private var c
+
+    var body: some View {
+        let choices = ui.contacts.filter { !inCall.contains($0.contactId) && !ui.blocked.contains($0.contactId) }
+        VStack(alignment: .leading, spacing: 10) {
+            Text(s("call_add")).font(Jakarta.font(22, .bold))
+            Text(s("t_ainda_cabem_escolhidos", room, chosen.count)).font(.sBodySmall)
+            if choices.isEmpty { Text(s("t_nao_ha_contactos_para_adicionar")).font(.sBodyMedium) }
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(choices) { ct in
+                        let on = chosen.contains(ct.contactId)
+                        let can = on || chosen.count < room
+                        Button {
+                            if on { chosen.remove(ct.contactId) } else if can { chosen.insert(ct.contactId) }
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: on ? "checkmark.square.fill" : "square").font(.system(size: 20))
+                                    .foregroundStyle(can ? c.primary : c.outlineVariant)
+                                Text(ct.nickname).lineLimit(1)
+                                Spacer()
+                            }
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            HStack {
+                Spacer()
+                Button(s("t_cancelar")) { dismiss() }
+                Button(s("t_adicionar")) { onAdd(choices.filter { chosen.contains($0.contactId) }) }
+                    .disabled(chosen.isEmpty).padding(.leading, 16)
+            }
+            .font(Jakarta.font(15, .semibold))
+        }
+        .padding(24)
+        .presentationDetents([.medium, .large])
+        .presentationBackground(c.surface)
+    }
+}

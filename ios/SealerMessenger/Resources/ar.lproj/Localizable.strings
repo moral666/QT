@@ -10,6 +10,7 @@
 "badge_support" = "Support";
 "badge_tester" = "Tester";
 "badge_troll" = "Troll";
+"call_add" = "إضافة إلى المكالمة";
 "call_banner_back" = "النقر للعودة إلى المكالمة";
 "call_camera" = "الكاميرا";
 "call_diag_copied" = "تم نسخ التشخيص";
@@ -39,6 +40,7 @@
 "full_screen_title" = "المكالمات بملء الشاشة";
 "gcall_from" = "%1$@ يتصل";
 "gcall_full" = "المكالمة الجماعية تضم 5 أشخاص بالفعل.";
+"gcall_join" = "الانضمام إلى المكالمة";
 "gcall_me" = "أنا";
 "gcall_name_text" = "من ليس لديك في جهات اتصاله سيرى هذا الاسم.";
 "gcall_name_title" = "اسمك في هذه المكالمة";

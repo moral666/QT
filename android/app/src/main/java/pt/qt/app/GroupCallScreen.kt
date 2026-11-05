@@ -110,6 +110,8 @@ fun GroupCallScreen(
     onClearSurface: (String, Surface) -> Unit,
     /** Testers (`CallDiag`): premir o tempo da chamada abre os numeros. `null` = desligado. */
     diagnostic: (() -> String?)? = null,
+    /** "Adicionar a ligacao" (0.9.71): qualquer participante. `null` = sem o botao (chamada cheia). */
+    onAdd: (() -> Unit)? = null,
 ) {
     val colors = LocalChatColors.current
     val context = LocalContext.current
@@ -154,14 +156,14 @@ fun GroupCallScreen(
     ) {
         Box(Modifier.fillMaxSize().safeDrawingPadding()) {
             if (!g.joined) {
-                // A tocar: o grupo, quem chama, Recusar / Atender.
+                // A tocar: quem chama, Recusar / Atender.
                 Column(
                     Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = 112.dp, start = 24.dp, end = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Avatar(g.groupName, g.groupId, sizeDp = 120)
+                    Avatar(g.title, g.fromId, sizeDp = 120)
                     Spacer(Modifier.height(20.dp))
-                    Text(g.groupName, style = MaterialTheme.typography.headlineMedium, color = colors.onTopBar, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(g.title, style = MaterialTheme.typography.headlineMedium, color = colors.onTopBar, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(8.dp))
                     Text(
                         s(if (g.video) R.string.gcall_video_title else R.string.gcall_title) + " · " + s(R.string.gcall_from, g.fromName),
@@ -204,7 +206,7 @@ fun GroupCallScreen(
             }
             AnimatedVisibility(visible, Modifier.align(Alignment.TopCenter), enter = fadeIn(), exit = fadeOut()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(g.groupName, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(g.title, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     val press = if (diagnostic != null) Modifier.pointerInput(Unit) { detectTapGestures(onLongPress = { showDiag = true }) } else Modifier
                     Box(press) { GroupCallClock(g.startedAt) }
                 }
@@ -223,6 +225,7 @@ fun GroupCallScreen(
                         ToggleRound(SpeakerIcon, s(R.string.t_altifalante), on = g.speakerOn, onClick = touched(onSpeaker))
                         ToggleRound(if (g.camera) VideoCallIcon else VideoOffIcon, s(R.string.call_camera), on = g.camera, onClick = touched(onCamera))
                         ActionRound(SwitchCameraIcon, s(R.string.video_switch), enabled = g.camera, onClick = touched(onSwitchCamera))
+                        if (onAdd != null) ActionRound(AddCallIcon, s(R.string.call_add), enabled = true, onClick = touched(onAdd))
                     }
                     Spacer(Modifier.height(16.dp))
                     HangupButton(touched(onLeave))

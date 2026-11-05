@@ -34,6 +34,8 @@ struct CallScreen: View {
     var remoteLayer: AVSampleBufferDisplayLayer? = nil
     /// Toque longo no tempo da chamada: os numeros da chamada. `nil` = desligado.
     var diagnostic: (() -> String?)? = nil
+    /// "Adicionar a ligacao" (0.9.71), so com a chamada atendida. `nil` = sem o botao.
+    var onAddToCall: (() -> Void)? = nil
     @Environment(\.chat) private var c
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @State private var controlsShown = true
@@ -248,6 +250,9 @@ struct CallScreen: View {
                 .buttonStyle(.plain)
                 .disabled(!v.camera)
                 .accessibilityLabel(s("video_switch"))
+            }
+            if call.phase == .active, let onAddToCall {
+                ToggleRound(icon: "person.badge.plus", label: s("call_add"), on: false, action: touched(onAddToCall))
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)

@@ -162,6 +162,8 @@ fun CallScreen(
     onRemoteSurface: (Surface?) -> Unit = {},
     /** Testers (`CallDiag`): toque longo no tempo da chamada abre os numeros. `null` = desligado. */
     diagnostic: (() -> String?)? = null,
+    /** "Adicionar a ligacao" (0.9.71), so com a chamada atendida. `null` = sem o botao. */
+    onAddToCall: (() -> Unit)? = null,
 ) {
     val colors = LocalChatColors.current
     var showDiag by remember { mutableStateOf(false) }
@@ -304,6 +306,7 @@ fun CallScreen(
                                 onSpeaker = touched(onSpeaker),
                                 onRoute = { id -> touches++; onRoute(id) },
                                 onSwitchCamera = touched(onSwitchCamera),
+                                onAdd = if (active) onAddToCall?.let(touched) else null,
                             )
                             Spacer(Modifier.height(20.dp))
                             HangupButton(touched(onHangup))
@@ -420,6 +423,7 @@ private fun ControlBar(
     onSpeaker: () -> Unit,
     onRoute: (String) -> Unit,
     onSwitchCamera: () -> Unit,
+    onAdd: (() -> Unit)? = null,
 ) {
     val v = call.video
     Row(
@@ -440,6 +444,7 @@ private fun ControlBar(
             ToggleRound(if (v.camera) VideoCallIcon else VideoOffIcon, s(R.string.call_camera), on = v.camera, onClick = camera)
             ActionRound(SwitchCameraIcon, s(R.string.video_switch), enabled = v.camera, onClick = onSwitchCamera)
         }
+        if (onAdd != null) ActionRound(AddCallIcon, s(R.string.call_add), enabled = true, onClick = onAdd)
     }
 }
 

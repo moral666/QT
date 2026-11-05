@@ -66,3 +66,13 @@ val SwitchCameraIcon: ImageVector by lazy {
         "M10.95,21.96C6.23,21.49 2.47,17.73 2,13.01H0c0.66,7.97 8.51,12.58 15.43,10.48l-4.48,-4.48V21.96z",
     )
 }
+
+/** Adicionar a ligacao (0.9.71), "PersonAdd". */
+val AddCallIcon: ImageVector by lazy {
+    callIcon(
+        "Filled.PersonAdd",
+        "M15,12c2.21,0 4,-1.79 4,-4s-1.79,-4 -4,-4 -4,1.79 -4,4 1.79,4 4,4z" +
+            "M6,10L6,7L4,7v3L1,10v2h3v3h2v-3h3v-2L6,10z" +
+            "M15,14c-2.67,0 -8,1.34 -8,4v2h16v-2c0,-2.66 -5.33,-4 -8,-4z",
+    )
+}

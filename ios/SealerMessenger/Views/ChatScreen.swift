@@ -33,6 +33,8 @@ struct ChatScreen: View {
     let onCall: (Contact) -> Void
     /// Videochamada (so para contactos que disseram que tem video).
     var onVideoCall: (Contact) -> Void = { _ in }
+    /// Ha uma chamada de grupo a que esta pessoa me convidou e em que nao estou: "Entrar na chamada".
+    var onJoinOngoing: (() -> Void)? = nil
 
     @State private var deleteTarget: DeleteTarget?
     @State private var viewing: ChatMessage?
@@ -149,7 +151,13 @@ struct ChatScreen: View {
                     }
                 }
             }, actions: {
-                if let contact, !blocked, !invite {
+                if let onJoinOngoing, contact != nil, !blocked {
+                    Button(action: onJoinOngoing) {
+                        Label(s("gcall_join"), systemImage: "phone.fill").font(.sLabelLarge)
+                            .foregroundStyle(Color(hex: 0x2E9E5B))
+                    }
+                    .buttonStyle(.plain)
+                } else if let contact, !blocked, !invite {
                     if ui.videoContacts.contains(conversationId) {
                         TopBarIcon(systemName: "video.fill", label: s("video_call_button")) { onVideoCall(contact) }
                     }

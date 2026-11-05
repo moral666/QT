@@ -433,6 +433,8 @@
     <string name="gcall_from">%1$s ruft an</string>
     <string name="gcall_waiting">Warten, bis andere beitreten…</string>
     <string name="gcall_full">Der Gruppenanruf hat bereits 5 Personen.</string>
+    <string name="gcall_join">Anruf beitreten</string>
+    <string name="call_add">Zum Anruf hinzufügen</string>
     <string name="gcall_notice">Bei Gruppenanrufen ist deine Netzwerkadresse für die anderen Teilnehmer sichtbar.</string>
     <string name="gcall_me">Ich</string>
     <string name="gcall_name_title">Dein Name in diesem Anruf</string>

@@ -183,12 +183,10 @@ final class AppModel: ObservableObject {
             client: { [weak self] in self?.qt },
             flush: { [weak self] in await self?.flushOutbox() },
             nameOf: { [weak self] id in self?.ui.memberName(id) ?? id },
-            groupNameOf: { [weak self] gid in self?.ui.groups.first { $0.groupId == gid }?.name ?? "" },
             busy: { [weak self] in self?.ui.call.map { $0.phase != .ended } ?? false },
             onError: { [weak self] m in self?.showError(m) },
-            ensureGroupSessions: { [weak self] gid in
+            ensureSessions: { [weak self] ids in
                 guard let self, let client = self.qt else { return }
-                let ids = (try? await background { try client.groupMembersNeedingSession(groupId: gid) }) ?? []
                 await self.ensureSessions(client, ids)
             },
             isContact: { [weak self] cid in self?.ui.contacts.contains { $0.contactId == cid } ?? false }
@@ -2714,6 +2712,32 @@ final class AppModel: ObservableObject {
         case .noAnswer: return incoming ? s("t_chamada_perdida") : s("t_sem_resposta")
         case .cancelled: return incoming ? s("t_chamada_perdida") : s("t_chamada_cancelada")
         case .expired: return s("t_chamada_perdida")
+        case .group: return s("t_chamada_terminada")
+        }
+    }
+
+    /// A chamada a dois passou a chamada de grupo: para o microfone e sai do ecra, sem "terminada".
+    private func leaveCallForGroup() {
+        guard let c = ui.call else { return }
+        stopCallMedia()
+        if let uuid = callKitIds.removeValue(forKey: c.callId) { CallKitBridge.shared.reportEnded(uuid, reason: .remoteEnded) }
+        ui.call = nil
+    }
+
+    /// ADICIONAR A LIGACAO (0.9.71): contactos para a chamada a dois atendida (passa a chamada de
+    /// grupo) ou para a chamada de grupo em que estou. Como ligar, e premium.
+    func addToCall(_ chosen: [Contact]) {
+        guard !chosen.isEmpty else { return }
+        let ids = chosen.map(\.publicId)
+        Task {
+            if await premiumBlocked() { return }
+            if groupCalls.ui != nil {
+                groupCalls.add(ids, peer: nil, video: false) {}
+                return
+            }
+            guard let call = ui.call, call.phase == .active,
+                  let peer = ui.contacts.first(where: { $0.contactId == call.contactId }) else { return }
+            groupCalls.add(ids, peer: peer, video: call.video.camera) { [weak self] in self?.leaveCallForGroup() }
         }
     }
 
@@ -2721,6 +2745,7 @@ final class AppModel: ObservableObject {
         switch reason {
         case .hangup, .rejected, .busy: return .remoteEnded
         case .noAnswer, .cancelled, .expired: return incoming ? .unanswered : .remoteEnded
+        case .group: return .remoteEnded
         }
     }
 
@@ -2796,7 +2821,10 @@ final class AppModel: ObservableObject {
                     await videoOnAnswered(client, callId)
                 }
             case .ended(let callId, _, let reason):
-                if let c = ui.call, c.callId == callId, c.phase != .ended {
+                if reason == .group {
+                    // Passou a chamada de grupo (0.9.71): sem o ecra de "terminada".
+                    if let c = ui.call, c.callId == callId { leaveCallForGroup() }
+                } else if let c = ui.call, c.callId == callId, c.phase != .ended {
                     let incoming = c.phase == .incoming
                     endCallLocal(endText(reason, incoming: incoming), reason: callKitReason(reason, incoming: incoming))
                 } else if ui.call == nil || ui.call?.phase == .ended {

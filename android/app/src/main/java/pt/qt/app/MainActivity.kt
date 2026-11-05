@@ -523,6 +523,10 @@ fun AppRoot(
     val call = ui.call
     // Chamada de grupo (0.9.63): tem o seu ecra, por cima de tudo (menos do bloqueio).
     val groupCall by vm.groupCalls.ui.collectAsState()
+    // Chamadas a decorrer em que nao estou (recusei): "Entrar na chamada" na conversa com quem convidou.
+    val ongoingCalls by vm.groupCalls.ongoing.collectAsState()
+    // "Adicionar a ligacao" (0.9.71): a lista de contactos aberta.
+    var addingToCall by remember { mutableStateOf(false) }
     var groupNotice by remember { mutableStateOf<(() -> Unit)?>(null) }
     // O aviso do IP antes da primeira chamada de grupo; depois, as permissoes e a acao.
     // Depois do aviso: o nome para esta chamada (0.9.67), ja com o ultimo que usei.
@@ -555,6 +559,15 @@ fun AppRoot(
         GroupCallNotice(
             onAccept = { vm.groupCalls.acceptNotice(); groupNotice = null; act() },
             onDismiss = { groupNotice = null },
+        )
+    }
+    if (addingToCall) {
+        val g = groupCall
+        val inCall = g?.tiles?.map { it.contactId }?.toSet() ?: setOfNotNull(call?.contactId)
+        AddToCallDialog(
+            ui.contacts, ui.blocked, inCall, room = CALL_MAX_PEOPLE - 1 - inCall.size,
+            onAdd = { chosen -> addingToCall = false; withGroupNotice { vm.addToCall(chosen) } },
+            onDismiss = { addingToCall = false },
         )
     }
     var showPhoto by remember { mutableStateOf(false) }
@@ -591,6 +604,7 @@ fun AppRoot(
                 onSurface = { id, surface -> vm.groupCalls.setSurface(id, surface) },
                 onClearSurface = { id, surface -> vm.groupCalls.clearSurface(id, surface) },
                 diagnostic = if (CallDiag.enabled) ({ vm.groupCalls.diagnostic() }) else null,
+                onAdd = if (g.joined && g.tiles.size < CALL_MAX_PEOPLE - 1) ({ addingToCall = true }) else null,
             )
         }
         call != null && !ui.locked && !showCallBar -> {
@@ -610,6 +624,7 @@ fun AppRoot(
                 onVideoRespond = { r -> if (r == VideoResponse.VIEW_AND_CAMERA) withCamera { vm.respondVideo(r) } else vm.respondVideo(r) },
                 onSelfPreview = vm::setSelfPreview,
                 onRemoteSurface = vm::setRemoteSurface,
+                onAddToCall = { addingToCall = true },
                 diagnostic = if (CallDiag.enabled) vm::callDiagnostic else null,
             )
         }
@@ -674,6 +689,9 @@ fun AppRoot(
                 onVideoCall = { c -> requestCall(c, true) },
                 canReport = reportsAvailable(), onReport = vm::reportContact,
                 onDraftRestored = vm::draftRestored,
+                onJoinOngoing = if (chatId in ongoingCalls) ({
+                    withGroupNotice { withMic { withCamera { vm.groupCalls.rejoin(chatId) } } }
+                }) else null,
             )
         }
         showRecovery -> {
@@ -1406,6 +1424,8 @@ fun ChatScreen(
     canReport: Boolean = false,
     onReport: (String, List<String>, String) -> Unit = { _, _, _ -> },
     onDraftRestored: () -> Unit = {},
+    /** Ha uma chamada de grupo a que esta pessoa me convidou e em que nao estou: "Entrar na chamada". */
+    onJoinOngoing: (() -> Unit)? = null,
 ) {
     val colors = LocalChatColors.current
     var viewing by remember { mutableStateOf<ChatMessage?>(null) }
@@ -1454,7 +1474,13 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    if (contact != null && !blocked && !invite) {
+                    if (onJoinOngoing != null && contact != null && !blocked) {
+                        TextButton(onClick = onJoinOngoing) {
+                            Icon(Icons.Filled.Call, contentDescription = null, tint = CALL_GREEN)
+                            Spacer(Modifier.width(6.dp))
+                            Text(s(R.string.gcall_join), color = CALL_GREEN)
+                        }
+                    } else if (contact != null && !blocked && !invite) {
                         if (canVideoCall) {
                             IconButton(onClick = { onVideoCall(contact) }) { Icon(VideoCallIcon, contentDescription = s(R.string.video_call_button)) }
                         }

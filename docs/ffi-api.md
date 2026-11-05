@@ -90,12 +90,12 @@ testers, sem IPs nem IDs).
 | Método | O que faz |
 |---|---|
 | `groupCallNoticeAccepted()` / `groupCallAcceptNotice()` | O aviso das chamadas de grupo, mostrado uma vez antes da primeira. Sem "Aceitar" não se liga nem se entra. |
-| `groupCallStart(groupId, video)` / `groupCallJoin` / `groupCallLeave` | Ligar a um grupo, entrar na chamada que está a tocar, sair ou recusar. |
-| `groupCallOngoing(groupId)` / `groupCallRejoin` | A chamada a decorrer num grupo em que não estou, e entrar depois (0.9.65). |
+| `groupCallAdd(publicIds, video)` / `groupCallJoin` / `groupCallLeave` | "Adicionar à ligação" (0.9.71: numa chamada a dois passa a grupo; leva também o public ID de quem está comigo), entrar na chamada que está a tocar, sair ou recusar. `groupCallNeedingSession(callId)`: public IDs da lista sem sessão. |
+| `groupCallOngoing(contactId)` / `groupCallRejoin` | A chamada a decorrer em que não estou, a que esse contacto me convidou, e entrar depois (0.9.65; desde a 0.9.71 pela conversa com quem convidou). |
 | `groupCallSetName(callId, name)` | O meu nome nesta chamada, até 32 caracteres (0.9.67). |
 | `groupCallSetCamera(on)` | Ligar ou desligar a minha câmara. |
 | `groupCallEvents()` | Eventos desde a última vez. Chamar depois de cada lote de `receiveSealed` e de segundo a segundo durante a chamada. |
-| `groupCallCurrent()` / `groupCallGroup` / `groupCallIsVideo` / `groupCallParticipants` | Estado da chamada e quem está nela. |
+| `groupCallCurrent()` / `groupCallFrom` / `groupCallIsVideo` / `groupCallParticipants` | Estado da chamada, quem convidou e quem está nela. |
 
 `groupCallAudioStart(…) → GroupAudio` arranca o áudio e o vídeo da chamada. O objeto
 `GroupAudio`: `pushCapture` / `pullPlayback` (a mistura de todos), `speaker()` (quem fala, para

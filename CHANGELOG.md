@@ -6,6 +6,25 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 5 de novembro de 2026: "Adicionar à ligação" (Android e iPhone 0.9.71, build 71)
+
+- **As chamadas de grupo começam numa chamada normal.** Na chamada a dois atendida (e na chamada de
+  grupo) há o botão "Adicionar à ligação", que abre a lista de contactos. Qualquer participante pode
+  adicionar contactos seus, até 5 pessoas na chamada. Como fazer uma chamada, é premium.
+- **Da chamada a dois para a de grupo:** a chamada a dois acaba dos dois lados sem o ecrã de
+  "Chamada terminada" (`CallEndReason::Group`); quem estava na chamada entra sozinho na de grupo, sem
+  tocar, e os contactos adicionados recebem o convite (toca).
+- **Núcleo:** cada chamada de grupo tem a sua lista de quem pode estar nela (o public ID de cada um),
+  que vai no convite e no "adicionado". Quem não é contacto de outro participante abre a sessão com
+  ele pela lista (`group_call_needing_session`), como nos grupos. Só se aceitam "entrei" e ofertas de
+  perna de quem está na lista. API nova: `group_call_add`, `group_call_needing_session` e
+  `group_call_from`; saem `group_call_start` e `group_call_group`. Formato: ops 9 a 12 do tipo 14
+  (`docs/protocol-spec.md` §27); os ops 1 a 3 das apps 0.9.62 a 0.9.69 são ignorados.
+- **"Entrar na chamada"** (quem recusou ou não atendeu) passa para a conversa com quem convidou.
+- Textos novos: `call_add` ("Adicionar à ligação") nas dez línguas; volta o `gcall_join`.
+- Testes: `chamada_a_dois_passa_a_grupo_ao_adicionar` e
+  `qualquer_participante_adiciona_quem_os_outros_nao_conhecem` (`ffi/src/group_call.rs`).
+
 ### 5 de novembro de 2026: grupos sem chamadas (Android e iPhone 0.9.70, build 70)
 
 - **Os grupos são só para mensagens:** texto, mensagens de voz, fotos, GIFs e ficheiros. Saem do
