@@ -39,7 +39,6 @@
 "full_screen_title" = "Chiamate a schermo intero";
 "gcall_from" = "%1$@ sta chiamando";
 "gcall_full" = "La chiamata di gruppo ha già 5 persone.";
-"gcall_join" = "Partecipa alla chiamata";
 "gcall_me" = "Io";
 "gcall_name_text" = "Chi non ti ha nei contatti vedrà questo nome.";
 "gcall_name_title" = "Il tuo nome in questa chiamata";

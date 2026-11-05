@@ -435,7 +435,6 @@
     <string name="gcall_full">La llamada de grupo ya tiene 5 personas.</string>
     <string name="gcall_notice">En las llamadas de grupo, tu dirección de red es visible para los demás participantes.</string>
     <string name="gcall_me">Yo</string>
-    <string name="gcall_join">Unirse a la llamada</string>
     <string name="gcall_name_title">Tu nombre en esta llamada</string>
     <string name="gcall_name_text">Quien no te tenga en sus contactos verá este nombre.</string>
 </resources>

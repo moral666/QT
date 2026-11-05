@@ -39,7 +39,6 @@
 "full_screen_title" = "全屏来电";
 "gcall_from" = "%1$@ 正在呼叫";
 "gcall_full" = "群组通话已有 5 人。";
-"gcall_join" = "加入通话";
 "gcall_me" = "我";
 "gcall_name_text" = "没有把你加为联系人的人会看到这个名字。";
 "gcall_name_title" = "你在本次通话中的名字";

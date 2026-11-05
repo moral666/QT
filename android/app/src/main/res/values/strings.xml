@@ -440,7 +440,6 @@
     <string name="gcall_full">A chamada de grupo já tem 5 pessoas.</string>
     <string name="gcall_notice">Nas chamadas de grupo, o teu endereço de rede fica visível aos outros participantes.</string>
     <string name="gcall_me">Eu</string>
-    <string name="gcall_join">Entrar na chamada</string>
     <string name="gcall_name_title">O teu nome nesta chamada</string>
     <string name="gcall_name_text">Quem não te tem nos contactos vê este nome.</string>
 </resources>

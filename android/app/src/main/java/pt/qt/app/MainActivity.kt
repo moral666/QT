@@ -523,7 +523,6 @@ fun AppRoot(
     val call = ui.call
     // Chamada de grupo (0.9.63): tem o seu ecra, por cima de tudo (menos do bloqueio).
     val groupCall by vm.groupCalls.ui.collectAsState()
-    val ongoingCalls by vm.groupCalls.ongoing.collectAsState()
     var groupNotice by remember { mutableStateOf<(() -> Unit)?>(null) }
     // O aviso do IP antes da primeira chamada de grupo; depois, as permissoes e a acao.
     // Depois do aviso: o nome para esta chamada (0.9.67), ja com o ultimo que usei.
@@ -651,12 +650,6 @@ fun AppRoot(
                 onSendFile = { uri -> vm.sendFileTo(openGroup.conversationId, uri) },
                 onSendVoice = { file, ms -> vm.sendVoiceTo(openGroup.conversationId, file, ms) },
                 onDraftRestored = vm::draftRestored,
-                onCall = { video ->
-                    withGroupNotice { withMic { if (video) withCamera { vm.groupCalls.start(openGroup.groupId, true) } else vm.groupCalls.start(openGroup.groupId, false) } }
-                },
-                onJoinOngoing = if (openGroup.groupId in ongoingCalls) ({
-                    withGroupNotice { withMic { withCamera { vm.groupCalls.rejoin(openGroup.groupId) } } }
-                }) else null,
             )
         }
         ui.openChatId?.startsWith("g:") == true -> {

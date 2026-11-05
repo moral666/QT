@@ -433,7 +433,6 @@
     <string name="gcall_full">このグループ通話はすでに5人です。</string>
     <string name="gcall_notice">グループ通話では、あなたのネットワークアドレスが他の参加者に表示されます。</string>
     <string name="gcall_me">自分</string>
-    <string name="gcall_join">通話に参加</string>
     <string name="gcall_name_title">この通話での名前</string>
     <string name="gcall_name_text">あなたを連絡先に登録していない人にはこの名前が表示されます。</string>
 </resources>

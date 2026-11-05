@@ -39,7 +39,6 @@
 "full_screen_title" = "Appels en plein écran";
 "gcall_from" = "%1$@ appelle";
 "gcall_full" = "L’appel de groupe compte déjà 5 personnes.";
-"gcall_join" = "Rejoindre l’appel";
 "gcall_me" = "Moi";
 "gcall_name_text" = "Les personnes qui ne t’ont pas dans leurs contacts verront ce nom.";
 "gcall_name_title" = "Ton nom dans cet appel";

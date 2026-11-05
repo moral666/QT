@@ -1,5 +1,11 @@
 //! Chamadas de GRUPO (0.9.62): ate 5 pessoas (eu e mais 4), voz e video.
 //!
+//! 0.9.70 (decisao do Nuno, 05/11/2026): os GRUPOS deixam de ter chamadas. Os grupos sao so
+//! para mensagens (texto, voz, fotos, GIFs e ficheiros). Ligar a um grupo da erro
+//! (`group_call_off`) e o tipo 14 que chegue de uma app 0.9.62 a 0.9.69 e ignorado em silencio
+//! (nao toca, nao fica "ocupado", nao aparece "Entrar na chamada"). O motor da malha fica:
+//! as chamadas de grupo vao comecar numa chamada normal ("Adicionar a ligacao").
+//!
 //! DESENHO (aprovado pelo Nuno a 30/10/2026):
 //!   * Uma chamada de grupo e uma MALHA de chamadas a dois ("pernas"): cada par de
 //!     participantes tem a sua perna, com chaves proprias (`qt_core::call`, da oferta E da
@@ -185,9 +191,24 @@ pub(crate) struct GroupCalls {
     /// So nos testes: outro prazo para `LEG_SILENT_MS`.
     #[cfg(all(test, feature = "calls"))]
     leg_timeout: Option<i64>,
+    /// So nos testes do motor da malha: as chamadas nos grupos ligadas (como ate a 0.9.69).
+    #[cfg(test)]
+    in_groups_for_tests: bool,
 }
 
 impl GroupCalls {
+    /// Ha chamadas nos grupos? Desde a 0.9.70 nunca (so os testes do motor as ligam).
+    fn in_groups(&self) -> bool {
+        #[cfg(test)]
+        {
+            self.in_groups_for_tests
+        }
+        #[cfg(not(test))]
+        {
+            false
+        }
+    }
+
     pub(crate) fn in_call(&self) -> bool {
         self.cur.as_ref().is_some_and(|g| g.state == State::Joined)
     }
@@ -483,6 +504,10 @@ pub(crate) fn on_group_call(client: &QtClient, c: &st::rusqlite::Connection, cid
         (calls.in_call(), calls.own_relay.clone())
     };
     let mut gc = crate::client::relock(&client.group_calls);
+    // 0.9.70: sem chamadas nos grupos. Tudo o que chegue de uma app antiga fica por aqui.
+    if !gc.in_groups() {
+        return Ok(no_change);
+    }
     // Um toque antigo (recebido em segundo plano, sem `group_call_events`) acaba antes de
     // decidir: senao um convite novo dava "ocupado".
     expire(&mut gc);
@@ -840,6 +865,9 @@ impl QtClient {
     /// LIGAR a um grupo (de que faco parte). Os convites ficam na outbox (tocam a campainha
     /// de cada membro). Eu fico ja na chamada, a espera de quem entrar.
     pub fn group_call_start(&self, group_id: String, video: bool) -> Result<GroupCallStart, QtError> {
+        if !crate::client::relock(&self.group_calls).in_groups() {
+            return Err(bad("group_call_off"));
+        }
         let c = self.lock()?;
         if !notice_accepted(&c)? {
             return Err(bad("group_call_notice"));
@@ -1505,6 +1533,7 @@ mod ring_tests {
         let _ = std::fs::remove_file(&path);
         let c = QtClient::open(path, vec![0x60 + n as u8; 32]).unwrap();
         let id = c.create_identity().unwrap();
+        crate::client::relock(&c.group_calls).in_groups_for_tests = true;
         Peer { c, id }
     }
 
@@ -1528,6 +1557,49 @@ mod ring_tests {
         flush(a, &[b]);
         b.c.send_text(cid(a), "ola!".into()).unwrap();
         flush(b, &[a]);
+    }
+
+    /// 0.9.70: sem chamadas nos grupos. Ligar a um grupo da erro, e o convite (e o \"entrei\")
+    /// de uma app 0.9.62 a 0.9.69 nao toca, nao deixa \"ocupado\" nem mostra \"Entrar na chamada\".
+    #[test]
+    fn grupos_sem_chamadas_e_convite_de_app_antiga_ignorado() {
+        let peers: Vec<Peer> = (0..3).map(|i| peer(&format!("s{i}"))).collect();
+        for i in 0..3 {
+            for j in i + 1..3 {
+                connect(&peers[i], &peers[j]);
+            }
+        }
+        let members = peers[1..].iter().map(|p| p.id.public_id.clone()).collect();
+        let gid = peers[0].c.group_create("Amigos".into(), members).unwrap().group_id;
+        let all: Vec<&Peer> = peers.iter().collect();
+        for p in &all {
+            flush(p, &all);
+        }
+        for p in &peers {
+            p.c.group_call_accept_notice().unwrap();
+        }
+        // B e C ja sao 0.9.70; A faz de app antiga (com as chamadas nos grupos).
+        for p in &peers[1..] {
+            crate::client::relock(&p.c.group_calls).in_groups_for_tests = false;
+            assert!(p.c.group_call_start(gid.clone(), true).is_err(), "nao se liga a um grupo");
+            assert!(p.c.outbox().unwrap().is_empty(), "nenhum convite saiu");
+        }
+        peers[0].c.group_call_start(gid.clone(), true).unwrap();
+        flush(&peers[0], &all);
+        for p in &peers[1..] {
+            assert_eq!(p.c.group_call_current().unwrap(), None, "o convite antigo nao toca");
+            assert!(p.c.group_call_events().unwrap().is_empty(), "sem eventos de grupo");
+            assert_eq!(p.c.group_call_ongoing(gid.clone()).unwrap(), None, "sem \"Entrar na chamada\"");
+        }
+        // E nao fica \"ocupado\": uma chamada a dois de C para B toca.
+        let call = peers[2].c.call_start(cid(&peers[1])).unwrap();
+        flush(&peers[2], &all);
+        let ev = peers[1].c.call_events().unwrap();
+        assert!(
+            ev.iter().any(|e| matches!(e, CallEvent::Incoming { call_id, .. } if *call_id == call.call_id)),
+            "a chamada a dois toca em B: {ev:?}"
+        );
+        peers[1].c.call_hangup(call.call_id).unwrap();
     }
 
     /// Um convite de grupo chega com a app em segundo plano: ninguem chama
@@ -1700,6 +1772,7 @@ mod mesh_tests {
             let _ = std::fs::remove_file(&path);
             let c = QtClient::open(path, vec![0x40 + n as u8; 32]).unwrap();
             let id = c.create_identity().unwrap();
+            crate::client::relock(&c.group_calls).in_groups_for_tests = true;
             Peer { c, id }
         }
         fn cid(&self) -> String {
