@@ -206,24 +206,28 @@ async fn bloqueio_premium_recusa_anexos_e_chamadas_a_quem_nao_tem() {
     let r = op.request(ClientMessage::AdminPremiumEnforce { on: None }).await.unwrap();
     assert!(matches!(r, ServerMessage::PremiumEnforce { on: true }), "{r:?}");
 
-    // Sem premium: anexos e chamadas recusados; texto, fim de chamada e receber continuam.
+    // Sem premium: anexos grandes e chamadas recusados; texto, voz (anexo pequeno, 0.9.73), fim de
+    // chamada e receber continuam.
     assert!(matches!(a.request(ClientMessage::PremiumStatus).await.unwrap(), ServerMessage::Premium { until_ms: 0, enforced: true, active: false }));
-    assert!(refused(&a.request(ClientMessage::BlobCreate { size: 10 }).await.unwrap()));
+    let big = qt_server::protocol::FREE_BLOB_MAX + 1;
+    assert!(refused(&a.request(ClientMessage::BlobCreate { size: big }).await.unwrap()));
+    let voz = a.request(ClientMessage::BlobCreate { size: qt_server::protocol::FREE_BLOB_MAX }).await.unwrap();
+    assert!(matches!(voz, ServerMessage::BlobCreated { .. }), "a voz passa sem premium: {voz:?}");
     assert!(refused(&a.request(call(Some(WakeKind::Call))).await.unwrap()));
     assert!(matches!(a.request(call(None)).await.unwrap(), ServerMessage::Ack));
     assert!(matches!(a.request(call(Some(WakeKind::CallEnd))).await.unwrap(), ServerMessage::Ack));
 
     // Premium que ja acabou nao conta.
     op.request(ClientMessage::AdminGrantPremium { user_id: uid(&alice), until_ms: 1_000 }).await.unwrap();
-    assert!(refused(&a.request(ClientMessage::BlobCreate { size: 10 }).await.unwrap()));
+    assert!(refused(&a.request(ClientMessage::BlobCreate { size: big }).await.unwrap()));
 
     // Com premium: passa.
     op.request(ClientMessage::AdminGrantPremium { user_id: uid(&alice), until_ms: 4_102_444_800_000 }).await.unwrap();
-    assert!(matches!(a.request(ClientMessage::BlobCreate { size: 10 }).await.unwrap(), ServerMessage::BlobCreated { .. }));
+    assert!(matches!(a.request(ClientMessage::BlobCreate { size: big }).await.unwrap(), ServerMessage::BlobCreated { .. }));
     assert!(matches!(a.request(call(Some(WakeKind::Call))).await.unwrap(), ServerMessage::Ack));
 
     // Desligar o bloqueio: o Bob (sem premium) volta a enviar anexos.
     let r = op.request(ClientMessage::AdminPremiumEnforce { on: Some(false) }).await.unwrap();
     assert!(matches!(r, ServerMessage::PremiumEnforce { on: false }), "{r:?}");
-    assert!(matches!(b.request(ClientMessage::BlobCreate { size: 10 }).await.unwrap(), ServerMessage::BlobCreated { .. }));
+    assert!(matches!(b.request(ClientMessage::BlobCreate { size: big }).await.unwrap(), ServerMessage::BlobCreated { .. }));
 }

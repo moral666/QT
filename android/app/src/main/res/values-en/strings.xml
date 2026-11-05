@@ -382,8 +382,8 @@
     <string name="premium_unlocks">Premium unlocks:</string>
     <string name="premium_perk_calls">Making encrypted voice calls</string>
     <string name="premium_perk_groups">Creating groups</string>
-    <string name="premium_perk_media">Sending photos, GIFs, voice messages and files up to 25 MB</string>
-    <string name="premium_perk_receive">Without Premium you still receive everything and answer calls</string>
+    <string name="premium_perk_media">Sending photos, GIFs and files up to 25 MB</string>
+    <string name="premium_perk_receive">Without Premium you can still send text and voice messages (up to 10 s), receive everything and answer calls</string>
     <string name="premium_active_short">Premium active</string>
     <string name="premium_soon">Coming soon on Google Play</string>
     <string name="premium_all_open">For now, every feature is open to everyone.</string>

@@ -387,8 +387,8 @@
     <string name="premium_unlocks">O Premium desbloqueia:</string>
     <string name="premium_perk_calls">Fazer chamadas de voz cifradas</string>
     <string name="premium_perk_groups">Criar grupos</string>
-    <string name="premium_perk_media">Enviar fotos, GIFs, mensagens de voz e ficheiros até 25 MB</string>
-    <string name="premium_perk_receive">Sem Premium continuas a receber tudo e a atender chamadas</string>
+    <string name="premium_perk_media">Enviar fotos, GIFs e ficheiros até 25 MB</string>
+    <string name="premium_perk_receive">Sem Premium continuas a enviar mensagens de texto e de voz (até 10 s), a receber tudo e a atender chamadas</string>
     <string name="premium_active_short">Premium ativo</string>
     <string name="premium_soon">Em breve na Google Play</string>
     <string name="premium_all_open">De momento, todas as funções estão abertas a toda a gente.</string>

@@ -84,8 +84,8 @@
 "premium_free_text" = "テキストメッセージは、今もこれからもずっと無料です。";
 "premium_perk_calls" = "暗号化された音声通話の発信";
 "premium_perk_groups" = "グループの作成";
-"premium_perk_media" = "写真、GIF、ボイスメッセージ、25 MBまでのファイルの送信";
-"premium_perk_receive" = "Premiumがなくても、すべて受信でき、通話に応答できます";
+"premium_perk_media" = "写真、GIF、25 MBまでのファイルの送信";
+"premium_perk_receive" = "Premiumがなくても、テキストとボイスメッセージ（10秒まで）を送信でき、すべて受信でき、通話に応答できます";
 "premium_price" = "年額5ユーロ";
 "premium_soon" = "Google Playで近日提供予定";
 "premium_title" = "Sealer Premium";
