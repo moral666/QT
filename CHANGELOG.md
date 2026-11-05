@@ -6,6 +6,22 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 5 de novembro de 2026: mudar o nome de um contacto e compilação sem avisos (Android e iPhone 0.9.72, build 72)
+
+- **Mudar o nome de um contacto:** na conversa, no menu (⋮ no Android, … no iPhone), "Mudar o
+  nome". Para corrigir um nome mal guardado: a primeira mudança é logo; depois há 10 minutos entre
+  cada mudança (a janela diz quanto falta e o "Guardar" fica desligado). Guardar outra vez o mesmo
+  ID com outro nome conta como mudança. O nome fica só no telemóvel (e, cifrado, na cópia da chave
+  de recuperação, que é atualizada). Na lista dos contactos, o campo novo `t` (quando mudou, em ms)
+  é opcional: os ficheiros antigos abrem como antes. Teste: `ContactRenameTest` (Android).
+- Texto novo: `contact_rename_wait` nas dez línguas.
+- **Site e README:** o cartão "Chamadas de grupo" diz que começam numa chamada normal, com
+  "Adicionar à ligação", nas dez línguas.
+- **Sem avisos ao compilar:** o `vendor/tungstenite` usa `usize::MAX` em vez de
+  `usize::max_value()` (o mesmo valor). O núcleo sem o motor das chamadas (bindings em Python) já
+  não avisa de código por usar; sai um campo que não era lido (`from_call` na chamada de grupo).
+  Verificado sem avisos com as features pq, pq+legacy-api, calls, android e ios.
+
 ### 5 de novembro de 2026: "Adicionar à ligação" (Android e iPhone 0.9.71, build 71)
 
 - **As chamadas de grupo começam numa chamada normal.** Na chamada a dois atendida (e na chamada de

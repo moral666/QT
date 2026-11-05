@@ -42,6 +42,9 @@ struct ChatScreen: View {
     @State private var showAdd = false
     @State private var confirmBlock = false
     @State private var showReport = false
+    /// "Mudar o nome" do contacto (0.9.72), com o intervalo de 10 minutos entre mudancas.
+    @State private var showRename = false
+    @State private var renameText = ""
     @Environment(\.chat) private var c
     @Environment(\.layoutDirection) private var layoutDirection
 
@@ -107,6 +110,18 @@ struct ChatScreen: View {
         }
         .sheet(isPresented: $showAdd) {
             AddContactSheet { n, p in model.addContact(nickname: n, publicId: p) }
+        }
+        .alert(s("t_mudar_o_nome"), isPresented: $showRename) {
+            let wait = contact?.renameWaitMs() ?? 0
+            if wait == 0 {
+                TextField(s("t_nome"), text: $renameText)
+                Button(s("t_guardar")) { model.renameContact(conversationId, nickname: renameText) }
+                    .disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            Button(s("t_cancelar"), role: .cancel) {}
+        } message: {
+            let wait = contact?.renameWaitMs() ?? 0
+            if wait > 0 { Text(s("contact_rename_wait", renameWaitMinutes(wait))) }
         }
         .alert(s("t_bloquear_2", name), isPresented: $confirmBlock) {
             Button(s("t_bloquear"), role: .destructive) { model.blockContact(conversationId) }
@@ -174,6 +189,12 @@ struct ChatScreen: View {
                     }
                     if reportsAvailable() {
                         Button(s("report"), systemImage: "exclamationmark.bubble") { showReport = true }
+                    }
+                    if let contact {
+                        Button(s("t_mudar_o_nome"), systemImage: "pencil") {
+                            renameText = contact.nickname
+                            showRename = true
+                        }
                     }
                     Button(s("t_eliminar_conversa_ou_contacto"), systemImage: "trash") {
                         deleteTarget = .choose(id: conversationId, name: name, hasHistory: !ui.chatMessages.isEmpty)

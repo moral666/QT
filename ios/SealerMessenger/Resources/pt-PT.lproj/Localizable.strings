@@ -27,6 +27,7 @@
 "community_title" = "Comunidade";
 "confirm_word" = "APAGAR";
 "confirm_word_alt" = "";
+"contact_rename_wait" = "Podes voltar a mudar o nome daqui a %1$@ min.";
 "contacts_unreadable_new" = "Começar lista nova";
 "contacts_unreadable_text" = "Não foi possível ler a lista de contactos guardada. Para não a perder, a app não grava nada por cima dela. Fecha e volta a abrir a app. Se o aviso continuar, podes começar uma lista nova (a antiga fica guardada à parte).";
 "contacts_unreadable_title" = "Os contactos não abriram";

@@ -6,12 +6,32 @@ struct Contact: Equatable, Hashable, Identifiable, Sendable {
     let nickname: String
     let publicId: String
     let relayId: String
+    /// Quando mudei o nome pela ultima vez (ms, 0 = nunca): ha um intervalo entre mudancas (0.9.72).
+    var renamedAt: Int64 = 0
 
     /// Identificador usado pelo QtClient = hex da chave publica de identidade (1.a metade do Public ID).
     var contactId: String { contactIdOf(publicId) }
 
     var id: String { contactId }
+
+    /// Quanto falta (ms) para poder voltar a mudar o nome: 0 = ja pode. A primeira mudanca e
+    /// sempre logo (para corrigir um nome mal escrito). Com o relogio atrasado, conta o intervalo
+    /// inteiro a partir de agora. Igual ao Android.
+    func renameWaitMs(now: Int64 = nowMs()) -> Int64 {
+        if renamedAt <= 0 { return 0 }
+        if now < renamedAt { return contactRenameCooldownMs }
+        return max(0, renamedAt + contactRenameCooldownMs - now)
+    }
 }
+
+/// Intervalo entre duas mudancas do nome de um contacto (decisao do Nuno, 0.9.72): 10 minutos.
+let contactRenameCooldownMs: Int64 = 10 * 60 * 1000
+
+/// Minutos que faltam, arredondados para cima (nunca 0 enquanto falta alguma coisa).
+func renameWaitMinutes(_ ms: Int64) -> Int64 { (ms + 59_999) / 60_000 }
+
+/// Agora, em ms desde 1970.
+func nowMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 
 /// contactId (64 hex) de um Public ID "qt1:...".
 func contactIdOf(_ publicId: String) -> String {
@@ -31,7 +51,8 @@ func contactIdOf(_ publicId: String) -> String {
 /// O ficheiro antigo (ate a 0.9.3: so `SecureBox.foreground`, sem cabecalho) continua a abrir e
 /// passa ao formato novo na gravacao seguinte. Mesmo JSON que o Android: [{"n","p","r"}].
 enum ContactStore {
-    private struct Row: Codable { let n: String; let p: String; let r: String }
+    /// `t` (0.9.72): quando mudei o nome (ms); sem ele nos ficheiros antigos e nunca.
+    private struct Row: Codable { let n: String; let p: String; let r: String; var t: Int64? = nil }
     private static let outerMagic = Data("QCB1".utf8)
     private static let innerMagic = Data("QCK1".utf8)
     private static let innerAad = Data("qt/contacts/v1".utf8)
@@ -65,7 +86,7 @@ enum ContactStore {
                 plain = outer
             }
             let rows = try JSONDecoder().decode([Row].self, from: plain)
-            return rows.map { Contact(nickname: $0.n, publicId: $0.p, relayId: $0.r) }
+            return rows.map { Contact(nickname: $0.n, publicId: $0.p, relayId: $0.r, renamedAt: $0.t ?? 0) }
         } catch {
             throw ContactsUnreadableError()
         }
@@ -93,7 +114,7 @@ enum ContactStore {
 
     static func save(_ contacts: [Contact], key: Data) throws {
         lock.lock(); defer { lock.unlock() }
-        let rows = contacts.map { Row(n: $0.nickname, p: $0.publicId, r: $0.relayId) }
+        let rows = contacts.map { Row(n: $0.nickname, p: $0.publicId, r: $0.relayId, t: $0.renamedAt > 0 ? $0.renamedAt : nil) }
         let plain = try JSONEncoder().encode(rows)
         guard let inner = try AES.GCM.seal(plain, using: SymmetricKey(data: key), authenticating: innerAad).combined else {
             throw SecureStoreError(message: "falha ao cifrar os contactos")

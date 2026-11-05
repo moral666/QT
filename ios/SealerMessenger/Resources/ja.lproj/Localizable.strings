@@ -27,6 +27,7 @@
 "community_title" = "コミュニティ";
 "confirm_word" = "削除";
 "confirm_word_alt" = "さくじょ";
+"contact_rename_wait" = "あと%1$@分で名前をもう一度変更できます。";
 "contacts_unreadable_new" = "新しいリストを始める";
 "contacts_unreadable_text" = "保存されている連絡先リストを読み込めませんでした。リストを失わないよう、アプリはその上に何も保存しません。アプリを閉じて、もう一度開いてください。このメッセージが続く場合は、新しいリストを始めることができます（古いリストは別に保管されます）。";
 "contacts_unreadable_title" = "連絡先を開けませんでした";

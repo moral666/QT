@@ -11,10 +11,33 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /** Contacto guardado na app. `publicId` = "qt1:" + hex(identidade 32B || assinatura 32B). */
-data class Contact(val nickname: String, val publicId: String, val relayId: String) {
+data class Contact(
+    val nickname: String,
+    val publicId: String,
+    val relayId: String,
+    /** Quando mudei o nome pela ultima vez (ms, 0 = nunca): ha um intervalo entre mudancas (0.9.72). */
+    val renamedAt: Long = 0L,
+) {
     /** Identificador usado pelo QtClient = hex da chave publica de identidade (1.a metade do Public ID). */
     val contactId: String get() = publicId.substring(4, 68)
+
+    /**
+     * Quanto falta (ms) para poder voltar a mudar o nome: 0 = ja pode. A primeira mudanca e
+     * sempre logo (para corrigir um nome mal escrito). Com o relogio atrasado, conta o intervalo
+     * inteiro a partir de agora.
+     */
+    fun renameWaitMs(now: Long = System.currentTimeMillis()): Long {
+        if (renamedAt <= 0L) return 0L
+        if (now < renamedAt) return CONTACT_RENAME_COOLDOWN_MS
+        return (renamedAt + CONTACT_RENAME_COOLDOWN_MS - now).coerceAtLeast(0L)
+    }
 }
+
+/** Intervalo entre duas mudancas do nome de um contacto (decisao do Nuno, 0.9.72): 10 minutos. */
+const val CONTACT_RENAME_COOLDOWN_MS = 10 * 60 * 1000L
+
+/** Minutos que faltam, arredondados para cima (nunca 0 enquanto falta alguma coisa). */
+fun renameWaitMinutes(ms: Long): Long = (ms + 59_999L) / 60_000L
 
 /**
  * Lista de contactos cifrada em repouso pelo Keystore (sao metadados: quem fala com quem).
@@ -83,7 +106,7 @@ class ContactStore(ctx: Context, private val box: KeystoreBox, private val bgBox
             val arr = JSONArray(String(plain, Charsets.UTF_8))
             (0 until arr.length()).map {
                 val o = arr.getJSONObject(it)
-                Contact(o.getString("n"), o.getString("p"), o.getString("r"))
+                Contact(o.getString("n"), o.getString("p"), o.getString("r"), o.optLong("t", 0L))
             }
         } catch (e: Exception) {
             throw ContactsUnreadableException(e)
@@ -121,7 +144,11 @@ class ContactStore(ctx: Context, private val box: KeystoreBox, private val bgBox
 
     fun save(contacts: List<Contact>, innerKey: ByteArray) = synchronized(lock) {
         val arr = JSONArray()
-        contacts.forEach { arr.put(JSONObject().put("n", it.nickname).put("p", it.publicId).put("r", it.relayId)) }
+        contacts.forEach { c ->
+            val o = JSONObject().put("n", c.nickname).put("p", c.publicId).put("r", c.relayId)
+            if (c.renamedAt > 0L) o.put("t", c.renamedAt)
+            arr.put(o)
+        }
         val sealed = bgBox.seal(sealInner(innerKey, arr.toString().toByteArray(Charsets.UTF_8)))
         val out = file.startWrite()
         try {

@@ -16,6 +16,8 @@ Mudancas (procurar "Sealer" no codigo):
 - `src/protocol/frame/mod.rs`: depois de tudo escrito, o buffer de escrita acima de
   8 KB e libertado.
 - `Cargo.toml`: sem os alvos `[[example]]` e `[[bench]]` (ficheiros nao copiados).
+- `src/protocol/frame/mod.rs` e `src/protocol/message.rs`: `usize::MAX` em vez de
+  `usize::max_value()` (o Rust novo avisa que esta obsoleto). O mesmo valor.
 
 O comportamento na rede e o mesmo. Ao subir o tokio-tungstenite para uma versao com
 outro tungstenite, rever se isto ainda faz falta (e medir de novo) antes de apagar.

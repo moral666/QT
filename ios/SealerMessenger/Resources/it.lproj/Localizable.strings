@@ -27,6 +27,7 @@
 "community_title" = "Community";
 "confirm_word" = "ELIMINA";
 "confirm_word_alt" = "";
+"contact_rename_wait" = "Potrai cambiare di nuovo il nome tra %1$@ min.";
 "contacts_unreadable_new" = "Nuovo elenco";
 "contacts_unreadable_text" = "Impossibile leggere l'elenco dei contatti salvato. Per non perderlo, l'app non salva nulla sopra. Chiudi e riapri l'app. Se l'avviso continua, puoi iniziare un nuovo elenco (quello vecchio viene conservato a parte).";
 "contacts_unreadable_title" = "Impossibile aprire i contatti";
