@@ -183,8 +183,7 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
     textos legais vale a versão portuguesa. Erros de tradução: Definições → "Reportar erro de
     tradução", ou o link no fim das páginas do site traduzido. O árabe é a única língua escrita da
     direita para a esquerda; os ecrãs foram adaptados.
-47. **Chamadas de grupo (desde a 0.9.62).** Com a app fechada, uma chamada de grupo não toca (só
-    as chamadas a dois). No iPhone, as chamadas de grupo ainda não usam o CallKit. Quem fica 60 s
+47. **Chamadas de grupo (desde a 0.9.62).** Quem fica 60 s
     sem rede sai da chamada (pode voltar a entrar enquanto ela decorre). Se duas pessoas entrarem
     ao mesmo tempo quando já há 4 na chamada, as duas entram e algumas pessoas não se ouvem umas às
     outras. É raro.

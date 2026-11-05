@@ -166,9 +166,9 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     store.delete_community(id).await.unwrap();
     assert!(store.list_community(0, 40_000).await.unwrap().0.is_empty());
     let h = "cd".repeat(32);
-    assert_eq!(store.community_keep(&[h.clone()]).await.unwrap(), vec![h.clone()]);
+    assert_eq!(store.community_keep(std::slice::from_ref(&h)).await.unwrap(), vec![h.clone()]);
     store.community_put_photo(&h, vec![8; 50]).await.unwrap();
-    assert!(store.community_keep(&[h.clone()]).await.unwrap().is_empty());
+    assert!(store.community_keep(std::slice::from_ref(&h)).await.unwrap().is_empty());
     store.community_publish(7, vec![9; 40]).await.unwrap();
     assert_eq!(store.community_version().await.unwrap(), 7);
     assert_eq!(store.community_index().await.unwrap(), Some((7, vec![9; 40])));

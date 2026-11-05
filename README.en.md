@@ -4,7 +4,7 @@
 
 **SEALER** is a private messenger: no phone number, no email, end-to-end encryption and post-quantum protection. **QT** is the name of the protocol and of this repository.
 
-**Status:** test version, in closed testing. Android app **0.9.73** (iPhone 0.9.73 not yet built), with two federated relays in the European Union (Stockholm and Spain).
+**Status:** test version, in closed testing. Android app **0.9.74** (iPhone 0.9.74 not yet built), with two federated relays in the European Union (Stockholm and Spain).
 
 [Ler em português →](README.md)
 
@@ -21,7 +21,7 @@
 Almost every messenger asks for your phone number. Even with encrypted messages, that record leaves a trail: who talks to whom, when and how often. QT answers this with engineering, not just a privacy policy:
 
 - **Your identity is a cryptographic key**, created on your phone. No phone number, email or username.
-- **End-to-end encryption** that not even the server can open. The server also does not know who sent each message.
+- **End-to-end encryption** that not even the server can open. The envelope does not say who sent it, and the server does not keep who sent each message.
 - **Open source**, so anyone can check what the app does.
 
 It is also a working example of "data protection by design", as the GDPR asks: every piece was built and tested for real, with automated tests confirming it does what it says.
@@ -102,7 +102,7 @@ Both apps use the **same Rust core** through UniFFI. All cryptography lives in R
 |---|---|
 | `core/` | Starting a session (X3DH and PQXDH) and encrypting each message (Double Ratchet, Sealed Sender) |
 | `transport/` | Connection protection (Noise Protocol over WebSocket) |
-| `server/` | The "postman": delivers messages without reading them or knowing who sent them, also from relay to relay (federation). Includes the call relay (UDP, anonymous rooms) |
+| `server/` | The "postman": delivers messages without reading them or keeping who sent them, also from relay to relay (federation). Includes the call relay (UDP, anonymous rooms) |
 | `call/` | Call engine: Opus 1.6 with DRED and neural PLC, adaptive jitter buffer |
 | `storage/` | Identity and chats on disk, encrypted (SQLCipher) |
 | `ffi/` | The bridge to Kotlin, Swift and Python: history, outbox, attachments, groups, calls |

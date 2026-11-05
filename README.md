@@ -4,7 +4,7 @@
 
 **SEALER** é um mensageiro privado: sem número de telefone, sem email, com cifra ponta a ponta e proteção pós-quântica. **QT** é o nome do protocolo e deste repositório.
 
-**Estado:** versão de testes, em testes fechados. App Android **0.9.73** (iPhone 0.9.73 por compilar), com dois relays em federação na União Europeia (Estocolmo e Espanha).
+**Estado:** versão de testes, em testes fechados. App Android **0.9.74** (iPhone 0.9.74 por compilar), com dois relays em federação na União Europeia (Estocolmo e Espanha).
 
 [Read this in English →](README.en.md)
 
@@ -21,7 +21,7 @@
 Quase todos os mensageiros pedem o número de telefone. Mesmo com as mensagens cifradas, esse registo deixa um rasto: quem fala com quem, quando e com que frequência. O QT responde a isto com engenharia, não só com uma política de privacidade:
 
 - **A tua identidade é uma chave criptográfica**, criada no telemóvel. Não há telefone, email nem nome de utilizador.
-- **Cifra ponta a ponta** que nem o servidor consegue abrir. O servidor também não sabe quem enviou cada mensagem.
+- **Cifra ponta a ponta** que nem o servidor consegue abrir. O envelope não diz quem o enviou, e o servidor não guarda quem enviou cada mensagem.
 - **Código aberto**, para qualquer pessoa poder verificar o que a app faz.
 
 É também um exemplo prático de "proteção de dados desde a conceção", como pede o RGPD: cada peça foi construída e testada a sério, com testes automáticos a confirmar que faz o que diz.
@@ -102,7 +102,7 @@ As duas apps usam o **mesmo núcleo em Rust** através do UniFFI. Toda a criptog
 |---|---|
 | `core/` | Começar a sessão (X3DH e PQXDH) e cifrar cada mensagem (Double Ratchet, Sealed Sender) |
 | `transport/` | Proteção da ligação (Noise Protocol sobre WebSocket) |
-| `server/` | O "carteiro": entrega mensagens sem as ler nem saber quem as enviou, também de relay para relay (federação). Inclui o relay das chamadas (UDP, salas anónimas) |
+| `server/` | O "carteiro": entrega mensagens sem as ler nem guardar quem as enviou, também de relay para relay (federação). Inclui o relay das chamadas (UDP, salas anónimas) |
 | `call/` | Motor das chamadas: Opus 1.6 com DRED e PLC neural, jitter buffer adaptativo |
 | `storage/` | Identidade e conversas no disco, cifradas (SQLCipher) |
 | `ffi/` | A ponte para Kotlin, Swift e Python: histórico, fila de saída, anexos, grupos, chamadas |

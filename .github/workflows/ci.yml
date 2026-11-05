@@ -51,7 +51,7 @@ jobs:
           python3 ffi/tests/test_noise_session.py
 
       - name: cargo clippy (lint estrito)
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: cargo audit (CVEs em dependências)
         run: |

@@ -138,8 +138,7 @@ async fn lista_publicada_lida_por_qualquer_conta_e_so_as_fotos_pedidas() {
         created_ms: 1,
         members: photos
             .iter()
-            .enumerate()
-            .map(|(_, (h, _))| community::Member { badge: 1, photo_hash: Some(*h) })
+            .map(|(h, _)| community::Member { badge: 1, photo_hash: Some(*h) })
             .collect(),
     };
     let index = community::build_index(&ISSUER, &ix).unwrap();
