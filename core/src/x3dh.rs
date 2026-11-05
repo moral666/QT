@@ -9,7 +9,7 @@
 //!   2. One-time pre-key (DH4), quando disponivel - fortalece a garantia de
 //!      forward secrecy logo na primeira mensagem.
 
-use crate::primitives::{dh, hkdf_derive, verify_signature, DhKeyPair, SigningKeyPair};
+use crate::primitives::{dh_unverified as dh, hkdf_derive, verify_signature, DhKeyPair, SigningKeyPair};
 use ed25519_dalek::{Signature, VerifyingKey};
 use thiserror::Error;
 use x25519_dalek::PublicKey;

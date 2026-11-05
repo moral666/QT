@@ -171,6 +171,7 @@ fn init_connection(conn: &Connection) -> Result<(), StorageError> {
             contact_id TEXT NOT NULL,
             envelope_id BLOB NOT NULL,
             seen_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            had_header INTEGER NOT NULL DEFAULT 1,
             PRIMARY KEY (contact_id, envelope_id)
         );
         -- Envelopes de contactos APAGADOS: so um hash (sem o contact_id em claro),
@@ -184,6 +185,13 @@ fn init_connection(conn: &Connection) -> Result<(), StorageError> {
     // 0.9.52. Com secure_delete ON as paginas sao sobrescritas. Numa base sem nada disto nao faz
     // nada (corre a cada abertura, como o resto do esquema).
     conn.execute_batch("DROP TABLE IF EXISTS fichas; DELETE FROM kv WHERE k LIKE 'fichas:%';")?;
+    // Bases anteriores a 0.9.74: os registos que ja la estao ficam como "com cabecalho" (nunca saem).
+    let has_header_col = conn
+        .prepare("SELECT 1 FROM pragma_table_info('seen_envelopes') WHERE name = 'had_header'")?
+        .exists([])?;
+    if !has_header_col {
+        conn.execute_batch("ALTER TABLE seen_envelopes ADD COLUMN had_header INTEGER NOT NULL DEFAULT 1")?;
+    }
     // Historico de mensagens e outbox (ver messages.rs): o texto passou a ser
     // guardado, SEMPRE dentro desta base cifrada e na mesma transacao que o
     // avanco do ratchet, para nunca se perder uma mensagem ja decifrada.
@@ -487,17 +495,24 @@ pub fn load_session_meta(conn: &Connection, contact_id: &str) -> Result<Option<S
 /// tinha sido visto (duplicado/replay) - o chamador deve descartar duplicados
 /// ANTES de os entregar ao Double Ratchet.
 pub fn record_envelope(conn: &Connection, contact_id: &str, envelope_id: &[u8]) -> Result<bool, StorageError> {
+    record_envelope_with(conn, contact_id, envelope_id, true)
+}
+
+/// Como `record_envelope`. `had_header`: a mensagem trazia cabecalho PQXDH (pode abrir sessao).
+pub fn record_envelope_with(conn: &Connection, contact_id: &str, envelope_id: &[u8], had_header: bool) -> Result<bool, StorageError> {
     let n = conn.execute(
-        "INSERT OR IGNORE INTO seen_envelopes (contact_id, envelope_id) VALUES (?1, ?2)",
-        rusqlite::params![contact_id, envelope_id],
+        "INSERT OR IGNORE INTO seen_envelopes (contact_id, envelope_id, had_header) VALUES (?1, ?2, ?3)",
+        rusqlite::params![contact_id, envelope_id, had_header],
     )?;
     Ok(n == 1)
 }
 
-/// Apaga registos de deduplicacao mais antigos que `older_than_secs`.
+/// Apaga os registos mais antigos que `older_than_secs` de mensagens sem cabecalho PQXDH: repetir
+/// uma dessas ja nao decifra (o ratchet nao volta atras). Os das mensagens com cabecalho ficam
+/// sempre: sao a protecao contra repetir uma primeira mensagem.
 pub fn prune_seen_envelopes(conn: &Connection, older_than_secs: i64) -> Result<usize, StorageError> {
     Ok(conn.execute(
-        "DELETE FROM seen_envelopes WHERE seen_at < strftime('%s','now') - ?1",
+        "DELETE FROM seen_envelopes WHERE had_header = 0 AND seen_at < strftime('%s','now') - ?1",
         [older_than_secs],
     )?)
 }
@@ -524,7 +539,8 @@ fn tombstone_digest(contact_id: &str, envelope_id: &[u8]) -> Vec<u8> {
 /// antigo reentregue pelo relay continua a ser reconhecido como repetido.
 pub fn tombstone_seen_envelopes(conn: &Connection, contact_id: &str) -> Result<(), StorageError> {
     let ids: Vec<Vec<u8>> = {
-        let mut stmt = conn.prepare("SELECT envelope_id FROM seen_envelopes WHERE contact_id = ?1")?;
+        // Sem sessao, uma mensagem sem cabecalho nao abre nada: nao precisa de ficar registada.
+        let mut stmt = conn.prepare("SELECT envelope_id FROM seen_envelopes WHERE contact_id = ?1 AND had_header = 1")?;
         let rows = stmt.query_map([contact_id], |r| r.get::<_, Vec<u8>>(0))?;
         rows.collect::<Result<Vec<_>, _>>()?
     };

@@ -65,6 +65,8 @@ fn setup() -> (Peer, Peer, Peer, String) {
     a.session_with(&c);
     let g = a.c.group_create("Família".into(), vec![b.pid(), c.pid()]).unwrap();
     assert!(g.i_am_admin && g.active && g.members.len() == 3);
+    b.c.call_contacts_sync(vec![a.cid()]).unwrap();
+    c.c.call_contacts_sync(vec![a.cid()]).unwrap();
     route(&a, &[&b, &c]);
     let gid = g.group_id.clone();
     // Bob e Carol precisam de sessao entre si para escrever no grupo.
@@ -198,6 +200,8 @@ fn mensagem_que_chega_antes_da_info_do_grupo_nao_se_perde() {
     a.session_with(&b);
     a.session_with(&c);
     let gid = a.c.group_create("G".into(), vec![b.pid(), c.pid()]).unwrap().group_id;
+    b.c.call_contacts_sync(vec![a.cid()]).unwrap();
+    c.c.call_contacts_sync(vec![a.cid()]).unwrap();
     // A info so chega ao Bob; a da Carol fica "no relay".
     let held: Vec<_> = a.c.outbox().unwrap().into_iter().filter(|i| i.contact_id == c.cid()).collect();
     for item in a.c.outbox().unwrap() {
@@ -215,6 +219,91 @@ fn mensagem_que_chega_antes_da_info_do_grupo_nao_se_perde() {
         c.c.receive_sealed(item.blob).unwrap();
     }
     assert_eq!(texts(&c, &gid), vec![(b.cid(), "cheguei primeiro".to_string())]);
+}
+
+/// Um desconhecido cria um grupo comigo: Bob ainda nao aceitou a Alice.
+fn invited() -> (Peer, Peer, Peer, String) {
+    let (a, b, c) = (peer("alice", 0x71), peer("bob", 0x72), peer("carol", 0x73));
+    a.session_with(&b);
+    a.session_with(&c);
+    let gid = a.c.group_create("Vizinhos".into(), vec![b.pid(), c.pid()]).unwrap().group_id;
+    c.c.call_contacts_sync(vec![a.cid()]).unwrap();
+    route(&a, &[&b, &c]);
+    (a, b, c, gid)
+}
+
+#[test]
+fn grupo_de_quem_nao_e_contacto_fica_como_convite() {
+    let (a, b, c, gid) = invited();
+    assert!(c.c.group(gid.clone()).unwrap().is_some(), "de um contacto entra logo");
+    assert!(b.c.group(gid.clone()).unwrap().is_none(), "de um desconhecido fica a espera");
+    assert_eq!(b.c.pending_intros().unwrap(), vec![a.cid()], "aparece como um convite normal");
+    let page = b.c.messages_page(a.cid(), None, 10).unwrap();
+    assert_eq!(page.iter().map(|m| m.text.as_str()).collect::<Vec<_>>(), vec!["Vizinhos"]);
+    // Mensagens do grupo ficam guardadas a espera.
+    a.c.group_send_text(gid.clone(), "bem-vindo".into()).unwrap();
+    route(&a, &[&b, &c]);
+    // Aceitar: a Alice passa a contacto e o grupo entra, com a mensagem.
+    b.c.call_contacts_sync(vec![a.cid()]).unwrap();
+    assert!(b.c.group(gid.clone()).unwrap().is_some());
+    assert_eq!(texts(&b, &gid), vec![(a.cid(), "bem-vindo".to_string())]);
+}
+
+#[test]
+fn recusar_o_convite_tira_o_grupo_e_as_mensagens() {
+    let (a, b, c, gid) = invited();
+    a.c.group_send_text(gid.clone(), "bem-vindo".into()).unwrap();
+    route(&a, &[&b, &c]);
+    b.c.delete_contact(a.cid()).unwrap();
+    assert!(b.c.pending_intros().unwrap().is_empty());
+    // Mais tarde a Alice passa a contacto: o grupo recusado nao aparece.
+    b.c.call_contacts_sync(vec![a.cid()]).unwrap();
+    assert!(b.c.group(gid).unwrap().is_none());
+}
+
+#[test]
+fn versao_nova_do_grupo_nao_repete_o_convite() {
+    let (a, b, c, gid) = invited();
+    let members = a.c.group(gid.clone()).unwrap().unwrap().members;
+    let members = members.into_iter().map(|m| GroupMemberInput { public_id: m.public_id, admin: m.admin }).collect();
+    a.c.group_update(gid.clone(), "Prédio".into(), members).unwrap();
+    route(&a, &[&b, &c]);
+    assert_eq!(b.c.messages_page(a.cid(), None, 10).unwrap().len(), 1);
+    b.c.call_contacts_sync(vec![a.cid()]).unwrap();
+    assert_eq!(b.c.group(gid).unwrap().unwrap().name, "Prédio", "fica a versao mais recente");
+}
+
+#[test]
+fn mensagens_a_espera_limitadas_por_remetente() {
+    let (a, b, c, gid) = invited();
+    for i in 0..8 {
+        a.c.group_send_text(gid.clone(), format!("m{i}")).unwrap();
+    }
+    route(&a, &[&b, &c]);
+    b.c.call_contacts_sync(vec![a.cid()]).unwrap();
+    assert_eq!(texts(&b, &gid).len(), 5, "so as primeiras 5 de cada remetente ficam guardadas");
+}
+
+#[test]
+fn nome_do_grupo_muda_de_24_em_24_horas() {
+    let (a, b, c, gid) = setup();
+    let input = |p: &Peer| {
+        let members = p.c.group(gid.clone()).unwrap().unwrap().members;
+        members.into_iter().map(|m| GroupMemberInput { public_id: m.public_id, admin: m.admin }).collect::<Vec<_>>()
+    };
+    assert_eq!(a.c.group(gid.clone()).unwrap().unwrap().rename_wait_ms, 0, "a primeira mudanca e logo");
+    a.c.group_update(gid.clone(), "Novo".into(), input(&a)).unwrap();
+    route(&a, &[&b, &c]);
+    let wait = a.c.group(gid.clone()).unwrap().unwrap().rename_wait_ms;
+    assert!(wait > 23 * 3600 * 1000 && wait <= 24 * 3600 * 1000, "{wait}");
+    assert!(b.c.group(gid.clone()).unwrap().unwrap().rename_wait_ms > 0, "vale para todos os administradores");
+    let r = a.c.group_update(gid.clone(), "Outro".into(), input(&a));
+    assert!(matches!(r, Err(QtError::InvalidInput { .. })), "{r:?}");
+    assert_eq!(a.c.group(gid.clone()).unwrap().unwrap().name, "Novo");
+    // Mudar os membros continua a dar.
+    let mut members = input(&a);
+    members.retain(|m| m.public_id != c.pid());
+    assert_eq!(a.c.group_update(gid.clone(), "Novo".into(), members).unwrap().members.len(), 2);
 }
 
 #[test]

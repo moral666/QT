@@ -942,7 +942,7 @@ mod tests {
         assert_eq!(parse_join_ok(&r, &bad), None);
         let other = RoomKeys::derive(&[2; 32], &[3; 16]);
         assert_eq!(parse_join_ok(&other, &ok), None);
-        assert!(JOIN_OK_LEN < 1 + 32 + JOIN_PAYLOAD_LEN + 16, "resposta menor que o pedido");
+        const _: () = assert!(JOIN_OK_LEN < 1 + 32 + JOIN_PAYLOAD_LEN + 16, "resposta menor que o pedido");
     }
 
     #[test]

@@ -44,8 +44,7 @@ fn pq_prekey_sobrevive_a_serializacao_e_reinicio() {
     let blob = bob.pq.to_bytes();
     assert_eq!(blob.len(), PQ_PRIVATE_KEY_LEN);
     let pub_before = bob.pq.public_key_bytes();
-    let Bob { identity, signing: _, spk, pq, opk } = bob;
-    drop(pq);
+    let Bob { identity, signing: _, spk, pq: _, opk } = bob;
     let restored = PqPreKeyPair::from_bytes(&blob).expect("restore");
     assert_eq!(restored.public_key_bytes(), pub_before, "mesma identidade PQ");
 

@@ -27,6 +27,8 @@ pub enum CryptoError {
     SignatureInvalid,
     #[error("falha ao cifrar (entrada demasiado grande)")]
     EncryptionFailed,
+    #[error("chave publica X25519 sem contribuicao (ordem pequena)")]
+    WeakPublicKey,
 }
 
 /// Par de chaves Ed25519 usado para ASSINAR (nao para DH). E a chave de
@@ -94,8 +96,19 @@ impl DhKeyPair {
     }
 }
 
-/// Diffie-Hellman puro sobre X25519.
-pub fn dh(private: &StaticSecret, public: &PublicKey) -> [u8; 32] {
+/// Diffie-Hellman sobre X25519. Recusa as chaves publicas de ordem pequena, cujo resultado nao
+/// depende da chave privada: quem recebe uma destas nao chega a ter um segredo partilhado.
+pub fn dh(private: &StaticSecret, public: &PublicKey) -> Result<[u8; 32], CryptoError> {
+    let shared = private.diffie_hellman(public);
+    if !shared.was_contributory() {
+        return Err(CryptoError::WeakPublicKey);
+    }
+    Ok(shared.to_bytes())
+}
+
+/// Como `dh`, sem verificar. So para chaves que ja passaram por `dh` no mesmo aperto de mao, e
+/// para o X3DH antigo (so nos testes: as apps usam PQXDH).
+pub(crate) fn dh_unverified(private: &StaticSecret, public: &PublicKey) -> [u8; 32] {
     private.diffie_hellman(public).to_bytes()
 }
 

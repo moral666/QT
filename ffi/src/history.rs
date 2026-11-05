@@ -60,13 +60,13 @@ const KV_PENDING_DELIVERED: &str = "rcpt_delivered:";
 /// Por enviar: o convite (o meu Public ID) a este contacto, antes da proxima mensagem.
 pub(crate) const KV_SEND_INTRO: &str = "send_intro:";
 /// Recebido: o Public ID de quem me escreveu sem estar nos meus contactos (convite).
-const KV_INTRO: &str = "intro:";
+pub(crate) const KV_INTRO: &str = "intro:";
 /// O contacto terminou a sessao (tipo 10): falta abrir uma nova e voltar a cifrar o
 /// que estava por entregar. Enquanto isto existir, a outbox dele fica retida.
 pub(crate) const KV_RESTART: &str = "restart:";
 /// Endereco no relay de uma entrada da outbox para quem ja nao esta nos contactos
 /// (o aviso "sessao terminada" de `delete_contact_notify`).
-const KV_OUT_RELAY: &str = "out_relay:";
+pub(crate) const KV_OUT_RELAY: &str = "out_relay:";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum MessageStatus {
@@ -563,6 +563,10 @@ impl QtClient {
     /// de rede ou reinicio da app), pela ordem em que foi criado.
     pub fn outbox(&self) -> Result<Vec<OutboxItem>, QtError> {
         let c = self.lock()?;
+        // Sinais de chamada que nao sairam a tempo: ja nao servem para nada.
+        for id in hm::outbox_drop_expired(&c, now_ms())? {
+            st::kv_delete(&c, &format!("{KV_OUT_RELAY}{}", hex(&id)))?;
+        }
         // Contactos que terminaram a sessao: o que la esta foi cifrado com a sessao antiga
         // e volta a ser cifrado quando abrir a nova (`requeue_after_session_reset`).
         let restart: std::collections::HashSet<String> = {
@@ -847,6 +851,16 @@ fn on_session_end(tx: &st::rusqlite::Connection, contact_id: &str) -> Result<Rec
     Ok(ReceiveResult::NoChange { contact_id: contact_id.to_string() })
 }
 
+/// Chegou uma mensagem de um contacto com quem ja nao tenho sessao (ex.: conta recuperada): marca
+/// que falta abrir uma nova. Ao recebe-la, o outro lado volta a enviar o que nao tem recibo. So
+/// contactos meus: a pista de quem enviou nao e autenticada ate a mensagem abrir.
+pub(crate) fn restart_lost_session(c: &st::rusqlite::Connection, contact_id: &str) -> Result<(), QtError> {
+    if crate::call::is_contact(c, contact_id)? && !is_blocked_in(c, contact_id)? {
+        st::kv_set(c, &format!("{KV_RESTART}{contact_id}"), &[1])?;
+    }
+    Ok(())
+}
+
 /// Sessao nova instalada para `contact_id` (`start_session` ou recebida). Se ele
 /// tinha terminado a anterior, volta a cifrar o que estava por entregar (mensagens,
 /// envelopes de grupo) com a nova, depois do convite. Corre na transacao da sessao.
@@ -883,6 +897,7 @@ impl QtClient {
         st::kv_delete(&tx, &format!("{}{contact_id}", crate::client::KV_PEER_EPH))?;
         st::kv_delete(&tx, &format!("{KV_INTRO}{contact_id}"))?;
         st::kv_delete(&tx, &format!("{KV_SEND_INTRO}{contact_id}"))?;
+        crate::groups::forget_invites(&tx, &contact_id)?;
         crate::profile::forget_contact(&tx, &contact_id)?;
         crate::badges::forget_contact(&tx, &contact_id)?;
         crate::call::forget_contact(&tx, &contact_id)?;

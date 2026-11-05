@@ -189,8 +189,8 @@ fn ficheiro_de_base_de_dados_corrompido_nao_abre_e_nao_entra_em_panic() {
     let p = tmp("corrupt");
     drop(open_database_with_key(&p, &KEY).unwrap());
     let mut raw = std::fs::read(&p).unwrap();
-    for i in 100..200 {
-        raw[i] ^= 0xFF;
+    for b in &mut raw[100..200] {
+        *b ^= 0xFF;
     }
     std::fs::write(&p, &raw).unwrap();
     assert!(open_database_with_key(&p, &KEY).is_err());
@@ -247,4 +247,21 @@ mod pq {
         assert!(matches!(load_pq_prekey(&c, 1), Err(StorageError::CorruptPqKey)));
         std::fs::remove_file(&p).ok();
     }
+}
+
+#[test]
+fn deduplicacao_fica_so_com_as_mensagens_que_abrem_sessao() {
+    let p = tmp("seen");
+    {
+        let c = open_database_with_key(&p, &KEY).unwrap();
+        assert!(record_envelope_with(&c, "bob", b"com-cabecalho", true).unwrap());
+        assert!(record_envelope_with(&c, "bob", b"sem-cabecalho", false).unwrap());
+        // Nada a sair antes do prazo.
+        assert_eq!(prune_seen_envelopes(&c, 3600).unwrap(), 0);
+        c.execute("UPDATE seen_envelopes SET seen_at = 1", []).unwrap();
+        assert_eq!(prune_seen_envelopes(&c, 3600).unwrap(), 1);
+        assert!(!record_envelope_with(&c, "bob", b"com-cabecalho", true).unwrap(), "essa fica para sempre");
+        assert!(record_envelope_with(&c, "bob", b"sem-cabecalho", false).unwrap());
+    }
+    std::fs::remove_file(&p).ok();
 }

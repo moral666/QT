@@ -156,6 +156,8 @@ fn group3() -> (Peer, Peer, Peer, String, String) {
     a.session_with(&b);
     a.session_with(&c);
     let g = a.c.group_create("Equipa".into(), vec![b.pid(), c.pid()]).unwrap();
+    b.c.call_contacts_sync(vec![a.cid()]).unwrap();
+    c.c.call_contacts_sync(vec![a.cid()]).unwrap();
     route(&a, &[&b, &c]);
     b.session_with(&c);
     c.session_with(&b);

@@ -16,7 +16,8 @@
 //! que ainda estava em texto simples no protocolo do servidor (`from`).
 
 use crate::primitives::{aead_decrypt, aead_encrypt, dh, hkdf_derive, CryptoError, DhKeyPair};
-use x25519_dalek::PublicKey;
+use x25519_dalek::{PublicKey, StaticSecret};
+use zeroize::Zeroizing;
 
 /// Cifra a identidade publica do remetente para que so o dono de
 /// `recipient_identity_pub` a consiga ler. `sender_identity_pub` e tipicamente
@@ -40,10 +41,7 @@ pub fn seal_sender_identity_bound(
     binding: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
     let ephemeral = DhKeyPair::generate();
-    let shared_secret = dh(&ephemeral.private, recipient_identity_pub);
-    let key_material = hkdf_derive(&shared_secret, &[], b"SealedSender_v1", 32);
-    let mut key = [0u8; 32];
-    key.copy_from_slice(&key_material);
+    let key = box_key(&ephemeral.private, recipient_identity_pub)?;
 
     // O ephemeral_public serve de AAD - vincula o envelope a esta chave
     // efemera especifica, impedindo que um atacante troque o cabecalho.
@@ -55,6 +53,15 @@ pub fn seal_sender_identity_bound(
     out.extend_from_slice(ephemeral.public.as_bytes());
     out.extend_from_slice(&ciphertext);
     Ok(out)
+}
+
+/// Chave da caixa. O segredo e os passos intermedios sao zerados ao sair.
+fn box_key(private: &StaticSecret, public: &PublicKey) -> Result<Zeroizing<[u8; 32]>, CryptoError> {
+    let shared_secret = Zeroizing::new(dh(private, public)?);
+    let key_material = Zeroizing::new(hkdf_derive(&shared_secret[..], &[], b"SealedSender_v1", 32));
+    let mut key = Zeroizing::new([0u8; 32]);
+    key.copy_from_slice(&key_material);
+    Ok(key)
 }
 
 /// Abre o envelope, devolvendo a chave publica de identidade do remetente.
@@ -80,10 +87,7 @@ pub fn unseal_sender_identity_bound(
     let ephemeral_pub = PublicKey::from(ephemeral_pub_bytes);
     let ciphertext = &envelope[32..];
 
-    let shared_secret = dh(&my_identity.private, &ephemeral_pub);
-    let key_material = hkdf_derive(&shared_secret, &[], b"SealedSender_v1", 32);
-    let mut key = [0u8; 32];
-    key.copy_from_slice(&key_material);
+    let key = box_key(&my_identity.private, &ephemeral_pub)?;
 
     let mut aad = ephemeral_pub_bytes.to_vec();
     aad.extend_from_slice(binding);

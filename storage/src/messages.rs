@@ -62,7 +62,8 @@ pub(crate) const SCHEMA: &str = "
         outbox_id  BLOB    NOT NULL UNIQUE,
         contact_id TEXT    NOT NULL,
         kind       INTEGER NOT NULL,
-        blob       BLOB    NOT NULL
+        blob       BLOB    NOT NULL,
+        expires_ms INTEGER NOT NULL DEFAULT 0
     );
     -- Reacoes com emoji: uma por pessoa e por mensagem. reactor = '' sou eu;
     -- senao, o contact_id de quem reagiu. conv_id = a conversa (contact_id ou grupo).
@@ -87,6 +88,11 @@ pub(crate) fn migrate(conn: &Connection) -> Result<(), StorageError> {
     let has_sender = conn.prepare("SELECT 1 FROM pragma_table_info('messages') WHERE name = 'sender'")?.exists([])?;
     if !has_sender {
         conn.execute_batch("ALTER TABLE messages ADD COLUMN sender TEXT NOT NULL DEFAULT ''")?;
+    }
+    // `expires_ms`: os sinais de chamada deixam de sair passado o prazo (0 = sem prazo).
+    let has_expiry = conn.prepare("SELECT 1 FROM pragma_table_info('outbox') WHERE name = 'expires_ms'")?.exists([])?;
+    if !has_expiry {
+        conn.execute_batch("ALTER TABLE outbox ADD COLUMN expires_ms INTEGER NOT NULL DEFAULT 0")?;
     }
     Ok(())
 }
@@ -423,6 +429,28 @@ pub fn outbox_put(conn: &Connection, outbox_id: &[u8], contact_id: &str, kind: i
         params![outbox_id, contact_id, kind, blob],
     )?;
     Ok(())
+}
+
+/// Como `outbox_put`, para o que deixa de fazer sentido depois de `expires_ms` (sinais de chamada).
+pub fn outbox_put_expiring(conn: &Connection, outbox_id: &[u8], contact_id: &str, kind: i64, blob: &[u8], expires_ms: i64) -> Result<(), StorageError> {
+    conn.execute(
+        "INSERT INTO outbox (outbox_id, contact_id, kind, blob, expires_ms) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![outbox_id, contact_id, kind, blob, expires_ms],
+    )?;
+    Ok(())
+}
+
+/// Tira da outbox o que ja passou do prazo e devolve os ids.
+pub fn outbox_drop_expired(conn: &Connection, now_ms: i64) -> Result<Vec<Vec<u8>>, StorageError> {
+    let ids: Vec<Vec<u8>> = {
+        let mut stmt = conn.prepare("SELECT outbox_id FROM outbox WHERE expires_ms != 0 AND expires_ms < ?1")?;
+        let rows = stmt.query_map([now_ms], |r| r.get(0))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    if !ids.is_empty() {
+        conn.execute("DELETE FROM outbox WHERE expires_ms != 0 AND expires_ms < ?1", [now_ms])?;
+    }
+    Ok(ids)
 }
 
 /// Remove a entrada e devolve-a (None se ja nao existia).

@@ -36,13 +36,13 @@ fn terceiro_nao_consegue_abrir_o_envelope() {
     // o AEAD deteta adulteracao, nao "chave errada" per se) OU falhar,
     // dependendo da matematica - o que importa e que NUNCA revele a
     // identidade correta de Alice.
-    match resultado {
-        Ok(chave_errada) => assert_ne!(
+    // (Falhar tambem e um resultado aceitavel e esperado.)
+    if let Ok(chave_errada) = resultado {
+        assert_ne!(
             chave_errada.as_bytes(),
             alice_identity.public.as_bytes(),
             "um atacante NUNCA deveria conseguir reconstruir a identidade correta"
-        ),
-        Err(_) => {} // falhar tambem e um resultado aceitavel e esperado
+        );
     }
 }
 
