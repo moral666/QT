@@ -59,6 +59,7 @@ final class CallAudioIO: @unchecked Sendable {
         return p
     }()
     private var source: AVAudioSourceNode?
+    private var sink: AVAudioSinkNode?
     private var voiceProcessing = true
     private var restarts = 0
     private var configObserver: NSObjectProtocol?
@@ -77,15 +78,23 @@ final class CallAudioIO: @unchecked Sendable {
     /// Liga o microfone e o altifalante. A sessao de audio ja foi ativada (CallKit).
     func start() throws {
         guard !running else { return }
-        try buildGraph(voiceProcessing: true)
+        try buildGraph(voiceProcessing: true, lowLatency: true)
         do {
             try engine.start()
         } catch {
-            // Sem o modo de voz do iPhone (sem cancelamento de eco), mas com som.
-            log("SealerCall", "audio com modo de voz falhou (\(safeMessage(error))): sem modo de voz")
+            // Primeiro sem o `AVAudioSinkNode`: o modo de voz (cancelamento de eco) fica.
+            log("SealerCall", "audio com baixa latencia falhou (\(safeMessage(error))): com installTap")
             teardownGraph()
-            try buildGraph(voiceProcessing: false)
-            try engine.start()
+            do {
+                try buildGraph(voiceProcessing: true, lowLatency: false)
+                try engine.start()
+            } catch {
+                // Sem o modo de voz do iPhone (sem cancelamento de eco), mas com som.
+                log("SealerCall", "audio com modo de voz falhou (\(safeMessage(error))): sem modo de voz")
+                teardownGraph()
+                try buildGraph(voiceProcessing: false, lowLatency: false)
+                try engine.start()
+            }
         }
         running = true
         // O iOS para o motor quando a configuracao do audio muda (CallKit, Bluetooth, auricular):
@@ -113,7 +122,11 @@ final class CallAudioIO: @unchecked Sendable {
         dog.start()
     }
 
-    private func buildGraph(voiceProcessing vp: Bool) throws {
+    /// `lowLatency`: o microfone por `AVAudioSinkNode`, que entrega os blocos ao ritmo do hardware
+    /// (~10 ms). O `installTap` entrega-os de 100 em 100 ms, seja qual for o tamanho pedido, e esses
+    /// saltos faziam a chamada usar os dois caminhos sem precisar. So serve para Float32 nao
+    /// intercalado; noutro formato, ou se um reinicio o desligar, fica o `installTap`.
+    private func buildGraph(voiceProcessing vp: Bool, lowLatency: Bool) throws {
         let input = engine.inputNode
         let output = engine.outputNode
         // O modo de voz liga-se nos dois lados (entrada e saida) antes de ligar os nos.
@@ -128,11 +141,25 @@ final class CallAudioIO: @unchecked Sendable {
         let ring = capture
         let sem = wake
         let counts = rtCounts
-        input.installTap(onBus: 0, bufferSize: 480, format: inFormat) { buffer, _ in
-            counts[0] &+= 1
-            guard let ch = buffer.floatChannelData else { return }
-            ring.write(ch[0], Int(buffer.frameLength))
-            sem.signal()
+        if lowLatency, inFormat.commonFormat == .pcmFormatFloat32, !inFormat.isInterleaved {
+            let node = AVAudioSinkNode { _, frameCount, list -> OSStatus in
+                counts[0] &+= 1
+                let abl = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: list))
+                guard let p = abl.first?.mData?.assumingMemoryBound(to: Float.self) else { return noErr }
+                ring.write(p, Int(frameCount))
+                sem.signal()
+                return noErr
+            }
+            engine.attach(node)
+            engine.connect(input, to: node, format: inFormat)
+            sink = node
+        } else {
+            input.installTap(onBus: 0, bufferSize: 480, format: inFormat) { buffer, _ in
+                counts[0] &+= 1
+                guard let ch = buffer.floatChannelData else { return }
+                ring.write(ch[0], Int(buffer.frameLength))
+                sem.signal()
+            }
         }
         let outFormat = AVAudioFormat(standardFormatWithSampleRate: Self.rate, channels: 1)!
         let out = playback
@@ -157,6 +184,11 @@ final class CallAudioIO: @unchecked Sendable {
     private func teardownGraph() {
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
+        if let s = sink {
+            engine.disconnectNodeInput(s)
+            engine.detach(s)
+        }
+        sink = nil
         if let s = source {
             engine.disconnectNodeOutput(s)
             engine.detach(s)
@@ -176,13 +208,13 @@ final class CallAudioIO: @unchecked Sendable {
         log("SealerCall", "a reiniciar o audio (\(reason)), modo de voz \(vp ? "sim" : "nao")")
         teardownGraph()
         do {
-            try buildGraph(voiceProcessing: vp)
+            try buildGraph(voiceProcessing: vp, lowLatency: restarts < 2)
             try engine.start()
         } catch {
             log("SealerCall", "reinicio falhou: \(safeMessage(error))")
             if vp {
                 teardownGraph()
-                try? buildGraph(voiceProcessing: false)
+                try? buildGraph(voiceProcessing: false, lowLatency: false)
                 try? engine.start()
             }
         }

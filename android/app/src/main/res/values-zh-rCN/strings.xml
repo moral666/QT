@@ -374,7 +374,7 @@
     <string name="recovery_restored">账户已恢复。聊天会自动重新开始。</string>
     <string name="premium_title">Sealer Premium</string>
     <string name="premium_title_on">Sealer Premium（已开通）</string>
-    <string name="premium_price">每年5欧元</string>
+    <string name="premium_price">每年6欧元</string>
     <string name="premium_active">你的Premium已开通。感谢你支持Sealer。</string>
     <string name="premium_free_text">文字消息现在免费，以后也永远免费。</string>
     <string name="premium_unlocks">Premium可解锁：</string>

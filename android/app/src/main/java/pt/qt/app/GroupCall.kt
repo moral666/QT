@@ -21,6 +21,7 @@ import uniffi.qt_ffi.GroupAudio
 import uniffi.qt_ffi.GroupCallEndReason
 import uniffi.qt_ffi.GroupCallEvent
 import uniffi.qt_ffi.QtClient
+import uniffi.qt_ffi.QtException
 
 /**
  * Chamadas de GRUPO no Android (0.9.63): ate 5 pessoas, voz e video. O nucleo (Rust,
@@ -45,6 +46,18 @@ data class GroupTile(
     val videoW: Int = 0,
     val videoH: Int = 0,
     val rotation: Int = 0,
+)
+
+/**
+ * O que a chamada a dois deixa para a de grupo: o microfone e a saida do som ficam como estavam,
+ * e a chamada no sistema de chamadas (`systemId`) continua, agora para o grupo.
+ */
+data class CallHandover(
+    val muted: Boolean,
+    val speaker: Boolean,
+    val systemId: String?,
+    val routes: List<AudioRoute> = emptyList(),
+    val route: AudioRoute? = null,
 )
 
 data class GroupCallUi(
@@ -91,15 +104,23 @@ class GroupCallController(
     private val ensureSessions: suspend (List<String>) -> Unit = {},
     /** Esta nos meus contactos (entao mostra-se o nome que eu lhe dei, nao o da chamada). */
     private val isContact: (String) -> Boolean = { false },
+    /** O que a chamada a dois deixou, uma so vez. `null`: nao vim de uma chamada a dois. */
+    private val takeHandover: () -> CallHandover? = { null },
 ) {
     private val prefs = app.getSharedPreferences("sealer_group_call", android.content.Context.MODE_PRIVATE)
 
-    /** O nome que escolhi para as chamadas de grupo (0.9.67; so neste telemovel). */
+    /** O nome que escolhi para as chamadas de grupo (0.9.67; na base cifrada desde a 0.9.74). */
     var myName: String
-        get() = prefs.getString("name", "").orEmpty()
+        get() = client()?.let { c -> runCatching { c.groupCallMyName() }.getOrNull() }.orEmpty()
         set(v) {
-            prefs.edit().putString("name", v.trim().take(32)).apply()
+            client()?.let { c -> runCatching { c.groupCallSaveMyName(v.trim().take(32)) } }
         }
+
+    /** Passa o nome das versoes antigas para a base cifrada. */
+    fun moveNameToCore(c: QtClient) {
+        val old = prefs.getString("name", null) ?: return
+        if (runCatching { c.groupCallSaveMyName(old) }.isSuccess) prefs.edit().remove("name").apply()
+    }
 
     /** Envia o meu nome para esta chamada (quem nao me tem nos contactos ve-o). */
     private fun sendName(c: QtClient, callId: String) {
@@ -122,6 +143,15 @@ class GroupCallController(
     private var preview: SurfaceTexture? = null
     private var ticker: Job? = null
     private var stopNet: (() -> Unit)? = null
+    /** Esta chamada no sistema de chamadas (auricular, carro): herdada ou vinda do toque. */
+    @Volatile private var systemId: String? = null
+    private var routes: List<AudioRoute> = emptyList()
+    private var route: AudioRoute? = null
+    /** O toque veio do segundo plano: ainda esta no sistema como chamada a chegar. */
+    @Volatile private var ringingSystemId: String? = null
+
+    /** A chamada do sistema `id` e a desta chamada de grupo? */
+    fun ownsSystem(id: String): Boolean = _ui.value != null && (systemId == id || ringingSystemId == id)
 
     fun noticeAccepted(): Boolean = runCatching { client()?.groupCallNoticeAccepted() }.getOrNull() == true
 
@@ -151,7 +181,7 @@ class GroupCallController(
             try {
                 c.groupCallAdd(publicIds, cur.camera)
             } catch (e: Exception) {
-                onError(s(R.string.gcall_full))
+                onError(joinError(e))
                 return@launch
             }
             flush()
@@ -162,12 +192,14 @@ class GroupCallController(
         val st = try {
             c.groupCallAdd(publicIds + p.publicId, video)
         } catch (e: Exception) {
-            onError(s(R.string.gcall_full))
+            onError(joinError(e))
             return@launch
         }
         detach()
+        val h = inherit()
         _ui.value = GroupCallUi(
             st.callId, p.contactId, nameOf(p.contactId), joined = true, video = video, camera = video,
+            muted = h?.muted == true, speakerOn = h?.speaker ?: true,
             startedAt = SystemClock.elapsedRealtime(),
         )
         sendName(c, st.callId)
@@ -188,11 +220,19 @@ class GroupCallController(
             c.groupCallJoin(g.callId)
         } catch (e: Exception) {
             // Cheia (5 pessoas) ou ja acabou.
-            onError(s(R.string.gcall_full))
+            onError(joinError(e))
             end()
             return@launch
         }
-        _ui.update { it?.copy(joined = true, camera = g.video, startedAt = SystemClock.elapsedRealtime()) }
+        // O toque veio do segundo plano: o sistema de chamadas fica com o som antes do microfone.
+        ringingSystemId?.let { id ->
+            ringingSystemId = null
+            runCatching { SystemCalls.answer(id) }
+            systemId = id
+        }
+        // Vinda de uma chamada a dois, a camara fica como estava nela (decide o nucleo).
+        val camera = runCatching { c.groupCallCamera(g.callId) }.getOrDefault(false)
+        _ui.update { it?.copy(joined = true, camera = camera, startedAt = SystemClock.elapsedRealtime()) }
         sendName(c, g.callId)
         flush()
         startMedia(c, g.callId)
@@ -208,7 +248,7 @@ class GroupCallController(
             ensureCallSessions(c, id)
             c.groupCallRejoin(id)
         } catch (e: Exception) {
-            onError(s(R.string.gcall_full))
+            onError(joinError(e))
             updateOngoing(c, fromId)
             return@launch
         }
@@ -259,12 +299,67 @@ class GroupCallController(
         val m = !(_ui.value?.muted ?: return)
         io?.muted = m
         _ui.update { it?.copy(muted = m) }
+        // O carro e o auricular ficam a saber (so com a chamada no sistema de chamadas).
+        systemId?.let { SystemCalls.setMuted(app, it, m) }
     }
 
     fun toggleSpeaker() {
         val on = !(_ui.value?.speakerOn ?: return)
+        // No sistema de chamadas a saida e escolhida por la (a resposta vem em [onSystemRoutes]).
+        val sys = systemId
+        if (sys != null && routes.isNotEmpty() && SystemCalls.manages(sys)) {
+            routes.toggleTarget(route)?.let { SystemCalls.setRoute(sys, it.id) }
+            return
+        }
         io?.setSpeaker(on)
         _ui.update { it?.copy(speakerOn = on) }
+    }
+
+    /** O sistema de chamadas desligou (auricular, carro, chamada GSM atendida por cima). */
+    fun onSystemHangup() = leave()
+
+    fun onSystemMuted(m: Boolean) {
+        if (_ui.value?.muted == m) return
+        io?.muted = m
+        _ui.update { it?.copy(muted = m) }
+    }
+
+    fun onSystemRoutes(list: List<AudioRoute>, current: AudioRoute?) {
+        routes = list
+        route = current
+        _ui.update { it?.copy(speakerOn = current?.kind == RouteKind.SPEAKER) }
+    }
+
+    /** "Atender" na notificacao com esta chamada a tocar no ecra. `false`: nao e nada comigo. */
+    fun answerFromNotification(): Boolean {
+        if (_ui.value?.joined != false) return false
+        join()
+        return true
+    }
+
+    /**
+     * O ecra voltou com um convite a tocar no segundo plano: o toque passa para aqui. Quem ja
+     * carregou em "Atender" (notificacao, auricular, carro) entra logo.
+     */
+    fun adoptRinging(c: QtClient, r: SealerCore.Ringing) {
+        val id = r.callId ?: return
+        // Entretanto acabou (desligou, ou passou o tempo): fica so como perdida.
+        if (runCatching { c.groupCallCurrent() }.getOrNull() != id || _ui.value != null) {
+            SealerCore.clearAnswer()
+            SystemCalls.end(r.sysKey, CallEnd.MISSED)
+            return
+        }
+        val from = r.contactId.orEmpty()
+        ringingSystemId = id
+        _ui.value = GroupCallUi(id, from, nameOf(from), joined = false, video = r.video, fromName = nameOf(from))
+        CallControl.hangup = hangupFromNotification
+        ensureTicker()
+        if (SealerCore.answerRequested(id) && noticeAccepted()) {
+            SealerCore.clearAnswer()
+            join()
+        } else if (!r.quiet) {
+            sounds.ringIncoming()
+        }
     }
 
     fun toggleCamera() = launch {
@@ -328,7 +423,7 @@ class GroupCallController(
     /** Chamar depois de cada lote recebido e de segundo a segundo durante a chamada. */
     suspend fun onEvents(c: QtClient) {
         val events = try {
-            c.groupCallEvents()
+            SealerCore.groupCallEvents(c)
         } catch (e: Exception) {
             return
         }
@@ -339,10 +434,13 @@ class GroupCallController(
                         runCatching { c.groupCallLeave(ev.callId) }
                         continue
                     }
+                    val h = if (ev.fromCall) inherit() else null
                     _ui.value = GroupCallUi(
                         ev.callId, ev.from, nameOf(ev.from), joined = false, video = ev.video,
                         fromName = nameOf(ev.from),
+                        muted = h?.muted == true, speakerOn = h?.speaker ?: true,
                     )
+                    CallControl.hangup = hangupFromNotification
                     ensureTicker()
                     // Vinha da chamada a dois com quem me adicionou: entro logo, sem tocar (com o
                     // aviso ja aceite; senao fica a tocar para o aceitar).
@@ -367,6 +465,21 @@ class GroupCallController(
     }
 
     // ------------------------------------------------------------ por dentro
+
+    /** Fica com o que a chamada a dois deixou (o servico e a chamada no sistema continuam). */
+    private fun inherit(): CallHandover? = takeHandover()?.also { h ->
+        systemId = h.systemId
+        routes = h.routes
+        route = h.route
+    }
+
+    /** O que dizer quando nao deu para entrar ou adicionar. */
+    private fun joinError(e: Exception): String = when ((e as? QtException.InvalidInput)?.field) {
+        "group_call_full" -> s(R.string.gcall_full)
+        "call_id" -> s(R.string.t_a_chamada_ja_nao_esta_disponivel)
+        "call_busy" -> s(R.string.t_ocupado_noutra_chamada)
+        else -> s(R.string.t_erro, e.safeMsg())
+    }
 
     private fun launch(block: suspend () -> Unit) {
         scope.launch(Dispatchers.IO) {
@@ -402,11 +515,14 @@ class GroupCallController(
         // O "Desligar" da notificacao tambem sai da chamada de grupo (antes nao fazia nada).
         CallControl.hangup = hangupFromNotification
         try {
-            io = CallAudioIO(app, a.pipe()).also {
+            // Na passagem de uma chamada a dois, o sistema de chamadas continua com o som.
+            val managed = systemId?.let { SystemCalls.manages(it) } == true
+            io = CallAudioIO(app, a.pipe(), managed).also {
                 it.start()
                 it.muted = g?.muted == true
                 it.setSpeaker(g?.speakerOn != false)
             }
+            if (managed) systemId?.let { SystemCalls.refresh(it) }
         } catch (e: Exception) {
             onError(s(R.string.t_nao_foi_possivel_usar_o_microfone_2, e.safeMsg()))
         }
@@ -507,6 +623,16 @@ class GroupCallController(
         audio = null
         if (CallControl.hangup === hangupFromNotification) CallControl.hangup = null
         CallService.stop(app)
+        // O microfone do sistema nunca fica silenciado depois da chamada.
+        systemId?.let { id ->
+            if (_ui.value?.muted == true) SystemCalls.setMuted(app, id, false)
+            SystemCalls.end(id, CallEnd.LOCAL)
+        }
+        systemId = null
+        ringingSystemId?.let { SystemCalls.end(it, CallEnd.REJECTED) }
+        ringingSystemId = null
+        routes = emptyList()
+        route = null
         _ui.value = null
     }
 }

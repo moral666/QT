@@ -1,7 +1,9 @@
 import AVFoundation
+import CallKit
 import Combine
 import Foundation
 import UIKit
+import UserNotifications
 
 // ============================================================================ canais do som e do video
 
@@ -60,6 +62,15 @@ struct GroupTile: Equatable {
     var rotation: UInt32 = 0
 }
 
+/// O que a chamada a dois deixa para a de grupo: o microfone e a saida do som ficam como estavam,
+/// e a chamada no CallKit continua, agora para o grupo (a sessao de audio nunca muda de dono).
+struct CallHandover {
+    let muted: Bool
+    let speaker: Bool
+    let callKitId: UUID?
+    let audioActive: Bool
+}
+
 struct GroupCallUi: Equatable {
     let callId: String
     /// Quem me convidou (ou com quem eu estava na chamada a dois): a foto e o nome no topo.
@@ -84,8 +95,9 @@ struct GroupCallUi: Equatable {
 /// Chamadas de GRUPO no iPhone (0.9.64): ate 5 pessoas, voz e video. O nucleo (Rust,
 /// `group_call.rs`) faz uma malha de chamadas a dois; aqui ha so o microfone e o altifalante (a
 /// mistura vem pronta do Rust), a camara (uma so codificacao para todos), um descodificador por
-/// participante com a camara ligada, o toque e o ecra. Sem CallKit (por agora): a chamada de
-/// grupo toca com a app aberta.
+/// participante com a camara ligada e o ecra. Desde a 0.9.74 usa o CallKit como as chamadas a
+/// dois: toca com a app fechada, e a chamada de grupo que nasce de uma chamada a dois continua a
+/// chamada que ja estava no sistema.
 @MainActor
 final class GroupCallModel: ObservableObject {
     @Published private(set) var ui: GroupCallUi?
@@ -101,11 +113,25 @@ final class GroupCallModel: ObservableObject {
     /// nos grupos: sem sessao, duas pessoas que nao sao contactos nao tinham ligacao.
     private var ensureSessions: ([String]) async -> Void = { _ in }
     private var isContact: (String) -> Bool = { _ in false }
+    /// O que a chamada a dois deixou, uma so vez. `nil`: nao vim de uma chamada a dois.
+    private var takeHandover: () -> CallHandover? = { nil }
+    /// O toque que o PushKit ja mostrou no CallKit, sem se saber de que chamada era.
+    private var takePendingRing: () -> UUID? = { nil }
+    /// Ja se carregou em "Atender" no CallKit? (Responde uma so vez.)
+    private var consumeAnswer: () -> Bool = { false }
+    /// O nome a mostrar no CallKit (com o bloqueio da app, nenhum).
+    private var callKitName: (String) -> String = { _ in "" }
 
-    /// O nome que escolhi para as chamadas de grupo (0.9.67; so neste iPhone).
+    /// O nome que escolhi para as chamadas de grupo (0.9.67; na base cifrada desde a 0.9.74).
     var myName: String {
-        get { UserDefaults.standard.string(forKey: "gcall_name") ?? "" }
-        set { UserDefaults.standard.set(String(newValue.trimmingCharacters(in: .whitespacesAndNewlines).prefix(32)), forKey: "gcall_name") }
+        get { (try? client()?.groupCallMyName()) ?? "" }
+        set { try? client()?.groupCallSaveMyName(name: String(newValue.trimmingCharacters(in: .whitespacesAndNewlines).prefix(32))) }
+    }
+
+    /// Passa o nome das versoes antigas para a base cifrada.
+    func moveNameToCore(_ c: QtClient) {
+        guard let old = UserDefaults.standard.string(forKey: "gcall_name") else { return }
+        if (try? c.groupCallSaveMyName(name: old)) != nil { UserDefaults.standard.removeObject(forKey: "gcall_name") }
     }
 
     /// Envia o meu nome para esta chamada (quem nao me tem nos contactos ve-o).
@@ -120,7 +146,15 @@ final class GroupCallModel: ObservableObject {
     private var receivers: [String: VideoReceiver] = [:]
     private var net: VideoNet?
     private var ticker: Task<Void, Never>?
-    private var ring: AVAudioPlayer?
+    /// Esta chamada no CallKit (herdada da chamada a dois, ou o toque).
+    private var systemCallId: UUID?
+    /// O toque foi pelo CallKit: ao atender na app, o sistema fica a saber.
+    private var rangViaCallKit = false
+    /// O sistema ja acabou esta chamada (nao se pede outra vez).
+    private var systemEnded = false
+    private var audioActive = false
+    private var joining = false
+    private var interruption: NSObjectProtocol?
 
     func attach(
         client: @escaping () -> QtClient?,
@@ -129,10 +163,18 @@ final class GroupCallModel: ObservableObject {
         busy: @escaping () -> Bool,
         onError: @escaping (String) -> Void,
         ensureSessions: @escaping ([String]) async -> Void = { _ in },
-        isContact: @escaping (String) -> Bool = { _ in false }
+        isContact: @escaping (String) -> Bool = { _ in false },
+        takeHandover: @escaping () -> CallHandover? = { nil },
+        takePendingRing: @escaping () -> UUID? = { nil },
+        consumeAnswer: @escaping () -> Bool = { false },
+        callKitName: @escaping (String) -> String = { _ in "" }
     ) {
         self.ensureSessions = ensureSessions
         self.isContact = isContact
+        self.takeHandover = takeHandover
+        self.takePendingRing = takePendingRing
+        self.consumeAnswer = consumeAnswer
+        self.callKitName = callKitName
         self.client = client
         self.flush = flush
         self.nameOf = nameOf
@@ -168,7 +210,7 @@ final class GroupCallModel: ObservableObject {
                 do {
                     _ = try await background { try c.groupCallAdd(publicIds: publicIds, video: cam) }
                 } catch {
-                    onError(s("gcall_full"))
+                    onError(joinError(error))
                     return
                 }
                 await flush()
@@ -182,12 +224,14 @@ final class GroupCallModel: ObservableObject {
             do {
                 st = try await background { try c.groupCallAdd(publicIds: publicIds + [p.publicId], video: video) }
             } catch {
-                onError(s("gcall_full"))
+                onError(joinError(error))
                 return
             }
             detach()
+            let h = inherit()
             ui = GroupCallUi(callId: st.callId, fromId: p.contactId, title: nameOf(p.contactId), joined: true,
-                             video: video, camera: video, startedAt: monotonicSeconds())
+                             video: video, muted: h?.muted ?? false, speakerOn: h?.speaker ?? true,
+                             camera: video, startedAt: monotonicSeconds())
             sendName(c, st.callId)
             await flush()
             startMedia(c, st.callId)
@@ -198,20 +242,25 @@ final class GroupCallModel: ObservableObject {
 
     /// ENTRAR na chamada que esta a tocar.
     func join() {
-        guard let c = client(), let g = ui, !g.joined else { return }
-        stopRing()
+        guard let c = client(), let g = ui, !g.joined, !joining else { return }
+        joining = true
         let id = g.callId
+        // Tocou pelo CallKit: o sistema fica a saber que se atendeu e ativa o audio.
+        if rangViaCallKit, let uuid = systemCallId { CallKitBridge.shared.answerFromApp(uuid) }
         Task {
+            defer { joining = false }
             do {
                 await ensureCallSessions(c, id)
                 try await background { try c.groupCallJoin(callId: id) }
             } catch {
-                onError(s("gcall_full"))
+                onError(joinError(error))
                 end()
                 return
             }
+            // Vinda de uma chamada a dois, a camara fica como estava nela (decide o nucleo).
+            let camera = (try? await background { try c.groupCallCamera(callId: id) }) ?? false
             ui?.joined = true
-            ui?.camera = g.video
+            ui?.camera = camera
             ui?.startedAt = monotonicSeconds()
             sendName(c, id)
             await flush()
@@ -228,7 +277,7 @@ final class GroupCallModel: ObservableObject {
                 await ensureCallSessions(c, id)
                 try await background { try c.groupCallRejoin(callId: id) }
             } catch {
-                onError(s("gcall_full"))
+                onError(joinError(error))
                 await updateOngoing(c, fromId)
                 return
             }
@@ -256,7 +305,7 @@ final class GroupCallModel: ObservableObject {
         Task {
             _ = try? await background { () -> Void in try c?.groupCallLeave(callId: g.callId) }
             await flush()
-            end()
+            end(fromUser: true)
         }
     }
 
@@ -265,6 +314,39 @@ final class GroupCallModel: ObservableObject {
         g.muted.toggle()
         io?.muted = g.muted
         ui = g
+        if let uuid = systemCallId { CallKitBridge.shared.setMuted(uuid, g.muted) }
+    }
+
+    // ------------------------------------------------------------ CallKit
+
+    /// Esta chamada do CallKit e a desta chamada de grupo?
+    func ownsSystem(_ uuid: UUID) -> Bool { ui != nil && systemCallId == uuid }
+
+    /// "Desligar" ou "Recusar" no ecra do iPhone.
+    func leaveFromSystem() {
+        systemEnded = true
+        leave()
+    }
+
+    /// O botao "silenciar" do ecra do iPhone.
+    func setMutedFromSystem(_ muted: Bool) {
+        guard var g = ui, g.muted != muted else { return }
+        g.muted = muted
+        io?.muted = muted
+        ui = g
+    }
+
+    /// O CallKit ativou o audio.
+    func audioSessionActivated() {
+        audioActive = true
+        startIO()
+    }
+
+    /// O CallKit desativou o audio (outra chamada por cima, por exemplo).
+    func audioSessionDeactivated() {
+        audioActive = false
+        io?.stop()
+        io = nil
     }
 
     func toggleSpeaker() {
@@ -313,10 +395,13 @@ final class GroupCallModel: ObservableObject {
             case .incoming(let callId, let from, let video, let fromCall):
                 if busy() || ui != nil {
                     _ = try? await background { () -> Void in try c.groupCallLeave(callId: callId) }
+                    if let uuid = takePendingRing() { CallKitBridge.shared.reportEnded(uuid, reason: .failed) }
                     continue
                 }
+                let h = fromCall ? inherit() : nil
                 ui = GroupCallUi(callId: callId, fromId: from, title: nameOf(from), joined: false,
-                                 video: video, fromName: nameOf(from))
+                                 video: video, fromName: nameOf(from),
+                                 muted: h?.muted ?? false, speakerOn: h?.speaker ?? true)
                 ensureTicker()
                 // Vinha da chamada a dois com quem me adicionou: entro logo, sem tocar (com o aviso
                 // ja aceite; senao fica a tocar para o aceitar).
@@ -324,11 +409,15 @@ final class GroupCallModel: ObservableObject {
                     join()
                     continue
                 }
-                startRing()
+                ringViaCallKit(from: from, video: video)
+                if consumeAnswer() && noticeAccepted() { join() }
             case .changed:
                 await refresh(c)
-            case .ended(let callId, _):
-                if ui?.callId == callId { end() }
+            case .ended(let callId, let reason):
+                guard let g = ui, g.callId == callId else { continue }
+                let missed = reason == .missed && !g.joined
+                if missed { showMissed(g.fromName) }
+                end(reason: missed ? .unanswered : .remoteEnded)
             case .ongoing(let contactId):
                 await updateOngoing(c, contactId)
             }
@@ -336,6 +425,55 @@ final class GroupCallModel: ObservableObject {
     }
 
     // ------------------------------------------------------------ por dentro
+
+    /// Fica com o que a chamada a dois deixou.
+    private func inherit() -> CallHandover? {
+        guard let h = takeHandover() else { return nil }
+        systemCallId = h.callKitId
+        audioActive = h.audioActive
+        return h
+    }
+
+    /// Toca como uma chamada a dois: pelo CallKit, com a app aberta, em segundo plano ou fechada.
+    private func ringViaCallKit(from: String, video: Bool) {
+        rangViaCallKit = true
+        if let uuid = takePendingRing() {
+            // O toque que o PushKit ja mostrou (sem nome) passa a ter o nome.
+            systemCallId = uuid
+            CallKitBridge.shared.updateName(uuid, name: callKitName(from), video: video)
+            return
+        }
+        if systemCallId != nil { return }
+        let uuid = UUID()
+        systemCallId = uuid
+        CallKitBridge.shared.reportIncoming(uuid, name: callKitName(from), video: video) { [weak self] ok in
+            if !ok { Task { @MainActor in self?.leaveFromSystem() } }
+        }
+    }
+
+    /// Chamada perdida: o aviso de sempre, com o nome (sem ele com o bloqueio da app).
+    private func showMissed(_ name: String) {
+        let content = UNMutableNotificationContent()
+        content.title = Config.appName
+        content.body = s("t_chamada_perdida")
+        if !callKitName(ui?.fromId ?? "").isEmpty, !name.isEmpty { content.body = s("t_chamada_perdida_de", name) }
+        content.sound = .default
+        content.threadIdentifier = "qt"
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
+    /// O que dizer quando nao deu para entrar ou adicionar.
+    private func joinError(_ error: Error) -> String {
+        if case QtError.InvalidInput(let field) = error {
+            switch field {
+            case "group_call_full": return s("gcall_full")
+            case "call_id": return s("t_a_chamada_ja_nao_esta_disponivel")
+            case "call_busy": return s("t_ocupado_noutra_chamada")
+            default: break
+            }
+        }
+        return s("t_erro", safeMessage(error))
+    }
 
     private func pin(_ hex: String) -> Data? {
         let h = hex.trimmingCharacters(in: .whitespaces)
@@ -365,9 +503,43 @@ final class GroupCallModel: ObservableObject {
         let n = VideoNet()
         n.start { [weak a] k in a?.setNetwork(kind: k) }
         net = n
-        // Sem CallKit: a sessao de audio da chamada e ativada aqui.
-        CallKitBridge.configureAudioSession()
-        try? AVAudioSession.sharedInstance().setActive(true)
+        // Uma interrupcao (alarme, Siri) para o motor de audio: volta a arrancar quando acaba.
+        interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
+            guard let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            MainActor.assumeIsolated { self?.onInterruption(type) }
+        }
+        // Sem CallKit: a sessao de audio da chamada e ativada aqui. Com ele, e o sistema que a ativa.
+        if systemCallId == nil {
+            CallKitBridge.configureAudioSession()
+            try? AVAudioSession.sharedInstance().setActive(true)
+            audioActive = true
+        }
+        startIO()
+        syncCamera()
+    }
+
+    private func onInterruption(_ type: AVAudioSession.InterruptionType) {
+        guard ui?.joined == true else { return }
+        switch type {
+        case .began:
+            io?.stop()
+            io = nil
+        case .ended:
+            try? AVAudioSession.sharedInstance().setActive(true)
+            startIO()
+        @unknown default:
+            break
+        }
+    }
+
+    /// Liga o microfone e o altifalante, quando a sessao de audio esta ativa.
+    private func startIO() {
+        guard self.io == nil, let a = audio, ui != nil else { return }
+        guard audioActive else {
+            activateAudioFallback()
+            return
+        }
         let io = CallAudioIO(audio: a)
         do {
             try io.start()
@@ -377,7 +549,19 @@ final class GroupCallModel: ObservableObject {
         } catch {
             onError(s("t_nao_foi_possivel_usar_o_microfone_2", safeMessage(error)))
         }
-        syncCamera()
+    }
+
+    /// Ha casos em que o CallKit nao avisa que ativou o audio: ao fim de 1,5 s ativa-se aqui.
+    private func activateAudioFallback() {
+        let id = ui?.callId
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self, !self.audioActive, self.io == nil, self.ui?.callId == id else { return }
+            CallKitBridge.configureAudioSession()
+            guard (try? AVAudioSession.sharedInstance().setActive(true)) != nil else { return }
+            self.audioActive = true
+            self.startIO()
+        }
     }
 
     private func syncCamera() {
@@ -449,22 +633,8 @@ final class GroupCallModel: ObservableObject {
         }
     }
 
-    private func startRing() {
-        guard let url = Bundle.main.url(forResource: "sealer_toque", withExtension: "caf"),
-              let p = try? AVAudioPlayer(contentsOf: url) else { return }
-        p.numberOfLoops = -1
-        p.play()
-        ring = p
-    }
-
-    private func stopRing() {
-        ring?.stop()
-        ring = nil
-    }
-
     /// Para tudo (saida, fim do toque ou chamada perdida).
-    private func end() {
-        stopRing()
+    private func end(reason: CXCallEndedReason = .remoteEnded, fromUser: Bool = false) {
         sender?.stop()
         sender = nil
         for r in receivers.values { r.stop() }
@@ -476,7 +646,20 @@ final class GroupCallModel: ObservableObject {
         audio = nil
         ticker?.cancel()
         ticker = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if let o = interruption { NotificationCenter.default.removeObserver(o) }
+        interruption = nil
+        // Com o CallKit, a sessao de audio e dele: desativa-a ao acabar a chamada.
+        if let uuid = systemCallId {
+            if !systemEnded {
+                if fromUser { CallKitBridge.shared.requestEnd(uuid) } else { CallKitBridge.shared.reportEnded(uuid, reason: reason) }
+            }
+        } else {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+        systemCallId = nil
+        systemEnded = false
+        rangViaCallKit = false
+        audioActive = false
         ui = nil
     }
 }

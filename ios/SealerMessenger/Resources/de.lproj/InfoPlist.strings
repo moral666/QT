@@ -2,3 +2,4 @@
 "NSCameraUsageDescription" = "Um den QR-Code einer anderen Person zu scannen und für Videoanrufe.";
 "NSMicrophoneUsageDescription" = "Für Sprachanrufe und Sprachnachrichten.";
 "NSFaceIDUsageDescription" = "Um SEALER ohne Code-Eingabe zu entsperren.";
+"NSLocalNetworkUsageDescription" = "Für eine bessere Anrufqualität, wenn du im selben WLAN bist.";

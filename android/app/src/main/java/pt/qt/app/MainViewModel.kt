@@ -326,13 +326,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         onError = { e -> error(e) },
         ensureSessions = { ids -> qt?.let { c -> ensureSessions(c, ids) } },
         isContact = { cid -> _ui.value.contacts.any { it.contactId == cid } },
+        takeHandover = { handover.also { handover = null } ?: currentHandover() },
     )
+
+    /** O que a chamada a dois deixou para a de grupo, ate o grupo ficar com isso. */
+    @Volatile private var handover: CallHandover? = null
+
+    private fun currentHandover(): CallHandover? = _ui.value.call?.takeIf { it.phase != CallPhase.ENDED }?.let { c ->
+        CallHandover(c.muted, c.speaker, c.callId.takeIf { SystemCalls.manages(it) }, c.routes, c.routes.firstOrNull { it.id == c.route })
+    }
+
     /** Atender, desligar, silenciar e saidas do som vindos do sistema de chamadas (auricular, carro). */
     private val systemCalls = object : SystemCalls.Listener {
         override fun owns(callId: String): Boolean =
-            _ui.value.call?.let { it.callId == callId && it.phase != CallPhase.ENDED } == true
+            _ui.value.call?.let { it.callId == callId && it.phase != CallPhase.ENDED } == true || groupCalls.ownsSystem(callId)
 
         override fun onSystemAnswer(callId: String) {
+            if (groupCalls.ownsSystem(callId)) {
+                groupCalls.answerFromNotification()
+                if (!visible) CallNotify.openToAnswer(getApplication())
+                return
+            }
             val c = _ui.value.call ?: return
             if (c.callId != callId || c.phase != CallPhase.INCOMING) return
             // Como o "Atender" da notificacao: a Activity atende (com a permissao do microfone).
@@ -343,10 +357,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         override fun onSystemHangup(callId: String) {
             // Desligado no sistema (auricular, carro, ou uma chamada GSM atendida por cima): o
             // outro lado recebe o fim, como ao desligar na app.
-            if (owns(callId)) hangupCall()
+            if (groupCalls.ownsSystem(callId)) groupCalls.onSystemHangup() else if (owns(callId)) hangupCall()
         }
 
         override fun onSystemMuted(callId: String, muted: Boolean) {
+            if (groupCalls.ownsSystem(callId)) {
+                groupCalls.onSystemMuted(muted)
+                return
+            }
             val c = _ui.value.call ?: return
             if (c.callId != callId || c.muted == muted) return
             callIO?.muted = muted
@@ -354,6 +372,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         override fun onRoutes(callId: String, routes: List<AudioRoute>, current: AudioRoute?) {
+            if (groupCalls.ownsSystem(callId)) {
+                groupCalls.onSystemRoutes(routes, current)
+                return
+            }
             _ui.update { u ->
                 u.call?.let { cur ->
                     if (cur.callId != callId) {
@@ -414,6 +436,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** O ecra passa a usar a base de dados aberta (por ele ou pelo segundo plano). */
     private suspend fun setupClient(client: QtClient) {
         qt = client
+        groupCalls.moveNameToCore(client)
         val ck = contactsKey ?: throw IllegalStateException("sem a chave dos contactos")
         // Lista de contactos no formato antigo: passa ja a ter a segunda camada.
         val contacts = try {
@@ -614,6 +637,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         resumeLinks()
         // Ligacoes ainda abertas (voltou antes de 30 s): "online" ja. Senao, startLink trata.
         io { if (link != null && !_ui.value.locked) presenceAnnounce(true) }
+        // Uma ligacao morta descobre-se ja, e nao com a primeira mensagem.
+        io {
+            val c = qt ?: return@io
+            val l = link ?: return@io
+            if (!_ui.value.locked) runCatching { l.request(c.relayRequestPremiumStatus(), LINK_CHECK_MS) }
+        }
         // O segundo plano pode ter recebido mensagens ou estar a tocar uma chamada.
         io {
             val c = qt ?: return@io
@@ -2470,6 +2499,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val client = qt ?: return@withLock
         val l = link ?: return@withLock
         var changed = false
+        var retried = false
         // Membros dos grupos que nao estao nos contactos: o endereco vem do Public ID na info do grupo.
         val members by lazy {
             client.groups().flatMap { it.members }.associate { it.contactId to it.publicId }
@@ -2480,10 +2510,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 ?: _ui.value.contacts.firstOrNull { it.contactId == item.contactId }?.relayId
                 ?: members[item.contactId]?.let { runCatching { relayIdOfPublicId(it) }.getOrNull() }
                 ?: continue
+            val req = client.relayRequestSendItem(relayId, item)   // recibos/presenca: sem campainha
             val r = try {
-                l.request(client.relayRequestSendItem(relayId, item))   // recibos/presenca: sem campainha
+                l.request(req)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                break   // sem rede: tenta no proximo ciclo, mantendo a ordem
+                // A ligacao estava morta (ex.: a app parada muito tempo): mais uma tentativa, ja por
+                // uma ligacao nova. Repetir e seguro: o destinatario ignora o que ja recebeu.
+                if (retried) break
+                retried = true
+                try {
+                    l.request(req)
+                } catch (e2: CancellationException) {
+                    throw e2
+                } catch (e2: Exception) {
+                    break   // sem rede: tenta no proximo ciclo, mantendo a ordem
+                }
             }
             if (r is RelayResponse.Ack) {
                 client.outboxSent(item.outboxId)
@@ -2700,7 +2743,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Para tudo o que a chamada usa. `how`: como acabou, para o sistema de chamadas. */
-    private fun stopCallMedia(how: CallEnd = CallEnd.LOCAL) {
+    private fun stopCallMedia(how: CallEnd = CallEnd.LOCAL, forGroup: Boolean = false) {
         val endingId = _ui.value.call?.takeIf { it.phase != CallPhase.ENDED }?.callId
         cameraHeld = false
         stopVideo()
@@ -2725,6 +2768,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         callTicker = null
         CallControl.hangup = null
         val app = getApplication<Application>()
+        // Passou a chamada de grupo: o servico e a chamada no sistema continuam, agora para ela.
+        // Sem isto, com o ecra apagado, o Android ja nao deixava voltar a usar o microfone.
+        if (forGroup) return
         CallService.stop(app)
         CallNotify.clear(app)
         // Depois do audio parado: o sistema devolve o som do telemovel ao normal. O microfone do
@@ -2935,8 +2981,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** A chamada a dois passou a chamada de grupo: para o microfone e sai do ecra, sem "terminada". */
     private fun leaveCallForGroup() {
         if (_ui.value.call == null) return
-        stopCallMedia(CallEnd.LOCAL)
+        handover = currentHandover()
+        stopCallMedia(CallEnd.LOCAL, forGroup = true)
         _ui.update { it.copy(call = null, answerNow = null) }
+        // Se a chamada de grupo nao chegar a arrancar, o servico e a chamada no sistema saem aqui.
+        viewModelScope.launch {
+            delay(HANDOVER_WAIT_MS)
+            val h = handover ?: return@launch
+            handover = null
+            if (groupCalls.ui.value != null || _ui.value.call != null) return@launch
+            CallService.stop(getApplication())
+            h.systemId?.let { SystemCalls.end(it, CallEnd.LOCAL) }
+        }
     }
 
     /**
@@ -2964,6 +3020,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val shown = _ui.value.call
         if (shown != null && shown.phase != CallPhase.ENDED) return
         val r = SealerCore.takeRinging(getApplication()) ?: return
+        if (r.group) {
+            groupCalls.adoptRinging(client, r)
+            return
+        }
         val id = r.callId ?: return
         // Entretanto acabou (desligou, ou passou o tempo): fica so como perdida.
         if (runCatching { client.callCurrent() }.getOrNull() != id) {
@@ -2987,6 +3047,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** "Atender" na notificacao (a Activity abriu com essa acao). */
     fun answerFromNotification() {
+        if (groupCalls.answerFromNotification()) return
         // A chamada a que se carregou (com o bloqueio da app ainda nao se sabe: null).
         SealerCore.answerCallId = SealerCore.ringing?.callId ?: _ui.value.call?.callId
         SealerCore.answerRequestedAt = SystemClock.elapsedRealtime()
@@ -3423,6 +3484,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val PHOTO_SYNC_MS = 60_000L
         /** Quanto tempo fica no ecra "Chamada terminada". */
         private const val ENDED_SHOW_MS = 2_000L
+        /** Ao voltar ao ecra: quanto se espera pela resposta do relay antes de voltar a ligar. */
+        private const val LINK_CHECK_MS = 3_000L
+        /** A chamada de grupo tem este tempo para ficar com o que a chamada a dois deixou. */
+        private const val HANDOVER_WAIT_MS = 5_000L
         /** Videochamada atendida sem "tenho video" do outro ao fim disto: a camara desliga-se. */
         private const val NO_VIDEO_AFTER_MS = 5_000L
         /** Sem imagens do outro ha mais disto: mostra a foto ou a inicial dele no lugar do video. */
