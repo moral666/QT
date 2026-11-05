@@ -6,6 +6,10 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 5 de novembro de 2026: versão 1.0.0 (Android e iPhone 1.0.0, build 75)
+
+- **Primeira versão estável**, a que entra na Play Store. As funcionalidades são as da 0.9.74.
+
 ### 5 de novembro de 2026: chamadas de grupo e grupos (Android e iPhone 0.9.74, build 74)
 
 - **Passar de uma chamada a dois para grupo:** a câmara, o microfone e a saída do som ficam como
