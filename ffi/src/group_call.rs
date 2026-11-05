@@ -1471,7 +1471,7 @@ fn rms(pcm: &[u8]) -> f64 {
     if n == 0 {
         return 0.0;
     }
-    let sum: f64 = pcm.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]]) as f64).map(|x| x * x).sum();
+    let sum: f64 = pcm.as_chunks::<2>().0.iter().map(|b| i16::from_le_bytes(*b) as f64).map(|x| x * x).sum();
     (sum / n as f64).sqrt()
 }
 
@@ -1590,8 +1590,8 @@ impl GroupAudio {
         for (peer, a) in self.all() {
             let pcm = a.pull_playback();
             levels.push((peer, rms(&pcm)));
-            for (i, b) in pcm.chunks_exact(2).take(n).enumerate() {
-                acc[i] += i16::from_le_bytes([b[0], b[1]]) as i32;
+            for (i, b) in pcm.as_chunks::<2>().0.iter().take(n).enumerate() {
+                acc[i] += i16::from_le_bytes(*b) as i32;
             }
         }
         {
