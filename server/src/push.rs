@@ -35,6 +35,9 @@ use crate::store::Store;
 
 /// Intervalo minimo entre duas campainhas para o mesmo utilizador.
 pub const MIN_INTERVAL: Duration = Duration::from_secs(10);
+/// Intervalo depois de `DAILY` notificacoes no mesmo dia.
+const SLOW_INTERVAL: Duration = Duration::from_secs(60);
+const DAILY: crate::limits::DailyRate = crate::limits::DailyRate { per_day: 500 };
 /// O "parar de tocar" so vale ate este tempo depois da campainha da chamada.
 pub const CALL_END_WINDOW: Duration = Duration::from_secs(60);
 const SCOPE: &str = "https://www.googleapis.com/auth/firebase.messaging";
@@ -167,11 +170,15 @@ enum SendError {
 
 impl Limits {
     fn allow(&self, user_id: &str) -> bool {
+        use crate::limits::{charge_daily, Limited::Push};
         let now = Instant::now();
+        // Depois de muitas no mesmo dia, uma por minuto.
+        let interval = if charge_daily(Push, user_id, DAILY, 0) { MIN_INTERVAL } else { SLOW_INTERVAL };
         let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
-        if last.get(user_id).is_some_and(|t| now.duration_since(*t) < MIN_INTERVAL) {
+        if last.get(user_id).is_some_and(|t| now.duration_since(*t) < interval) {
             return false;
         }
+        charge_daily(Push, user_id, DAILY, 1);
         // Nao deixa o mapa crescer para sempre: tira as entradas antigas.
         if last.len() > 10_000 {
             last.retain(|_, t| now.duration_since(*t) < MIN_INTERVAL);

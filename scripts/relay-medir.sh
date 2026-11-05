@@ -20,6 +20,8 @@ sleep 0.5
 KEY=$(mktemp -u /tmp/qt-medir-key.XXXX)
 RELAY_BIND_ADDR=127.0.0.1:$PORT REDIS_URL=redis://127.0.0.1:$RPORT NOISE_KEY_PATH=$KEY \
   RELAY_MAX_CONNECTIONS=20000 RELAY_BLOB_DIR=/tmp/qt-medir-anexos \
+  RELAY_NEW_ACCOUNTS_PER_MIN=0 RELAY_MAX_UNREGISTERED=0 RELAY_SEND_PER_MIN_NEW=300 \
+  RELAY_SEND_DAILY_MB=0 RELAY_SEND_DAILY_MB_NEW=0 RELAY_EGRESS_MB_PER_SEC=0 \
   ./target/release/relay_server >/dev/null 2>&1 &
 RELAY=$!
 trap 'kill "$RELAY" 2>/dev/null; kill "$(cat /tmp/qt-medir-redis.pid)" 2>/dev/null; rm -f "$KEY"' EXIT

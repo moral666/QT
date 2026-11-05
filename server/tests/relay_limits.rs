@@ -59,4 +59,19 @@ async fn limites_por_conta_e_por_autenticar() {
     tokio::time::sleep(Duration::from_millis(300)).await;
     let mut nova = client(&relay, &SigningKeyPair::generate()).await.expect("com vagas livres volta a aceitar");
     assert!(nova.fetch_messages().await.is_ok());
+
+    // ---- 3) Sem conta: grupo proprio; com ele cheio, quem tem conta continua a entrar ----
+    drop((ja_autenticado, nova));
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let cfg = ServerConfig { max_unregistered: 1, ..ServerConfig::default() };
+    let relay = TestRelay::start(cfg).await;
+    let mut primeira = client(&relay, &SigningKeyPair::generate()).await.unwrap();
+    assert!(client(&relay, &SigningKeyPair::generate()).await.is_err(), "grupo cheio: fecha");
+    let com_conta = SigningKeyPair::generate();
+    registar(&relay, &qt_server::protocol::user_id_from_signing_public(&com_conta.verifying_key.to_bytes())).await;
+    assert!(client(&relay, &com_conta).await.is_ok());
+    assert!(primeira.fetch_messages().await.is_ok());
+    primeira.close().await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(client(&relay, &SigningKeyPair::generate()).await.is_ok(), "vaga livre");
 }

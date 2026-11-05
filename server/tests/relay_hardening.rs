@@ -263,6 +263,7 @@ async fn timeouts_de_handshake_autenticacao_e_inatividade() {
         handshake_timeout: Duration::from_millis(300),
         auth_timeout: Duration::from_millis(300),
         idle_timeout: Duration::from_millis(500),
+        unregistered_idle: Duration::from_millis(500),
         ..ServerConfig::default()
     };
     let relay = TestRelay::start(cfg).await;

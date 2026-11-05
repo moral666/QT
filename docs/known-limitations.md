@@ -31,7 +31,7 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
 11. **Sem verificação de tempo constante / canais laterais** das dependências.
 
 ## Relay / rede
-12. **Sem consentimento de contacto**; fila ≤ 1000. Desde a 0.9.3: 300 envelopes por minuto e
+12. **Sem consentimento de contacto**; fila ≤ 1000 mensagens e 2 MB. Desde a 0.9.3: 300 envelopes por minuto e
     60 pedidos de bundle por minuto por conta, e prova de trabalho (Argon2id, uns segundos)
     para criar conta. Um atacante com muitas máquinas continua a conseguir criar contas.
     Desde 19/10/2026 há limites de ligações (100 por IP no HAProxy, 2 000 por autenticar e 8 por

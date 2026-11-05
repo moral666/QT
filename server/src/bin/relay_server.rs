@@ -215,6 +215,24 @@ async fn main() {
             }
         });
     }
+    // Estado do Redis e dos anexos de 10 em 10 s: guia os limites e entra na linha `stats 60s`.
+    // Sem `INFO` no ACL, a percentagem fica a 0 e os limites que dependem dela nao atuam.
+    let s = store.clone();
+    tokio::spawn(async move {
+        use std::sync::atomic::Ordering::Relaxed;
+        let stats = &qt_server::stats::STATS;
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(10));
+        loop {
+            tick.tick().await;
+            let pct = s.redis_memory_pct().await.unwrap_or(0);
+            qt_server::limits::set_redis_pct(pct);
+            stats.redis_mem_pct.store(pct, Relaxed);
+            stats.blobs_reserved_mb.store(s.blobs_reserved() / 1_048_576, Relaxed);
+            if let Ok(n) = s.reports_stored().await {
+                stats.reports_stored.store(n, Relaxed);
+            }
+        }
+    });
     let listener = TcpListener::bind(&bind_addr)
         .await
         .unwrap_or_else(|_| fatal("nao foi possivel abrir o socket TCP (porta ocupada/permissoes?)"));
@@ -277,6 +295,20 @@ async fn main() {
         federacao: arrancar_federacao(&store, &static_keys.private).await,
         // RELAY_NOVAS_CONTAS=0: relay cheio, as apps novas vao para o relay seguinte da lista.
         novas_contas: !matches!(std::env::var("RELAY_NOVAS_CONTAS").as_deref(), Ok("0") | Ok("false") | Ok("no")),
+        // RELAY_NEW_ACCOUNTS_PER_MIN=0: sem teto de contas novas (medicoes).
+        new_accounts: {
+            let per_minute = env_u64("RELAY_NEW_ACCOUNTS_PER_MIN", defaults.new_accounts.per_minute as u64) as u32;
+            let burst = env_u64("RELAY_NEW_ACCOUNTS_BURST", defaults.new_accounts.burst as u64) as u32;
+            qt_server::limits::Rate { burst: if per_minute == 0 { 0 } else { burst }, per_minute }
+        },
+        max_unregistered: env_u64("RELAY_MAX_UNREGISTERED", defaults.max_unregistered as u64) as usize,
+        send_rate_new: {
+            let n = env_u64("RELAY_SEND_PER_MIN_NEW", defaults.send_rate_new.per_minute as u64) as u32;
+            qt_server::limits::Rate { burst: n, per_minute: n }
+        },
+        send_bytes: qt_server::limits::DailyRate { per_day: env_u64("RELAY_SEND_DAILY_MB", 20) * 1_048_576 },
+        send_bytes_new: qt_server::limits::DailyRate { per_day: env_u64("RELAY_SEND_DAILY_MB_NEW", 5) * 1_048_576 },
+        egress_per_sec: env_u64("RELAY_EGRESS_MB_PER_SEC", defaults.egress_per_sec / 1_048_576) * 1_048_576,
         ..defaults
     });
     if !cfg.novas_contas {
@@ -300,8 +332,12 @@ async fn main() {
         };
 
         let Ok(permit) = slots.clone().try_acquire_owned() else {
-            // Cheio: fecha logo (o cliente volta a tentar com backoff).
+            // Cheio: fecha logo (o cliente volta a tentar com backoff). A vaga seguinte sai de
+            // uma ligacao sem conta, a mais antiga.
             qt_server::stats::inc(&qt_server::stats::STATS.rejected_busy);
+            if qt_server::limits::UnregisteredSlot::close_oldest() {
+                qt_server::stats::inc(&qt_server::stats::STATS.unregistered_closed);
+            }
             drop(tcp_stream);
             continue;
         };
@@ -371,6 +407,8 @@ fn configure_blobs(store: &mut Store, noise_key_path: &str) {
     let mut cfg = qt_server::BlobConfig::new(&dir);
     cfg.max_total_bytes = env_u64("RELAY_BLOB_MAX_TOTAL_MB", 2048) * 1_048_576;
     cfg.max_user_bytes_per_day = env_u64("RELAY_BLOB_USER_DAILY_MB", 1024) * 1_048_576;
+    cfg.max_free_user_bytes_per_day = env_u64("RELAY_BLOB_FREE_DAILY_MB", 20) * 1_048_576;
+    cfg.free_share_pct = env_u64("RELAY_BLOB_FREE_SHARE_PCT", 25).min(100);
     cfg.min_free_bytes = env_u64("RELAY_BLOB_MIN_FREE_MB", 1024) * 1_048_576;
     let (total_mb, user_mb) = (cfg.max_total_bytes / 1_048_576, cfg.max_user_bytes_per_day / 1_048_576);
     match store.enable_blobs(cfg) {

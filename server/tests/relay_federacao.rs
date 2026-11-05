@@ -444,6 +444,62 @@ async fn copia_de_recuperacao_noutro_relay() {
 }
 
 #[tokio::test]
+async fn perguntas_por_anexos_limitadas_e_guardadas() {
+    let (mut a, mut b) = (Lado::novo("estocolmo").await, Lado::novo("espanha").await);
+    let (fa, fb) = (a.arrancar(vec![b.como_par()]), b.arrancar(vec![a.como_par()]));
+    esperar_ligado(&fa).await;
+    esperar_ligado(&fb).await;
+    let cfg = ServerConfig {
+        federacao: Some(fa.clone()),
+        fed_lookup_rate: qt_server::limits::Rate { burst: 2, per_minute: 1 },
+        ..fast_cfg()
+    };
+    let url = relay_com(&a, cfg).await;
+    let (_, mut c) = conta(&url).await;
+    let info = |n: u8| ClientMessage::BlobInfo { blob_id: format!("{n:02x}").repeat(16) };
+    assert!(matches!(c.request(info(1)).await.unwrap(), ServerMessage::BlobNotFound));
+    assert!(matches!(c.request(info(2)).await.unwrap(), ServerMessage::BlobNotFound));
+    recusa(c.request(info(3)).await.unwrap(), RATE_LIMITED);
+    // O que ja se sabe nao volta a perguntar nem gasta o limite.
+    assert!(fa.anexo_conhecido(&format!("{:02x}", 1).repeat(16)));
+    assert!(matches!(c.request(info(1)).await.unwrap(), ServerMessage::BlobNotFound));
+}
+
+#[tokio::test]
+async fn bloqueio_premium_acerta_se_quando_o_par_volta() {
+    let (mut a, mut b) = (Lado::novo("estocolmo").await, Lado::novo("espanha").await);
+    // O operador muda o bloqueio com o outro relay em baixo.
+    a.store.set_premium_enforced(true).await.unwrap();
+    assert!(!b.store.premium_enforced().await.unwrap());
+    let (fa, fb) = (a.arrancar(vec![b.como_par()]), b.arrancar(vec![a.como_par()]));
+    esperar_ligado(&fa).await;
+    esperar_ligado(&fb).await;
+    for _ in 0..50 {
+        if b.store.premium_enforced().await.unwrap() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(b.store.premium_enforced().await.unwrap(), "o relay que estava em baixo ficou com a decisao mais recente");
+    assert!(a.store.premium_enforced().await.unwrap());
+}
+
+#[tokio::test]
+async fn contas_novas_noutro_relay_nao_usam_a_parte_final_da_fila() {
+    let (a, _fa, ua, b, _fb, ub) = par_federado().await;
+    let (s, mut c) = conta(&ua).await;
+    let (bob, _cb) = conta(&ub).await;
+    let _ = (&a, &s);
+    // A conta da Ana e nova: a fila do Bob, no outro relay, recusa-a aos 80 %.
+    let to = uid(&bob);
+    for _ in 0..800 {
+        b.store.enqueue_from_peer(to.clone(), vec![], vec![1; 16], false).await.unwrap();
+    }
+    let r = c.request(envio(&to, 1)).await.unwrap();
+    recusa(r, "fila do destinatario cheia");
+}
+
+#[tokio::test]
 async fn relay_do_destinatario_em_baixo_fica_na_outbox() {
     let mut a = Lado::novo("a").await;
     let b = Lado::novo("b").await;
@@ -502,7 +558,7 @@ async fn operador_num_relay_trata_contas_do_outro() {
     }
     // Bloqueio premium: vale nos dois relays.
     match o.request(ClientMessage::AdminPremiumEnforce { on: Some(true) }).await.unwrap() {
-        ServerMessage::PremiumEnforce { on } => assert!(on),
+        ServerMessage::PremiumEnforce { on, pares, confirmados } => assert!(on && pares == 1 && confirmados == 1),
         x => panic!("{x:?}"),
     }
     assert!(b.store.premium_enforced().await.unwrap());

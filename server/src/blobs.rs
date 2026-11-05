@@ -34,6 +34,11 @@ use thiserror::Error;
 pub const BLOB_CHUNK: usize = 40 * 1024;
 /// Maior ficheiro aceite: 25 MiB de imagem + arredondamento + etiquetas AEAD.
 pub const MAX_BLOB_BYTES: u64 = 27 * 1024 * 1024;
+/// Um envio parado ha mais disto deixa de ter lugar reservado.
+pub const UNFINISHED_TTL: Duration = Duration::from_secs(15 * 60);
+/// Um anexo pode ser descarregado ate perfazer este numero de vezes o seu tamanho (grupo de 10
+/// com repeticoes de blocos).
+pub const MAX_DOWNLOADS: u64 = 15;
 
 #[derive(Clone, Debug)]
 pub struct BlobConfig {
@@ -45,6 +50,10 @@ pub struct BlobConfig {
     pub max_total_bytes: u64,
     /// Bytes que cada utilizador pode enviar por dia (anti-abuso).
     pub max_user_bytes_per_day: u64,
+    /// O mesmo para contas sem premium.
+    pub max_free_user_bytes_per_day: u64,
+    /// Parte de `max_total_bytes` (em %) que as contas sem premium podem ocupar.
+    pub free_share_pct: u64,
     /// Espaco que fica sempre livre no disco (para o sistema, o Redis e os registos):
     /// abaixo disto, o relay recusa anexos novos mesmo sem chegar a `max_total_bytes`.
     pub min_free_bytes: u64,
@@ -61,6 +70,8 @@ impl BlobConfig {
             ttl: Duration::from_secs(24 * 60 * 60),
             max_total_bytes: 2 * 1024 * 1024 * 1024,
             max_user_bytes_per_day: 1024 * 1024 * 1024,
+            max_free_user_bytes_per_day: 20 * 1024 * 1024,
+            free_share_pct: 25,
             grace: Duration::from_secs(600),
             min_free_bytes: 1024 * 1024 * 1024,
         }
@@ -72,6 +83,10 @@ pub(crate) struct Blobs {
     /// Bytes reservados no disco (tamanho declarado de cada ficheiro).
     /// Recalculado por `sweep_blobs`.
     used: AtomicU64,
+    /// A parte de `used` de contas sem premium.
+    used_free: AtomicU64,
+    /// Bytes ja entregues de cada anexo (so em memoria).
+    served: std::sync::Mutex<std::collections::HashMap<String, u64>>,
     /// As escritas sao curtas (40 KB); uma de cada vez evita dois pedidos a
     /// escrever no mesmo ficheiro ao mesmo tempo.
     write_lock: tokio::sync::Mutex<()>,
@@ -149,11 +164,41 @@ impl Blobs {
             b.mode(0o700);
         }
         b.create(&cfg.dir)?;
-        Ok(Self { cfg, used: AtomicU64::new(0), write_lock: tokio::sync::Mutex::new(()) })
+        Ok(Self {
+            cfg,
+            used: AtomicU64::new(0),
+            used_free: AtomicU64::new(0),
+            served: Default::default(),
+            write_lock: tokio::sync::Mutex::new(()),
+        })
     }
 
     fn path(&self, id: &str) -> PathBuf {
         self.cfg.dir.join(id)
+    }
+
+    /// Conta `bytes` entregues do anexo. `false`: ja passou do limite de descargas.
+    fn serve(&self, id: &str, size: u64, bytes: u64) -> bool {
+        let mut served = self.served.lock().unwrap_or_else(|e| e.into_inner());
+        let total = served.entry(id.to_string()).or_insert(0);
+        if *total >= size.saturating_mul(MAX_DOWNLOADS) {
+            return false;
+        }
+        *total += bytes;
+        true
+    }
+
+    fn forget_served(&self, id: &str) {
+        self.served.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+    }
+}
+
+/// Subtrai sem passar abaixo de zero (ciclo compare-and-swap: igual em qualquer versao do Rust,
+/// sem o `fetch_update` que o Rust novo da como antiquado).
+fn sub_saturating(c: &AtomicU64, n: u64) {
+    let mut current = c.load(Ordering::SeqCst);
+    while let Err(actual) = c.compare_exchange_weak(current, current.saturating_sub(n), Ordering::SeqCst, Ordering::SeqCst) {
+        current = actual;
     }
 }
 
@@ -161,11 +206,17 @@ struct Meta {
     size: u64,
     token_hash: String,
     complete: bool,
+    free: bool,
 }
 
 impl Store {
     fn blobs(&self) -> Result<&Blobs, BlobError> {
         self.blobs.as_ref().ok_or(BlobError::Disabled)
+    }
+
+    /// Bytes reservados para anexos neste momento.
+    pub fn blobs_reserved(&self) -> u64 {
+        self.blobs.as_ref().map_or(0, |b| b.used.load(Ordering::SeqCst))
     }
 
     fn blob_key(&self, id: &str) -> String {
@@ -183,11 +234,17 @@ impl Store {
             size,
             token_hash: m.get("token").cloned().unwrap_or_default(),
             complete: m.get("complete").map(|v| v == "1").unwrap_or(false),
+            free: m.get("free").map(|v| v == "1").unwrap_or(false),
         })
     }
 
     /// Reserva espaco para um ficheiro de `size` bytes enviado por `owner`.
     pub async fn blob_create(&self, owner: &str, size: u64) -> Result<(String, String), BlobError> {
+        self.blob_create_as(owner, size, false).await
+    }
+
+    /// Como `blob_create`. `free`: conta sem premium (quota e espaco proprios).
+    pub async fn blob_create_as(&self, owner: &str, size: u64, free: bool) -> Result<(String, String), BlobError> {
         let blobs = self.blobs()?;
         if size == 0 || size > MAX_BLOB_BYTES {
             return Err(BlobError::BadSize);
@@ -200,8 +257,20 @@ impl Store {
             blobs.used.fetch_sub(size, Ordering::SeqCst);
             return Err(BlobError::NoSpace);
         }
+        if free {
+            let share = blobs.cfg.max_total_bytes / 100 * blobs.cfg.free_share_pct;
+            let prev = blobs.used_free.fetch_add(size, Ordering::SeqCst);
+            if prev.saturating_add(size) > share {
+                blobs.used_free.fetch_sub(size, Ordering::SeqCst);
+                blobs.used.fetch_sub(size, Ordering::SeqCst);
+                return Err(BlobError::NoSpace);
+            }
+        }
         let release = |e: BlobError| {
             blobs.used.fetch_sub(size, Ordering::SeqCst);
+            if free {
+                blobs.used_free.fetch_sub(size, Ordering::SeqCst);
+            }
             e
         };
         let mut conn = self.connection().await.map_err(|e| release(e.into()))?;
@@ -226,9 +295,17 @@ impl Store {
             .incr(&qkey, size)
             .expire(&qkey, 2 * 86_400)
             .ignore()
-            .hset_multiple(&key, &[("size", size.to_string()), ("token", token_hash(&token)), ("complete", "0".to_string())])
+            .hset_multiple(
+                &key,
+                &[
+                    ("size", size.to_string()),
+                    ("token", token_hash(&token)),
+                    ("complete", "0".to_string()),
+                    ("free", if free { "1" } else { "0" }.to_string()),
+                ],
+            )
             .ignore()
-            .expire(&key, blobs.cfg.ttl.as_secs() as i64)
+            .expire(&key, blobs.cfg.ttl.min(UNFINISHED_TTL).as_secs() as i64)
             .ignore()
             .query_async(&mut conn)
             .await;
@@ -239,7 +316,7 @@ impl Store {
                 let _ = std::fs::remove_file(blobs.path(&id));
                 return Err(release(e.into()));
             }
-            Ok((total,)) if total > blobs.cfg.max_user_bytes_per_day => {
+            Ok((total,)) if total > if free { blobs.cfg.max_free_user_bytes_per_day } else { blobs.cfg.max_user_bytes_per_day } => {
                 let _: Result<(), _> = redis::pipe().decr(&qkey, size).ignore().del(&key).ignore().query_async(&mut conn).await;
                 let _ = std::fs::remove_file(blobs.path(&id));
                 return Err(release(BlobError::Quota));
@@ -289,9 +366,19 @@ impl Store {
                 f.sync_all()?;
             }
         }
+        let mut conn = self.connection().await?;
+        let key = self.blob_key(id);
         if end == meta.size {
-            let mut conn = self.connection().await?;
-            conn.hset::<_, _, _, ()>(self.blob_key(id), "complete", "1").await?;
+            // Acabou de chegar: fica o prazo inteiro a espera de quem o descarregue.
+            redis::pipe()
+                .hset(&key, "complete", "1")
+                .ignore()
+                .expire(&key, blobs.cfg.ttl.as_secs() as i64)
+                .ignore()
+                .query_async::<_, ()>(&mut conn)
+                .await?;
+        } else {
+            conn.expire::<_, ()>(&key, blobs.cfg.ttl.min(UNFINISHED_TTL).as_secs() as i64).await?;
         }
         Ok(BlobStatus { size: meta.size, received: end, complete: end == meta.size })
     }
@@ -315,6 +402,9 @@ impl Store {
             return Err(BlobError::BadOffset);
         }
         let len = (meta.size - offset).min(BLOB_CHUNK as u64) as usize;
+        if !blobs.serve(id, meta.size, len as u64) {
+            return Err(BlobError::NotFound);
+        }
         let path = blobs.path(id);
         let data = tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
             use std::io::{Read, Seek, SeekFrom};
@@ -337,22 +427,19 @@ impl Store {
         if !is_valid_blob_id(id) {
             return Err(BlobError::BadRequest);
         }
-        let size = match self.blob_meta(id).await {
-            Ok(m) => Some(m.size),
+        let meta = match self.blob_meta(id).await {
+            Ok(m) => Some((m.size, m.free)),
             Err(BlobError::NotFound) => None,
             Err(e) => return Err(e),
         };
         let mut conn = self.connection().await?;
         let removed: u64 = conn.del(self.blob_key(id)).await?;
         let _ = std::fs::remove_file(blobs.path(id));
-        if let (Some(size), 1) = (size, removed) {
-            // Subtrai sem passar abaixo de zero (ciclo compare-and-swap: igual em
-            // qualquer versao do Rust, sem o `fetch_update` que o Rust novo da como antiquado).
-            let mut current = blobs.used.load(Ordering::SeqCst);
-            while let Err(actual) =
-                blobs.used.compare_exchange_weak(current, current.saturating_sub(size), Ordering::SeqCst, Ordering::SeqCst)
-            {
-                current = actual;
+        blobs.forget_served(id);
+        if let (Some((size, free)), 1) = (meta, removed) {
+            sub_saturating(&blobs.used, size);
+            if free {
+                sub_saturating(&blobs.used_free, size);
             }
         }
         Ok(())
@@ -383,9 +470,11 @@ impl Store {
         let mut conn = self.connection().await?;
         let mut removed = 0u64;
         let mut used = 0u64;
+        let mut used_free = 0u64;
+        let mut alive = std::collections::HashSet::new();
         for (id, path, age) in entries {
             let key = self.blob_key(&id);
-            let size: Option<u64> = conn.hget(&key, "size").await?;
+            let (size, free): (Option<u64>, Option<String>) = redis::pipe().hget(&key, "size").hget(&key, "free").query_async(&mut conn).await?;
             let too_old = age > blobs.cfg.ttl + blobs.cfg.grace;
             let orphan = size.is_none() && age >= blobs.cfg.grace;
             if too_old || orphan {
@@ -395,9 +484,15 @@ impl Store {
                 let _: u64 = conn.del(&key).await?;
             } else {
                 used += size.unwrap_or(0);
+                if free.as_deref() == Some("1") {
+                    used_free += size.unwrap_or(0);
+                }
+                alive.insert(id);
             }
         }
         blobs.used.store(used, Ordering::SeqCst);
+        blobs.used_free.store(used_free, Ordering::SeqCst);
+        blobs.served.lock().unwrap_or_else(|e| e.into_inner()).retain(|id, _| alive.contains(id));
         Ok((removed, used))
     }
 }

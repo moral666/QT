@@ -87,7 +87,7 @@ async fn envio_recusado_nao_deixa_chaves_para_tras() {
     assert!(matches!(s.enqueue(Sender::Check(&n), a.clone(), vec![], vec![1]).await, Err(StoreError::SenderNotRegistered)));
     assert!(!exists(&p, &format!("queue:{a}")).await);
     // Vinda de outro relay para um desconhecido: o mesmo.
-    assert!(matches!(s.enqueue_from_peer(x.clone(), vec![], vec![1]).await, Err(StoreError::RecipientUnknown)));
+    assert!(matches!(s.enqueue_from_peer(x.clone(), vec![], vec![1], false).await, Err(StoreError::RecipientUnknown)));
     assert!(!exists(&p, &format!("queue:{x}")).await);
 }
 
@@ -178,21 +178,21 @@ async fn registo_numa_so_transacao() {
     s.delete_account(&a).await.unwrap();
     // Registar de novo: bundle, fim da marca de apagada e one-time prekeys trocadas.
     let otpks = vec![vec![1u8; 36], vec![2u8; 36]];
-    assert_eq!(s.register_full(&a, vec![9, 9], Some(&otpks)).await.unwrap(), None);
+    assert_eq!(s.register_full(&a, vec![9, 9], Some(&otpks), qt_server::store::NewAccount::No).await.unwrap(), None);
     assert_eq!(s.get_bundle(&a).await.unwrap(), Some(vec![9, 9]));
     assert!(!exists(&p, &format!("deleted:{a}")).await);
     assert_eq!(s.count_one_time_prekeys(&a).await.unwrap(), 2);
     assert!(ttl(&p, &format!("bundle:{a}")).await > 0);
     // Sem one-time prekeys no pedido: as que estao ficam.
-    s.register_full(&a, vec![9], None).await.unwrap();
+    s.register_full(&a, vec![9], None, qt_server::store::NewAccount::No).await.unwrap();
     assert_eq!(s.count_one_time_prekeys(&a).await.unwrap(), 2);
     // Lista vazia: tira-as todas (como antes).
-    s.register_full(&a, vec![9], Some(&[])).await.unwrap();
+    s.register_full(&a, vec![9], Some(&[]), qt_server::store::NewAccount::No).await.unwrap();
     assert_eq!(s.count_one_time_prekeys(&a).await.unwrap(), 0);
     // Com copia de recuperacao: o registo devolve o lookup para a renovar.
     let lookup = "ab".repeat(32);
     s.backup_put(&a, &lookup, "0123456789abcdef", 0, 1, vec![5; 10]).await.unwrap();
-    assert_eq!(s.register_full(&a, vec![9], None).await.unwrap(), Some(lookup.clone()));
+    assert_eq!(s.register_full(&a, vec![9], None, qt_server::store::NewAccount::No).await.unwrap(), Some(lookup.clone()));
     s.renew_backup_of(&a, &lookup).await.unwrap();
     assert_eq!(s.backup_get(&lookup, 0).await.unwrap(), Some((1, vec![5; 10])));
 }
@@ -202,12 +202,12 @@ async fn estado_ao_autenticar_e_premium_num_so_pedido() {
     let p = prefix("auth");
     let s = store(&p);
     let (a, b) = (user('a'), user('b'));
-    assert_eq!(s.auth_state(&a).await.unwrap(), (false, false));
+    assert_eq!(s.auth_state(&a).await.unwrap(), (false, false, 0));
     s.register_bundle(a.clone(), vec![1]).await.unwrap();
-    assert_eq!(s.auth_state(&a).await.unwrap(), (false, true));
+    assert_eq!(s.auth_state(&a).await.unwrap(), (false, true, 0));
     assert!(s.is_registered(&a).await.unwrap());
     s.ban(&b).await.unwrap();
-    assert_eq!(s.auth_state(&b).await.unwrap(), (true, false));
+    assert_eq!(s.auth_state(&b).await.unwrap(), (true, false, 0));
     // Premium: sem bloqueio passa sempre; com bloqueio so quem tem premium.
     assert!(s.premium_allows(&a).await.unwrap());
     s.set_premium_enforced(true).await.unwrap();

@@ -135,7 +135,9 @@ e depois alimenta a root key do Double Ratchet.
   o relay recusa escritas de contas sem registo). Desde a 0.9.3 há limites por
   conta (300 envelopes por minuto) e uma prova de trabalho ao criar conta (alguns
   segundos de CPU), mas um atacante com muitas máquinas continua a conseguir criar
-  contas. Não há consentimento de contacto no relay. Desde a 0.9.18 há denúncias
+  contas. Desde 5/11/2026 há também limites em bytes por conta e por fila, um teto de
+  contas novas por relay e limites mais baixos nas primeiras 24 horas de cada conta
+  (lista em `protocol-spec.md`, secção 11). Não há consentimento de contacto no relay. Desde a 0.9.18 há denúncias
   (cifradas para o operador) e banimentos por ID; um ID banido pode ser trocado
   por outro novo.
 * **Denúncias:** o operador lê as mensagens que quem denuncia escolheu enviar. Não

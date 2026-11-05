@@ -60,6 +60,7 @@ async fn uma_one_time_prekey_por_pedido_e_o_lote_novo_substitui() {
     let pow = qt_core::pow::pow_solve(&bob.verifying_key.to_bytes(), qt_core::pow::POW_BITS);
     let r = b.request(register(&bob, pow, Some(vec![otpk(1), otpk(2)]))).await.unwrap();
     assert!(matches!(r, ServerMessage::Ack), "{r:?}");
+    registar(&relay, &uid(&alice)).await;
     let mut a = client(&relay, &alice).await;
     let fetch = || ClientMessage::FetchPreKeyBundle { user_id: uid(&bob) };
     let mut got = vec![];

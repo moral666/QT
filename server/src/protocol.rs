@@ -392,7 +392,15 @@ pub enum ServerMessage {
         active: bool,
     },
     /// Resposta a `AdminPremiumEnforce`: estado do bloqueio depois do pedido.
-    PremiumEnforce { on: bool },
+    PremiumEnforce {
+        on: bool,
+        /// Relays da federacao, sem contar este.
+        #[serde(default)]
+        pares: u32,
+        /// Dos `pares`, quantos confirmaram a mudanca pedida.
+        #[serde(default)]
+        confirmados: u32,
+    },
     /// Resposta a `AdminListPremium`.
     PremiumList { entries: Vec<PremiumEntry> },
     /// Resposta a `AdminOnline`.
