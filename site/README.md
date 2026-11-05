@@ -64,6 +64,7 @@ worker/index.js             Código do Worker: só /api/estado (estado do relay 
 public/
   favicon-32.png, favicon-192.png, apple-touch-icon.png
   og-image.jpg              Pré-visualização para redes sociais (1200 x 630)
+  robots.txt, sitemap.xml   Para os motores de busca (acrescentar ao sitemap as páginas novas)
 src/
   main.js                   Arranque: modos da página e, se compensar, o logótipo 3D
   layout.js                 Modos: grelha (início e explorar) e lista

@@ -1,10 +1,10 @@
-# QT
+# SEALER (QT protocol)
 
 <p align="center"><img src="branding/sealer-logo-transparente.png" width="140" alt="SEALER logo"></p>
 
 **SEALER** is a private messenger: no phone number, no email, end-to-end encryption and post-quantum protection. **QT** is the name of the protocol and of this repository.
 
-**Status:** test version, in closed testing. Android app **1.0.0** (iPhone 1.0.0 not yet built), with two federated relays in the European Union (Stockholm and Spain).
+**Status:** version **1.0.0** for Android and iPhone, in invitation-only early access, with two federated relays in the European Union (Stockholm and Spain). Next: Google Play and the App Store.
 
 [Ler em português →](README.md)
 
@@ -77,19 +77,14 @@ The design accepts more relays. The relay-to-relay protocol is in section 25 of 
 - The whole Rust core (cryptography, transport, server, storage and the bridge to the apps), with the test suite passing.
 - Two federated relays on AWS: `wss://relay.sealerapp.com` (Stockholm) and `wss://relay-es.sealerapp.com` (Spain), each with Redis only on `127.0.0.1` and protected by an ACL.
 - Signed *release* Android app on three Samsung phones and the emulator.
-- **Android 0.9.16 with iPhone 0.9.15** (20/10/2026), no bugs: adding, deleting and re-adding contacts, QR code, share ID button, all menus, text and voice messages, GIFs, sending files, blocking contacts, deleting chats and voice calls between Androids, between Android and iPhone and between iPhones.
-- **Android 0.9.22** (22/10/2026): app lock, recent apps and account recovery.
-- **Android 0.9.31** (23/10/2026), no bugs: testers' requests (ringback for the caller, speaker before the call is answered, minimized call, copying the 12 words, links, badges after account recovery) and all ten languages reviewed, Arabic included.
-- **Android 0.9.67**: group calls tested on phones.
-- **iPhone 0.9.69**: built and tested on the Mac.
+- **On real phones, Android and iPhone, across the releases up to 1.0.0:** contacts (adding, deleting, QR code, sharing the ID), text and voice messages, GIFs, files, blocking contacts, deleting chats, voice calls between Androids, between Android and iPhone and between iPhones, group calls, app lock, account recovery with the 12 words and all ten languages, Arabic included. The iPhone app is built and tested on a Mac.
 - Field test with five devices on three platforms and continuous sending: no message lost ([`docs/field-tests.md`](docs/field-tests.md)).
 
 **Next:**
 
-- Distribution through Google Play and the App Store (today testers install the app by hand). Already prepared: [`docs/google-play.md`](docs/google-play.md).
-- Production server with backups and alerts.
+- Distribution through Google Play and the App Store (for now, the app is available by invitation). Already prepared: [`docs/google-play.md`](docs/google-play.md).
 
-**Stages:** *closed testing* (now, 0.9.x) → *beta* in the stores, with more testers → *1.0*. The full plan is in [`ROADMAP.md`](ROADMAP.md).
+**Stages:** *closed testing* (0.9.x) → *1.0.0* in invitation-only early access (now) → Google Play and the App Store. The full plan is in [`ROADMAP.md`](ROADMAP.md).
 
 ## Architecture
 
@@ -117,12 +112,12 @@ Both apps use the **same Rust core** through UniFFI. All cryptography lives in R
 
 **Between real phones** (three Samsung phones in Portugal, server in Stockholm, 19 Oct 2026):
 
-| | Typical message (median) | 95 % of messages |
-|---|---|---|
-| From the phone to the server | **42 ms** | 57 ms |
-| From the server to the other phone | **141 ms** | 18 s |
+| | Typical message (median) |
+|---|---|
+| From the phone to the server | **42 ms** |
+| From the server to the other phone | **141 ms** |
 
-The slow messages are for sleeping phones: the notification wakes them up and the message arrives when the app opens.
+If the recipient's phone is asleep, the notification wakes it up and the message arrives when the app opens.
 
 **Calls:** about 64 ms of network one way between Portugal and Stockholm, and about 35 MB per hour in each direction. In a test with 15 % of packets lost, DRED rebuilt them all. Switching from Wi-Fi to mobile data does not drop the call, and there is a fallback through `wss://relay.sealerapp.com/call` for networks that block UDP. Formats in section 18 of [`docs/protocol-spec.md`](docs/protocol-spec.md).
 
