@@ -87,7 +87,7 @@ export default {
   'index.80': '今後の予定',
   'index.81': '今後の予定',
   'index.82': 'これから',
-  'index.83': '暗号化された音声通話とビデオ通話、最大5人のグループ通話、グループ、25&nbsp;MBまでのファイル、復元キー、アプリのロックはすでに使えます。次はGoogle PlayとApp Storeです。<a href="./funcionalidades">アプリでできることをすべて見る</a>',
+  'index.83': '通話、グループ、ファイルはすでに使えます。次はGoogle PlayとApp Storeです。検討中：企業のオフィスに置くSEALERサーバー。障害時は自動でクラウドに切り替わります。<a href="./funcionalidades">アプリでできることをすべて見る</a>',
   'index.84': 'このページはCookieを使わず、あなたの行動を追跡するツールも使っていません。<a href="./politica-de-cookies">Cookieポリシー</a>',
   'index.85': '<a href="./funcionalidades">機能</a> · <a href="./como-funciona">仕組み</a> · <a href="./privacidade">プライバシー</a> · <a href="./termos">規約</a> · <a href="./apagar-conta">アカウントの削除</a> · <a href="https://github.com/moral666/QT">GitHubのコード</a>',
   'index.86': '© 2026 SEALER。QTプロトコル、オープンソース。',

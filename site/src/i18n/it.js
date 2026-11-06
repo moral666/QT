@@ -86,7 +86,7 @@ export default {
   'index.80': 'In arrivo',
   'index.81': 'In arrivo',
   'index.82': 'Cosa viene dopo',
-  'index.83': 'Chiamate vocali e videochiamate cifrate, chiamate di gruppo fino a 5 persone, gruppi, file fino a 25&nbsp;MB, chiave di recupero e blocco dell’app sono già qui. Prossimi passi: Google Play e l’App&nbsp;Store. <a href="./funcionalidades">Tutto ciò che fa l’app</a>',
+  'index.83': 'Chiamate, gruppi e file sono già qui. Prossimi passi: Google Play e l’App&nbsp;Store. In studio: un server SEALER proprio per le aziende, in ufficio, che passa da solo al cloud se qualcosa si guasta. <a href="./funcionalidades">Tutto ciò che fa l’app</a>',
   'index.84': 'Questa pagina non usa cookie né strumenti per seguire quello che ci fai. <a href="./politica-de-cookies">Cookie policy</a>',
   'index.85': '<a href="./funcionalidades">Funzionalità</a> · <a href="./como-funciona">Come funziona</a> · <a href="./privacidade">Privacy</a> · <a href="./termos">Termini</a> · <a href="./apagar-conta">Elimina account</a> · <a href="https://github.com/moral666/QT">Codice su GitHub</a>',
   'index.86': '© 2026 SEALER. Protocollo QT, open source.',

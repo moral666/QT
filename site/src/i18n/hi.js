@@ -87,7 +87,7 @@ export default {
   'index.80': 'आने वाला है',
   'index.81': 'आने वाला है',
   'index.82': 'आगे क्या है',
-  'index.83': 'एन्क्रिप्टेड वॉइस और वीडियो कॉल, 5 लोगों तक की ग्रुप कॉल, ग्रुप, 25&nbsp;MB तक की फ़ाइलें, रिकवरी कुंजी और ऐप लॉक पहले से मौजूद हैं। आगे: Google Play और App&nbsp;Store। <a href="./funcionalidades">ऐप क्या-क्या करता है</a>',
+  'index.83': 'कॉल, ग्रुप और फ़ाइलें पहले से मौजूद हैं। आगे: Google Play और App&nbsp;Store। अध्ययन में: व्यवसायों के ऑफ़िस में लगने वाला अपना SEALER सर्वर, जो कोई ख़राबी होने पर अपने आप क्लाउड पर चला जाता है। <a href="./funcionalidades">ऐप क्या-क्या करता है</a>',
   'index.84': 'यह पेज न कोई कुकी इस्तेमाल करता है, न ही ऐसे टूल जो देखते हैं कि आप इस पर क्या करते हैं। <a href="./politica-de-cookies">कुकी नीति</a>',
   'index.85': '<a href="./funcionalidades">सुविधाएं</a> · <a href="./como-funciona">यह कैसे काम करता है</a> · <a href="./privacidade">गोपनीयता</a> · <a href="./termos">शर्तें</a> · <a href="./apagar-conta">खाता हटाएं</a> · <a href="https://github.com/moral666/QT">GitHub पर कोड</a>',
   'index.86': '© 2026 SEALER. QT प्रोटोकॉल, ओपन सोर्स।',
