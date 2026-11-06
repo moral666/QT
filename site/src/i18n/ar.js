@@ -88,7 +88,7 @@ export default {
   'index.80': 'قادم',
   'index.81': 'قادم',
   'index.82': 'ما التالي',
-  'index.83': 'المكالمات الصوتية ومكالمات الفيديو المشفّرة والمكالمات الجماعية حتى 5 أشخاص والمجموعات والملفات حتى 25&nbsp;ميغابايت ومفتاح الاسترداد وقفل التطبيق متوفرة بالفعل. التالي: Google Play وApp&nbsp;Store. <a href="./funcionalidades">كل ما يفعله التطبيق</a>',
+  'index.83': 'المكالمات والمجموعات والملفات متوفرة بالفعل. التالي: Google Play وApp&nbsp;Store. قيد الدراسة: خادم SEALER خاص بالشركات في المكتب، ينتقل تلقائيًا إلى السحابة عند حدوث أي عطل. <a href="./funcionalidades">كل ما يفعله التطبيق</a>',
   'index.84': 'لا تستخدم هذه الصفحة ملفات تعريف الارتباط ولا أدوات لتتبع النشاط فيها. <a href="./politica-de-cookies">سياسة ملفات تعريف الارتباط</a>',
   'index.85': '<a href="./funcionalidades">الميزات</a> · <a href="./como-funciona">كيف يعمل</a> · <a href="./privacidade">الخصوصية</a> · <a href="./termos">الشروط</a> · <a href="./apagar-conta">حذف الحساب</a> · <a href="https://github.com/moral666/QT">الشيفرة على GitHub</a>',
   'index.86': '© 2026 SEALER. بروتوكول QT، مفتوح المصدر.',

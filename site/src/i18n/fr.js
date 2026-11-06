@@ -86,7 +86,7 @@ export default {
   'index.80': 'En chemin',
   'index.81': 'En chemin',
   'index.82': 'La suite',
-  'index.83': 'Les appels vocaux et vidéo chiffrés, les appels de groupe jusqu’à 5 personnes, les groupes, les fichiers jusqu’à 25&nbsp;Mo, la clé de récupération et le verrouillage de l’app sont déjà là. Ensuite : Google Play et l’App&nbsp;Store. <a href="./funcionalidades">Tout ce que fait l’app</a>',
+  'index.83': 'Les appels, les groupes et les fichiers sont déjà là. Ensuite : Google Play et l’App&nbsp;Store. À l’étude : un serveur SEALER pour les entreprises, au bureau, qui bascule seul vers le cloud en cas de panne. <a href="./funcionalidades">Tout ce que fait l’app</a>',
   'index.84': 'Cette page n’utilise ni cookies ni outils pour suivre ce que tu y fais. <a href="./politica-de-cookies">Politique de cookies</a>',
   'index.85': '<a href="./funcionalidades">Fonctionnalités</a> · <a href="./como-funciona">Comment ça marche</a> · <a href="./privacidade">Confidentialité</a> · <a href="./termos">Conditions</a> · <a href="./apagar-conta">Supprimer le compte</a> · <a href="https://github.com/moral666/QT">Code sur GitHub</a>',
   'index.86': '© 2026 SEALER. Protocole QT, open source.',
