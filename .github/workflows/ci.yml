@@ -54,9 +54,14 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: cargo audit (CVEs em dependências)
+        # RUSTSEC-2026-0459 (SQLite, pelo rusqlite 0.31 em storage/) fica ignorado por agora.
+        # Só afeta quem abre uma base de dados escrita por terceiros; as apps só abrem a sua.
+        # Corrigir exige uma versão nova das apps e, a 11/11/2026, o SQLCipher embutido (o que
+        # as apps usam) ainda traz o SQLite afetado. O relay não inclui o SQLite.
+        # Tirar o --ignore quando o rusqlite for atualizado para uma versão corrigida.
         run: |
           cargo install cargo-audit --locked
-          cargo audit
+          cargo audit --ignore RUSTSEC-2026-0459
 
   # TODO: adicionar jobs de build reprodutível (Nix) e build Android/iOS
   # quando essas camadas existirem.
