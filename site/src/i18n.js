@@ -175,7 +175,26 @@ export function translatePage() {
   return pending;
 }
 
+/**
+ * Endereço oficial desta versão da página, para os motores de pesquisa: o mesmo caminho, só com o
+ * `?lang=` escolhido (sem ele, a página sem língua, que é a versão x-default). As alternativas de
+ * cada língua (hreflang) estão no <head> de cada página.
+ */
+function setCanonical() {
+  try {
+    const url = new URL(location.pathname.replace(/\.html$/, '').replace(/\/index$/, '/'), 'https://sealerapp.com');
+    if (chosen) url.searchParams.set('lang', chosen);
+    const link = document.createElement('link');
+    link.rel = 'canonical';
+    link.href = url.href;
+    document.head.append(link);
+  } catch {
+    // Sem canonical, a página funciona na mesma.
+  }
+}
+
 async function run() {
+  setCanonical();
   document.documentElement.lang = HTML_LANG[lang];
   document.documentElement.dir = RTL.has(lang) ? 'rtl' : 'ltr';
   markSwitcher();
