@@ -1,5 +1,5 @@
 // Textos do site em japonês (chaves data-i18n das páginas; o português está no HTML).
-// Forma educada です・ます. Termos fixos: ver o glossário no projeto (claude/glossario_ja_zh_hi.md).
+// Forma educada です・ます. Termos fixos: glossário fora do repo.
 const NOTE = 'これは翻訳です。疑義がある場合は、ポルトガル語版が優先されます。';
 
 export default {

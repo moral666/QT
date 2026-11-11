@@ -68,6 +68,5 @@ GoogleService-Info.plist
 /fuzz/coverage/
 /fuzz/corpus/
 
-# Só no PC do autor (22/10/2026): notas de trabalho e a app de gestão do operador.
-/CLAUDE.md
+# Só no PC do autor (22/10/2026): a app de gestão do operador.
 /tools/sealer-control/

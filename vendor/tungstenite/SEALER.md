@@ -7,8 +7,7 @@ Porque: o relay tem dezenas de milhares de ligacoes WebSocket quase sempre parad
 O original guarda em cada ligacao um bloco fixo de 4 KB para ler e a capacidade da
 maior mensagem que ja recebeu e enviou (ate ~64 KB depois de um anexo), para sempre.
 Medido a 29/10/2026 (8 000 ligacoes, texto e audios): o relay passou de 44 KB por
-ligacao parada (88 KB depois de trafego) para 8 KB (12 KB). Ver
-`claude/teste_carga_2910.md` (notas do projeto).
+ligacao parada (88 KB depois de trafego) para 8 KB (12 KB).
 
 Mudancas (procurar "Sealer" no codigo):
 - `src/buffer.rs`: le diretamente para o armazenamento, sem o bloco fixo de 4 KB; um

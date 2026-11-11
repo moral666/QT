@@ -123,7 +123,7 @@ PLIST = {
 }
 
 # Japones, chines simplificado e hindi (22/10/2026): mesma ordem de chaves, acrescentados
-# no fim de cada tuplo. Ver claude/glossario no projeto (Apple na China: 面容 ID e 触控 ID).
+# no fim de cada tuplo. Glossario fora do repo (Apple na China: 面容 ID e 触控 ID).
 EXTRA_JA_ZH_HI = {
     "push_new": ("新しいメッセージがあります", "你有新消息", "आपके लिए नए मैसेज हैं"),
     "ios_open_settings": ("設定を開く", "打开设置", "सेटिंग्ज़ खोलें"),
