@@ -1,0 +1,38 @@
+name: Dependências
+
+# Procura avisos de segurança (RustSec) nas dependências do Rust.
+# Corre à parte do CI porque um aviso novo aparece sem ninguém mexer no código: assim não põe
+# vermelho um push que não tem culpa. Corre todos os dias, sempre que as dependências mudam
+# (Cargo.lock ou um Cargo.toml) e à mão (Actions > Dependências > Run workflow).
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  push:
+    branches: [main, develop]
+    paths:
+      - "Cargo.lock"
+      - "**/Cargo.toml"
+      - ".github/workflows/dependencias.yml"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: cargo audit (CVEs em dependências)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar toolchain Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo audit
+        # RUSTSEC-2026-0459 (SQLite, pelo rusqlite 0.31 em storage/) fica ignorado por agora.
+        # Só afeta quem abre uma base de dados escrita por terceiros; as apps só abrem a sua.
+        # Corrigir exige uma versão nova das apps e, a 11/11/2026, o SQLCipher embutido (o que
+        # as apps usam) ainda traz o SQLite afetado. O relay não inclui o SQLite.
+        # Tirar o --ignore quando o rusqlite for atualizado para uma versão corrigida.
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit --ignore RUSTSEC-2026-0459

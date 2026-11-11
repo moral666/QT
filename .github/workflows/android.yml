@@ -40,13 +40,10 @@ jobs:
       - name: Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: libsqlcipher-dev (para compilar o qt_ffi no PC)
-        run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev
-
       - name: Bindings Kotlin (UniFFI, perfil de producao)
         run: |
-          cargo build -p qt_ffi --features pq,calls
-          cargo run -q -p qt_ffi --features pq,calls --bin uniffi-bindgen -- \
+          cargo build -p qt_ffi --features pq,calls,qt_storage/bundled-sqlcipher
+          cargo run -q -p qt_ffi --features pq,calls,qt_storage/bundled-sqlcipher --bin uniffi-bindgen -- \
             generate --library target/debug/libqt_ffi.so --language kotlin --out-dir ffi/bindings/kotlin
           rm -rf android/app/src/main/java/uniffi
           cp -r ffi/bindings/kotlin/uniffi android/app/src/main/java/

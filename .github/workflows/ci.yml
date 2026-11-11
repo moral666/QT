@@ -1,10 +1,22 @@
 name: CI
 
+# Um push ou pull request que só mexe no site, na documentação ou em ficheiros .md não corre
+# estes testes: nada disso entra no código Rust. Os avisos de segurança das dependências
+# (cargo audit) correm à parte, em dependencias.yml.
+
 on:
   pull_request:
     branches: [develop, main]
+    paths-ignore:
+      - "site/**"
+      - "docs/**"
+      - "**.md"
   push:
     branches: [develop, main]
+    paths-ignore:
+      - "site/**"
+      - "docs/**"
+      - "**.md"
 
 jobs:
   test-workspace:
@@ -28,11 +40,12 @@ jobs:
         with:
           components: clippy
 
-      - name: Instalar libsqlcipher-dev (necessário para o crate storage)
-        run: sudo apt-get update && sudo apt-get install -y libsqlcipher-dev
+      # O SQLCipher (crate storage) é compilado a partir do código-fonte, como nas apps
+      # (feature bundled-sqlcipher). Antes instalava-se o libsqlcipher-dev com o apt, e o CI
+      # falhava sempre que as máquinas do GitHub não chegavam aos servidores do Ubuntu.
 
       - name: cargo test --workspace (sem PQXDH)
-        run: cargo test --workspace --verbose
+        run: cargo test --workspace --features qt_storage/bundled-sqlcipher --verbose
 
       - name: cargo test (core com PQXDH, exige Rust 1.81+)
         working-directory: core
@@ -42,26 +55,16 @@ jobs:
         # Os testes Python usam a API antiga (bytes de chaves na FFI), que so
         # existe com a feature `legacy-api`; as apps nunca a ativam.
         run: |
-          cargo build -p qt_ffi --features legacy-api
+          cargo build -p qt_ffi --features legacy-api,qt_storage/bundled-sqlcipher
           mkdir -p ffi/bindings
-          cargo run -p qt_ffi --features legacy-api --bin uniffi-bindgen -- \
+          cargo run -p qt_ffi --features legacy-api,qt_storage/bundled-sqlcipher --bin uniffi-bindgen -- \
             generate --library target/debug/libqt_ffi.so --language python --out-dir ffi/bindings
           cp target/debug/libqt_ffi.so ffi/bindings/
           python3 ffi/tests/test_ffi_bindings.py
           python3 ffi/tests/test_noise_session.py
 
       - name: cargo clippy (lint estrito)
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: cargo audit (CVEs em dependências)
-        # RUSTSEC-2026-0459 (SQLite, pelo rusqlite 0.31 em storage/) fica ignorado por agora.
-        # Só afeta quem abre uma base de dados escrita por terceiros; as apps só abrem a sua.
-        # Corrigir exige uma versão nova das apps e, a 11/11/2026, o SQLCipher embutido (o que
-        # as apps usam) ainda traz o SQLite afetado. O relay não inclui o SQLite.
-        # Tirar o --ignore quando o rusqlite for atualizado para uma versão corrigida.
-        run: |
-          cargo install cargo-audit --locked
-          cargo audit --ignore RUSTSEC-2026-0459
+        run: cargo clippy --workspace --all-targets --features qt_storage/bundled-sqlcipher -- -D warnings
 
   # TODO: adicionar jobs de build reprodutível (Nix) e build Android/iOS
   # quando essas camadas existirem.
