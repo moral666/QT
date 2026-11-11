@@ -4,7 +4,7 @@ const NOTE = ' This is a translation: if in doubt, the Portuguese version prevai
 export default {
   // ---------- Página inicial ----------
   'index._title': 'SEALER: messages only you and the recipient can read',
-  'index.@0': 'SEALER is a messaging app where only you and the recipient can read what you write. For Android and iPhone, version 1.0.',
+  'index.@0': 'SEALER is a messaging app where only you and the recipient can read what you write. For Android and iPhone, version 1.0.0.',
   'index.@1': 'Back to the start',
   'index.@2': 'SEALER logo: a lilac glass speech bubble with the letter S and three dots.',
   'index.@3': 'Windows with information about SEALER. Drag or use the arrow keys to explore.',
@@ -28,7 +28,7 @@ export default {
   'index.19': 'The conversations stored on your phone are locked&nbsp;too.',
   'index.20': 'For everyone',
   'index.21': 'Early access',
-  'index.22': 'The app is already at version&nbsp;1.0. For now, entry is by invitation; next it comes to Google Play and the App&nbsp;Store.',
+  'index.22': 'The app is already at version&nbsp;1.0.0. For now, entry is by invitation; next it comes to Google Play and the App&nbsp;Store.',
   'index.23': 'For everyone',
   'index.24': 'Delete everything whenever you want',
   'index.25': 'One tap deletes your account from the phone and from our server. <a href="./apagar-conta">How to&nbsp;delete</a>',
@@ -92,7 +92,7 @@ export default {
   'index.86': '© 2026 SEALER. QT protocol, open source.',
 
   'index.87': 'Spain',
-  'index.88': 'iPhone and Android',
+  'index.88': 'Calls between iPhone and Android',
   'index.89': 'Under 0.1% of voice&nbsp;lost',
   'index.90': 'We tested messages, files, links, GIFs, profile photos, calls, a 5-person group video call, account recovery and 10&nbsp;languages.',
   // ---------- Como funciona ----------

@@ -4,7 +4,7 @@ const NOTE = ' Questa è una traduzione: in caso di dubbio, prevale la versione 
 export default {
   // ---------- Página inicial ----------
   'index._title': 'SEALER: messaggi che solo tu e il destinatario potete leggere',
-  'index.@0': 'SEALER è un’app di messaggistica in cui solo tu e il destinatario potete leggere ciò che scrivi. Per Android e iPhone, versione 1.0.',
+  'index.@0': 'SEALER è un’app di messaggistica in cui solo tu e il destinatario potete leggere ciò che scrivi. Per Android e iPhone, versione 1.0.0.',
   'index.@1': 'Torna all’inizio',
   'index.@2': 'Logo di SEALER: un fumetto di vetro lilla con la lettera S e tre puntini.',
   'index.@3': 'Finestre con informazioni su SEALER. Trascina o usa i tasti freccia per esplorare.',
@@ -28,7 +28,7 @@ export default {
   'index.19': 'Anche le conversazioni salvate sul tuo telefono sono&nbsp;bloccate.',
   'index.20': 'Per tutti',
   'index.21': 'Accesso anticipato',
-  'index.22': 'L’app è già alla versione&nbsp;1.0. Per ora si entra su invito; poi arriva su Google Play e sull’App&nbsp;Store.',
+  'index.22': 'L’app è già alla versione&nbsp;1.0.0. Per ora si entra su invito; poi arriva su Google Play e sull’App&nbsp;Store.',
   'index.23': 'Per tutti',
   'index.24': 'Cancella tutto quando vuoi',
   'index.25': 'Un tocco elimina il tuo account dal telefono e dal nostro server. <a href="./apagar-conta">Come&nbsp;eliminarlo</a>',
@@ -92,7 +92,7 @@ export default {
   'index.86': '© 2026 SEALER. Protocollo QT, open source.',
 
   'index.87': 'Spagna',
-  'index.88': 'iPhone e Android',
+  'index.88': 'Chiamate tra iPhone e Android',
   'index.89': 'Meno dello 0,1&nbsp;% di voce persa',
   'index.90': 'Provati messaggi, file, link, GIF, foto profilo, chiamate, videochiamata di gruppo a 5, recupero account e 10&nbsp;lingue.',
   // ---------- Como funciona ----------

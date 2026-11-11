@@ -5,7 +5,7 @@ const NOTE = '本页为译文，如有疑义，以葡萄牙语版本为准。';
 export default {
   // ---------- Página inicial ----------
   'index._title': 'SEALER：只有你和对方能读的消息',
-  'index.@0': 'SEALER是一款即时通讯应用，你写的内容只有你和对方能读。支持Android和iPhone，版本1.0。',
+  'index.@0': 'SEALER是一款即时通讯应用，你写的内容只有你和对方能读。支持Android和iPhone，版本1.0.0。',
   'index.@1': '返回首页',
   'index.@2': 'SEALER标志：一个淡紫色的玻璃对话气泡，里面有字母S和三个点。',
   'index.@3': '介绍SEALER的信息窗口。拖动或使用方向键浏览。',
@@ -29,7 +29,7 @@ export default {
   'index.19': '保存在你手机上的聊天记录同样处于加密保护之中。',
   'index.20': '面向所有人',
   'index.21': '抢先体验',
-  'index.22': '应用已经是1.0版本。目前凭邀请加入，接下来将登陆Google Play和App&nbsp;Store。',
+  'index.22': '应用已经是1.0.0版本。目前凭邀请加入，接下来将登陆Google Play和App&nbsp;Store。',
   'index.23': '面向所有人',
   'index.24': '随时删除一切',
   'index.25': '轻点一下，就能从手机和我们的服务器上删除你的账户。<a href="./apagar-conta">如何删除</a>',
@@ -93,7 +93,7 @@ export default {
   'index.86': '© 2026 SEALER。QT协议，开源。',
 
   'index.87': '西班牙',
-  'index.88': 'iPhone与Android',
+  'index.88': 'iPhone与Android之间的通话',
   'index.89': '语音丢失不到0.1%',
   'index.90': '测试了消息、文件、链接、GIF、头像、通话、5人群组视频通话、账户恢复和10种语言。',
   // ---------- Como funciona ----------

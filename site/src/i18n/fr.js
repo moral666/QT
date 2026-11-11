@@ -4,7 +4,7 @@ const NOTE = ' Ceci est une traduction : en cas de doute, la version portugaise
 export default {
   // ---------- Página inicial ----------
   'index._title': 'SEALER : des messages que seuls toi et le destinataire pouvez lire',
-  'index.@0': 'SEALER est une app de messagerie où seuls toi et le destinataire pouvez lire ce que tu écris. Pour Android et iPhone, version 1.0.',
+  'index.@0': 'SEALER est une app de messagerie où seuls toi et le destinataire pouvez lire ce que tu écris. Pour Android et iPhone, version 1.0.0.',
   'index.@1': 'Revenir au début',
   'index.@2': 'Logo SEALER : une bulle de dialogue en verre lilas avec la lettre S et trois points.',
   'index.@3': 'Fenêtres avec des informations sur SEALER. Fais glisser ou utilise les flèches du clavier pour explorer.',
@@ -28,7 +28,7 @@ export default {
   'index.19': 'Les conversations gardées sur ton téléphone sont elles aussi&nbsp;verrouillées.',
   'index.20': 'Pour tout le monde',
   'index.21': 'Accès anticipé',
-  'index.22': 'L’app est déjà en version&nbsp;1.0. Pour l’instant, on y entre sur invitation ; elle arrive ensuite sur Google Play et l’App&nbsp;Store.',
+  'index.22': 'L’app est déjà en version&nbsp;1.0.0. Pour l’instant, on y entre sur invitation ; elle arrive ensuite sur Google Play et l’App&nbsp;Store.',
   'index.23': 'Pour tout le monde',
   'index.24': 'Tout effacer quand tu veux',
   'index.25': 'Un seul geste supprime ton compte du téléphone et de notre serveur. <a href="./apagar-conta">Comment&nbsp;supprimer</a>',
@@ -92,7 +92,7 @@ export default {
   'index.86': '© 2026 SEALER. Protocole QT, open source.',
 
   'index.87': 'Espagne',
-  'index.88': 'iPhone et Android',
+  'index.88': 'Appels entre iPhone et Android',
   'index.89': '&lt;&nbsp;0,1&nbsp;% de voix perdue',
   'index.90': 'Testés : messages, fichiers, liens, GIF, photos de profil, appels, appel vidéo de groupe à 5, récupération du compte et 10&nbsp;langues.',
   // ---------- Como funciona ----------

@@ -5,7 +5,7 @@ const NOTE = 'これは翻訳です。疑義がある場合は、ポルトガル
 export default {
   // ---------- Página inicial ----------
   'index._title': 'SEALER：あなたと相手だけが読めるメッセージ',
-  'index.@0': 'SEALERは、あなたと相手だけが内容を読めるメッセージアプリです。AndroidとiPhoneに対応、バージョン1.0。',
+  'index.@0': 'SEALERは、あなたと相手だけが内容を読めるメッセージアプリです。AndroidとiPhoneに対応、バージョン1.0.0。',
   'index.@1': 'トップに戻る',
   'index.@2': 'SEALERのロゴ：文字Sと3つの点が入った、ライラック色のガラスの吹き出し。',
   'index.@3': 'SEALERについての情報ウィンドウ。ドラッグするか矢印キーで見て回れます。',
@@ -29,7 +29,7 @@ export default {
   'index.19': 'スマートフォンに保存されたチャットも、鍵がかかった状態で守られています。',
   'index.20': '一般向け',
   'index.21': '先行アクセス',
-  'index.22': 'アプリはすでにバージョン1.0です。現在は招待制で、次はGoogle PlayとApp&nbsp;Storeで公開します。',
+  'index.22': 'アプリはすでにバージョン1.0.0です。現在は招待制で、次はGoogle PlayとApp&nbsp;Storeで公開します。',
   'index.23': '一般向け',
   'index.24': 'いつでもすべて削除',
   'index.25': 'ワンタップで、スマートフォンと私たちのサーバーからアカウントを削除できます。<a href="./apagar-conta">削除の方法</a>',
@@ -93,7 +93,7 @@ export default {
   'index.86': '© 2026 SEALER。QTプロトコル、オープンソース。',
 
   'index.87': 'スペイン',
-  'index.88': 'iPhoneとAndroid',
+  'index.88': 'iPhoneとAndroid間の通話',
   'index.89': '失われた音声は0.1%未満',
   'index.90': 'メッセージ、ファイル、リンク、GIF、プロフィール写真、通話、5人のグループビデオ通話、アカウント復元、10言語をテスト。',
   // ---------- Como funciona ----------

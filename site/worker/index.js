@@ -186,7 +186,7 @@ async function relayPing(relayUrl) {
   return best;
 }
 
-/** Tenta abrir uma ligação WebSocket ao relay (pelo Caddy, com TLS) e fecha-a logo. */
+/** Tenta abrir uma ligação WebSocket ao relay (pelo HAProxy, com TLS) e fecha-a logo. */
 async function relayOnline(relayUrl) {
   if (!relayUrl) return false;
   try {
