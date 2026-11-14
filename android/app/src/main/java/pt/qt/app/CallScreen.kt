@@ -300,8 +300,9 @@ fun CallScreen(
                             ControlBar(
                                 call = call,
                                 onVideo = videoOn,
-                                // Camara so se os dois lados tiverem video (app antiga: so voz).
-                                camera = if (videoAllowed && v.supported && onCamera != null) touched(onCamera) else null,
+                                // Camara so se os dois lados tiverem video (app antiga: so voz). videoAllowed ja
+                                // inclui onCamera != null.
+                                camera = if (videoAllowed && v.supported) touched(onCamera) else null,
                                 onMute = touched(onMute),
                                 onSpeaker = touched(onSpeaker),
                                 onRoute = { id -> touches++; onRoute(id) },
