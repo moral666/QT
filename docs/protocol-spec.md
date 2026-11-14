@@ -558,7 +558,7 @@ tipo 6 = mensagem de grupo: [16 group_id][payload v1 completo: tipo 1, 3 ou 5]
 tipo 7 = info do grupo:     [16 group_id][JSON: versão, nome, membros e administradores]
 tipo 8 = saída do grupo:    [16 group_id]
 tipo 9 = presença: [1 estado: 1 = online, 0 = offline]  (msg_id sempre o mesmo)
-tipo 10 = sessão terminada: [vazio]
+tipo 10 = sessão terminada: [vazio] ou [32 chave efémera da sessão recusada] (desde a 1.0.2)
 tipo 11 = chamada de voz (ver secção 18)
 tipo 12 = foto de perfil: [1 op: 1 = foto, 0 = sem foto][foto WebP ou JPEG, máx. 9 973 bytes]
           (msg_id sempre o mesmo)
@@ -625,6 +625,20 @@ sessao nova (`sessions_to_restart` + `start_session`): o que estava por entregar
 nova, seguido do convite (tipo 4). Do lado de quem apagou, chega como convite. Se a
 sessao nova vier do outro lado primeiro, o reenvio acontece ao recebe-la. Uma versao
 antiga mostra o tipo 10 como "atualiza a app". Testes: `ffi/tests/session_reset.rs`.
+
+**Sessao recusada (tipo 10 com 32 bytes, desde a 1.0.2).** Depois de recuperar a conta, um
+contacto pode abrir uma sessao com o bundle do telemovel antigo: quem recebe ja nao tem essas
+chaves e nunca a consegue abrir. Ao receber um cabecalho PQXDH que nao abre (sem sessao ou
+com o `establish_responder` a falhar), a app de um contacto conhecido e nao bloqueado ve quem
+ganha o desempate das sessoes cruzadas. Se for ela (a sua chave de identidade e a menor), basta
+ter uma sessao, que o outro adota ao recebe-la. Se for ele, guarda a chave efemera desse
+cabecalho (`reject:`) e envia um tipo 10 com esses 32 bytes, cifrado com a sessao que tem (ou
+com a proxima que abrir). No maximo um aviso por chave efemera e um a cada
+10 s por contacto (`reject_sent:`), porque a pista de quem enviou nao e autenticada. Quem recebe
+so apaga a sessao que iniciou se o cabecalho por confirmar (`pending:`) comecar por essa chave;
+se nao, ignora. Nas sessoes cruzadas, uma mensagem dele que e este aviso para a minha sessao
+por confirmar faz-me adotar a dele, seja qual for o desempate. Uma versao antiga trata-o como o
+tipo 10 vazio (apaga a sessao e abre uma nova). Testes: `ffi/tests/recovery_both.rs`.
 
 **Tipos desconhecidos.** Um payload v1 com tipo que a versao nao conhece e
 guardado como aviso ("atualiza a app"), nunca como texto.

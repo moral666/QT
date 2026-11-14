@@ -37,7 +37,7 @@ pub const BADGE_LEGACY: u8 = 9;
 /// Aro e medalha proprios (desenho a parte, sem tinta). Nunca entra na Comunidade.
 pub const BADGE_QF: u8 = 10;
 /// Maior numero de badge conhecido (os outros sao recusados). As apps antigas (ate a 0.9.50)
-/// conhecem ate ao 5: um certificado com 6 a 9 e recusado e la nao aparece nada. Ate a 0.9.60
+/// conhecem ate ao 5: um certificado com 6 a 9 e recusado e la nao aparece nada. Ate a 1.0.0
 /// conhecem ate ao 9: o 10 e recusado e la nao aparece nada.
 pub const BADGE_MAX: u8 = BADGE_QF;
 

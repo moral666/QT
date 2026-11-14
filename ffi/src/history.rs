@@ -299,8 +299,9 @@ enum Payload {
     GroupLeave { body: Vec<u8> },
     /// Presenca (ver `presence.rs`): o contacto abriu ou fechou a app.
     Presence { online: bool, sent_at: i64 },
-    /// O contacto apagou-me e as chaves da sessao (tipo 10).
-    SessionEnd,
+    /// O contacto apagou-me e as chaves da sessao (tipo 10). Corpo vazio, ou (desde a 1.0.2)
+    /// os 32 bytes da chave efemera da sessao que eu iniciei e que ele nao consegue abrir.
+    SessionEnd { body: Vec<u8> },
     /// Chamada de voz (tipo 11, ver `call.rs`): o corpo comeca pela operacao.
     Call { body: Vec<u8>, sent_at: i64 },
     GroupCall { body: Vec<u8>, sent_at: i64 },
@@ -370,7 +371,7 @@ fn decode(plain: &[u8], legacy_id: &[u8]) -> Payload {
             [state @ (0 | 1)] => Payload::Presence { online: *state == 1, sent_at },
             _ => Payload::Ignored,
         },
-        T_SESSION_END => Payload::SessionEnd,
+        T_SESSION_END => Payload::SessionEnd { body: plain[HDR..].to_vec() },
         crate::call::T_CALL => match plain.len() - HDR {
             17..=128 => Payload::Call { body: plain[HDR..].to_vec(), sent_at },
             _ => Payload::Ignored,
@@ -707,7 +708,7 @@ impl QtClient {
                 Payload::GroupInfo { body } => crate::groups::on_group_info(tx, contact_id, &body)?,
                 Payload::GroupLeave { body } => crate::groups::on_group_leave(self, tx, contact_id, &body)?,
                 Payload::Presence { online, sent_at } => crate::presence::on_presence(self, tx, contact_id, online, sent_at)?,
-                Payload::SessionEnd => on_session_end(tx, contact_id)?,
+                Payload::SessionEnd { body } => on_session_end(tx, contact_id, &body)?,
                 Payload::Call { body, sent_at } => crate::call::on_call(self, tx, contact_id, &body, sent_at)?,
                 Payload::GroupCall { body, sent_at } => crate::group_call::on_group_call(self, tx, contact_id, &body, sent_at)?,
                 Payload::Profile { body } => crate::profile::on_profile(tx, contact_id, &body)?,
@@ -843,12 +844,91 @@ impl QtClient {
 /// rececao, DEPOIS de a sessao avancada ter sido guardada): o contacto apagou as
 /// chaves dele. Apaga a nossa sessao (o contacto e o historico ficam) e marca que
 /// falta abrir uma nova; a outbox dele fica retida ate la (ver `outbox`).
-fn on_session_end(tx: &st::rusqlite::Connection, contact_id: &str) -> Result<ReceiveResult, QtError> {
+fn on_session_end(tx: &st::rusqlite::Connection, contact_id: &str, body: &[u8]) -> Result<ReceiveResult, QtError> {
+    // Com a chave efemera: so vale para a sessao que eu iniciei e que ainda esta por confirmar
+    // com essa chave. Se ja troquei de sessao (fiquei com a dele), nao ha nada a apagar.
+    if body.len() == 32 {
+        let pending = st::kv_get(tx, &format!("pending:{contact_id}"))?;
+        if pending.as_deref().and_then(|h| h.get(..32)) != Some(body) {
+            return Ok(ReceiveResult::NoChange { contact_id: contact_id.to_string() });
+        }
+    }
     st::delete_session(tx, contact_id)?;
     st::kv_delete(tx, &format!("pending:{contact_id}"))?;
     st::kv_delete(tx, &format!("{KV_PENDING_DELIVERED}{contact_id}"))?;
     st::kv_set(tx, &format!("{KV_RESTART}{contact_id}"), &[1])?;
     Ok(ReceiveResult::NoChange { contact_id: contact_id.to_string() })
+}
+
+/// Ja enviei "nao consigo abrir a tua sessao" a este contacto: [32 chave efemera][8 ms BE].
+const KV_REJECT_SENT: &str = "reject_sent:";
+/// Por enviar (ainda sem sessao para o cifrar): a chave efemera da sessao dele que nao abriu.
+const KV_REJECT: &str = "reject:";
+/// Entre dois avisos ao mesmo contacto (avisos de chaves efemeras diferentes).
+const REJECT_GAP_MS: i64 = 10_000;
+
+/// O plaintext e o aviso tipo 10 para a sessao que comecou com a chave efemera `eph`?
+pub(crate) fn is_reject_of(plain: &[u8], eph: &[u8]) -> bool {
+    eph.len() == 32 && plain.len() == HDR + 32 && plain[0] == PAYLOAD_V1 && plain[1] == T_SESSION_END && &plain[HDR..] == eph
+}
+
+/// Chegou o inicio de uma sessao (cabecalho PQXDH com a chave efemera `eph`) que nao consigo abrir:
+/// ele usou chaves minhas que ja nao existem (o bundle do telemovel antigo, antes de eu recuperar
+/// a conta, ou uma pre-key ja apagada). Avisa-o (tipo 10 com `eph`) para ele largar essa sessao e
+/// ficar com a minha; sem isto ele continuava a cifrar com ela e nada chegava (14/11/2026).
+/// So a contactos conhecidos, uma vez por chave efemera e no maximo um aviso a cada 10 s (a pista
+/// de quem enviou nao e autenticada). Sem sessao para o cifrar: fica guardado e segue com a
+/// proxima sessao (`queue_reject_if_needed`), e a app abre uma (`sessions_to_restart`).
+/// So avisa quando o desempate das sessoes cruzadas lhe da razao (a chave de identidade dele e a
+/// menor): se for a minha, ele adota a minha sessao ao recebe-la e o aviso nao faz falta. Uma app
+/// antiga (ate a 1.0.0) apagaria ate a minha sessao ao recebe-lo.
+pub(crate) fn reject_init(client: &QtClient, c: &st::rusqlite::Connection, contact_id: &str, eph: &[u8]) -> Result<(), QtError> {
+    let known = crate::call::is_contact(c, contact_id)?
+        || st::load_session(c, contact_id)?.is_some()
+        || st::kv_get(c, &format!("{KV_RESTART}{contact_id}"))?.is_some();
+    if !known || is_blocked_in(c, contact_id)? || eph.len() != 32 {
+        return Ok(());
+    }
+    let has_session = st::load_session(c, contact_id)?.is_some();
+    let mine = st::load_identity(c)?.identity.public.to_bytes();
+    if contact_to_identity(contact_id)?.to_bytes() >= mine {
+        // Fica a minha sessao: basta haver uma (a app abre-a e ele adota-a ao recebe-la).
+        if !has_session {
+            st::kv_set(c, &format!("{KV_RESTART}{contact_id}"), &[1])?;
+        }
+        return Ok(());
+    }
+    if let Some(v) = st::kv_get(c, &format!("{KV_REJECT_SENT}{contact_id}"))? {
+        let at = v.get(32..40).and_then(|b| b.try_into().ok()).map(i64::from_be_bytes).unwrap_or(0);
+        if v.get(..32) == Some(eph) || now_ms() - at < REJECT_GAP_MS {
+            return Ok(());
+        }
+    }
+    let tx = c.unchecked_transaction()?;
+    st::kv_set(&tx, &format!("{KV_REJECT}{contact_id}"), eph)?;
+    if has_session {
+        queue_reject_if_needed(client, &tx, contact_id)?;
+    } else {
+        st::kv_set(&tx, &format!("{KV_RESTART}{contact_id}"), &[1])?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// Se houver um aviso por enviar (`reject_init`), poe-no na outbox, cifrado com a sessao atual.
+pub(crate) fn queue_reject_if_needed(client: &QtClient, c: &st::rusqlite::Connection, contact_id: &str) -> Result<(), QtError> {
+    let key = format!("{KV_REJECT}{contact_id}");
+    let Some(eph) = st::kv_get(c, &key)? else { return Ok(()) };
+    st::kv_delete(c, &key)?;
+    if eph.len() != 32 || is_blocked_in(c, contact_id)? {
+        return Ok(());
+    }
+    let blob = client.seal_with(c, contact_id, &encode_control(T_SESSION_END, &eph)?)?;
+    hm::outbox_put(c, &new_id()?, contact_id, hm::OUTBOX_RECEIPT, &blob)?;
+    let mut sent = eph;
+    sent.extend_from_slice(&now_ms().to_be_bytes());
+    st::kv_set(c, &format!("{KV_REJECT_SENT}{contact_id}"), &sent)?;
+    Ok(())
 }
 
 /// Chegou uma mensagem de um contacto com quem ja nao tenho sessao (ex.: conta recuperada): marca
@@ -893,6 +973,8 @@ impl QtClient {
         }
         st::kv_delete(&tx, &format!("{KV_RESTART}{contact_id}"))?;
         st::kv_delete(&tx, &format!("{KV_PENDING_DELIVERED}{contact_id}"))?;
+        st::kv_delete(&tx, &format!("{KV_REJECT}{contact_id}"))?;
+        st::kv_delete(&tx, &format!("{KV_REJECT_SENT}{contact_id}"))?;
         st::kv_delete(&tx, &format!("pending:{contact_id}"))?;
         st::kv_delete(&tx, &format!("{}{contact_id}", crate::client::KV_PEER_EPH))?;
         st::kv_delete(&tx, &format!("{KV_INTRO}{contact_id}"))?;

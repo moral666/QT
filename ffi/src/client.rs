@@ -451,8 +451,11 @@ impl QtClient {
         // Quem inicia a conversa manda o seu Public ID (cifrado) antes da 1.a mensagem:
         // assim quem recebe pode aceitar o convite sem ter de escrever o ID.
         st::kv_set(&tx, &format!("{}{contact_id}", crate::history::KV_SEND_INTRO), &[1])?;
-        // O contacto tinha terminado a sessao antiga: o que estava por entregar segue ja.
+        // O contacto tinha terminado a sessao antiga: o que estava por entregar segue ja (isto
+        // limpa a outbox antiga dele). Depois o aviso "nao consegui abrir a tua sessao" (se
+        // houver): ele larga a sessao dele e fica com esta.
         crate::history::after_new_session(self, &tx, &contact_id)?;
+        crate::history::queue_reject_if_needed(self, &tx, &contact_id)?;
         tx.commit()?;
         Ok(contact_id)
     }
@@ -876,8 +879,21 @@ impl QtClient {
                     crate::history::restart_lost_session(c, contact_id)?;
                     return Err(QtError::UnknownSession);
                 };
-                let (mut s, opk) = self.establish_responder(c, contact_id, kind, h)?;
-                let p = s.decrypt(&msg).map_err(|_| QtError::Crypto)?;
+                let opened = self.establish_responder(c, contact_id, kind, h).and_then(|(mut s, opk)| {
+                    let p = s.decrypt(&msg).map_err(|_| QtError::Crypto)?;
+                    Ok((s, opk, p))
+                });
+                let (s, opk, p) = match opened {
+                    Ok(x) => x,
+                    Err(e) => {
+                        // Sessao aberta com chaves que ja nao tenho (ex.: ele usou o bundle do
+                        // meu telemovel antigo antes de eu recuperar a conta): sem aviso, ele
+                        // continuava a cifrar com ela para sempre.
+                        // Melhor esforco: um erro aqui nao pode mudar o erro devolvido.
+                        let _ = crate::history::reject_init(self, c, contact_id, &h[..32]);
+                        return Err(e);
+                    }
+                };
                 used_opk = opk;
                 new_session = true;
                 (Some(s), p)
@@ -896,16 +912,33 @@ impl QtClient {
                     if st::kv_get(c, &format!("{KV_PEER_EPH}{contact_id}"))?.as_deref() == Some(&h[..32]) {
                         return Err(QtError::Crypto);
                     }
-                    let (mut ns, opk) = self.establish_responder(c, contact_id, kind, h).map_err(|_| QtError::Crypto)?;
-                    let p = ns.decrypt(&msg).map_err(|_| QtError::Crypto)?;
-                    let ours_pending = st::kv_get(c, &format!("pending:{contact_id}"))?.is_some();
+                    let opened = self.establish_responder(c, contact_id, kind, h).and_then(|(mut ns, opk)| {
+                        let p = ns.decrypt(&msg).map_err(|_| QtError::Crypto)?;
+                        Ok((ns, opk, p))
+                    });
+                    let (ns, opk, p) = match opened {
+                        Ok(x) => x,
+                        Err(_) => {
+                            // Melhor esforco: um erro aqui nao pode mudar o erro devolvido.
+                            let _ = crate::history::reject_init(self, c, contact_id, &h[..32]);
+                            return Err(QtError::Crypto);
+                        }
+                    };
+                    let pending_header = st::kv_get(c, &format!("pending:{contact_id}"))?;
+                    let ours_pending = pending_header.is_some();
+                    // Ele avisa que nao consegue abrir a sessao que EU iniciei (ver `reject_init`):
+                    // a minha sessao nunca vai funcionar, fica a dele, seja qual for o desempate.
+                    let ours_rejected = pending_header.as_deref().is_some_and(|ph| {
+                        let plain = if padded { unpad_plaintext(&p) } else { Some(p.clone()) };
+                        plain.is_some_and(|x| crate::history::is_reject_of(&x, &ph[..32.min(ph.len())]))
+                    });
                     // SESSOES CRUZADAS: os dois iniciaram uma sessao ao mesmo tempo (ex.:
                     // dois membros de um grupo novo). Desempate deterministico e igual nos
                     // dois lados: fica a sessao iniciada por quem tem a chave de identidade
                     // "menor". O outro lado adota-a ao receber a nossa primeira mensagem.
                     let mine = st::load_identity(c)?.identity.public.to_bytes();
                     let theirs = contact_to_identity(contact_id)?.to_bytes();
-                    if ours_pending && theirs >= mine {
+                    if ours_pending && theirs >= mine && !ours_rejected {
                         // Ganhamos: a nossa sessao fica. A mensagem dele e autentica (o AEAD
                         // da sessao dele passou), por isso e lida na mesma, sem trocar de
                         // sessao. A OPK (se houver) fica para as mensagens seguintes dele.
