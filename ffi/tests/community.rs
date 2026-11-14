@@ -2,7 +2,7 @@
 //! guardada na app (assinatura, numero, fotos so as novas, ordem).
 
 use base64::Engine;
-use qt_core::badge::{issue, issuer_public, BADGE_DEV, BADGE_FOUNDER, BADGE_LEGACY, BADGE_NONE, BADGE_TROLL};
+use qt_core::badge::{issue, issuer_public, BADGE_DEV, BADGE_FOUNDER, BADGE_LEGACY, BADGE_NONE, BADGE_QF, BADGE_TROLL};
 use qt_core::{community as qc, report};
 use qt_ffi::*;
 use std::sync::Arc;
@@ -105,6 +105,10 @@ fn envio_so_com_medalha_e_so_quando_muda() {
     grant(&nuno, &a, BADGE_FOUNDER, 2_000);
     assert_eq!(open(&a.c.community_submit_request().unwrap().unwrap()).cert.badge, BADGE_FOUNDER);
     grant(&nuno, &a, BADGE_NONE, 3_000);
+    assert_eq!(a.c.community_submit_request().unwrap(), None);
+    // A 10 nunca vai para a Comunidade.
+    grant(&nuno, &a, BADGE_QF, 4_000);
+    assert_eq!(a.c.badge_mine().unwrap(), BADGE_QF);
     assert_eq!(a.c.community_submit_request().unwrap(), None);
 }
 

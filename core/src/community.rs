@@ -208,7 +208,7 @@ pub fn open_submission(seed: &[u8; 32], issuer: &[u8; 32], sealed: &[u8]) -> Res
     let cert_bytes = signed[at..at + badge::CERT_LEN].to_vec();
     at += badge::CERT_LEN;
     let cert = badge::verify_with(issuer, &cert_bytes).ok_or(CommunityError::BadCertificate)?;
-    if cert.badge == badge::BADGE_NONE {
+    if !badge::in_community(cert.badge) {
         return Err(CommunityError::BadCertificate);
     }
     let op_secret = report::operator_report_secret(seed);
@@ -266,7 +266,7 @@ fn encode_index(ix: &Index) -> Result<Vec<u8>, CommunityError> {
     out.extend_from_slice(&ix.created_ms.to_be_bytes());
     out.extend_from_slice(&(ix.members.len() as u16).to_be_bytes());
     for m in &ix.members {
-        if m.badge == badge::BADGE_NONE || m.badge > badge::BADGE_MAX {
+        if !badge::in_community(m.badge) {
             return Err(CommunityError::BadCertificate);
         }
         out.push(m.badge);
@@ -301,7 +301,7 @@ fn decode_index(b: &[u8]) -> Result<Index, CommunityError> {
     };
     for _ in 0..n {
         let badge = take(&mut at, 1)?[0];
-        if badge == badge::BADGE_NONE || badge > badge::BADGE_MAX {
+        if !badge::in_community(badge) {
             return Err(bad());
         }
         let photo_hash = match take(&mut at, 1)?[0] {
@@ -551,8 +551,8 @@ mod tests {
         assert!(blob.len().div_ceil(3) * 4 < 62_000);
         ix.members.push(ix.members[0].clone());
         assert_eq!(build_index(&s.issuer_seed, &ix), Err(CommunityError::TooLarge));
-        // Medalha 0 ou desconhecida: recusada.
-        for b in [badge::BADGE_NONE, badge::BADGE_MAX + 1] {
+        // Medalha 0, desconhecida ou a 10 (fora da Comunidade): recusada.
+        for b in [badge::BADGE_NONE, badge::BADGE_QF, badge::BADGE_MAX + 1] {
             let ix = Index { members: vec![Member { badge: b, photo_hash: None }], ..sample(0) };
             assert_eq!(build_index(&s.issuer_seed, &ix), Err(CommunityError::BadCertificate));
         }

@@ -34,9 +34,17 @@ pub const BADGE_SUPPORT: u8 = 7;
 pub const BADGE_TROLL: u8 = 8;
 /// A Legacy e um escudo a volta da foto (sem aro nem medalha no canto).
 pub const BADGE_LEGACY: u8 = 9;
+/// Aro e medalha proprios (desenho a parte, sem tinta). Nunca entra na Comunidade.
+pub const BADGE_QF: u8 = 10;
 /// Maior numero de badge conhecido (os outros sao recusados). As apps antigas (ate a 0.9.50)
-/// conhecem ate ao 5: um certificado com 6 a 9 e recusado e la nao aparece nada.
-pub const BADGE_MAX: u8 = BADGE_LEGACY;
+/// conhecem ate ao 5: um certificado com 6 a 9 e recusado e la nao aparece nada. Ate a 0.9.60
+/// conhecem ate ao 9: o 10 e recusado e la nao aparece nada.
+pub const BADGE_MAX: u8 = BADGE_QF;
+
+/// Pode aparecer na lista da Comunidade (medalha conhecida, menos a 10).
+pub fn in_community(badge: u8) -> bool {
+    badge != BADGE_NONE && badge <= BADGE_MAX && badge != BADGE_QF
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BadgeCert {
@@ -121,11 +129,12 @@ mod tests {
         assert!(verify_with(&issuer, &m).is_none());
         assert!(verify_with(&issuer, &issue(&seed, &who, BADGE_MAX + 1, 0)).is_none());
         assert!(verify_with(&issuer, &c[..CERT_LEN - 1]).is_none());
-        // Os badges novos (6 a 9) sao aceites.
-        for b in [BADGE_BUGHUNTER, BADGE_SUPPORT, BADGE_TROLL, BADGE_LEGACY] {
+        // Os badges novos (6 a 10) sao aceites.
+        for b in [BADGE_BUGHUNTER, BADGE_SUPPORT, BADGE_TROLL, BADGE_LEGACY, BADGE_QF] {
             let v = verify_with(&issuer, &issue(&seed, &who, b, 5)).unwrap();
             assert_eq!(v.badge, b);
         }
+        assert!(!in_community(BADGE_QF) && !in_community(BADGE_NONE) && in_community(BADGE_LEGACY));
         // Com a chave por preencher (zeros) nada e aceite.
         if ISSUER_PUBLIC_KEY == [0u8; 32] {
             assert!(verify(&c).is_none());

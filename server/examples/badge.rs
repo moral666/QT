@@ -144,6 +144,7 @@ fn badge_num(name: &str) -> u8 {
         "support" => badge::BADGE_SUPPORT,
         "troll" => badge::BADGE_TROLL,
         "legacy" => badge::BADGE_LEGACY,
+        "qf" => badge::BADGE_QF,
         _ => die("badge desconhecido (founder, cofounder, dev, tester, contributor, bughunter, support, troll, legacy ou nenhum)"),
     }
 }

@@ -21,8 +21,9 @@ import androidx.compose.ui.unit.dp
  * tons de cinza) pintado com duas cores, sombra e brilho, para manter o aspeto metalico.
  * A Legacy e diferente: um escudo prateado a volta da foto (`badge_shield_legacy`), sem aro
  * nem medalha no canto.
+ * O 10 tem aro e medalha proprios, ja pintados (`badge_ring_qf`, `badge_coin_qf`): sem filtro.
  * Numeros iguais aos do Rust: 0 nenhum, 1 Founder, 2 Co-founder, 3 Dev, 4 Tester, 5 Contributor,
- * 6 Bug Hunter, 7 Support, 8 Troll, 9 Legacy.
+ * 6 Bug Hunter, 7 Support, 8 Troll, 9 Legacy, 10 QF.
  */
 object Badges {
     const val NONE = 0
@@ -37,8 +38,15 @@ object Badges {
         6 -> Color(0xFF8E0E1A) to Color(0xFFFFB0B0)   // Bug Hunter: vermelho
         7 -> Color(0xFF9A4208) to Color(0xFFFFD2A0)   // Support: laranja
         8 -> Color(0xFF14287A) to Color(0xFFA9C0FF)   // Troll: azul
+        QF -> Color(0xFF1C3529) to Color(0xFF5E9377)  // QF: verde (aro proprio, ver `ownRing`)
         else -> null
     }
+
+    /** Badge com aro e medalha proprios (o desenho ja vem pintado). */
+    const val QF = 10
+
+    /** Aro desenhado a parte (sem o filtro de cor); null = usa o `badge_ring` pintado. */
+    fun ownRing(badge: Int): Int? = if (badge == QF) R.drawable.badge_ring_qf else null
 
     fun name(badge: Int): String? = when (badge) {
         1 -> s(R.string.badge_founder)
@@ -50,6 +58,7 @@ object Badges {
         7 -> s(R.string.badge_support)
         8 -> s(R.string.badge_troll)
         LEGACY -> s(R.string.badge_legacy)
+        QF -> "QF"
         else -> null
     }
 
@@ -63,6 +72,7 @@ object Badges {
         6 -> R.drawable.badge_coin_bughunter
         7 -> R.drawable.badge_coin_support
         8 -> R.drawable.badge_coin_troll
+        QF -> R.drawable.badge_coin_qf
         else -> null
     }
 
@@ -109,6 +119,11 @@ val LocalBadges = compositionLocalOf<Map<String, Int>> { emptyMap() }
 /** O aro do badge, do tamanho do `modifier`. Nada se o badge for 0 ou desconhecido. */
 @Composable
 fun BadgeRing(badge: Int, modifier: Modifier) {
+    val own = Badges.ownRing(badge)
+    if (own != null) {
+        Image(painterResource(own), contentDescription = Badges.name(badge), modifier = modifier)
+        return
+    }
     val (shadow, light) = Badges.colors(badge) ?: return
     val filter = remember(badge) { Badges.filter(shadow, light) }
     Image(painterResource(R.drawable.badge_ring), contentDescription = Badges.name(badge), modifier = modifier, colorFilter = filter)

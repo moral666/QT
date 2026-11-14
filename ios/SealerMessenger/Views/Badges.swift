@@ -7,8 +7,9 @@ import UIKit
 /// tons de cinza) pintado com duas cores, sombra e brilho (`CIFalseColor`), igual ao Android.
 /// A Legacy e diferente: um escudo prateado a volta da foto (`BadgeShieldLegacy`), sem aro nem
 /// medalha no canto.
+/// O 10 tem aro e medalha proprios, ja pintados (`BadgeRingQF`, `BadgeCoin10`): sem filtro.
 /// Numeros iguais aos do Rust: 0 nenhum, 1 Founder, 2 Co-founder, 3 Dev, 4 Tester, 5 Contributor,
-/// 6 Bug Hunter, 7 Support, 8 Troll, 9 Legacy.
+/// 6 Bug Hunter, 7 Support, 8 Troll, 9 Legacy, 10 QF.
 enum Badges {
     static let none = 0
     /// Parte do aro ocupada pela foto (o buraco do desenho tem 83% do diametro).
@@ -17,6 +18,8 @@ enum Badges {
     static let coinScale: CGFloat = 0.40
     /// Legacy: escudo a volta da foto, em vez do aro e da medalha.
     static let legacy = 9
+    /// Aro e medalha proprios (o desenho ja vem pintado).
+    static let qf = 10
     /// Escudo: lado do desenho em relacao ao avatar (passa um pouco para fora, sobretudo em baixo,
     /// para a foto nao ficar muito mais pequena do que com o aro).
     static let shieldScale: CGFloat = 1.25
@@ -39,6 +42,7 @@ enum Badges {
         case 6: return (0x8E0E1A, 0xFFB0B0)   // Bug Hunter: vermelho
         case 7: return (0x9A4208, 0xFFD2A0)   // Support: laranja
         case 8: return (0x14287A, 0xA9C0FF)   // Troll: azul
+        case Self.qf: return (0x1C3529, 0x5E9377)  // QF: verde (aro proprio, ver `ring`)
         default: return nil
         }
     }
@@ -54,6 +58,7 @@ enum Badges {
         case 7: return s("badge_support")
         case 8: return s("badge_troll")
         case 9: return s("badge_legacy")
+        case Self.qf: return "QF"
         default: return nil
         }
     }
@@ -63,6 +68,11 @@ enum Badges {
     /// O aro ja pintado (feito uma vez por badge e guardado em memoria).
     @MainActor static func ring(_ badge: Int) -> UIImage? {
         if let img = cache[badge] { return img }
+        if badge == qf {
+            let img = UIImage(named: "BadgeRingQF")
+            cache[badge] = img
+            return img
+        }
         guard let pair = colors(badge),
               let base = UIImage(named: "BadgeRing"), let cg = base.cgImage else { return nil }
         func ci(_ rgb: UInt32) -> CIColor {
@@ -119,7 +129,7 @@ struct BadgeShield: View {
     }
 }
 
-/// A medalha do badge (moeda com o simbolo), `BadgeCoin1`...`BadgeCoin8` no Assets.
+/// A medalha do badge (moeda com o simbolo), `BadgeCoin1`...`BadgeCoin8` e `BadgeCoin10` no Assets.
 struct BadgeCoin: View {
     let badge: Int
     let size: CGFloat

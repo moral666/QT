@@ -105,7 +105,7 @@ fn my_state(c: &st::rusqlite::Connection) -> Result<Option<MyState>, QtError> {
     let Some(cert) = crate::badges::my_cert(c)? else { return Ok(None) };
     let me = st::load_identity(c)?;
     let ok = crate::badges::verify_cert(&cert)
-        .is_some_and(|v| v.badge != qb::BADGE_NONE && v.subject == me.identity.public.to_bytes());
+        .is_some_and(|v| qb::in_community(v.badge) && v.subject == me.identity.public.to_bytes());
     if !ok {
         return Ok(None);
     }
