@@ -4,7 +4,7 @@
 
 **SEALER** is a private messenger: no phone number, no email, end-to-end encryption and post-quantum protection. **QT** is the name of the protocol and of this repository.
 
-**Status:** version **1.0.2** for Android and iPhone, in invitation-only early access, with two federated relays in the European Union (Stockholm and Spain). Next: Google Play and the App Store.
+**Status:** version **1.0.3** for Android and iPhone, in invitation-only early access, with two federated relays in the European Union (Stockholm and Spain). Next: Google Play and the App Store.
 
 [Ler em português →](README.md)
 
@@ -138,7 +138,7 @@ cargo test --workspace                       # everything (needs Redis)
 cargo test -p qt_core --features pq          # only the cryptographic core
 ```
 
-Rust 1.88 or newer, via [rustup](https://rustup.rs). `cmake` builds Opus for the calls. The `server/tests/redis_acl.rs` test starts a Redis with the production command list and is skipped without `redis-server`.
+Rust 1.89 or newer, via [rustup](https://rustup.rs). `cmake` builds Opus for the calls. The `server/tests/redis_acl.rs` test starts a Redis with the production command list and is skipped without `redis-server`.
 
 ### Two people through the server, on your PC
 

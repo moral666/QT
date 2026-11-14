@@ -6,6 +6,15 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 14 de novembro de 2026: versão 1.0.3 (Android e iPhone 1.0.3, build 78)
+
+- **Base de dados:** o SQLCipher embutido nas apps passa à versão 4.20, com o SQLite 3.54.1, que corrige
+  a CVE-2026-119375 (RUSTSEC-2026-0459). As bases de dados já criadas abrem como antes, com a mesma
+  cifra e a mesma chave: testado com uma base da 1.0.2. O `cargo audit` deixa de ignorar este aviso.
+- **Dependências:** tokio 1.54.1 e rustix 1.1.6, que corrigem os avisos de segurança das versões
+  anteriores (apps e relays).
+- **Compilar:** o núcleo passa a pedir Rust 1.89 ou mais recente.
+
 ### 14 de novembro de 2026: versão 1.0.2 (Android e iPhone 1.0.2, build 77)
 
 - **Mensagens depois de recuperar a conta:** quando as duas pessoas de uma conversa recuperam a

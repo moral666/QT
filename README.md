@@ -4,7 +4,7 @@
 
 **SEALER** é um mensageiro privado: sem número de telefone, sem email, com cifra ponta a ponta e proteção pós-quântica. **QT** é o nome do protocolo e deste repositório.
 
-**Estado:** versão **1.0.2** para Android e iPhone, em acesso antecipado por convite, com dois relays em federação na União Europeia (Estocolmo e Espanha). A seguir: Google Play e App Store.
+**Estado:** versão **1.0.3** para Android e iPhone, em acesso antecipado por convite, com dois relays em federação na União Europeia (Estocolmo e Espanha). A seguir: Google Play e App Store.
 
 [Read this in English →](README.en.md)
 
@@ -138,7 +138,7 @@ cargo test --workspace                       # tudo (precisa do Redis)
 cargo test -p qt_core --features pq          # só o núcleo criptográfico
 ```
 
-Rust 1.88 ou mais recente, via [rustup](https://rustup.rs). O `cmake` compila o Opus das chamadas. O teste `server/tests/redis_acl.rs` arranca um Redis com a lista de comandos de produção e é saltado sem `redis-server`.
+Rust 1.89 ou mais recente, via [rustup](https://rustup.rs). O `cmake` compila o Opus das chamadas. O teste `server/tests/redis_acl.rs` arranca um Redis com a lista de comandos de produção e é saltado sem `redis-server`.
 
 ### Duas pessoas pelo servidor, no PC
 

@@ -5,7 +5,7 @@
 #        -> UniFFI -> qt_ffi.kt  -> app Android
 #
 # Requisitos (no PC de build, Linux/macOS):
-#   * Rust >= 1.88 via rustup           https://rustup.rs
+#   * Rust >= 1.89 via rustup           https://rustup.rs
 #   * Android NDK r27+ (ex.: Android Studio > SDK Manager > NDK); ver a nota sobre o r26d abaixo
 #   * perl, make (para compilar SQLCipher + OpenSSL a partir do codigo-fonte)
 #   * cmake (para compilar o Opus das chamadas de voz: sudo apt install cmake)

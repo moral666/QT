@@ -28,11 +28,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: cargo audit
-        # RUSTSEC-2026-0459 (SQLite, pelo rusqlite 0.31 em storage/) fica ignorado por agora.
-        # Só afeta quem abre uma base de dados escrita por terceiros; as apps só abrem a sua.
-        # Corrigir exige uma versão nova das apps e, a 11/11/2026, o SQLCipher embutido (o que
-        # as apps usam) ainda traz o SQLite afetado. O relay não inclui o SQLite.
-        # Tirar o --ignore quando o rusqlite for atualizado para uma versão corrigida.
+        # Desde a 1.0.3 o SQLCipher embutido (rusqlite 0.42: SQLCipher 4.20 com SQLite 3.54.1) ja traz
+        # a correcao do RUSTSEC-2026-0459: nada fica ignorado.
         run: |
           cargo install cargo-audit --locked
-          cargo audit --ignore RUSTSEC-2026-0459
+          cargo audit
