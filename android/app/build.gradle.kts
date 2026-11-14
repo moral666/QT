@@ -37,7 +37,9 @@ val fcm: FcmConfig? = run {
     if (!f.exists()) return@run null
     @Suppress("UNCHECKED_CAST")
     val root = groovy.json.JsonSlurper().parse(f) as Map<String, Any?>
+    @Suppress("UNCHECKED_CAST")
     val info = root["project_info"] as? Map<String, Any?> ?: return@run null
+    @Suppress("UNCHECKED_CAST")
     val clients = root["client"] as? List<Map<String, Any?>> ?: return@run null
     val client = clients.firstOrNull {
         ((it["client_info"] as? Map<*, *>)?.get("android_client_info") as? Map<*, *>)?.get("package_name") == "sealer.app"
@@ -149,6 +151,9 @@ android {
             // por mmap a partir do APK, sem extracao para disco). Evita o padrao "extrai
             // binario nativo e executa" que alguns motores heuristicos marcam.
             useLegacyPackaging = false
+            // O libqt_ffi.so ja sai do cargo sem simbolos (strip no perfil release). O strip do
+            // Gradle falhava nele e ficava o aviso "Unable to strip": o APK e o mesmo.
+            keepDebugSymbols += "**/libqt_ffi.so"
         }
         resources {
             // Metadados desnecessarios que so aumentam o APK.

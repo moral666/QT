@@ -582,7 +582,8 @@ fun AppRoot(
         !overLock && !ui.locked && !ui.loading
     CompositionLocalProvider(LocalPhotos provides ui.photos, LocalBadges provides ui.badges) {
     Column(Modifier.fillMaxSize()) {
-    if (showCallBar && call != null) CallBar(call, onClick = { callMinimized = false })
+    // showCallBar ja inclui call != null (o Kotlin 2 sabe que call nao e null aqui).
+    if (showCallBar) CallBar(call, onClick = { callMinimized = false })
     // A barra ja ocupa a barra de estado: os ecras por baixo nao a reservam outra vez.
     Box(Modifier.weight(1f).then(if (showCallBar) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier)) {
     when {

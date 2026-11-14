@@ -78,7 +78,12 @@ object Push {
         }
     }
 
-    /** O token FCM deste telemovel, ou null (sem Google Play Services, sem rede...). */
+    /**
+     * O token FCM deste telemovel, ou null (sem Google Play Services, sem rede...).
+     * A Google marcou `token` e `deleteToken` como obsoletos, mas continuam a funcionar. A troca
+     * pela API nova muda a forma como o relay acorda os telemoveis: fica para uma versao propria.
+     */
+    @Suppress("DEPRECATION")
     suspend fun token(ctx: Context): String? {
         if (!init(ctx)) return null
         return suspendCancellableCoroutine { cont ->
@@ -93,6 +98,7 @@ object Push {
     }
 
     /** Esquece o token deste telemovel na Google (ao desligar ou ao apagar o perfil). */
+    @Suppress("DEPRECATION")
     fun deleteToken(ctx: Context) {
         if (!init(ctx)) return
         try {
@@ -157,8 +163,10 @@ class SealerPushService : FirebaseMessagingService() {
     /**
      * Token novo (raro): com a base de dados aberta, segue ja para o relay (0.9.23; antes so
      * quando a app voltava a abrir, e ate la as campainhas iam para o token antigo). Sem ela
-     * (bloqueio da app), segue da proxima vez que a app se ligar.
+     * (bloqueio da app), segue da proxima vez que a app se ligar. Obsoleto na Google, mas
+     * continua a ser chamado (ver [Push.token]).
      */
+    @Suppress("OVERRIDE_DEPRECATION")
     override fun onNewToken(token: String) {
         SealerCore.pushTokenChanged(applicationContext, token)
     }
