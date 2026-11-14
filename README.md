@@ -4,7 +4,7 @@
 
 **SEALER** é um mensageiro privado: sem número de telefone, sem email, com cifra ponta a ponta e proteção pós-quântica. **QT** é o nome do protocolo e deste repositório.
 
-**Estado:** versão **1.0.0** para Android e iPhone, em acesso antecipado por convite, com dois relays em federação na União Europeia (Estocolmo e Espanha). A seguir: Google Play e App Store.
+**Estado:** versão **1.0.2** para Android e iPhone, em acesso antecipado por convite, com dois relays em federação na União Europeia (Estocolmo e Espanha). A seguir: Google Play e App Store.
 
 [Read this in English →](README.en.md)
 

@@ -6,6 +6,15 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 14 de novembro de 2026: versão 1.0.2 (Android e iPhone 1.0.2, build 77)
+
+- **Mensagens depois de recuperar a conta:** quando as duas pessoas de uma conversa recuperam a
+  conta com as 12 palavras, as mensagens voltam a chegar. Antes, um dos telemóveis podia abrir a
+  sessão com as chaves do telemóvel antigo do outro, que já não existem, e continuar a cifrar com
+  ela: nada chegava. Agora quem recebe uma sessão que não consegue abrir avisa o outro (tipo 10 com
+  a chave efémera dessa sessão) e os dois ficam com a mesma. Testes: `ffi/tests/recovery_both.rs`.
+- **Android:** compilação sem avisos (Kotlin, Firebase e Gradle), sem mudar o funcionamento.
+
 ### 5 de novembro de 2026: versão 1.0.0 (Android e iPhone 1.0.0, build 75)
 
 - **Primeira versão estável**, a que entra na Play Store. As funcionalidades são as da 0.9.74.
