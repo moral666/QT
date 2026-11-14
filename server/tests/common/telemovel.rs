@@ -123,6 +123,10 @@ pub struct Telemovel {
     pub erros_receber: std::collections::BTreeMap<String, u32>,
     /// Pedidos feitos ao relay por tipo, desde que o telemovel foi instalado.
     pub pedidos: Contagem,
+    /// `restartTriedAt` da app.
+    recomecos: std::collections::HashMap<String, std::time::Instant>,
+    /// Membros de grupos (nao contactos) com quem se abriu sessao (so o endereco).
+    contactos_de_grupo: Vec<Contacto>,
     seq: u32,
 }
 
@@ -154,6 +158,8 @@ impl Telemovel {
             recusas: Default::default(),
             erros_receber: Default::default(),
             pedidos: Default::default(),
+            recomecos: Default::default(),
+            contactos_de_grupo: vec![],
             seq: 0,
         }
     }
@@ -251,12 +257,16 @@ impl Telemovel {
         self.contactos.iter().find(|c| c.contact_id() == cid)
     }
 
+    fn contacto_ou_membro(&self, cid: &str) -> Option<&Contacto> {
+        self.contacto(cid).or_else(|| self.contactos_de_grupo.iter().find(|c| c.contact_id() == cid))
+    }
+
     /// `ensureSession`.
     pub async fn garantir_sessao(&mut self, cid: &str) -> Result<(), String> {
         if self.qt.has_session(cid.into()).unwrap() {
             return Ok(());
         }
-        let c = self.contacto(cid).cloned().ok_or("nao e contacto")?;
+        let c = self.contacto_ou_membro(cid).cloned().ok_or("nao e contacto")?;
         let l = self.link.as_mut().ok_or("sem ligacao")?;
         match l.pedido(self.qt.relay_request_fetch_bundle(c.relay_id.clone()).unwrap()).await? {
             RelayResponse::Bundle { bytes } => {
@@ -295,6 +305,9 @@ impl Telemovel {
                 Some(r) => r,
                 None => continue,
             };
+            if std::env::var("QT_TEL_DEBUG").is_ok() {
+                eprintln!("[{}] envia para {} ({} bytes)", self.nome, &item.contact_id[..6], item.blob.len());
+            }
             let req = self.qt.relay_request_send_item(relay_id, item.clone()).unwrap();
             let r = match l.pedido(req).await {
                 Ok(r) => r,
@@ -339,7 +352,11 @@ impl Telemovel {
             }
             let mut ack = vec![];
             for m in msgs {
-                match self.qt.receive_sealed(m.ciphertext.clone()) {
+                let res = self.qt.receive_sealed(m.ciphertext.clone());
+                if std::env::var("QT_TEL_DEBUG").is_ok() {
+                    eprintln!("[{}] recebe {:?}", self.nome, res.as_ref().map(|r| format!("{r:?}").chars().take(90).collect::<String>()));
+                }
+                match res {
                     Ok(r) => {
                         if !matches!(r, ReceiveResult::NoChange { .. }) {
                             recebeu = true;
@@ -367,16 +384,47 @@ impl Telemovel {
         total
     }
 
-    /// `restartSessions`.
+    /// `restartSessions` (1.0.4: membros dos grupos tambem, e uma tentativa por contacto a cada
+    /// 5 minutos).
     pub async fn recomecar_sessoes(&mut self) {
         let ids = self.qt.sessions_to_restart().unwrap();
         let mut abriu = false;
+        let membros: std::collections::HashMap<String, String> = self
+            .qt
+            .groups()
+            .unwrap()
+            .into_iter()
+            .filter(|g| g.active)
+            .flat_map(|g| g.members)
+            .map(|m| (m.contact_id, m.public_id))
+            .collect();
         for cid in ids {
-            if self.contacto(&cid).is_none() || self.qt.is_blocked(cid.clone()).unwrap() {
+            if self.qt.is_blocked(cid.clone()).unwrap() {
                 continue;
             }
-            if self.garantir_sessao(&cid).await.is_ok() {
-                abriu = true;
+            if self.recomecos.get(&cid).is_some_and(|t| t.elapsed() < Duration::from_secs(300)) {
+                continue;
+            }
+            if self.contacto(&cid).is_none() {
+                let Some(pid) = membros.get(&cid) else { continue };
+                let c = Contacto { nome: "membro".into(), relay_id: relay_id_of_public_id(pid.clone()).unwrap(), public_id: pid.clone() };
+                // Fica na lista so para o endereco (como o Contact temporario da app).
+                self.contactos_de_grupo.push(c);
+            }
+            self.recomecos.insert(cid.clone(), std::time::Instant::now());
+            if std::env::var("QT_TEL_DEBUG").is_ok() {
+                eprintln!("[{}] recomeca sessao com {}", self.nome, &cid[..6]);
+            }
+            match self.garantir_sessao(&cid).await {
+                Ok(()) => {
+                    abriu = true;
+                    self.recomecos.remove(&cid);
+                }
+                Err(e) if e.contains("demasiados pedidos") => {
+                    self.recomecos.remove(&cid);
+                    break;
+                }
+                Err(_) => {}
             }
         }
         if abriu {

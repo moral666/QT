@@ -2458,18 +2458,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * ele, para o que estava por entregar seguir (o Rust volta a cifra-lo, com o convite).
      * Membros de grupos que nao estao nos contactos: tratados pelo ciclo das sessoes dos grupos.
      */
+    /**
+     * Ultima tentativa de abrir a sessao com cada contacto em [restartSessions] (1.0.4). Sem isto,
+     * um contacto sem chaves no relay (ex.: apagou a conta) gastava um pedido de bundle a cada
+     * mensagem recebida, e o relay recusava os pedidos (limite de bundles da conta).
+     */
+    private val restartTriedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     private suspend fun restartSessions(client: QtClient) {
         val ids = client.sessionsToRestart()
         if (ids.isEmpty()) return
         var started = false
+        // Membros dos grupos que nao estao nos contactos (1.0.4): o endereco vem do Public ID.
+        val members by lazy {
+            runCatching { client.groups().filter { it.active }.flatMap { it.members }.associate { it.contactId to it.publicId } }
+                .getOrDefault(emptyMap())
+        }
+        val now = SystemClock.elapsedRealtime()
         for (cid in ids) {
-            val c = _ui.value.contacts.firstOrNull { it.contactId == cid } ?: continue
             if (cid in _ui.value.blocked) continue
+            val last = restartTriedAt[cid]
+            if (last != null && now - last < RESTART_RETRY_MS) continue
+            val c = _ui.value.contacts.firstOrNull { it.contactId == cid }
+                ?: members[cid]?.let { pid -> runCatching { Contact(s(R.string.t_contacto), pid, relayIdOfPublicId(pid)) }.getOrNull() }
+                ?: continue
+            restartTriedAt[cid] = now
             try {
                 ensureSession(client, c)
                 started = true
+                restartTriedAt.remove(cid)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: RelayLimitException) {
+                // Limite de pedidos de bundle da conta (ex.: muitos contactos depois de recuperar):
+                // os outros esperam pelo ciclo seguinte, sem os 5 minutos.
+                restartTriedAt.remove(cid)
+                break
             } catch (e: Exception) {
                 Log.w(TAG, "sessao nova depois de terminada: ${e.safeMsg()}")
             }
@@ -2486,6 +2510,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         when (val r = l.request(client.relayRequestFetchBundle(c.relayId))) {
             is RelayResponse.Bundle -> client.startSession(c.publicId, peerBundleFromRelayBytes(r.bytes))
             is RelayResponse.BundleNotFound -> throw IllegalStateException(s(R.string.err_contact_no_keys))
+            is RelayResponse.Error ->
+                if (r.reason == relayRateLimitedReason()) throw RelayLimitException()
+                else throw IllegalStateException(s(R.string.t_resposta_inesperada_do_servidor))
             else -> throw IllegalStateException(s(R.string.t_resposta_inesperada_do_servidor))
         }
     }
@@ -2527,6 +2554,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 } catch (e2: Exception) {
                     break   // sem rede: tenta no proximo ciclo, mantendo a ordem
                 }
+            }
+            if (r is RelayResponse.Error && r.reason == relayRateLimitedReason()) {
+                // Limite de pedidos da conta: o resto seria recusado tambem. Fica tudo para o
+                // proximo ciclo, pela mesma ordem (antes tentava cada item e multiplicava as recusas).
+                break
             }
             if (r is RelayResponse.Ack) {
                 client.outboxSent(item.outboxId)
@@ -3474,6 +3506,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
          * anexos partilham a ligacao com as mensagens: uma mensagem espera no maximo um lote.
          */
         private const val WINDOW = 4
+        /** Nova tentativa de abrir uma sessao que falhou em [restartSessions] (1.0.4). */
+        private const val RESTART_RETRY_MS = 5 * 60_000L
         private const val RETRY_MS = 15_000L
         private const val RETRY_MAX_MS = 5 * 60_000L
         /** Recusas seguidas de um anexo antes de ficar como falhado. */
@@ -3498,6 +3532,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
 /** O relay respondeu, mas recusou (ou respondeu outra coisa): nao e falta de rede. */
 private class RelayRefusedException(msg: String) : IOException(msg)
+
+/** O relay recusou por limite de pedidos da conta ([relayRateLimitedReason]): tentar mais tarde. */
+private class RelayLimitException : Exception("limite de pedidos do relay")
 
 private fun RelayResponse.describe(): String = when (this) {
     is RelayResponse.Error -> reason

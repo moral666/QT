@@ -2284,12 +2284,46 @@ final class AppModel: ObservableObject {
     // ================================================================ sessoes e outbox
 
     /// Um contacto apagou-me e as chaves dele ("sessao terminada"): abre ja uma sessao nova.
+    /// Ultima tentativa de abrir a sessao com cada contacto em `restartSessions` (1.0.4). Sem isto,
+    /// um contacto sem chaves no relay (ex.: apagou a conta) gastava um pedido de bundle a cada
+    /// mensagem recebida, e o relay recusava os pedidos (limite de bundles da conta).
+    private var restartTriedAt: [String: Double] = [:]
+    private static let restartRetrySeconds: Double = 5 * 60
+
     private func restartSessions(_ client: QtClient) async {
         guard let ids = try? await background({ try client.sessionsToRestart() }), !ids.isEmpty else { return }
         var started = false
+        // Membros dos grupos que nao estao nos contactos (1.0.4): o endereco vem do Public ID.
+        var members: [String: String]?
+        let now = monotonicSeconds()
         for cid in ids {
-            guard let c = ui.contact(cid), !ui.blocked.contains(cid) else { continue }
-            do { try await ensureSession(client, c); started = true } catch {
+            if ui.blocked.contains(cid) { continue }
+            if let last = restartTriedAt[cid], now - last < Self.restartRetrySeconds { continue }
+            var contact = ui.contact(cid)
+            if contact == nil {
+                if members == nil {
+                    members = await background {
+                        var m: [String: String] = [:]
+                        for g in (try? client.groups()) ?? [] where g.active { for x in g.members { m[x.contactId] = x.publicId } }
+                        return m
+                    }
+                }
+                if let pid = members?[cid], let r = try? relayIdOfPublicId(publicId: pid) {
+                    contact = Contact(nickname: s("t_contacto"), publicId: pid, relayId: r)
+                }
+            }
+            guard let c = contact else { continue }
+            restartTriedAt[cid] = now
+            do {
+                try await ensureSession(client, c)
+                started = true
+                restartTriedAt[cid] = nil
+            } catch is RelayLimitError {
+                // Limite de pedidos de bundle da conta (ex.: muitos contactos depois de recuperar):
+                // os outros esperam pelo ciclo seguinte, sem os 5 minutos.
+                restartTriedAt[cid] = nil
+                break
+            } catch {
                 log("SealerRelay", "sessao nova depois de terminada: \(safeMessage(error))")
             }
         }
@@ -2308,11 +2342,16 @@ final class AppModel: ObservableObject {
             _ = try await background { try client.startSession(publicId: c.publicId, bundle: try peerBundleFromRelayBytes(bytes: bytes)) }
         case .bundleNotFound:
             throw PlainError(s("err_contact_no_keys"))
+        case .error(let reason) where reason == relayRateLimitedReason():
+            throw RelayLimitError()
         case let other:
             log("SealerRelay", "bundle: resposta inesperada \(other.describe)")
             throw PlainError(s("t_resposta_inesperada_do_servidor"))
         }
     }
+
+    /// O relay recusou por limite de pedidos da conta (`relayRateLimitedReason`): tentar mais tarde.
+    private struct RelayLimitError: Error {}
 
     /// Envia ao relay tudo o que esta na outbox, pela ordem. So sai o que o relay confirmar.
     private func flushOutbox() async {
@@ -2327,7 +2366,7 @@ final class AppModel: ObservableObject {
         var members: [String: String]?
         var changed = false
         var retried = false
-        for item in items {
+        itemLoop: for item in items {
             var relayId = item.relayId ?? ui.contact(item.contactId)?.relayId
             if relayId == nil {
                 if members == nil {
@@ -2356,6 +2395,10 @@ final class AppModel: ObservableObject {
             case .ack:
                 _ = try? await background { try client.outboxSent(outboxId: item.outboxId) }
                 changed = true
+            case .error(let reason) where reason == relayRateLimitedReason():
+                // Limite de pedidos da conta: o resto seria recusado tambem. Fica tudo para o
+                // proximo ciclo, pela mesma ordem (antes tentava cada item e multiplicava as recusas).
+                break itemLoop
             case .error(let reason) where reason == relayPremiumRequiredReason():
                 // Chamada sem premium (o operador tirou-o entretanto): a oferta nao segue.
                 _ = try? await background { try client.outboxSent(outboxId: item.outboxId) }

@@ -998,6 +998,13 @@ impl QtClient {
             crate::profile::forget_sent(&tx, contact_id)?;
             crate::badges::forget_sent(&tx, contact_id)?;
             crate::call::forget_sent(&tx, contact_id)?;
+            // ... e os grupos em que sou administrador e ele e membro (nao vao na copia).
+            crate::groups::resend_info_to(self, &tx, contact_id)?;
+            // Sessao aberta por uma mensagem de grupo: nada volta para ele nesta sessao (os grupos
+            // nao tem recibos) e a dele ficava por confirmar para sempre. Confirma-a ja.
+            if crate::history::is_group_payload(&plaintext) {
+                crate::history::queue_session_ack(self, &tx, contact_id)?;
+            }
         }
         // Ganchos do chamador (ex.: guardar a mensagem no historico) na MESMA transacao.
         after(&tx, contact_id, &env_id, &plaintext)?;
@@ -1243,6 +1250,14 @@ pub fn relay_elsewhere_name(reason: String) -> Option<String> {
 #[uniffi::export]
 pub fn relay_no_new_accounts_reason() -> String {
     "relay sem contas novas".to_string()
+}
+
+/// Motivo do `Error` do relay quando a conta passou o limite de pedidos por minuto (igual ao
+/// `RATE_LIMITED` do relay). A app para de enviar a outbox ate ao proximo ciclo: insistir so gasta
+/// pedidos que voltam a ser recusados (uma conta nova tem 60 envios por minuto).
+#[uniffi::export]
+pub fn relay_rate_limited_reason() -> String {
+    "demasiados pedidos, tenta daqui a pouco".to_string()
 }
 
 /// Motivo do `Error` do relay a um anexo ou chamada de uma conta sem premium, com o bloqueio

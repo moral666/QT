@@ -561,7 +561,8 @@ impl QtClient {
     }
 
     /// Tudo o que ainda nao foi confirmado pelo relay (reenviar apos falhas
-    /// de rede ou reinicio da app), pela ordem em que foi criado.
+    /// de rede ou reinicio da app): primeiro os sinais de chamada, depois o resto pela
+    /// ordem em que foi criado (ver `hm::outbox_all`).
     pub fn outbox(&self) -> Result<Vec<OutboxItem>, QtError> {
         let c = self.lock()?;
         // Sinais de chamada que nao sairam a tempo: ja nao servem para nada.
@@ -931,11 +932,33 @@ pub(crate) fn queue_reject_if_needed(client: &QtClient, c: &st::rusqlite::Connec
     Ok(())
 }
 
+/// Mensagem de grupo (tipos 6, 7 e 8)?
+pub(crate) fn is_group_payload(plain: &[u8]) -> bool {
+    plain.len() > 1 && plain[0] == PAYLOAD_V1 && matches!(plain[1], T_GROUP_MSG | T_GROUP_INFO | T_GROUP_LEAVE)
+}
+
+/// Sessao nova recebida (fui eu que a abri do meu lado como responder): a dele fica "por confirmar"
+/// ate eu lhe enviar alguma coisa nela. Nas conversas a dois isso acontece logo (recibo de entrega),
+/// mas nos grupos nao: a sessao dele ficava por confirmar para sempre e, se eu
+/// recuperasse a conta, ganhava o desempate das sessoes cruzadas com chaves que eu ja nao tenho (as
+/// mensagens dele perdiam-se). Um recibo sem mensagens confirma-a sem mudar nada do outro lado (as
+/// apps antigas tambem o ignoram). Desde a 1.0.4.
+pub(crate) fn queue_session_ack(client: &QtClient, c: &st::rusqlite::Connection, contact_id: &str) -> Result<(), QtError> {
+    if is_blocked_in(c, contact_id)? {
+        return Ok(());
+    }
+    let blob = client.seal_with(c, contact_id, &encode_receipt(&new_id()?, now_ms(), hm::ST_DELIVERED, &[]))?;
+    hm::outbox_put(c, &new_id()?, contact_id, hm::OUTBOX_RECEIPT, &blob)?;
+    Ok(())
+}
+
 /// Chegou uma mensagem de um contacto com quem ja nao tenho sessao (ex.: conta recuperada): marca
 /// que falta abrir uma nova. Ao recebe-la, o outro lado volta a enviar o que nao tem recibo. So
-/// contactos meus: a pista de quem enviou nao e autenticada ate a mensagem abrir.
+/// contactos meus e, desde a 1.0.4, membros dos meus grupos ativos: a pista de quem enviou nao e
+/// autenticada ate a mensagem abrir.
 pub(crate) fn restart_lost_session(c: &st::rusqlite::Connection, contact_id: &str) -> Result<(), QtError> {
-    if crate::call::is_contact(c, contact_id)? && !is_blocked_in(c, contact_id)? {
+    let known = crate::call::is_contact(c, contact_id)? || crate::groups::is_member_of_active(c, contact_id)?;
+    if known && !is_blocked_in(c, contact_id)? {
         st::kv_set(c, &format!("{KV_RESTART}{contact_id}"), &[1])?;
     }
     Ok(())
@@ -952,7 +975,11 @@ pub(crate) fn after_new_session(client: &QtClient, tx: &st::rusqlite::Connection
     st::kv_delete(tx, &key)?;
     // Primeiro o que estava por entregar (isto limpa a outbox antiga dele), depois o convite.
     requeue_after_session_reset(client, tx, contact_id)?;
-    queue_intro_if_needed(client, tx, contact_id)
+    queue_intro_if_needed(client, tx, contact_id)?;
+    // A sessao dele tinha-se perdido (ex.: recuperou a conta): volta a mandar-lhe os grupos, e um
+    // recibo vazio para ele passar ja a esta sessao, mesmo sem nada por entregar (1.0.4).
+    crate::groups::resend_info_to(client, tx, contact_id)?;
+    queue_session_ack(client, tx, contact_id)
 }
 
 impl QtClient {

@@ -608,6 +608,39 @@ fn replay_pending(c: &st::rusqlite::Connection, gid: &str) -> Result<(), QtError
     Ok(())
 }
 
+/// `cid` e membro de algum grupo ativo meu?
+pub(crate) fn is_member_of_active(c: &st::rusqlite::Connection, cid: &str) -> Result<bool, QtError> {
+    for (_, json, active) in hm::groups_all(c)? {
+        if active && serde_json::from_str::<StoredGroup>(&json).is_ok_and(|g| g.has(cid)) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Sessao nova com `cid` (ex.: reinstalou e recuperou a conta com as 12 palavras). Os grupos nao
+/// vao na copia de recuperacao, por isso ele pode ja nao os conhecer: nos grupos ativos em que sou
+/// administrador e ele e membro, volta a receber a info atual (desde a 1.0.4). Quem ja tem esta
+/// versao ignora-a; quem nao tem o grupo volta a te-lo (sem as mensagens antigas), e as mensagens
+/// que entretanto ficaram guardadas a espera da info aparecem.
+pub(crate) fn resend_info_to(client: &QtClient, c: &st::rusqlite::Connection, cid: &str) -> Result<(), QtError> {
+    let (me, _) = my_identity(c)?;
+    for (gid, json, active) in hm::groups_all(c)? {
+        if !active {
+            continue;
+        }
+        let Ok(g) = serde_json::from_str::<StoredGroup>(&json) else { continue };
+        if !g.is_admin(&me) {
+            continue;
+        }
+        let Some(m) = g.members.iter().find(|m| member_cid(&m.pid).as_deref() == Some(cid)) else { continue };
+        let mut body = parse_gid(&gid)?;
+        body.extend_from_slice(&serde_json::to_vec(&g).map_err(|_| QtError::Storage)?);
+        fanout(client, c, std::slice::from_ref(&m.pid), T_GROUP_INFO, &body, None)?;
+    }
+    Ok(())
+}
+
 /// Tipo 8: um membro saiu. Os administradores publicam logo uma versao sem ele.
 pub(crate) fn on_group_leave(client: &QtClient, c: &st::rusqlite::Connection, from: &str, body: &[u8]) -> Result<ReceiveResult, QtError> {
     let Some(gid) = gid_hex(body) else { return Ok(no_change(from)) };

@@ -49,8 +49,17 @@ pub struct Stats {
     pub closed_oldest: AtomicU64,
     /// Registos de conta nova recusados por falta de prova de trabalho valida.
     pub pow_rejected: AtomicU64,
-    /// Pedidos recusados por passarem o limite por conta (envios, bundles).
+    /// Pedidos recusados por passarem o limite por conta (todos os tipos juntos).
     pub rate_limited: AtomicU64,
+    /// O mesmo, por tipo (desde a 1.0.4): envios de contas com mais e com menos de um dia,
+    /// pedidos de bundle, registos, copias de recuperacao, anexos e comunidade.
+    pub limited_send: AtomicU64,
+    pub limited_send_new: AtomicU64,
+    pub limited_bundle: AtomicU64,
+    pub limited_register: AtomicU64,
+    pub limited_backup: AtomicU64,
+    pub limited_blob: AtomicU64,
+    pub limited_community: AtomicU64,
     /// One-time prekeys entregues com um bundle.
     pub otpks_served: AtomicU64,
     /// Escritas recusadas (envio, token, anexo) a contas sem bundle no relay.
@@ -115,6 +124,13 @@ pub static STATS: Stats = Stats {
     closed_oldest: AtomicU64::new(0),
     pow_rejected: AtomicU64::new(0),
     rate_limited: AtomicU64::new(0),
+    limited_send: AtomicU64::new(0),
+    limited_send_new: AtomicU64::new(0),
+    limited_bundle: AtomicU64::new(0),
+    limited_register: AtomicU64::new(0),
+    limited_backup: AtomicU64::new(0),
+    limited_blob: AtomicU64::new(0),
+    limited_community: AtomicU64::new(0),
     otpks_served: AtomicU64::new(0),
     not_registered: AtomicU64::new(0),
     recipient_unknown: AtomicU64::new(0),
@@ -134,6 +150,12 @@ pub static STATS: Stats = Stats {
 
 pub fn inc(c: &AtomicU64) {
     c.fetch_add(1, Relaxed);
+}
+
+/// Um pedido recusado pelo limite por conta: conta no total e no tipo.
+pub fn limitado(tipo: &AtomicU64) {
+    inc(&STATS.rate_limited);
+    inc(tipo);
 }
 
 pub fn add(c: &AtomicU64, n: u64) {
@@ -188,6 +210,13 @@ pub fn take_line(s: &Stats) -> Option<String> {
         ("provas_por_verificar", t(&s.pow_limited)),
         ("saida_kb", t(&s.egress_bytes) / 1024),
         ("sem_conta_fechadas", t(&s.unregistered_closed)),
+        ("limite_envios", t(&s.limited_send)),
+        ("limite_envios_conta_nova", t(&s.limited_send_new)),
+        ("limite_bundles", t(&s.limited_bundle)),
+        ("limite_registos", t(&s.limited_register)),
+        ("limite_copias", t(&s.limited_backup)),
+        ("limite_anexos", t(&s.limited_blob)),
+        ("limite_comunidade", t(&s.limited_community)),
     ];
     let active = s.active.load(Relaxed);
     if active == 0 && v.iter().all(|(_, n)| *n == 0) {
@@ -217,5 +246,27 @@ mod tests {
         let l = take_line(&s).unwrap();
         assert!(l.contains("envios=1") && l.contains("mensagens_entregues=3"), "{l}");
         assert!(take_line(&s).is_none(), "os contadores do intervalo foram repostos");
+    }
+}
+
+#[cfg(test)]
+mod tests_limites {
+    use super::*;
+
+    #[test]
+    fn limite_por_tipo_na_linha() {
+        let antes = STATS.limited_send_new.load(Relaxed);
+        limitado(&STATS.limited_send_new);
+        assert!(STATS.limited_send_new.load(Relaxed) > antes);
+        let s = Stats::default();
+        s.rate_limited.store(5, Relaxed);
+        s.limited_send.store(2, Relaxed);
+        s.limited_bundle.store(3, Relaxed);
+        let linha = take_line(&s).unwrap();
+        for campo in ["limite_por_conta=5", "limite_envios=2", "limite_bundles=3", "limite_envios_conta_nova=0", "limite_registos=0", "limite_copias=0", "limite_anexos=0", "limite_comunidade=0"] {
+            assert!(linha.contains(campo), "{campo} em {linha}");
+        }
+        // Os contadores por tipo ficam antes dos parenteses (o Sealer Control so le essa parte).
+        assert!(linha.find("limite_comunidade").unwrap() < linha.find('(').unwrap_or(usize::MAX));
     }
 }

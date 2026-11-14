@@ -110,3 +110,11 @@ fn bloquear_um_id_invalido_falha() {
     let b = peer("bob", 0x33);
     assert!(b.c.block_contact("nao-e-um-id".into()).is_err());
 }
+
+/// O motivo que a app compara tem de ser o mesmo texto que o relay devolve (`RATE_LIMITED`).
+#[test]
+fn motivo_do_limite_igual_ao_do_relay() {
+    let relay = include_str!("../../server/src/protocol.rs");
+    let reason = qt_ffi::client::relay_rate_limited_reason();
+    assert!(relay.contains(&format!("pub const RATE_LIMITED: &str = \"{reason}\";")));
+}

@@ -527,6 +527,7 @@ object SealerCore {
             } catch (e: Exception) {
                 break   // sem rede: fica para depois, pela mesma ordem
             }
+            if (r is RelayResponse.Error && r.reason == relayRateLimitedReason()) break   // limite da conta: fica para depois
             if (r is RelayResponse.Ack) c.outboxSent(item.outboxId)
         }
     }

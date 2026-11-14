@@ -549,6 +549,7 @@ O plaintext cifrado pelo Double Ratchet tem agora um formato próprio (o relay n
 [1 versão=0x01][1 tipo][16 msg_id][8 sent_at ms, BE]
 tipo 1 = texto:  [texto UTF-8, máx. 9000 bytes]
 tipo 2 = recibo: [1 estado: 2=entregue, 3=vista][2 n BE][n × 16 msg_id], n ≤ 400
+         (com n = 0: so confirma a sessao, sem mudar nada; ver "Sessao aberta por um grupo")
 tipo 3 = anexo:  [1 versão=1][32 chave][16 blob_id][8 tamanho BE][8 tamanho cifrado BE]
                  [4 largura BE][4 altura BE][1 n][n bytes do tipo MIME]
                  ficheiro: [1 versão=2] e o mesmo, mais [1 k][k bytes do nome, UTF-8]
@@ -582,6 +583,10 @@ Um plaintext fora deste formato (clientes antigos) é tratado como texto simples
 **Estados** de uma mensagem enviada: *por enviar* (na outbox) → *enviada* (o relay deu `Ack`) → *entregue* (recibo cifrado do destinatário) → *vista* (recibo cifrado, opcional). Os estados só sobem e um recibo só afeta mensagens enviadas ao próprio remetente do recibo.
 
 **Atomicidade** (`ffi/src/history.rs`): enviar = avançar o ratchet + guardar a mensagem + pôr o envelope na outbox, numa transação; receber = avançar o ratchet + marcar o envelope como visto + guardar a mensagem/aplicar o recibo + agendar o recibo "entregue", numa transação. A outbox só é limpa quando o relay confirma. Testes: `ffi/tests/history_flow.rs`.
+
+**Ordem da outbox (desde a 1.0.4):** os sinais de chamada (os que têm prazo) saem primeiro e o resto pela ordem em que foi criado. Quando o relay responde `demasiados pedidos, tenta daqui a pouco` (limite por conta), a app para e continua no ciclo seguinte, pela mesma ordem.
+
+**Sessão aberta por um grupo (desde a 1.0.4):** quem recebe uma sessão nova numa mensagem de grupo (tipos 6, 7 e 8) responde logo com um recibo vazio (tipo 2 com n = 0). Sem isto, a sessão de quem a abriu ficava por confirmar (os grupos não têm recibos) e, depois de uma recuperação de conta, ganhava o desempate das sessões cruzadas com chaves que já não existem. As apps antigas ignoram o recibo vazio. O administrador de um grupo volta a enviar a info (tipo 7) a um membro com uma sessão nova (ex.: recuperou a conta: os grupos não vão na cópia). Testes: `server/tests/app_e2e.rs`.
 
 ## 13. Sessoes cruzadas, reinicio de sessao e eliminacao
 

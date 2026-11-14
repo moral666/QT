@@ -468,9 +468,11 @@ pub fn outbox_take(conn: &Connection, outbox_id: &[u8]) -> Result<Option<OutboxE
     Ok(e)
 }
 
-/// Tudo o que ainda nao foi confirmado pelo relay, pela ordem de criacao.
+/// Tudo o que ainda nao foi confirmado pelo relay. Os sinais de chamada (os que tem prazo) vem primeiro: uma chamada toca logo, mesmo com muitas
+/// mensagens por enviar e o limite de envios da conta (desde a 1.0.4). O resto vai pela ordem em que
+/// foi criado. A ordem diferente e segura: o Double Ratchet guarda as chaves das que ficaram para tras.
 pub fn outbox_all(conn: &Connection) -> Result<Vec<OutboxEntry>, StorageError> {
-    let mut stmt = conn.prepare("SELECT outbox_id, contact_id, kind, blob FROM outbox ORDER BY seq ASC")?;
+    let mut stmt = conn.prepare("SELECT outbox_id, contact_id, kind, blob FROM outbox ORDER BY (expires_ms != 0) DESC, seq ASC")?;
     let rows = stmt.query_map([], |r| {
         Ok(OutboxEntry { outbox_id: r.get(0)?, contact_id: r.get(1)?, kind: r.get(2)?, blob: r.get(3)? })
     })?;

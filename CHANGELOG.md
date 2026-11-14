@@ -6,6 +6,29 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 14 de novembro de 2026: versão 1.0.4 (Android e iPhone 1.0.4, build 79)
+
+Correções encontradas pelos testes de ponta a ponta novos (`server/tests/app_e2e.rs` e
+`app_e2e_federacao.rs`: telemóveis simulados com o núcleo e os relays verdadeiros).
+
+- **Envios no limite da conta:** quando o relay responde que a conta passou o limite de pedidos por
+  minuto, a app para de enviar a outbox até ao ciclo seguinte, pela mesma ordem. Antes tentava cada
+  item e multiplicava as recusas (259 em 10 ciclos no teste), e as mensagens chegavam fora de ordem.
+- **Chamadas à frente:** os sinais de chamada (oferta, atender, desligar) saem antes do resto da
+  outbox. Antes, com mensagens por enviar e o limite da conta, uma chamada podia demorar minutos a tocar.
+- **Grupos depois de recuperar a conta:** o administrador volta a enviar a info do grupo a quem
+  recomeçou a sessão, e o grupo volta a aparecer (sem as mensagens antigas). Uma sessão aberta por
+  uma mensagem de grupo é confirmada logo com um recibo vazio (antes ficava por confirmar e partia-se
+  depois de uma recuperação). Um membro que não é contacto e cujas mensagens deixam de abrir passa a
+  ter a sessão recomeçada, como os contactos.
+- **Sessões por recomeçar:** a app tenta abrir cada uma no máximo de 5 em 5 minutos, e para no
+  limite de pedidos do relay. Antes pedia o bundle de um contacto sem chaves (ex.: apagou a conta) a
+  cada mensagem recebida (40 pedidos em 40 mensagens no teste).
+- **Relay:** as recusas por limite são contadas por tipo na linha de estatísticas (`limite_envios`,
+  `limite_envios_conta_nova`, `limite_bundles`, `limite_registos`, `limite_copias`, `limite_anexos`,
+  `limite_comunidade`), além do total `limite_por_conta`.
+  Função nova no núcleo: `relay_rate_limited_reason`.
+
 ### 14 de novembro de 2026: versão 1.0.3 (Android e iPhone 1.0.3, build 78)
 
 - **Base de dados:** o SQLCipher embutido nas apps passa à versão 4.20, com o SQLite 3.54.1, que corrige

@@ -302,10 +302,26 @@ async fn grupo_de_tres_com_um_membro_que_recupera() {
     a.enviar_grupo(&gid, "depois da recuperacao").await;
     b.enviar_grupo(&gid, "b depois").await;
     for _ in 0..4 { ate_acalmar(&mut [&mut a, &mut b, &mut c]).await; }
-    println!("C depois de recuperar: grupos {:?}", c.qt.groups().unwrap().iter().map(|g| g.name.clone()).collect::<Vec<_>>());
-    println!("C recebe: {:?}", c.qt.groups().unwrap().first().map(|g| c.recebidas_grupo(&g.group_id)));
-    println!("erros A {:?} B {:?} C {:?}", a.erros_receber, b.erros_receber, c.erros_receber);
     assert!(a.recebidas_grupo(&gid).contains(&"b depois".to_string()), "o grupo continua entre A e B");
+    // Desde a 1.0.4: o administrador (A) volta a mandar a info do grupo a quem recomecou a sessao.
+    let g = c.qt.group(gid.clone()).unwrap().expect("a Carla volta a ter o grupo");
+    assert!(g.active && g.name == "Amigos", "{g:?}");
+    let rc = c.recebidas_grupo(&gid);
+    assert!(rc.contains(&"depois da recuperacao".to_string()), "da Ana: {rc:?}");
+    // O Bruno nao e contacto da Carla: a primeira mensagem dele ainda foi com a sessao antiga e
+    // perdeu-se, mas a Carla abriu logo uma sessao nova com ele (1.0.4): a seguinte ja chega.
+    b.enviar_grupo(&gid, "b segunda").await;
+    for _ in 0..3 { ate_acalmar(&mut [&mut a, &mut b, &mut c]).await; }
+    let rc = c.recebidas_grupo(&gid);
+    assert!(rc.contains(&"b segunda".to_string()), "do Bruno sem a Carla escrever: {rc:?}");
+    c.enviar_grupo(&gid, "voltei ao grupo").await;
+    for _ in 0..3 { ate_acalmar(&mut [&mut a, &mut b, &mut c]).await; }
+    assert!(a.recebidas_grupo(&gid).contains(&"voltei ao grupo".to_string()));
+    assert!(b.recebidas_grupo(&gid).contains(&"voltei ao grupo".to_string()));
+    b.enviar_grupo(&gid, "b outra vez").await;
+    for _ in 0..3 { ate_acalmar(&mut [&mut a, &mut b, &mut c]).await; }
+    let rc = c.recebidas_grupo(&gid);
+    assert!(rc.contains(&"b outra vez".to_string()), "do Bruno depois de a Carla escrever: {rc:?}");
 }
 
 #[tokio::test]
@@ -522,4 +538,92 @@ async fn chamada_atras_da_fila_no_limite() {
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     }
     println!("com 80 mensagens a frente e 10 envios/s, tocou ao fim de {tocou:?}");
+    // Desde a 1.0.4 os sinais de chamada saem a frente: toca no primeiro ciclo.
+    assert!(tocou.is_some_and(|d| d < std::time::Duration::from_secs(2)), "{tocou:?}");
+    // E as mensagens continuam a chegar todas, pela ordem.
+    for _ in 0..60 {
+        a.flush().await;
+        b.ciclo().await;
+        if b.recebidas(&cid(&a)).len() == 80 { break; }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    assert_eq!(b.recebidas(&cid(&a)), (0..80).map(|i| format!("m{i}")).collect::<Vec<_>>());
+}
+
+/// O contacto apagou-me e depois apagou a conta: a sessao fica por recomecar e o bundle dele ja nao
+/// existe. A app nao pode pedir o bundle a cada mensagem que recebe (limite de bundles da conta).
+#[tokio::test]
+async fn recomecar_sessao_com_conta_apagada_nao_insiste() {
+    let relay = TestRelay::start(fast_cfg()).await;
+    let (mut a, mut b) = dois(&relay).await;
+    let mut c = Telemovel::novo("carla", &relay.url);
+    c.criar_conta().await;
+    a.adicionar(c.como_contacto("C"));
+    c.adicionar(a.como_contacto("A"));
+    let (ca, cb) = (cid(&a), cid(&b));
+    a.enviar(&cb, "1").await.unwrap();
+    ate_acalmar(&mut [&mut a, &mut b]).await;
+    // B apaga a Ana (avisa) e depois apaga a conta no relay.
+    let rid = a.como_contacto("A").relay_id;
+    b.qt.delete_contact_notify(ca.clone(), rid).unwrap();
+    b.flush().await;
+    let req = b.qt.relay_request_delete_account().unwrap();
+    b.link.as_mut().unwrap().pedido(req).await.unwrap();
+    // A Ana continua a usar a app: recebe 40 mensagens da Carla, um ciclo por mensagem.
+    let antes = a.pedidos_de("FetchPreKeyBundle");
+    for i in 0..40 {
+        c.enviar(&ca, &format!("c{i}")).await.unwrap();
+        a.ciclo().await;
+    }
+    let pedidos = a.pedidos_de("FetchPreKeyBundle") - antes;
+    println!("bundles pedidos por causa da sessao a recomecar: {pedidos}");
+    assert!(pedidos <= 2, "pede o bundle de uma conta apagada a cada ciclo: {pedidos}");
+}
+
+/// Recuperar uma conta com muitos contactos: o relay limita os pedidos de bundle; a app nao pode
+/// insistir nem desistir por 5 minutos, e todas as sessoes voltam.
+#[tokio::test]
+async fn recuperar_com_muitos_contactos_no_limite_de_bundles() {
+    let mut cfg = fast_cfg();
+    cfg.fetch_bundle_rate = qt_server::limits::Rate { burst: 8, per_minute: 600 }; // 10 por segundo
+    let relay = TestRelay::start(cfg).await;
+    let mut a = Telemovel::novo("ana", &relay.url);
+    a.criar_conta().await;
+    let mut outros = vec![];
+    for i in 0..30 {
+        let mut x = Telemovel::novo(&format!("amigo{i}"), &relay.url);
+        x.criar_conta().await;
+        x.adicionar(a.como_contacto("Ana"));
+        a.adicionar(x.como_contacto(&format!("Amigo {i}")));
+        outros.push(x);
+    }
+    let pa = a.ativar_recuperacao().await;
+    a.desinstalar();
+    a.recuperar(pa).await.unwrap();
+    assert_eq!(a.contactos.len(), 30);
+    let mut ciclos = 0;
+    while ciclos < 40 {
+        a.ciclo().await;
+        ciclos += 1;
+        let falta = outros.iter().filter(|x| !a.qt.has_session(cid(x)).unwrap()).count();
+        if falta == 0 { break; }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    let recusas = a.pedidos_de("FetchPreKeyBundle");
+    println!("sessoes de novo com 30 contactos em {ciclos} ciclos, {recusas} pedidos de bundle");
+    assert!(outros.iter().all(|x| a.qt.has_session(cid(x)).unwrap()), "ficaram contactos sem sessao");
+    assert!(recusas <= 30 + ciclos, "insistiu nos pedidos de bundle: {recusas}");
+    // E as conversas funcionam nos dois sentidos.
+    let ca = cid(&a);
+    for x in outros.iter_mut().take(3) {
+        x.ciclo().await;
+        x.enviar(&ca, "ola de novo").await.unwrap();
+    }
+    for _ in 0..3 {
+        a.ciclo().await;
+        for x in outros.iter_mut().take(3) { x.ciclo().await; }
+    }
+    for x in outros.iter().take(3) {
+        assert_eq!(a.recebidas(&cid(x)), ["ola de novo"], "{}", x.nome);
+    }
 }

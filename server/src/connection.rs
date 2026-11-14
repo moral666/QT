@@ -649,7 +649,7 @@ async fn handle_client_message(
                 return err("so podes registar o teu proprio bundle");
             }
             if !crate::limits::allow(crate::limits::Limited::Register, me, cfg.register_rate) {
-                stats::inc(&STATS.rate_limited);
+                stats::limitado(&STATS.limited_register);
                 return err(crate::protocol::RATE_LIMITED);
             }
             if bundle_bytes.is_empty() || bundle_bytes.len() > MAX_BUNDLE {
@@ -761,7 +761,7 @@ async fn handle_client_message(
             // Cada pedido gasta uma one-time prekey do contacto: sem limite, alguem
             // podia esvazia-las de proposito.
             if !crate::limits::allow(crate::limits::Limited::FetchBundle, me, cfg.fetch_bundle_rate) {
-                stats::inc(&STATS.rate_limited);
+                stats::limitado(&STATS.limited_bundle);
                 return err(crate::protocol::RATE_LIMITED);
             }
             match store.get_bundle(&user_id).await {
@@ -808,7 +808,7 @@ async fn handle_client_message(
                 || !crate::limits::allow_daily(crate::limits::Limited::SendBytes, me, bytes, ciphertext.len() as u64)
                 || (young && crate::limits::redis_tight())
             {
-                stats::inc(&STATS.rate_limited);
+                stats::limitado(if young { &STATS.limited_send_new } else { &STATS.limited_send });
                 return err(crate::protocol::RATE_LIMITED);
             }
             // Fazer chamadas e pago (0.9.21): a oferta vai com a campainha marcada.
@@ -987,7 +987,7 @@ async fn handle_client_message(
                     // Sem premium: limites proprios, para o espaco nunca faltar a quem paga.
                     let free = !premium || young;
                     if free && !crate::limits::allow_per_hour(crate::limits::Limited::BlobCreate, me, cfg.free_blobs_per_hour) {
-                        stats::inc(&STATS.rate_limited);
+                        stats::limitado(&STATS.limited_blob);
                         return err(crate::protocol::RATE_LIMITED);
                     }
                     match store.blob_create_as(me, size, free).await {
@@ -1020,7 +1020,7 @@ async fn handle_client_message(
         },
         ClientMessage::BlobGet { blob_id, offset } => {
             if !session.egress_left(cfg, me) {
-                stats::inc(&STATS.rate_limited);
+                stats::limitado(&STATS.limited_blob);
                 return err(crate::protocol::RATE_LIMITED);
             }
             match store.blob_get(&blob_id, offset).await {
@@ -1122,7 +1122,7 @@ async fn handle_client_message(
         },
         ClientMessage::CommunityIndex => {
             if !session.egress_left(cfg, me) {
-                stats::inc(&STATS.rate_limited);
+                stats::limitado(&STATS.limited_community);
                 return err(crate::protocol::RATE_LIMITED);
             }
             match store.community_index().await {
@@ -1138,7 +1138,7 @@ async fn handle_client_message(
                 return err("pedido invalido");
             }
             if !session.egress_left(cfg, me) {
-                stats::inc(&STATS.rate_limited);
+                stats::limitado(&STATS.limited_community);
                 return err(crate::protocol::RATE_LIMITED);
             }
             let mut photos = Vec::new();
@@ -1308,7 +1308,7 @@ async fn handle_client_message(
                 || !crate::limits::allow_daily(crate::limits::Limited::BackupBytes, me, daily, bytes.len() as u64)
                 || (young && crate::limits::redis_tight())
             {
-                stats::inc(&STATS.rate_limited);
+                stats::limitado(&STATS.limited_backup);
                 return err(crate::protocol::RATE_LIMITED);
             }
             match session.registered(store, me).await {
@@ -1336,7 +1336,7 @@ async fn handle_client_message(
                 return err("copia invalida");
             }
             if !crate::limits::allow(crate::limits::Limited::Backup, me, cfg.backup_rate) {
-                stats::inc(&STATS.rate_limited);
+                stats::limitado(&STATS.limited_backup);
                 return err(crate::protocol::RATE_LIMITED);
             }
             match store.backup_get(&lookup, part).await {
@@ -1449,7 +1449,7 @@ fn fed_lookup_allowed(fed: &crate::federation::Federacao, blob_id: &str, me: &st
     if fed.anexo_conhecido(blob_id) || crate::limits::allow(crate::limits::Limited::FedLookup, me, cfg.fed_lookup_rate) {
         return true;
     }
-    stats::inc(&STATS.rate_limited);
+    stats::limitado(&STATS.limited_blob);
     false
 }
 
