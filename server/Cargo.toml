@@ -31,8 +31,9 @@ zeroize = "1"
 libc = "0.2"
 
 [dev-dependencies]
+redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
 base64 = "0.22"
-qt_ffi = { path = "../ffi", features = ["calls"] }
+qt_ffi = { path = "../ffi", features = ["calls", "video"] }
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
 tokio = { version = "1", features = ["full", "test-util"] }
