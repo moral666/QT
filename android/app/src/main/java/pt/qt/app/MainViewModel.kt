@@ -48,6 +48,7 @@ import uniffi.qt_ffi.relayIdOfPublicId
 import uniffi.qt_ffi.relayPremiumRequiredReason
 import uniffi.qt_ffi.relayElsewhereName
 import uniffi.qt_ffi.relayNoNewAccountsReason
+import uniffi.qt_ffi.relayRateLimitedReason
 import uniffi.qt_ffi.relayRecipientDeletedReason
 import uniffi.qt_ffi.BackupContact
 

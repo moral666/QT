@@ -24,6 +24,7 @@ import uniffi.qt_ffi.QtException
 import uniffi.qt_ffi.ReceiveResult
 import uniffi.qt_ffi.RelayResponse
 import uniffi.qt_ffi.relayIdOfPublicId
+import uniffi.qt_ffi.relayRateLimitedReason
 
 /**
  * O nucleo da app aberto UMA vez por processo (chamadas, fase 4b).
