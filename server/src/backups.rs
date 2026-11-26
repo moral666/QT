@@ -191,8 +191,8 @@ fn decode(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
     let header = usize::from(count) * 4;
     let (lengths, mut data) = (rest.get(..header)?, rest.get(header..)?);
     let mut parts = Vec::with_capacity(usize::from(count));
-    for l in lengths.chunks_exact(4) {
-        let len = u32::from_le_bytes(l.try_into().ok()?) as usize;
+    for l in lengths.as_chunks::<4>().0 {
+        let len = u32::from_le_bytes(*l) as usize;
         parts.push(data.get(..len)?.to_vec());
         data = data.get(len..)?;
     }

@@ -50,9 +50,6 @@ argon2 = "0.5"
 chacha20poly1305 = "0.10"
 base64 = "0.22"
 
-[build-dependencies]
-uniffi = { version = "0.28", features = ["build"] }
-
 [[bin]]
 name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"

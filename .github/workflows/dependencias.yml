@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Instalar toolchain Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: cargo audit
         # Desde a 1.0.3 o SQLCipher embutido (rusqlite 0.42: SQLCipher 4.20 com SQLite 3.54.1) ja traz

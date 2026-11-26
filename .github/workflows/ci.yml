@@ -35,8 +35,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Versao fixa em todos os workflows: um Rust novo traz regras novas do clippy e punha o
+      # CI vermelho sem ninguem ter mexido no codigo. Subir de versao e uma mudanca a parte.
       - name: Instalar toolchain Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: clippy
 

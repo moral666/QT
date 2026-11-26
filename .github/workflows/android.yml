@@ -38,7 +38,7 @@ jobs:
           java-version: "17"
 
       - name: Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.100.0
 
       - name: Bindings Kotlin (UniFFI, perfil de producao)
         run: |

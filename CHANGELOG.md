@@ -24,6 +24,8 @@ Atualizar primeiro os relays (um de cada vez) e depois as apps. A 1.0.4 continua
 - **Relay:** um relay que não consegue saber se há cópia responde com erro, nunca "não há cópia"; uma
   conta banida num relay fica banida nos outros também quando se registou com ele parado.
 - Testes: `server/tests/relay_copias.rs`, `relay_prekeys.rs`, `app_e2e_federacao.rs`.
+- **Dependências:** `url` atualizada para a 2.5.9 (RUSTSEC-2026-0592). O GitHub passa a compilar com
+  uma versão fixa do Rust (1.100.0), em vez de mudar sozinho quando sai uma nova.
 
 ### 26 de novembro de 2026: relays: cópia de recuperação no disco (sem mudanças nas apps nem no protocolo)
 
