@@ -499,7 +499,7 @@ impl Store {
 
 /// Espaco livre no disco onde esta `dir` (o que um processo sem privilegios pode usar).
 #[cfg(unix)]
-fn free_bytes(dir: &Path) -> Option<u64> {
+pub(crate) fn free_bytes(dir: &Path) -> Option<u64> {
     use std::os::unix::ffi::OsStrExt;
     let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
     // SAFETY: `statvfs` so escreve na estrutura que lhe passamos; o caminho e uma
@@ -512,7 +512,7 @@ fn free_bytes(dir: &Path) -> Option<u64> {
 }
 
 #[cfg(not(unix))]
-fn free_bytes(_dir: &Path) -> Option<u64> {
+pub(crate) fn free_bytes(_dir: &Path) -> Option<u64> {
     None
 }
 

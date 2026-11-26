@@ -185,6 +185,7 @@ async fn main() {
 
     let mut store = Store::new(&redis_url).unwrap_or_else(|_| fatal("URL do Redis invalido"));
     configure_blobs(&mut store, &noise_key_path);
+    configure_backups(&mut store, &noise_key_path);
     // Notificacoes com a app fechada (FCM). Sem QT_FCM_CREDENTIALS ficam desligadas.
     match qt_server::push::init_from_env() {
         Ok(true) => println!("Notificacoes (FCM): ativas"),
@@ -198,6 +199,21 @@ async fn main() {
         Err(e) => fatal(&format!("notificacoes do iPhone: {e}")),
     }
     let store = Arc::new(store);
+    if store.backups_on_disk() {
+        // Copias de recuperacao expiradas: ao arrancar e de hora a hora.
+        let s = store.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+            loop {
+                tick.tick().await;
+                match s.sweep_backups().await {
+                    Ok(removed) if removed > 0 => println!("copias de recuperacao: {removed} expiradas apagadas"),
+                    Ok(_) => {}
+                    Err(_) => eprintln!("copias de recuperacao: falha na limpeza (Redis/disco)"),
+                }
+            }
+        });
+    }
     if store.blobs_enabled() {
         // Limpeza dos anexos: ao arrancar e de 10 em 10 minutos (expirados e orfaos).
         let s = store.clone();
@@ -389,6 +405,31 @@ fn env_u64(name: &str, default: u64) -> u64 {
     std::env::var(name).ok().and_then(|v| v.trim().parse().ok()).unwrap_or(default)
 }
 
+/// A pasta indicada na variavel `var`, ou `name/` ao lado da chave Noise.
+fn data_dir(var: &str, name: &str, noise_key_path: &str) -> std::path::PathBuf {
+    std::env::var(var).map(std::path::PathBuf::from).unwrap_or_else(|_| {
+        std::path::Path::new(noise_key_path)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(|p| p.join(name))
+            .unwrap_or_else(|| std::path::PathBuf::from(name))
+    })
+}
+
+/// Copias de recuperacao (cifradas pela app) no disco: `copias/` ao lado da chave Noise (em
+/// producao /var/lib/qt/copias). Se a pasta nao servir, o relay arranca na mesma e as copias
+/// novas ficam no Redis.
+fn configure_backups(store: &mut Store, noise_key_path: &str) {
+    let dir = data_dir("RELAY_BACKUP_DIR", "copias", noise_key_path);
+    let mut cfg = qt_server::BackupConfig::new(&dir);
+    let min_free_mb = env_u64("RELAY_BACKUP_MIN_FREE_MB", 2048);
+    cfg.min_free_bytes = min_free_mb * 1_048_576;
+    match store.enable_backups(cfg) {
+        Ok(()) => println!("Copias de recuperacao em {} (90 dias; deixando {min_free_mb} MB livres no disco)", dir.display()),
+        Err(e) => eprintln!("AVISO: nao foi possivel usar {} ({e}): as copias de recuperacao ficam no Redis", dir.display()),
+    }
+}
+
 /// Anexos (imagens/GIFs cifrados) no disco, no maximo 24 h. Pasta por omissao:
 /// `anexos/` ao lado da chave Noise (em producao /var/lib/qt/anexos). Se a pasta
 /// nao puder ser criada, o relay arranca na mesma, sem anexos.
@@ -397,13 +438,7 @@ fn configure_blobs(store: &mut Store, noise_key_path: &str) {
         println!("Anexos desativados (RELAY_BLOBS=0)");
         return;
     }
-    let dir = std::env::var("RELAY_BLOB_DIR").map(std::path::PathBuf::from).unwrap_or_else(|_| {
-        std::path::Path::new(noise_key_path)
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .map(|p| p.join("anexos"))
-            .unwrap_or_else(|| std::path::PathBuf::from("anexos"))
-    });
+    let dir = data_dir("RELAY_BLOB_DIR", "anexos", noise_key_path);
     let mut cfg = qt_server::BlobConfig::new(&dir);
     cfg.max_total_bytes = env_u64("RELAY_BLOB_MAX_TOTAL_MB", 2048) * 1_048_576;
     cfg.max_user_bytes_per_day = env_u64("RELAY_BLOB_USER_DAILY_MB", 1024) * 1_048_576;

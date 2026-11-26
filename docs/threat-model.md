@@ -20,7 +20,7 @@
 | **Outro relay da federação** (curioso ou comprometido) | Recebe os pedidos do relay par: onde está uma conta, mensagens e anexos para as contas dele, bundles e partes da cópia de recuperação. Pode mentir sobre onde está uma conta, atrasar ou descartar o que lhe pedem. |
 | **Atacante passivo na rede** | Vê todo o tráfego cliente↔relay e relay↔relay. |
 | **Atacante ativo na rede** | Injeta, repete, reordena, corta ou modifica frames. |
-| **Quem lê o Redis / o armazenamento do relay** | Cópia total do que o relay persiste. |
+| **Quem lê o Redis / o armazenamento do relay** | Cópia total do que o relay persiste (Redis, anexos e cópias de recuperação no disco). |
 | **Quem captura tráfego hoje (harvest-now-decrypt-later)** | Guarda tudo; mais tarde tem um computador quântico capaz de correr Shor. |
 | **Quem obtém uma cópia do ficheiro SQLCipher** | Ficheiro cifrado, sem a chave. |
 | **Quem obtém o *estado* de uma sessão num instante T** | Cópia do estado do ratchet nesse momento. |

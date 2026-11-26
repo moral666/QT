@@ -1224,6 +1224,13 @@ vão na cópia.
   `BackupDelete` e com a conta (`DeleteAccount`). Ao banir, fica mais 30 dias. `BackupGet { lookup, part }`
   (resposta `BackupPart` ou `BackupNotFound`) serve qualquer ligação autenticada: num telemóvel
   sem identidade, a app autentica-se com uma chave temporária só em memória.
+- **Onde fica (desde 26/11/2026):** num ficheiro no disco do relay (`/var/lib/qt/copias`, 0600, um
+  por cópia; `server/src/backups.rs`). No Redis fica só o índice (dono, partes e prazo) e as partes
+  a meio do envio. A resposta `Ack` à última parte só sai com o ficheiro gravado (fsync). Uma cópia
+  guardada no Redis por uma versão anterior lê-se na mesma e passa para o disco quando a app abre.
+  Se o ficheiro não se conseguir ler, a resposta é um erro, nunca `BackupNotFound`. A limpeza (de
+  hora a hora) só apaga um ficheiro parado há mais de 90 dias e sem índice. Abaixo de 2 GB livres no
+  disco não se gravam cópias novas.
 - **Quando é enviada:** ao confirmar as palavras, quando os contactos ou os bloqueados mudam e
   ao abrir a app. O núcleo só devolve pedidos se o conteúdo mudou (resumo SHA-256).
 - **Recuperar:** palavras → Argon2 → `BackupGet` das partes → abrir → instalar a identidade
@@ -1232,8 +1239,8 @@ vão na cópia.
   (o mecanismo de sessões substituídas da secção das sessões cruzadas). As mensagens enviadas
   para o telemóvel antigo antes disso perdem-se. Uma conta só funciona num telemóvel de cada vez.
 
-Testes: `core/src/recovery.rs`, `ffi/src/recovery.rs`, `server/tests/relay_backup.rs` e
-`server/tests/redis_acl.rs`.
+Testes: `core/src/recovery.rs`, `ffi/src/recovery.rs`, `server/tests/relay_backup.rs`,
+`server/tests/backup_disco.rs` e `server/tests/redis_acl.rs`.
 
 ## 23. Acesso por conta (desde a app 0.9.20; bloqueio no relay desde a 0.9.21)
 
@@ -1347,7 +1354,8 @@ continuam a fazer os mesmos pedidos ao seu relay.
   memória. Perguntas novas: 60 seguidas e 120 por minuto por conta. Anexos e cópias usam no máximo 16 das
   64 perguntas em curso por par.
 * Cópia de recuperação: `BackupGet` que não está aqui → `LerCopia { lookup, part }` a todos os pares (o que
-  a tem fica em memória 10 min, para as outras partes). `BackupPut` só no relay da conta.
+  a tem fica em memória 10 min, para as outras partes). `BackupPut` só no relay da conta. Se um par
+  responder com erro e nenhum der a cópia, a app recebe um erro e não `BackupNotFound`.
 * Bloqueio premium: ao ligar, cada relay envia `Bloqueio { on, at }` (`at`: quando o operador decidiu, em ms)
   e fica a decisão mais recente. Um relay por atualizar não responde e nada muda.
 * Registos: só contagens (`fed_enviadas`, `fed_recebidas`, `fed_pedidos`, `fed_indisponivel`).

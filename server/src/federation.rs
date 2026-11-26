@@ -451,6 +451,11 @@ impl Federacao {
 
     /// Pergunta a um par. `None`: desligado, ocupado, sem resposta a tempo ou erro.
     async fn perguntar(&self, par: &Par, p: Pedido) -> Option<Resposta> {
+        self.perguntar_com_erro(par, p).await.filter(|r| !matches!(r, Resposta::Erro { .. }))
+    }
+
+    /// Como `perguntar`, mas o erro que o par devolve chega a quem perguntou.
+    async fn perguntar_com_erro(&self, par: &Par, p: Pedido) -> Option<Resposta> {
         if !par.ligado() {
             return None;
         }
@@ -462,10 +467,7 @@ impl Federacao {
             par.tx.try_send(Envio { p, resp: tx }).ok()?;
             rx.await.ok()
         };
-        match tokio::time::timeout(TEMPO_PERGUNTA, pedido).await {
-            Ok(Some(Resposta::Erro { .. })) | Ok(None) | Err(_) => None,
-            Ok(Some(r)) => Some(r),
-        }
+        tokio::time::timeout(TEMPO_PERGUNTA, pedido).await.ok().flatten()
     }
 
     /// Estados destas contas em cada par (`None` = esse par nao respondeu).
@@ -844,6 +846,8 @@ impl Federacao {
     }
 
     /// Parte de uma copia de recuperacao guardada noutro relay (telemovel novo, conta noutro relay).
+    /// Um par que responde com erro pode te-la: sai um erro e nao "nao ha copia". `None`: nenhum
+    /// dos que responderam a tem.
     pub async fn ler_copia(&self, lookup: &str, part: u32) -> Option<ServerMessage> {
         let pedido = || Pedido::LerCopia { lookup: lookup.to_string(), part };
         let ler = |r: Option<Resposta>| match r {
@@ -856,14 +860,16 @@ impl Federacao {
             }
             self.copias.forget(lookup);
         }
-        let perguntas = self.pares.iter().map(|par| async move { (par.nome.clone(), self.perguntar(par, pedido()).await) });
+        let perguntas = self.pares.iter().map(|par| async move { (par.nome.clone(), self.perguntar_com_erro(par, pedido()).await) });
+        let mut falhou = false;
         for (nome, r) in join_all(perguntas).await {
+            falhou |= matches!(r, Some(Resposta::Erro { .. }));
             if let Some(m) = ler(r) {
                 self.copias.put(lookup, &nome);
                 return Some(m);
             }
         }
-        None
+        falhou.then(|| ServerMessage::Error { reason: "erro interno".into() })
     }
 
     // ----- Fase 3: operador -----

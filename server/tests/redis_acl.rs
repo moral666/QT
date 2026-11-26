@@ -152,6 +152,23 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     store.delete_backup(&alice).await.unwrap();
     assert_eq!(store.backup_get(&lookup, 0).await.unwrap(), None);
 
+    // O mesmo com as copias no disco, incluindo mover para la uma que estava no Redis (EXISTS,
+    // GET, DEL) e a limpeza.
+    store.backup_put(&alice, &lookup, "0123456789abcdef", 0, 1, vec![5; 10]).await.unwrap();
+    let copias = std::env::temp_dir().join(format!("qt-acl-copias-{}-{port}", std::process::id()));
+    let mut cfg = qt_server::BackupConfig::new(&copias);
+    cfg.min_free_bytes = 0;
+    store.enable_backups(cfg).unwrap();
+    store.renew_backup(&alice).await.unwrap();
+    assert!(copias.join(&lookup[..2]).join(&lookup).is_file());
+    assert_eq!(store.backup_get(&lookup, 0).await.unwrap(), Some((1, vec![5; 10])));
+    store.backup_put(&alice, &lookup, "fedcba9876543210", 0, 1, vec![6; 10]).await.unwrap();
+    store.expire_backup_of_banned(&alice).await.unwrap();
+    store.sweep_backups().await.unwrap();
+    assert_eq!(store.backup_get(&lookup, 0).await.unwrap(), Some((1, vec![6; 10])));
+    store.delete_backup(&alice).await.unwrap();
+    assert_eq!(store.backup_get(&lookup, 0).await.unwrap(), None);
+
     // Premium.
     store.set_premium(&alice, 4_102_444_800_000).await.unwrap();
     assert_eq!(store.premium_until(&alice).await.unwrap(), 4_102_444_800_000);

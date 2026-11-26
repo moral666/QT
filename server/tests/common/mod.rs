@@ -68,6 +68,9 @@ impl TestRelay {
         if let Some(b) = blobs {
             store.enable_blobs(b).unwrap();
         }
+        // Como em producao: copias de recuperacao no disco (a pasta segue o prefixo, por isso
+        // sobrevive a `restart`).
+        enable_test_backups(&mut store, &prefix);
         let store = Arc::new(store);
         let key = private.clone();
         let handle = tokio::spawn(async move {
@@ -106,6 +109,16 @@ impl Drop for TestRelay {
     fn drop(&mut self) {
         self.kill();
     }
+}
+
+pub fn test_backup_dir(prefix: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("qt-copias-{prefix}"))
+}
+
+pub fn enable_test_backups(store: &mut Store, prefix: &str) {
+    let mut cfg = qt_server::BackupConfig::new(test_backup_dir(prefix));
+    cfg.min_free_bytes = 0;
+    store.enable_backups(cfg).unwrap();
 }
 
 pub fn fast_cfg() -> ServerConfig {

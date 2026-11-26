@@ -12,6 +12,7 @@
 //! (`secure-messenger-server`), ja que quem so quer fazer self-host do
 //! servidor nao precisa clonar os clientes.
 
+pub mod backups;
 pub mod blobs;
 pub mod call_relay;
 pub mod client;
@@ -27,5 +28,6 @@ pub mod store;
 pub mod waiters;
 
 pub use connection::{handle_connection, handle_connection_with, ServerConfig};
+pub use backups::BackupConfig;
 pub use blobs::BlobConfig;
 pub use store::Store;

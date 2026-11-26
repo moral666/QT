@@ -47,6 +47,7 @@ impl Lado {
         let mut b = qt_server::BlobConfig::new(std::env::temp_dir().join(format!("qt-fed-anexos-{prefix}")));
         b.min_free_bytes = 0;
         st.enable_blobs(b).unwrap();
+        enable_test_backups(&mut st, &prefix);
         Lado {
             nome: nome.into(),
             prefix,
@@ -441,6 +442,12 @@ async fn copia_de_recuperacao_noutro_relay() {
         novo.request(ClientMessage::BackupGet { lookup: "cd".repeat(32), part: 0 }).await.unwrap(),
         ServerMessage::BackupNotFound
     ));
+
+    // O relay que tem a copia nao a consegue ler: o outro responde erro, nunca "nao ha copia".
+    let ficheiro = test_backup_dir(&_a.prefix).join(&lookup[..2]).join(&lookup);
+    std::fs::write(ficheiro, b"estragado").unwrap();
+    let r = novo.request(ClientMessage::BackupGet { lookup: lookup.clone(), part: 0 }).await.unwrap();
+    assert!(matches!(r, ServerMessage::Error { .. }), "{r:?}");
 }
 
 #[tokio::test]

@@ -98,6 +98,10 @@ pub enum StoreError {
     /// Faltam partes da copia (a ultima chegou antes das outras).
     #[error("copia incompleta")]
     BackupIncomplete,
+    /// Falha a ler ou a gravar a copia no disco, ou o indice diz que ha copia e os dados faltam.
+    /// Nunca se responde "nao ha copia" nestes casos.
+    #[error("copia: erro de disco: {0}")]
+    BackupDisk(std::io::Error),
 }
 
 /// Marca da idade da conta (`{p}:idade:{conta}`): existe nos primeiros 30 dias. Sem marca, a conta
@@ -145,6 +149,8 @@ pub struct Store {
     pub(crate) key_prefix: String,
     /// Anexos no disco (ver `blobs.rs`); `None` = desativados.
     pub(crate) blobs: Option<crate::blobs::Blobs>,
+    /// Copias de recuperacao no disco (ver `backups.rs`); `None` = ficam no Redis.
+    pub(crate) backups: Option<crate::backups::Backups>,
     /// Bloco de ids reservado no Redis: (proximo, fim exclusivo). Ver `ID_BLOCK`.
     ids: tokio::sync::Mutex<(u64, u64)>,
 }
@@ -162,6 +168,7 @@ impl Store {
             shared: tokio::sync::OnceCell::new(),
             key_prefix: key_prefix.to_string(),
             blobs: None,
+            backups: None,
             ids: tokio::sync::Mutex::new((0, 0)),
         })
     }
@@ -174,6 +181,16 @@ impl Store {
 
     pub fn blobs_enabled(&self) -> bool {
         self.blobs.is_some()
+    }
+
+    /// Passa a guardar as copias de recuperacao no disco, em `cfg.dir` (ver `backups.rs`).
+    pub fn enable_backups(&mut self, cfg: crate::backups::BackupConfig) -> std::io::Result<()> {
+        self.backups = Some(crate::backups::Backups::new(cfg)?);
+        Ok(())
+    }
+
+    pub fn backups_on_disk(&self) -> bool {
+        self.backups.is_some()
     }
 
     /// Antes abria uma ligacao TCP nova ao Redis em CADA pedido; com 10 000
@@ -1093,22 +1110,24 @@ impl Store {
 
 // ------------------------------------------------------------ copia de recuperacao
 //
-// Bytes cifrados pela app (o relay nao os le). Chaves:
+// Bytes cifrados pela app (o relay nao os le). Com as copias no disco (`backups.rs`) o conteudo
+// fica num ficheiro e aqui so o indice; `bkpart` serve as partes a meio do envio e as copias
+// ainda por mover. Chaves:
 //   {p}:bkhead:{lookup}               "{geracao}:{partes}" da copia atual
 //   {p}:bkpart:{lookup}:{geracao}:{i} uma parte
 //   {p}:bkown:{lookup}                a conta dona (so ela substitui a copia)
 //   {p}:bkof:{conta}                  o lookup da copia desta conta (para a apagar com ela)
 impl Store {
-    fn bk_keys(&self, lookup: &str) -> (String, String) {
+    pub(crate) fn bk_keys(&self, lookup: &str) -> (String, String) {
         let p = &self.key_prefix;
         (format!("{p}:bkhead:{lookup}"), format!("{p}:bkown:{lookup}"))
     }
 
-    fn bk_part(&self, lookup: &str, generation: &str, i: u32) -> String {
+    pub(crate) fn bk_part(&self, lookup: &str, generation: &str, i: u32) -> String {
         format!("{}:bkpart:{lookup}:{generation}:{i}", self.key_prefix)
     }
 
-    async fn bk_head(&self, conn: &mut redis::aio::ConnectionManager, lookup: &str) -> Result<Option<(String, u32)>, StoreError> {
+    pub(crate) async fn bk_head(&self, conn: &mut redis::aio::ConnectionManager, lookup: &str) -> Result<Option<(String, u32)>, StoreError> {
         let head: Option<String> = conn.get(self.bk_keys(lookup).0).await?;
         Ok(head.and_then(|h| {
             let (g, n) = h.split_once(':')?;
@@ -1160,12 +1179,20 @@ impl Store {
         if part + 1 != parts {
             return Ok(());
         }
+        let mut turn = match &self.backups {
+            Some(b) => Some(b.turn().await),
+            None => None,
+        };
         // Ultima parte: confirma que chegaram todas antes de trocar.
+        let mut chunks = Vec::with_capacity(parts as usize);
         for i in 0..parts {
             let v: Option<Vec<u8>> = conn.get(self.bk_part(lookup, generation, i)).await?;
-            if v.is_none() {
-                return Err(StoreError::BackupIncomplete);
-            }
+            chunks.push(v.ok_or(StoreError::BackupIncomplete)?);
+        }
+        // No disco antes de trocar: se falhar, a copia anterior fica como estava e a app volta a
+        // tentar.
+        if let (Some(b), Some(t)) = (&self.backups, turn.take()) {
+            turn = Some(b.write(t, lookup, chunks).await?);
         }
         let old = self.bk_head(&mut conn, lookup).await?;
         let of_key = format!("{}:bkof:{owner}", self.key_prefix);
@@ -1176,7 +1203,12 @@ impl Store {
         pipe.set(&of_key, lookup).ignore().expire(&of_key, BACKUP_TTL_SECONDS).ignore();
         pipe.del(&stage_key).ignore();
         for i in 0..parts {
-            pipe.expire(self.bk_part(lookup, generation, i), BACKUP_TTL_SECONDS).ignore();
+            let key = self.bk_part(lookup, generation, i);
+            if self.backups.is_some() {
+                pipe.del(key).ignore();
+            } else {
+                pipe.expire(key, BACKUP_TTL_SECONDS).ignore();
+            }
         }
         if let Some((g, n)) = old.filter(|(g, _)| g != generation) {
             for i in 0..n {
@@ -1184,6 +1216,7 @@ impl Store {
             }
         }
         pipe.query_async::<_, ()>(&mut conn).await?;
+        drop(turn);
         // Palavras novas: a copia das palavras antigas desta conta deixa de servir.
         if let Some(prev) = previous_lookup.filter(|l| l != lookup) {
             self.delete_backup_lookup(&mut conn, &prev, owner).await?;
@@ -1191,15 +1224,29 @@ impl Store {
         Ok(())
     }
 
-    /// Uma parte da copia atual: `(partes, dados)`.
+    /// Uma parte da copia atual: `(partes, dados)`. `None` so quando nao ha mesmo copia: com
+    /// indice e sem dados e um erro.
     pub async fn backup_get(&self, lookup: &str, part: u32) -> Result<Option<(u32, Vec<u8>)>, StoreError> {
         let mut conn = self.connection().await?;
         let Some((generation, parts)) = self.bk_head(&mut conn, lookup).await? else { return Ok(None) };
+        // Primeiro o Redis: copias ainda por mover (ou gravadas por um relay da versao anterior).
+        if part < parts {
+            let data: Option<Vec<u8>> = conn.get(self.bk_part(lookup, &generation, part)).await?;
+            if let Some(d) = data {
+                return Ok(Some((parts, d)));
+            }
+        }
+        if let Some(b) = &self.backups {
+            if let Some(mut chunks) = b.read(lookup).await? {
+                let n = chunks.len() as u32;
+                return Ok((part < n).then(|| (n, chunks.swap_remove(part as usize))));
+            }
+        }
         if part >= parts {
             return Ok(None);
         }
-        let data: Option<Vec<u8>> = conn.get(self.bk_part(lookup, &generation, part)).await?;
-        Ok(data.map(|d| (parts, d)))
+        eprintln!("copias de recuperacao: ha indice mas faltam os dados");
+        Err(StoreError::BackupDisk(std::io::Error::new(std::io::ErrorKind::NotFound, "copia em falta")))
     }
 
     async fn delete_backup_lookup(
@@ -1213,6 +1260,11 @@ impl Store {
         if current_owner.as_deref() != Some(owner) {
             return Ok(());
         }
+        // O ficheiro primeiro: se falhar, o indice fica e pode tentar-se outra vez.
+        let _turn = match &self.backups {
+            Some(b) => Some(b.remove(b.turn().await, lookup).await?),
+            None => None,
+        };
         let head = self.bk_head(conn, lookup).await?;
         let mut pipe = redis::pipe();
         pipe.del(&head_key).ignore().del(&own_key).ignore();
@@ -1273,6 +1325,15 @@ impl Store {
             pipe.expire(self.bk_part(&lookup, &generation, i), ttl).ignore();
         }
         pipe.query_async::<_, ()>(&mut conn).await?;
+        if let Some(b) = &self.backups {
+            if ttl == BACKUP_TTL_SECONDS {
+                // App aberta: a copia que ainda esta no Redis passa para o disco.
+                self.backup_move_or_touch(b, &mut conn, &lookup).await?;
+            } else {
+                // Banida: o ficheiro envelhece, para a limpeza o apagar quando o indice expirar.
+                b.set_age(&lookup, std::time::Duration::from_secs((BACKUP_TTL_SECONDS - ttl).max(0) as u64)).await?;
+            }
+        }
         Ok(())
     }
 }

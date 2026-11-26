@@ -135,6 +135,8 @@ cargo build --release --manifest-path "$SRC/Cargo.toml" -p qt_server --bin relay
 # ---------- 4. Utilizador e binario ----------
 id qt >/dev/null 2>&1 || useradd --system --home /var/lib/qt --shell /usr/sbin/nologin qt
 install -d -o qt -g qt -m 700 /var/lib/qt
+# Copias de recuperacao (cifradas pelas apps).
+install -d -o qt -g qt -m 700 /var/lib/qt/copias
 # Estado publico (tempo medio de entrega), servido em /estado.json: so este ficheiro, nada mais.
 install -d -o qt -g qt -m 755 /var/lib/qt-estado
 install -d -o root -g qt -m 750 /etc/qt
@@ -183,6 +185,7 @@ V_BLOB_TOTAL=$(env_val RELAY_BLOB_MAX_TOTAL_MB 2048)
 V_BLOB_DAILY=$(env_val RELAY_BLOB_USER_DAILY_MB 1024)
 V_BLOB_FREE=$(env_val RELAY_BLOB_MIN_FREE_MB 1024)
 V_BLOB_FREE_DAILY=$(env_val RELAY_BLOB_FREE_DAILY_MB 20)
+V_BACKUP_FREE=$(env_val RELAY_BACKUP_MIN_FREE_MB 2048)
 V_NEW_ACCOUNTS=$(env_val RELAY_NEW_ACCOUNTS_PER_MIN 30)
 V_UNREGISTERED=$(env_val RELAY_MAX_UNREGISTERED 2000)
 umask 027
@@ -198,6 +201,8 @@ RELAY_BLOB_USER_DAILY_MB=$V_BLOB_DAILY
 RELAY_BLOB_MIN_FREE_MB=$V_BLOB_FREE
 # Quota diaria de anexos de quem nao tem premium.
 RELAY_BLOB_FREE_DAILY_MB=$V_BLOB_FREE_DAILY
+# Copias de recuperacao em /var/lib/qt/copias: abaixo deste espaco livre nao se gravam copias novas.
+RELAY_BACKUP_MIN_FREE_MB=$V_BACKUP_FREE
 # Contas novas por minuto neste relay (rajada de 300). Acima disto as apps passam ao relay seguinte.
 RELAY_NEW_ACCOUNTS_PER_MIN=$V_NEW_ACCOUNTS
 # Ligacoes autenticadas de quem ainda nao tem conta aqui.

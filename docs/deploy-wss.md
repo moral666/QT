@@ -89,6 +89,21 @@ O utilizador `qt-relay` do Redis precisa dos comandos de hash, `DEL` e
 `DECRBY` para os anexos; sem eles o envio de imagens falha com "erro interno"
 (o teste `server/tests/redis_acl.rs` usa a lista de produção para o apanhar).
 
+## Cópias de recuperação
+
+As cópias (cifradas pela app, com chave das 12 palavras) ficam num ficheiro cada em
+`/var/lib/qt/copias`; no Redis fica só o índice. Cópias que ainda estejam no Redis passam para o
+disco quando a app abre. Ao mudar de máquina ou ao fazer cópias de segurança, esta pasta e o Redis
+vão juntos: uma sem o outro não chega.
+
+| Variável | Omissão | Para quê |
+|---|---|---|
+| `RELAY_BACKUP_DIR` | `copias/` ao lado da chave Noise (`/var/lib/qt/copias`) | Pasta das cópias |
+| `RELAY_BACKUP_MIN_FREE_MB` | 2048 | Espaço que fica sempre livre no disco; abaixo disto, não se gravam cópias novas |
+
+Depois de um relay passar a guardar as cópias no disco, não voltes a uma versão anterior: essa não
+lê os ficheiros.
+
 ## Atualizar o relay
 
 Corre de novo `deploy/aws/setup-ec2.sh`: vai buscar o código ao GitHub,

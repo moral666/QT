@@ -1350,7 +1350,7 @@ async fn handle_client_message(
                     // Federacao (fase 2): a copia pode estar no relay da conta.
                     if let Some(fed) = &cfg.federacao {
                         if let Some(r) = fed.ler_copia(&lookup, part).await {
-                            if part == 0 {
+                            if part == 0 && matches!(r, ServerMessage::BackupPart { .. }) {
                                 stats::inc(&STATS.backups_restored);
                                 stats::inc(&STATS.fed_lookups);
                             }

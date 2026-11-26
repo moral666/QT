@@ -6,6 +6,19 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 26 de novembro de 2026: relays: cópia de recuperação no disco (sem mudanças nas apps nem no protocolo)
+
+- **Onde fica a cópia:** passa da memória (Redis) para um ficheiro no disco do relay
+  (`/var/lib/qt/copias`). Na memória fica só o índice. Menos memória por conta com as 12 palavras.
+- **Cópias já guardadas:** leem-se como antes e passam para o disco quando a pessoa abre a app. Só
+  saem da memória depois de gravadas.
+- **Falhas:** o relay só responde "guardada" com o ficheiro no disco. Uma cópia que não se consegue
+  ler dá erro, nunca "não há cópia", também quando o pedido chega pelo outro relay.
+- **Prazos iguais:** 90 dias a contar da última abertura, 30 dias ao banir, apagada ao pedir e com a
+  conta.
+- Atualizar os relays com o `setup-ec2.sh` e não voltar à versão anterior depois.
+- Testes: `server/tests/backup_disco.rs`.
+
 ### 14 de novembro de 2026: versão 1.0.4 (Android e iPhone 1.0.4, build 79)
 
 Correções encontradas pelos testes de ponta a ponta novos (`server/tests/app_e2e.rs` e
