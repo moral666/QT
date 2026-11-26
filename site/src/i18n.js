@@ -133,7 +133,8 @@ function applyDict(dict) {
 function keepLangInLinks() {
   if (!chosen) return;
   for (const a of document.querySelectorAll('a[href]')) {
-    if (a.closest('.lang')) continue;
+    // data-keep-lang: a ligação escolhe ela própria a língua (ex.: a versão portuguesa).
+    if (a.closest('.lang') || a.hasAttribute('data-keep-lang')) continue;
     const href = a.getAttribute('href');
     if (!href || /^(https?:|mailto:|#)/.test(href)) continue;
     const url = new URL(href, location.href);

@@ -6,6 +6,15 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 26 de novembro de 2026: site e documentação revistos (sem mudanças nas apps nem nos relays)
+
+- **Site:** os termos passam a referir as videochamadas; o núcleo em Rust mostra as cinco partes;
+  em "Como funciona" o nome de uma medalha já não aparece repetido; nas páginas traduzidas, "versão
+  portuguesa" é uma ligação; dados `schema.org` na página inicial; datas do `sitemap.xml`.
+- **Documentação:** README (PT e EN), `ROADMAP.md`, `docs/performance.md` (teste de carga de 29/10),
+  `docs/known-limitations.md`, `docs/ffi-api.md`, `docs/android-integration.md` e os dois esquemas da
+  arquitetura (faltava `call`).
+
 ### 26 de novembro de 2026: relays: as contas perdiam o registo quando o relay reiniciava
 
 - **Falha:** a base de dados do relay deitava fora, a cada reinício, o que tinha sido gravado em

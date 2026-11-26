@@ -77,14 +77,14 @@ O desenho aceita mais relays. O protocolo entre relays está na secção 25 de [
 - Todo o núcleo em Rust (criptografia, transporte, servidor, armazenamento e ponte para as apps), com a suite de testes a passar.
 - Dois relays em federação na AWS: `wss://relay.sealerapp.com` (Estocolmo) e `wss://relay-es.sealerapp.com` (Espanha), cada um com o Redis só em `127.0.0.1` e protegido por ACL.
 - App Android *release* assinada, em três Samsung e no emulador.
-- **Em telemóveis reais, Android e iPhone, ao longo das versões até à 1.0.0:** contactos (adicionar, apagar, código QR, partilhar o ID), mensagens de texto e de voz, GIFs, ficheiros, bloquear contactos, apagar conversas, chamadas de voz entre Androids, entre Android e iPhone e entre iPhones, chamadas de grupo, bloqueio da app, recuperação da conta com as 12 palavras e as dez línguas, árabe incluído. A app iPhone é compilada e testada num Mac.
+- **Em telemóveis reais, Android e iPhone, ao longo das versões até à 1.0.0 (e na 1.1.0 no Android):** contactos (adicionar, apagar, código QR, partilhar o ID), mensagens de texto e de voz, GIFs, ficheiros, bloquear contactos, apagar conversas, chamadas de voz entre Androids, entre Android e iPhone e entre iPhones, chamadas de grupo, bloqueio da app, recuperação da conta com as 12 palavras e as dez línguas, árabe incluído. A app iPhone é compilada e testada num Mac.
 - Teste de campo com cinco aparelhos em três plataformas e envios contínuos: nenhuma mensagem perdida ([`docs/field-tests.md`](docs/field-tests.md)).
 
 **A seguir:**
 
 - Distribuição pela Google Play e pela App Store (por agora, a app chega por convite). Já preparado: [`docs/google-play.md`](docs/google-play.md).
 
-**Etapas:** *testes fechados* (0.9.x) → *1.0.0* em acesso antecipado, por convite (agora) → Google Play e App Store. O plano completo está em [`ROADMAP.md`](ROADMAP.md).
+**Etapas:** *testes fechados* (0.9.x) → *acesso antecipado* por convite, desde a 1.0.0 (agora, na 1.1.0) → Google Play e App Store. O plano completo está em [`ROADMAP.md`](ROADMAP.md).
 
 ## Arquitetura
 
@@ -108,7 +108,9 @@ As duas apps usam o **mesmo núcleo em Rust** através do UniFFI. Toda a criptog
 
 ## Números
 
-**Servidor sozinho** (máquina de 2 vCPU, sem TLS nem rede real): 10 000 ligações abertas sem falhas, cerca de 14 KB por ligação, ~3 300 pedidos por segundo e 0 % de CPU com as ligações paradas. Com mensagens sempre a circular, ~16 900 mensagens de 200 B por segundo. Com o HAProxy e TLS: 8 000 ligações sem falhas, cerca de 40 KB por ligação. Desde a 0.9.45 cada app abre uma só ligação ao relay (antes eram três). Detalhes em [`docs/performance.md`](docs/performance.md).
+**Teste de carga** (29/10/2026, máquina com 2 processadores e 1,8 GB): 32 500 pessoas ligadas ao mesmo tempo trocaram mais de 1 000 mensagens, áudios e recibos por segundo, sem erros, até a máquina chegar ao limite.
+
+**Servidor sozinho** (15/10/2026, máquina de 2 vCPU, sem TLS nem rede real): 10 000 ligações abertas sem falhas, cerca de 14 KB por ligação, ~3 300 pedidos por segundo e 0 % de CPU com as ligações paradas. Com mensagens sempre a circular, ~16 900 mensagens de 200 B por segundo. Com o HAProxy e TLS: 8 000 ligações sem falhas, cerca de 40 KB por ligação. Desde a 0.9.45 cada app abre uma só ligação ao relay (antes eram três). Detalhes em [`docs/performance.md`](docs/performance.md).
 
 **Entre telemóveis reais** (três Samsung em Portugal, servidor em Estocolmo, 19/10/2026):
 

@@ -77,14 +77,14 @@ The design accepts more relays. The relay-to-relay protocol is in section 25 of 
 - The whole Rust core (cryptography, transport, server, storage and the bridge to the apps), with the test suite passing.
 - Two federated relays on AWS: `wss://relay.sealerapp.com` (Stockholm) and `wss://relay-es.sealerapp.com` (Spain), each with Redis only on `127.0.0.1` and protected by an ACL.
 - Signed *release* Android app on three Samsung phones and the emulator.
-- **On real phones, Android and iPhone, across the releases up to 1.0.0:** contacts (adding, deleting, QR code, sharing the ID), text and voice messages, GIFs, files, blocking contacts, deleting chats, voice calls between Androids, between Android and iPhone and between iPhones, group calls, app lock, account recovery with the 12 words and all ten languages, Arabic included. The iPhone app is built and tested on a Mac.
+- **On real phones, Android and iPhone, across the releases up to 1.0.0 (and 1.1.0 on Android):** contacts (adding, deleting, QR code, sharing the ID), text and voice messages, GIFs, files, blocking contacts, deleting chats, voice calls between Androids, between Android and iPhone and between iPhones, group calls, app lock, account recovery with the 12 words and all ten languages, Arabic included. The iPhone app is built and tested on a Mac.
 - Field test with five devices on three platforms and continuous sending: no message lost ([`docs/field-tests.md`](docs/field-tests.md)).
 
 **Next:**
 
 - Distribution through Google Play and the App Store (for now, the app is available by invitation). Already prepared: [`docs/google-play.md`](docs/google-play.md).
 
-**Stages:** *closed testing* (0.9.x) → *1.0.0* in invitation-only early access (now) → Google Play and the App Store. The full plan is in [`ROADMAP.md`](ROADMAP.md).
+**Stages:** *closed testing* (0.9.x) → invitation-only *early access* since 1.0.0 (now on 1.1.0) → Google Play and the App Store. The full plan is in [`ROADMAP.md`](ROADMAP.md).
 
 ## Architecture
 
@@ -108,7 +108,9 @@ Both apps use the **same Rust core** through UniFFI. All cryptography lives in R
 
 ## Numbers
 
-**Server alone** (2 vCPU machine, no TLS and no real network): 10,000 open connections without failures, about 14 KB per connection, ~3,300 requests per second and 0 % CPU with idle connections. With messages flowing constantly, ~16,900 messages of 200 B per second. With HAProxy and TLS: 8,000 connections without failures, about 40 KB per connection. Since 0.9.45 each app opens a single connection to the relay (it used to be three). Details in [`docs/performance.md`](docs/performance.md).
+**Load test** (29 October 2026, machine with 2 processors and 1.8 GB): 32,500 people connected at the same time exchanged over 1,000 messages, voice clips and receipts per second, with no errors, until the machine hit its limit.
+
+**Server alone** (15 October 2026, 2 vCPU machine, no TLS and no real network): 10,000 open connections without failures, about 14 KB per connection, ~3,300 requests per second and 0 % CPU with idle connections. With messages flowing constantly, ~16,900 messages of 200 B per second. With HAProxy and TLS: 8,000 connections without failures, about 40 KB per connection. Since 0.9.45 each app opens a single connection to the relay (it used to be three). Details in [`docs/performance.md`](docs/performance.md).
 
 **Between real phones** (three Samsung phones in Portugal, server in Stockholm, 19 Oct 2026):
 

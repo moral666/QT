@@ -1,5 +1,5 @@
 // Textos do site em inglês (chaves data-i18n das páginas; o português está no HTML).
-const NOTE = ' This is a translation: if in doubt, the Portuguese version prevails.';
+const NOTE = ' This is a translation: if in doubt, the <a href="?lang=pt" data-keep-lang>Portuguese version</a> prevails.';
 
 export default {
   // ---------- Página inicial ----------
@@ -61,7 +61,7 @@ export default {
   'index.54': 'SQLCipher, with the key protected by the Android Keystore or the iPhone Secure Enclave, and <code>secure_delete</code>&nbsp;on.',
   'index.55': 'For experts',
   'index.56': 'Rust core',
-  'index.57': 'All message and call cryptography lives in a single Rust&nbsp;core&nbsp;(<code>core</code>, <code>ffi</code>, <code>storage</code>).',
+  'index.57': 'All message and call cryptography lives in a single Rust&nbsp;core&nbsp;(<code>core</code>, <code>transport</code>, <code>call</code>, <code>storage</code>, <code>ffi</code>).',
   'index.58': 'For experts',
   'index.60': 'The apps call the core through bindings generated with UniFFI. On Android: <code>arm64-v8a</code> and&nbsp;<code>armeabi-v7a</code>.',
   'index.61': 'Architecture',
@@ -125,7 +125,7 @@ export default {
   'como.32': 'Some people have a badge in the corner of their photo, with a ring in the same colour. Legacy is different: it is a shield around the photo. The badge is a certificate signed by SEALER and arrives encrypted like messages: the server doesn’t know it is a badge, and the app only accepts badges with SEALER’s signature.',
   'como.33': 'Founder',
   'como.34': 'Co-founder',
-  'como.35': 'Developer',
+  'como.35': 'Dev',
   'como.36': 'Tester',
   'como.37': 'Contributor',
   'como.40': 'Bug hunter',
@@ -261,13 +261,13 @@ export default {
   // ---------- Termos de utilização ----------
   'termos._title': 'Terms of use · SEALER',
   'termos.@0': 'The rules for using SEALER: what you can and can’t do, what happens to your conversations and what we guarantee (and don’t) in an app in testing.',
-  'termos.1': 'Last updated: 24 October 2026.' + NOTE,
+  'termos.1': 'Last updated: 26 November 2026.' + NOTE,
   'termos.2': 'Terms of use',
   'termos.3': 'In short: use SEALER to talk respectfully and within the law. Your messages belong only to you and the recipient: we can’t read them. The app is still in testing, so it may fail.',
   'termos.4': 'Who we are and what these terms are',
   'termos.5': 'SEALER (the app for Android and iPhone and the server that delivers messages) is a project by Nuno Gonzalez, in Portugal. These terms are the rules for using SEALER. By using the app, you accept these terms and the <a href="./privacidade">privacy policy</a>. If you don’t agree, don’t use the app.',
   'termos.6': 'The service',
-  'termos.7': 'SEALER is for exchanging messages, photos, GIFs, voice messages and files, and for making voice calls, with end-to-end encryption, one to one or in groups.',
+  'termos.7': 'SEALER is for exchanging messages, photos, GIFs, voice messages and files, and for making voice and video calls, with end-to-end encryption, one to one or in groups.',
   'termos.8': 'It is in closed testing: only invited testers have access. It may have bugs, become unavailable or change without notice.',
   'termos.9': 'During testing, all features are free. In the future, some features may become paid; if that happens, we will let you know in advance. It has no ads.',
   'termos.10': 'Your account and your conversations',

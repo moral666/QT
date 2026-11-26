@@ -45,7 +45,9 @@ Ordenadas por impacto. O detalhe do modelo de adversário está em
 14. **Federação pequena e fechada (desde 29/10/2026):** dois relays (Estocolmo e Espanha) entregam
     mensagens entre si, mas cada conta vive num só. Com o relay de casa em baixo, as contas dele não
     recebem nem renovam o registo até ele voltar (o que lhes enviam fica na fila de saída de quem
-    envia). Os dois relays são do mesmo operador, por isso a pressão legal continua num só sítio.
+    envia). Desde a 1.1.0, quem tem a chave de recuperação pode recuperar a conta com as 12 palavras
+    no outro relay; quando o de casa voltar, a conta regressa. Os dois relays são do mesmo operador,
+    por isso a pressão legal continua num só sítio.
     Cada relay fica a saber que alguém do outro procura uma conta sua (não quem) e quando lhe chega
     uma mensagem do outro relay. Uma conta registada com um par em baixo e depois largada (porque o
     outro relay já a tinha) perde as mensagens que estavam na fila do relay que a largou. Desde a

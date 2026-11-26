@@ -73,6 +73,7 @@ CONTENT = {
         "crates": [
             ("core", "Criptografia", "X3DH e PQXDH (X25519 + ML-KEM-768) · Double Ratchet · Sealed Sender"),
             ("transport", "Ligação", "Noise_XX (X25519, ChaCha20-Poly1305) sobre WebSocket · chave do relay fixada"),
+            ("call", "Chamadas", "Opus 1.6 com DRED e PLC neural · jitter buffer adaptativo"),
             ("storage", "Dados no aparelho", "SQLCipher · secure_delete · histórico e ratchet na mesma transação"),
             ("ffi", "Ponte para as apps", "UniFFI para Kotlin, Swift e Python · cifra dos anexos de imagem"),
         ],
@@ -90,7 +91,7 @@ CONTENT = {
             "de dois relays em federação na AWS, um em Estocolmo e outro em Espanha (HAProxy com TLS, relay em "
             "Rust e Redis em cada um), por Noise_XX sobre wss com as chaves dos relays fixadas nas apps. Os "
             "relays ligam-se entre si também por Noise_XX, com as chaves fixadas dos dois lados. Nunca veem o "
-            "conteúdo nem quem envia. O núcleo tem quatro partes: core, transport, storage e ffi. O site "
+            "conteúdo nem quem envia. O núcleo tem cinco partes: core, transport, call, storage e ffi. O site "
             "sealerapp.com está à parte, na Cloudflare, e só verifica se o relay responde."
         ),
     },
@@ -129,6 +130,7 @@ CONTENT = {
         "crates": [
             ("core", "Cryptography", "X3DH and PQXDH (X25519 + ML-KEM-768) · Double Ratchet · Sealed Sender"),
             ("transport", "Connection", "Noise_XX (X25519, ChaCha20-Poly1305) over WebSocket · pinned relay key"),
+            ("call", "Calls", "Opus 1.6 with DRED and neural PLC · adaptive jitter buffer"),
             ("storage", "On-device data", "SQLCipher · secure_delete · history and ratchet in one transaction"),
             ("ffi", "Bridge to the apps", "UniFFI for Kotlin, Swift and Python · image attachment encryption"),
         ],
@@ -146,7 +148,7 @@ CONTENT = {
             "federated relays on AWS, one in Stockholm and one in Spain (HAProxy with TLS, a Rust relay and Redis "
             "on each), using Noise_XX over wss with the relay keys pinned in the apps. The relays connect to each "
             "other with Noise_XX too, with the keys pinned on both sides. They never see the content or the "
-            "sender. The core has four parts: core, transport, storage and ffi. The sealerapp.com website is "
+            "sender. The core has five parts: core, transport, call, storage and ffi. The sealerapp.com website is "
             "separate, on Cloudflare, and only checks that the relay is up."
         ),
     },

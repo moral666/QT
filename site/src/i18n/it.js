@@ -1,5 +1,5 @@
 // Textos do site em italiano (chaves data-i18n das páginas; o português está no HTML).
-const NOTE = ' Questa è una traduzione: in caso di dubbio, prevale la versione portoghese.';
+const NOTE = ' Questa è una traduzione: in caso di dubbio, prevale la <a href="?lang=pt" data-keep-lang>versione portoghese</a>.';
 
 export default {
   // ---------- Página inicial ----------
@@ -61,7 +61,7 @@ export default {
   'index.54': 'SQLCipher, con la chiave protetta dall’Android Keystore o dalla Secure Enclave dell’iPhone, e <code>secure_delete</code>&nbsp;attivo.',
   'index.55': 'Per esperti',
   'index.56': 'Nucleo in Rust',
-  'index.57': 'Tutta la crittografia di messaggi e chiamate vive in un unico nucleo in&nbsp;Rust&nbsp;(<code>core</code>, <code>ffi</code>, <code>storage</code>).',
+  'index.57': 'Tutta la crittografia di messaggi e chiamate vive in un unico nucleo in&nbsp;Rust&nbsp;(<code>core</code>, <code>transport</code>, <code>call</code>, <code>storage</code>, <code>ffi</code>).',
   'index.58': 'Per esperti',
   'index.60': 'Le app chiamano il nucleo tramite binding generati con UniFFI. Su Android: <code>arm64-v8a</code> e&nbsp;<code>armeabi-v7a</code>.',
   'index.61': 'Architettura',
@@ -261,13 +261,13 @@ export default {
   // ---------- Termos de utilização ----------
   'termos._title': 'Termini di utilizzo · SEALER',
   'termos.@0': 'Le regole per usare SEALER: cosa puoi e non puoi fare, cosa succede alle tue conversazioni e cosa garantiamo (e cosa no) in un’app in prova.',
-  'termos.1': 'Ultimo aggiornamento: 24 ottobre 2026.' + NOTE,
+  'termos.1': 'Ultimo aggiornamento: 26 novembre 2026.' + NOTE,
   'termos.2': 'Termini di utilizzo',
   'termos.3': 'In breve: usa SEALER per parlare con rispetto e nel rispetto della legge. I tuoi messaggi appartengono solo a te e al destinatario: non possiamo leggerli. L’app è ancora in prova, quindi può avere malfunzionamenti.',
   'termos.4': 'Chi siamo e cosa sono questi termini',
   'termos.5': 'SEALER (l’app per Android e iPhone e il server che consegna i messaggi) è un progetto di Nuno Gonzalez, in Portogallo. Questi termini sono le regole per usare SEALER. Usando l’app accetti questi termini e l’<a href="./privacidade">informativa sulla privacy</a>. Se non sei d’accordo, non usare l’app.',
   'termos.6': 'Il servizio',
-  'termos.7': 'SEALER serve a scambiare messaggi, foto, GIF, messaggi vocali e file, e a fare chiamate vocali, con cifratura end-to-end, a due o in gruppo.',
+  'termos.7': 'SEALER serve a scambiare messaggi, foto, GIF, messaggi vocali e file, e a fare chiamate vocali e videochiamate, con cifratura end-to-end, a due o in gruppo.',
   'termos.8': 'È in test chiuso: solo i tester invitati vi hanno accesso. Può avere bug, non essere disponibile o cambiare senza preavviso.',
   'termos.9': 'Durante i test, tutte le funzioni sono gratuite. In futuro, alcune funzioni potranno diventare a pagamento; se succederà, ti avviseremo con anticipo. Non ha pubblicità.',
   'termos.10': 'Il tuo account e le tue conversazioni',

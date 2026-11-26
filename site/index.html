@@ -36,6 +36,30 @@
     <meta property="og:image" content="https://sealerapp.com/og-image.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
 
+    <!-- Dados para os motores de pesquisa (schema.org). É só informação: o navegador não o executa. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://sealerapp.com/#organization",
+            "name": "SEALER",
+            "url": "https://sealerapp.com/",
+            "logo": "https://sealerapp.com/favicon-192.png",
+            "sameAs": ["https://github.com/moral666/QT"]
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "SEALER",
+            "url": "https://sealerapp.com/",
+            "applicationCategory": "CommunicationApplication",
+            "operatingSystem": "Android, iOS",
+            "publisher": { "@id": "https://sealerapp.com/#organization" }
+          }
+        ]
+      }
+    </script>
     <!--
       Escolhe o modo antes de a página aparecer (sem piscar). Sem JavaScript, ou num
       navegador sem módulos, não corre e a página mostra a lista. É o único script
@@ -257,7 +281,7 @@
             <p class="tile__label tile__label--group" data-i18n="index.55">Para especialistas</p>
             <svg class="tile__icon" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="7" /><circle cx="24" cy="24" r="14" /><path d="M24 4v6M24 38v6M4 24h6M38 24h6M9.9 9.9l4.2 4.2M33.9 33.9l4.2 4.2M9.9 38.1l4.2-4.2M33.9 14.1l4.2-4.2" /></svg>
             <h3 class="tile__title" id="t-rust" data-i18n="index.56">Núcleo em Rust</h3>
-            <p class="tile__text" data-i18n="index.57">Toda a criptografia das mensagens e das chamadas vive num só núcleo em Rust&nbsp;(<code>core</code>, <code>ffi</code>, <code>storage</code>).</p>
+            <p class="tile__text" data-i18n="index.57">Toda a criptografia das mensagens e das chamadas vive num só núcleo em Rust&nbsp;(<code>core</code>, <code>transport</code>, <code>call</code>, <code>storage</code>, <code>ffi</code>).</p>
           </article>
           <article class="tile tile--tecnico" data-cell="1-4" aria-labelledby="t-uniffi">
             <p class="tile__label tile__label--group" data-i18n="index.58">Para especialistas</p>

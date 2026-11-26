@@ -20,7 +20,7 @@ iPhone em `ios/` segue o mesmo desenho em Swift.
 Rust → cargo build → cargo-ndk → libqt_ffi.so → UniFFI → qt_ffi.kt → app
 ```
 
-Pré-requisitos no PC de build: Rust ≥ 1.81 (`rustup`), Android NDK r27+ (com o r26d a compilação do OpenSSL falhou),
+Pré-requisitos no PC de build: Rust ≥ 1.89 (`rustup`), Android NDK r27+ (com o r26d a compilação do OpenSSL falhou),
 `perl` e `make` (compilam SQLCipher + OpenSSL a partir do código-fonte),
 `cargo install cargo-ndk --locked`.
 

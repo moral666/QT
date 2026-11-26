@@ -19,7 +19,8 @@ seguir.
 - **Notificações push com a app fechada** (aviso genérico "Tens mensagens novas";
   desde a 0.9.6 a app decifra em segundo plano, no telemóvel, para as chamadas tocarem).
 - **Relay em `relay.sealerapp.com`** (HAProxy com TLS), medido com 8 000 ligações
-  em simultâneo sem falhas; desde a 0.9.45 cada app usa uma só ligação.
+  em simultâneo sem falhas (num teste de carga posterior, 32 500: `docs/performance.md`); desde a 0.9.45
+  cada app usa uma só ligação.
 - **Relay acessível pela internet** (AWS EC2), atrás de TLS (`wss://`), com
   pinning da chave Noise nas apps e o Redis só em `127.0.0.1` com ACL.
 - **Chave da base de dados vinda do Android Keystore / Secure Enclave do iPhone**; o
@@ -68,9 +69,12 @@ seguir.
 - **Qualidade do vídeo** (0.9.61): sem teto fixo no Wi-Fi (até 4K, conforme a ligação e os
   telemóveis), até 720p com dados móveis; a voz manda (o vídeo desce antes de a voz chegar
   atrasada); o atraso a mais da voz desce nos silêncios.
-- **Chamadas de grupo** (0.9.62 a 0.9.67, Android; iPhone por compilar): até 5 pessoas, voz e
+- **Chamadas de grupo** (0.9.62 a 0.9.67 no Android; no iPhone desde a 0.9.74): até 5 pessoas, voz e
   vídeo, cifradas ponta a ponta; a minha câmara em cima e os outros na grelha; nome escolhido
   para cada chamada; entrar depois de recusar; diagnóstico como nas chamadas a dois.
+- **Recuperar com um relay parado** (1.1.0, 26/11/2026): a cópia de recuperação fica nos dois
+  relays. Se o da conta não responder, recupera-se com as 12 palavras no outro; quando o primeiro
+  voltar, a conta regressa e as mensagens que chegaram entretanto vão atrás.
 
 ## A seguir: tornar isto usável no dia a dia
 
@@ -110,7 +114,8 @@ seguir.
   `espanha`, que entregam entre si mensagens, bundles, anexos, cópias de recuperação e
   chamadas (`docs/protocol-spec.md`, secção 25). O desenho aceita mais relays.
 - [ ] **Federação, a seguir:** mais relays na Europa; mudar uma conta de relay; continuar
-  a receber quando o relay de casa da conta está em baixo (hoje fica à espera que volte)
+  a receber quando o relay de casa da conta está em baixo (hoje fica à espera que
+  volte, a não ser que se recupere a conta no outro com as 12 palavras, desde a 1.1.0)
 - [ ] **Grupos maiores:** os grupos atuais (até 10 pessoas) enviam uma cópia
   cifrada a cada membro; para grupos grandes faz sentido Sender Keys ou MLS
 

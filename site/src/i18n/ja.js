@@ -1,6 +1,6 @@
 // Textos do site em japonês (chaves data-i18n das páginas; o português está no HTML).
 // Forma educada です・ます. Termos fixos: glossário fora do repo.
-const NOTE = 'これは翻訳です。疑義がある場合は、ポルトガル語版が優先されます。';
+const NOTE = 'これは翻訳です。疑義がある場合は、<a href="?lang=pt" data-keep-lang>ポルトガル語版</a>が優先されます。';
 
 export default {
   // ---------- Página inicial ----------
@@ -62,7 +62,7 @@ export default {
   'index.54': 'SQLCipherを使用。鍵はAndroid KeystoreまたはiPhoneのSecure Enclaveで保護され、<code>secure_delete</code>が有効です。',
   'index.55': '専門家向け',
   'index.56': 'Rustのコア',
-  'index.57': 'メッセージと通話の暗号処理は、すべて1つのRustコア（<code>core</code>、<code>ffi</code>、<code>storage</code>）にあります。',
+  'index.57': 'メッセージと通話の暗号処理は、すべて1つのRustコア（<code>core</code>、<code>transport</code>、<code>call</code>、<code>storage</code>、<code>ffi</code>）にあります。',
   'index.58': '専門家向け',
   'index.60': 'アプリはUniFFIで生成したバインディングを通じてコアを呼び出します。Androidでは<code>arm64-v8a</code>と<code>armeabi-v7a</code>に対応しています。',
   'index.61': 'アーキテクチャ',
@@ -128,7 +128,7 @@ export default {
   'como.32': '写真の隅にバッジがあり、同じ色のリングで囲まれている人がいます。Legacyは別で、写真を囲む盾です。バッジはSEALERが署名した証明書で、メッセージと同じように暗号化されて届きます。サーバーはそれがバッジだとは知らず、アプリはSEALERの署名があるバッジだけを受け入れます。',
   'como.33': 'Founder',
   'como.34': 'Co-founder',
-  'como.35': 'Developer',
+  'como.35': 'Dev',
   'como.36': 'Tester',
   'como.37': 'Contributor',
   'como.40': 'Bug Hunter',
@@ -264,13 +264,13 @@ export default {
   // ---------- Termos de utilização ----------
   'termos._title': '利用規約 · SEALER',
   'termos.@0': 'SEALERを使うためのルール：できること・できないこと、チャットがどうなるか、テスト中のアプリとして保証すること（しないこと）。',
-  'termos.1': '最終更新日：2026年10月24日。' + NOTE,
+  'termos.1': '最終更新日：2026年11月26日。' + NOTE,
   'termos.2': '利用規約',
   'termos.3': '要点：SEALERを、相手を尊重し、法律の範囲内でやり取りするためにお使いください。メッセージはあなたと相手だけのもので、私たちには読めません。アプリはまだテスト中のため、不具合が起きることがあります。',
   'termos.4': '私たちについて、そしてこの規約について',
   'termos.5': 'SEALER（AndroidとiPhone向けのアプリ、およびメッセージを届けるサーバー）は、ポルトガルのNuno Gonzalezによるプロジェクトです。この規約は、SEALERを使うためのルールです。アプリを使うことで、この規約と<a href="./privacidade">プライバシーポリシー</a>に同意したことになります。同意できない場合は、アプリを使わないでください。',
   'termos.6': 'サービス',
-  'termos.7': 'SEALERは、エンドツーエンドの暗号化により、1対1またはグループで、メッセージ、写真、GIF、ボイスメッセージ、ファイルをやり取りし、音声通話をするためのものです。',
+  'termos.7': 'SEALERは、エンドツーエンドの暗号化により、1対1またはグループで、メッセージ、写真、GIF、ボイスメッセージ、ファイルをやり取りし、音声通話やビデオ通話をするためのものです。',
   'termos.8': 'クローズドテスト中で、利用できるのは招待されたテスターだけです。不具合があったり、利用できなくなったり、予告なく変更されたりすることがあります。',
   'termos.9': 'テスト期間中は、すべての機能が無料です。将来、一部の機能が有料になる可能性があります。その場合は、事前にお知らせします。広告はありません。',
   'termos.10': 'あなたのアカウントとチャット',

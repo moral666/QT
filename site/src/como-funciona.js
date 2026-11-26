@@ -407,5 +407,12 @@ applyLayout();
 playBtn.textContent = playing ? T.pause : T.play;
 anaText.textContent = PLAIN;
 envText.textContent = PLAIN;
-translatePage();
+// Medalhas: quando o nome na língua da página é igual ao da medalha, não se repete.
+translatePage().then(() => {
+  for (const li of document.querySelectorAll('.cf-badges__lista li')) {
+    const name = li.querySelector('strong');
+    const translated = li.querySelector('span');
+    if (name && translated) translated.hidden = name.textContent.trim().toLowerCase() === translated.textContent.trim().toLowerCase();
+  }
+});
 go(0);

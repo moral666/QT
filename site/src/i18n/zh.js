@@ -1,6 +1,6 @@
 // Textos do site em chinês simplificado (chaves data-i18n das páginas; o português está no HTML).
 // 你 nas páginas comuns, 您 nas páginas legais. Termos fixos: ver o glossário no projeto.
-const NOTE = '本页为译文，如有疑义，以葡萄牙语版本为准。';
+const NOTE = '本页为译文，如有疑义，以<a href="?lang=pt" data-keep-lang>葡萄牙语版本</a>为准。';
 
 export default {
   // ---------- Página inicial ----------
@@ -62,7 +62,7 @@ export default {
   'index.54': '使用SQLCipher，密钥由Android Keystore或iPhone的Secure Enclave保护，并开启<code>secure_delete</code>。',
   'index.55': '面向专业人士',
   'index.56': 'Rust核心',
-  'index.57': '所有消息和通话的加密都在同一个Rust核心中完成（<code>core</code>、<code>ffi</code>、<code>storage</code>）。',
+  'index.57': '所有消息和通话的加密都在同一个Rust核心中完成（<code>core</code>、<code>transport</code>、<code>call</code>、<code>storage</code>、<code>ffi</code>）。',
   'index.58': '面向专业人士',
   'index.60': '应用通过UniFFI生成的绑定调用核心。Android支持<code>arm64-v8a</code>和<code>armeabi-v7a</code>。',
   'index.61': '架构',
@@ -128,7 +128,7 @@ export default {
   'como.32': '有些人的头像角落有一枚徽章，周围有同色的圆环。Legacy 不同：它是围绕头像的一面盾牌。徽章是由SEALER签名的证书，和消息一样加密送达：服务器不知道它是徽章，应用也只接受带有SEALER签名的徽章。',
   'como.33': 'Founder',
   'como.34': 'Co-founder',
-  'como.35': 'Developer',
+  'como.35': 'Dev',
   'como.36': 'Tester',
   'como.37': 'Contributor',
   'como.40': 'Bug Hunter',
@@ -264,13 +264,13 @@ export default {
   // ---------- Termos de utilização ----------
   'termos._title': '使用条款 · SEALER',
   'termos.@0': '使用SEALER的规则：您可以做什么、不能做什么，您的聊天会怎样，以及作为测试中的应用，我们保证什么（不保证什么）。',
-  'termos.1': '最后更新：2026年10月24日。' + NOTE,
+  'termos.1': '最后更新：2026年11月26日。' + NOTE,
   'termos.2': '使用条款',
   'termos.3': '简而言之：请以尊重他人、遵守法律的方式使用SEALER交流。您的消息只属于您和收件人：我们无法读取。应用仍在测试中，因此可能会出现故障。',
   'termos.4': '我们是谁，以及这些条款是什么',
   'termos.5': 'SEALER（适用于Android和iPhone的应用，以及传递消息的服务器）是葡萄牙的Nuno Gonzalez的项目。这些条款是使用SEALER的规则。使用本应用，即表示您接受这些条款和<a href="./privacidade">隐私政策</a>。如果您不同意，请不要使用本应用。',
   'termos.6': '服务',
-  'termos.7': 'SEALER用于通过端到端加密，一对一或在群组中交换消息、照片、GIF、语音消息和文件，以及进行语音通话。',
+  'termos.7': 'SEALER用于通过端到端加密，一对一或在群组中交换消息、照片、GIF、语音消息和文件，以及进行语音通话和视频通话。',
   'termos.8': '本服务处于封闭测试阶段：只有受邀的测试人员可以使用。它可能存在问题、暂时无法使用，或在不另行通知的情况下发生变化。',
   'termos.9': '测试期间，所有功能都免费。将来，部分功能可能会收费；如有变化，我们会提前通知您。本应用没有广告。',
   'termos.10': '您的账户和您的聊天',

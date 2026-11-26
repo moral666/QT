@@ -5,6 +5,24 @@ medido, como repetir a medição e o que ficou de fora.
 
 ---
 
+## 29 de outubro de 2026: teste de carga com 32 500 pessoas
+
+Máquina limitada a 2 processadores e 1,8 GB. Pessoas ligadas ao mesmo tempo, a trocar mensagens,
+áudios e recibos.
+
+| | |
+|---|---|
+| Pessoas ligadas ao mesmo tempo | 32 500 |
+| Mensagens, áudios e recibos por segundo | mais de 1 000 |
+| Erros | nenhum, até a máquina chegar ao limite |
+
+Antes dele, o relay passou a gastar menos memória por ligação (CHANGELOG, 29/10). Depois dele, o
+`maxconn` do HAProxy ficou no travão do relay mais 3000, com `maxsslrate 300`
+(`deploy/aws/setup-ec2.sh`). Esta entrada é só o resumo: o relatório completo não está no
+repositório.
+
+---
+
 ## 22 de outubro de 2026: abuso (encher o Redis)
 
 Teste de abuso controlado: `server/examples/abuso.rs`. Relay de teste em 127.0.0.1:9550 com um

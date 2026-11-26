@@ -1,6 +1,6 @@
 # Referência da API FFI (`qt_ffi`, UniFFI)
 
-Índice da API que as apps Android e iPhone usam (0.9.69). O crate `qt_ffi` expõe só `bytes`,
+Índice da API que as apps Android e iPhone usam (1.1.0). O crate `qt_ffi` expõe só `bytes`,
 `string`, records, enums e erros; nenhuma estrutura interna do Rust passa para as apps. Em Kotlin
 e Swift os nomes ficam em camelCase (`create_identity` → `createIdentity`). As chamadas são
 síncronas e *thread-safe*: as apps correm-nas fora da thread da interface.
@@ -24,10 +24,12 @@ só para testes; nunca nas builds das apps). As apps compilam com `pq,calls,vide
 | `encrypt` / `decrypt` / `encryptSealed` / `decryptSealed` | Cifra e decifra com o Double Ratchet (com o remetente selado nas `*Sealed`). As apps usam-nas só através do histórico. |
 | `relayNoiseSession()` / `relayUserId()` / `relayAuthMessage(hash)` | Sessão Noise com a chave estática do telemóvel, caixa no relay e a 1.ª mensagem de cada ligação (assinatura ligada ao handshake). |
 | `relayRequestRegisterBundle` / `FetchBundle` / `Send` / `SendItem` / `Fetch` / `Wait` / `Ack` | Pedidos ao relay (bytes a cifrar com o `NoiseSession`). `Wait` espera até 25 s por mensagens. Confirmar (`Ack`) só depois de guardar cada mensagem. |
+| `relayMoved()` | A app passou a usar outro relay: o próximo registo leva um lote novo de one-time prekeys (1.1.0). |
 | `relayRequestDeleteAccount()` / `relayRequestPushToken(token)` | Apagar a conta no relay; token das notificações com a app fechada. |
 
 Funções livres: `relayParseResponse(bytes)`, `peerBundleFromRelayBytes(bytes)`,
-`relayIdOfPublicId(publicId)`, `relayRecipientDeletedReason()`, `relayElsewhereName(reason)` e
+`relayIdOfPublicId(publicId)`, `relayRecipientDeletedReason()`, `relayElsewhereName(reason)`,
+`relayRateLimitedReason()` (pedidos a mais por minuto) e
 `relayNoNewAccountsReason()` (federação: conta noutro relay, relay sem contas novas).
 
 ## `relay_choice.rs`: relay de uma conta nova (desde a 0.9.69, §25.2)
