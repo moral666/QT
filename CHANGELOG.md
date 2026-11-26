@@ -6,6 +6,15 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 26 de novembro de 2026: relays: as contas perdiam o registo quando o relay reiniciava
+
+- **Falha:** a base de dados do relay deitava fora, a cada reinício, o que tinha sido gravado em
+  transação, entre isso o registo das contas. Até a pessoa abrir a app, quem lhe escrevia recebia
+  "destinatário desconhecido".
+- **Correção:** `deploy/redis/qt-redis.conf` (o utilizador `default` continua desligado). Ao atualizar
+  o relay, o que se tinha perdido volta. Sem mudanças nas apps.
+- Teste novo em `server/tests/redis_acl.rs`: reiniciar a base de dados e confirmar que a conta existe.
+
 ### 26 de novembro de 2026: versão 1.1.0 (Android e iPhone 1.1.0, build 80): recuperar com um relay parado
 
 Atualizar primeiro os relays (um de cada vez) e depois as apps. A 1.0.4 continua a funcionar.

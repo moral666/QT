@@ -30,24 +30,34 @@ fn start_redis_with_production_acl(password: &str) -> Option<(Redis, u16)> {
 
 /// Redis de teste com as linhas `user ...` do ficheiro de deploy (prefixo, marcador, password).
 fn start_redis_with_acl_lines(users: &[(&str, &str, &str)]) -> Option<(Redis, u16)> {
+    let (conf, port) = redis_conf(users, "appendonly no")?;
+    Some((spawn_redis(&conf, port), port))
+}
+
+/// Ficheiro de configuracao de teste, com o utilizador `default` e os `users` tirados do deploy.
+fn redis_conf(users: &[(&str, &str, &str)], persistencia: &str) -> Option<(std::path::PathBuf, u16)> {
     if Command::new("redis-server").arg("--version").stdout(Stdio::null()).status().is_err() {
         eprintln!("redis-server nao instalado: teste saltado");
         return None;
     }
     let deploy = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../deploy/redis/qt-redis.conf")).unwrap();
     let mut acl = String::new();
-    for (prefix, marker, password) in users {
+    for (prefix, marker, password) in std::iter::once(&("user default ", "SEM_MARCADOR", "")).chain(users) {
         let line = deploy.lines().find(|l| l.starts_with(prefix)).expect("linha do utilizador no qt-redis.conf");
         acl.push_str(&line.replace(marker, password));
         acl.push('\n');
     }
     let port = free_port();
     let conf = std::env::temp_dir().join(format!("qt-acl-{}-{port}.conf", std::process::id()));
-    std::fs::write(&conf, format!("port {port}\nbind 127.0.0.1\nsave \"\"\nappendonly no\nuser default off\n{acl}")).unwrap();
-    let redis = Redis(Command::new("redis-server").arg(&conf).stdout(Stdio::null()).spawn().unwrap());
+    std::fs::write(&conf, format!("port {port}\nbind 127.0.0.1\nsave \"\"\n{persistencia}\n{acl}")).unwrap();
+    Some((conf, port))
+}
+
+fn spawn_redis(conf: &std::path::Path, port: u16) -> Redis {
+    let redis = Redis(Command::new("redis-server").arg(conf).stdout(Stdio::null()).spawn().unwrap());
     for _ in 0..50 {
         if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
-            return Some((redis, port));
+            return redis;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -213,6 +223,40 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     assert_eq!(store.community_index().await.unwrap(), Some((7, vec![9; 40])));
     assert_eq!(store.community_photo(&h).await.unwrap(), Some(vec![8; 50]));
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// O que o relay grava em transacao (registo da conta, one-time prekeys) tem de continuar la depois
+/// de o Redis reiniciar. Ate 26/11/2026 o `default` nao tinha permissoes e o Redis deitava fora as
+/// transacoes ao reler o AOF: as contas deixavam de existir ate cada app voltar a abrir.
+#[tokio::test]
+async fn contas_sobrevivem_a_um_reinicio_do_redis() {
+    let pw = "ef56".repeat(16);
+    let dados = std::env::temp_dir().join(format!("qt-acl-aof-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dados);
+    std::fs::create_dir_all(&dados).unwrap();
+    let persistencia = format!("dir {}\nappendonly yes\nappendfsync always", dados.display());
+    let users = [("user qt-relay ", "SUBSTITUI_POR_PASSWORD_FORTE", pw.as_str())];
+    let Some((conf, port)) = redis_conf(&users, &persistencia) else { return };
+    let url = format!("redis://qt-relay:{pw}@127.0.0.1:{port}");
+    let alice = "a".repeat(64);
+    let age = qt_server::store::NewAccount::No;
+
+    let redis = spawn_redis(&conf, port);
+    let store = Store::new(&url).unwrap();
+    store.register_full(&alice, vec![1, 2, 3], Some(&[vec![4; 36], vec![5; 36]]), age).await.unwrap();
+    drop((store, redis));
+
+    let _redis = spawn_redis(&conf, port);
+    let store = Store::new(&url).unwrap();
+    assert!(store.is_registered(&alice).await.unwrap(), "a conta perdeu-se no reinicio");
+    assert_eq!(store.get_bundle(&alice).await.unwrap(), Some(vec![1, 2, 3]));
+    assert_eq!(store.count_one_time_prekeys(&alice).await.unwrap(), 2);
+
+    // As permissoes do `default` nao abrem a porta: continua desligado.
+    let mut sem_password = redis::Client::open(format!("redis://127.0.0.1:{port}")).unwrap().get_connection().unwrap();
+    assert!(redis::cmd("PING").query::<String>(&mut sem_password).is_err());
+    assert!(redis::cmd("AUTH").arg("default").arg("qualquer").query::<String>(&mut sem_password).is_err());
+    let _ = std::fs::remove_dir_all(dados);
 }
 
 /// Federacao (fase 1): o estado das contas, a marca "por verificar" e largar uma conta
