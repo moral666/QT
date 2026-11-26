@@ -110,3 +110,46 @@ async fn limite_de_envios_e_de_bundles_por_conta() {
     }
     assert!(matches!(ca.request(fetch()).await.unwrap(), ServerMessage::Error { ref reason } if reason == RATE_LIMITED));
 }
+
+#[tokio::test]
+async fn telemovel_novo_sem_lote_nao_deixa_chaves_do_antigo() {
+    use qt_core::primitives::DhKeyPair;
+    let relay = TestRelay::start(ServerConfig::default()).await;
+    let (bob, alice) = (SigningKeyPair::generate(), SigningKeyPair::generate());
+    let identidade = DhKeyPair::generate().public;
+    let bundle = |spk_id: u32, spk: &DhKeyPair| {
+        let pq = [7u8; qt_core::identity::PQ_PUBLIC_KEY_BYTES];
+        qt_core::identity::encode_bundle_v4(&identidade, &bob, spk_id, &spk.public, 1, 1, &pq).unwrap()
+    };
+    let publicar = |bundle_bytes: Vec<u8>, pow: Option<u64>, keys: Option<Vec<Vec<u8>>>| ClientMessage::RegisterPreKeyBundle {
+        user_id: uid(&bob),
+        bundle_bytes,
+        pow,
+        one_time_pre_keys: keys,
+    };
+    let mut b = client(&relay, &bob).await;
+    registar(&relay, &uid(&alice)).await;
+    let mut a = client(&relay, &alice).await;
+    macro_rules! chave_servida {
+        () => {
+            match a.request(ClientMessage::FetchPreKeyBundle { user_id: uid(&bob) }).await.unwrap() {
+                ServerMessage::PreKeyBundle { one_time_pre_key, .. } => one_time_pre_key,
+                other => panic!("{other:?}"),
+            }
+        };
+    }
+    let pow = qt_core::pow::pow_solve(&bob.verifying_key.to_bytes(), qt_core::pow::POW_BITS);
+    let antiga = DhKeyPair::generate();
+    let lote = vec![otpk(1), otpk(2), otpk(3), otpk(4)];
+    assert!(matches!(b.request(publicar(bundle(1, &antiga), pow, Some(lote))).await.unwrap(), ServerMessage::Ack));
+    // A app abre outra vez (mesmo bundle) e depois troca a signed pre-key: as chaves ficam.
+    assert!(matches!(b.request(publicar(bundle(1, &antiga), None, None)).await.unwrap(), ServerMessage::Ack));
+    assert_eq!(chave_servida!(), Some(otpk(1)));
+    let rodada = DhKeyPair::generate();
+    assert!(matches!(b.request(publicar(bundle(2, &rodada), None, None)).await.unwrap(), ServerMessage::Ack));
+    assert_eq!(chave_servida!(), Some(otpk(2)));
+    // Telemovel novo (recuperacao): a contagem recomeca; sem lote, as antigas saem.
+    let nova = DhKeyPair::generate();
+    assert!(matches!(b.request(publicar(bundle(1, &nova), None, None)).await.unwrap(), ServerMessage::Ack));
+    assert_eq!(chave_servida!(), None, "chave do telemovel antigo");
+}

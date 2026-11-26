@@ -277,6 +277,8 @@ final class AppModel: ObservableObject {
     private static let waitTimeoutSeconds: Double = 35
     private static let waitRetrySeconds: Double = 300
     private static let relayUnknownRequest = "mensagem invalida"
+    /// Recuperacao: tempo maximo por pedido a um relay antes de passar ao seguinte.
+    private static let recoveryTryNanos: UInt64 = 20_000_000_000
     private static let maxPages = 20
     private static let maxTextBytes = 9_000
     private static let page = 50
@@ -886,6 +888,8 @@ final class AppModel: ObservableObject {
         guard let target, target.name != current.name, Relays.setHome(prefs, target.name) else { return false }
         relayMoves += 1
         log("SealerRelay", "relay da conta: \(target.name)")
+        // O relay novo ainda nao tem as one-time prekeys desta app: o registo leva um lote.
+        if let client = qt { _ = try? await background { try client.relayMoved() } }
         try? qt?.callSetRelay(name: Relays.callName(prefs))
         ui.relayUrl = target.url
         ui.relayKeyHex = target.pin
@@ -1435,30 +1439,55 @@ final class AppModel: ObservableObject {
             } catch {
                 showError(s("recovery_bad_words")); return
             }
-            let l = newLink(client)
-            var parts: [Data] = []
-            do {
+            // A copia esta em todos os relays: se o primeiro nao responder, pergunta-se ao seguinte.
+            let first = Relays.home(prefs)
+            var found: (relay: RelayInfo, parts: [Data])?
+            var failure = "t_sem_ligacao_ao_servidor"
+            for relay in [first] + Relays.all.filter({ $0.name != first.name }) {
+                let l = RelayLink(qt: client, url: relay.url, pinnedRelayKeyHex: relay.pin.isEmpty ? nil : relay.pin)
+                var parts: [Data] = []
                 var total: UInt32 = 1
-                while UInt32(parts.count) < total {
-                    let n = UInt32(parts.count)
-                    switch try await l.request(try await background { try client.relayRequestBackupGet(part: n) }) {
-                    case .backupPart(_, let all, let data):
-                        total = all
-                        parts.append(data)
-                    case .backupNotFound:
-                        await l.close(); showError(s("recovery_not_found")); return
-                    default:
-                        await l.close(); showError(s("t_resposta_inesperada_do_servidor")); return
+                do {
+                    fetch: while UInt32(parts.count) < total {
+                        let n = UInt32(parts.count)
+                        let bytes = try await background { try client.relayRequestBackupGet(part: n) }
+                        // Um relay em baixo nao pode prender a recuperacao.
+                        let limit = Task {
+                            try await Task.sleep(nanoseconds: Self.recoveryTryNanos)
+                            await l.shutdown()
+                        }
+                        defer { limit.cancel() }
+                        switch try await l.request(bytes) {
+                        case .backupPart(_, let all, let data):
+                            total = all
+                            parts.append(data)
+                        case .backupNotFound:
+                            await l.shutdown(); showError(s("recovery_not_found")); return
+                        default:
+                            failure = "t_resposta_inesperada_do_servidor"
+                            break fetch
+                        }
                     }
+                } catch {
+                    log("SealerRelay", "recuperacao: \(relay.name) sem resposta")
                 }
-            } catch {
-                await l.close(); showError(s("t_sem_ligacao_ao_servidor")); return
+                await l.shutdown()
+                if UInt32(parts.count) >= total {
+                    found = (relay, parts)
+                    break
+                }
             }
-            await l.close()
-            let all = parts
+            guard let found else { showError(s(failure)); return }
+            let (relay, all) = (found.relay, found.parts)
             guard let acc = try? await background({ try client.recoveryRestore(parts: all) }) else {
                 showError(s("recovery_bad_backup")); return
             }
+            // A conta fica no relay que respondeu; se viver noutro que esteja de pe, o registo diz
+            // qual e a app muda (`moveRelay`).
+            Relays.setHome(prefs, relay.name)
+            try? client.callSetRelay(name: Relays.callName(prefs))
+            ui.relayUrl = relay.url
+            ui.relayKeyHex = relay.pin
             let list = acc.contacts.compactMap { c -> Contact? in
                 guard let r = try? relayIdOfPublicId(publicId: c.publicId) else { return nil }
                 return Contact(nickname: c.nickname.isEmpty ? s("t_contacto") : c.nickname, publicId: c.publicId, relayId: r)
@@ -2450,6 +2479,8 @@ final class AppModel: ObservableObject {
                         try? await Task.sleep(nanoseconds: 20_000_000)
                     }
                 case .error(let reason):
+                    // A conta voltou ao relay dela (recuperada com esse em baixo).
+                    if await moveRelay(reason) { return }
                     if reason == Self.relayUnknownRequest {
                         waitBlockedUntil = monotonicSeconds() + Self.waitRetrySeconds
                     } else {

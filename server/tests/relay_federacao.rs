@@ -443,9 +443,21 @@ async fn copia_de_recuperacao_noutro_relay() {
         ServerMessage::BackupNotFound
     ));
 
-    // O relay que tem a copia nao a consegue ler: o outro responde erro, nunca "nao ha copia".
-    let ficheiro = test_backup_dir(&_a.prefix).join(&lookup[..2]).join(&lookup);
-    std::fs::write(ficheiro, b"estragado").unwrap();
+    // A copia passa para o relay b. Com a do a estragada, o a serve a que o b tem.
+    for _ in 0..200 {
+        if _b.store.backup_get(&lookup, 0).await.unwrap().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let ficheiro = |lado: &Lado| test_backup_dir(&lado.prefix).join(&lookup[..2]).join(&lookup);
+    std::fs::write(ficheiro(&_a), b"estragado").unwrap();
+    let mut no_a = ligar(&ua, &SigningKeyPair::generate()).await;
+    let r = no_a.request(ClientMessage::BackupGet { lookup: lookup.clone(), part: 0 }).await.unwrap();
+    assert!(matches!(r, ServerMessage::BackupPart { .. }), "{r:?}");
+
+    // Nenhum dos dois a consegue ler: erro, nunca "nao ha copia".
+    std::fs::write(ficheiro(&_b), b"estragado").unwrap();
     let r = novo.request(ClientMessage::BackupGet { lookup: lookup.clone(), part: 0 }).await.unwrap();
     assert!(matches!(r, ServerMessage::Error { .. }), "{r:?}");
 }

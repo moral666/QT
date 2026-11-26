@@ -35,6 +35,11 @@ const KV_ENTROPY: &str = "recovery:entropy";
 const KV_KEY: &str = "recovery:key";
 const KV_LOOKUP: &str = "recovery:lookup";
 const KV_DIGEST: &str = "recovery:digest";
+/// Quando o relay aceitou a ultima copia (ms).
+const KV_SENT_AT: &str = "recovery:sent_at";
+/// Mesmo sem mudancas a copia volta a ser enviada de tempos a tempos: se tiver expirado no
+/// relay (90 dias sem abrir a app) ou se se tiver perdido, volta a existir.
+const RESEND_AFTER_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
 /// Recuperacao a meio: as palavras ja conferidas e o que delas sai (so em memoria).
 pub(crate) struct PendingRecovery {
@@ -176,6 +181,7 @@ impl QtClient {
         st::kv_set(&tx, KV_KEY, keys.key.as_ref())?;
         st::kv_set(&tx, KV_LOOKUP, keys.lookup.as_bytes())?;
         st::kv_delete(&tx, KV_DIGEST)?;
+        st::kv_delete(&tx, KV_SENT_AT)?;
         tx.commit()?;
         Ok(qr::words_of(&entropy))
     }
@@ -195,7 +201,7 @@ impl QtClient {
     pub fn recovery_disable(&self) -> Result<(), QtError> {
         let c = self.lock()?;
         let tx = c.unchecked_transaction()?;
-        for k in [KV_ENTROPY, KV_KEY, KV_LOOKUP, KV_DIGEST] {
+        for k in [KV_ENTROPY, KV_KEY, KV_LOOKUP, KV_DIGEST, KV_SENT_AT] {
             st::kv_delete(&tx, k)?;
         }
         tx.commit()?;
@@ -207,8 +213,8 @@ impl QtClient {
         json_bytes(serde_json::json!("BackupDelete"))
     }
 
-    /// Prepara a copia com os contactos da app. `force`: refaz mesmo que nada tenha mudado
-    /// (a app chama assim de tempos a tempos). Sem chave ativa: nada a enviar.
+    /// Prepara a copia com os contactos da app. Sem mudancas desde a ultima aceite ha menos de
+    /// 7 dias nao ha nada a enviar, a nao ser com `force`. Sem chave ativa: nada a enviar.
     pub fn recovery_backup(&self, contacts: Vec<BackupContact>, force: bool) -> Result<BackupUpload, QtError> {
         if contacts.len() > MAX_CONTACTS {
             return Err(bad("contactos"));
@@ -255,7 +261,11 @@ impl QtClient {
             h.update(&*plain);
             hex(&h.finalize())
         };
-        if !force && st::kv_get(&c, KV_DIGEST)?.as_deref() == Some(digest.as_bytes()) {
+        let recente = st::kv_get(&c, KV_SENT_AT)?
+            .and_then(|v| std::str::from_utf8(&v).ok()?.parse::<i64>().ok())
+            // No futuro (relogio atrasado entretanto): nao conta.
+            .is_some_and(|at| (0..RESEND_AFTER_MS).contains(&(now_ms() - at)));
+        if !force && recente && st::kv_get(&c, KV_DIGEST)?.as_deref() == Some(digest.as_bytes()) {
             return Ok(BackupUpload { requests: vec![], digest });
         }
         body.created_at_ms = Some(now_ms());
@@ -282,6 +292,7 @@ impl QtClient {
     pub fn recovery_backup_sent(&self, digest: String) -> Result<(), QtError> {
         let c = self.lock()?;
         st::kv_set(&c, KV_DIGEST, digest.as_bytes())?;
+        st::kv_set(&c, KV_SENT_AT, now_ms().to_string().as_bytes())?;
         Ok(())
     }
 
@@ -543,6 +554,26 @@ mod tests {
         assert_eq!(novo.profile_photo_of(cid(&bob)).unwrap(), Some(foto));
         // So uma vez.
         assert_eq!(bob.badge_sync(vec![cid(&novo)]).unwrap(), 0);
+    }
+
+    #[test]
+    fn sem_mudancas_a_copia_volta_a_ir_passados_7_dias() {
+        let c = client("reenvio", 9, true);
+        c.recovery_enable().unwrap();
+        let up = c.recovery_backup(vec![], false).unwrap();
+        c.recovery_backup_sent(up.digest).unwrap();
+        assert!(c.recovery_backup(vec![], false).unwrap().requests.is_empty());
+        let quando = |ms: i64| st::kv_set(&c.lock().unwrap(), KV_SENT_AT, ms.to_string().as_bytes()).unwrap();
+        quando(now_ms() - RESEND_AFTER_MS + 60_000);
+        assert!(c.recovery_backup(vec![], false).unwrap().requests.is_empty(), "quase 7 dias");
+        // Passados os 7 dias (a copia pode ja ter expirado no relay), no futuro, ou sem data
+        // (instalacoes que vem de uma versao anterior).
+        quando(now_ms() - RESEND_AFTER_MS - 1);
+        assert!(!c.recovery_backup(vec![], false).unwrap().requests.is_empty());
+        quando(now_ms() + 3_600_000);
+        assert!(!c.recovery_backup(vec![], false).unwrap().requests.is_empty());
+        st::kv_delete(&c.lock().unwrap(), KV_SENT_AT).unwrap();
+        assert!(!c.recovery_backup(vec![], false).unwrap().requests.is_empty());
     }
 
     #[test]

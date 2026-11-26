@@ -147,6 +147,12 @@ pub(crate) fn new_one_time_prekeys(c: &st::rusqlite::Connection, count: u32) -> 
     Ok(out)
 }
 
+/// O proximo registo leva um lote novo, mesmo que tenha ido um ha menos de um dia.
+pub(crate) fn reset_upload(c: &st::rusqlite::Connection) -> Result<(), QtError> {
+    st::kv_delete(c, KV_OPK_UPLOAD)?;
+    Ok(())
+}
+
 /// Se passou um dia desde o ultimo lote, gera um lote novo para enviar ao relay
 /// (`[4 numero BE][32 publica]` por chave) e apaga as privadas dos lotes com mais de
 /// `KEEP_OPK_SECS`. `None`: ainda nao e altura.
@@ -276,6 +282,24 @@ mod tests {
         let r2 = json(&c.relay_request_register_bundle(bundle).unwrap());
         assert_eq!(r2["RegisterPreKeyBundle"]["pow"].as_u64(), Some(pow));
         assert!(r2["RegisterPreKeyBundle"].get("one_time_pre_keys").is_none());
+    }
+
+    #[test]
+    fn depois_de_mudar_de_relay_vai_um_lote_novo() {
+        let (c, _) = client("mudou");
+        let bundle = c.publishable_bundle().unwrap();
+        let lote = |c: &QtClient| {
+            let r = json(&c.relay_request_register_bundle(bundle.clone()).unwrap());
+            r["RegisterPreKeyBundle"]["one_time_pre_keys"].as_array().cloned()
+        };
+        let primeiro = lote(&c).unwrap();
+        assert!(lote(&c).is_none());
+        c.relay_moved().unwrap();
+        let segundo = lote(&c).unwrap();
+        assert_eq!(segundo.len(), OPK_BATCH as usize);
+        assert_ne!(primeiro[0], segundo[0]);
+        // As privadas do primeiro lote ficam (pode haver primeiras mensagens a caminho).
+        assert_eq!(st::count_one_time_prekeys(&c.lock().unwrap()).unwrap(), 2 * OPK_BATCH);
     }
 
     #[test]

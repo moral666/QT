@@ -616,6 +616,14 @@ impl QtClient {
         json_bytes(serde_json::json!({ "RegisterPreKeyBundle": body }))
     }
 
+    /// A app passou a usar outro relay: o proximo `relay_request_register_bundle` leva um lote
+    /// novo de one-time prekeys. O que foi para o relay anterior (ou num registo recusado, "conta
+    /// noutro relay") nao chegou a este.
+    pub fn relay_moved(&self) -> Result<(), QtError> {
+        let c = self.lock()?;
+        prekeys::reset_upload(&c)
+    }
+
     pub fn relay_request_fetch_bundle(&self, relay_id: String) -> Result<Vec<u8>, QtError> {
         json_bytes(serde_json::json!({"FetchPreKeyBundle": {"user_id": relay_id}}))
     }

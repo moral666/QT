@@ -176,3 +176,23 @@ async fn recuperar_com_o_principal_fechado_a_contas_novas() {
     assert!(b.recebidas(&ca).contains(&"ok".to_string()));
     assert!(a.recebidas(&cb).contains(&"ok2".to_string()));
 }
+
+#[tokio::test]
+async fn conversa_nova_com_uma_conta_recuperada_fora_do_principal() {
+    let (_se, _es, relays) = federacao(false).await;
+    let mut a = tel("ana", &relays, 1).await; // conta em Espanha
+    let palavras = a.ativar_recuperacao().await;
+    a.desinstalar();
+    a.recuperar(palavras).await.unwrap(); // passa pelo principal e muda para Espanha
+    assert_eq!(a.url, relays[1].1);
+    // Um contacto novo comeca a conversa (leva uma one-time prekey do relay).
+    let mut c = tel("carla", &relays, 0).await;
+    c.adicionar(a.como_contacto("Ana"));
+    let (ca, cc) = (cid(&a), cid(&c));
+    c.enviar(&ca, "ola").await.unwrap();
+    for _ in 0..3 { ate_acalmar(&mut [&mut a, &mut c]).await; }
+    assert!(a.erros_receber.is_empty(), "{:?}", a.erros_receber);
+    a.aceitar_convite(&cc, "Carla");
+    for _ in 0..3 { ate_acalmar(&mut [&mut a, &mut c]).await; }
+    assert!(a.recebidas(&cc).contains(&"ola".to_string()), "{:?}", a.recebidas(&cc));
+}

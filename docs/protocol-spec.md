@@ -462,7 +462,10 @@ Um pedido ↔ uma resposta, sequenciais.
    `user_id`; ≤ 24 000 bytes. **Conta nova** (o relay ainda não tem bundle dela): exige `pow`,
    um `nonce` tal que `Argon2id(m = 8 MiB, t = 1, p = 1, "QT-POW-v1" ‖ signing_public ‖ nonce)`
    comece por 7 bits a zero (`core/src/pow.rs`; uns segundos num telemóvel, uma vez por conta).
-   `one_time_pre_keys` (até 200, `[4 número BE][32 pública]` cada) substitui as guardadas.
+   `one_time_pre_keys` (até 200, `[4 número BE][32 pública]` cada) substitui as guardadas. Sem
+   elas, um bundle de outra instalação (signed pre-key diferente, com número igual ou menor) apaga
+   as guardadas, que já ninguém consegue usar (desde 26/11/2026). A app manda um lote por dia e,
+   desde a 1.1.0, também depois de mudar de relay (`relay_moved`).
    O bundle expira ao fim de 90 dias; as apps voltam a publicá-lo sempre que abrem
    (arranque, desbloqueio ou ID novo), por isso só expira para quem não abre a app há 90 dias.
 3. `FetchPreKeyBundle{user_id}`: só contas registadas. A resposta
@@ -1224,6 +1227,9 @@ vão na cópia.
   `BackupDelete` e com a conta (`DeleteAccount`). Ao banir, fica mais 30 dias. `BackupGet { lookup, part }`
   (resposta `BackupPart` ou `BackupNotFound`) serve qualquer ligação autenticada: num telemóvel
   sem identidade, a app autentica-se com uma chave temporária só em memória.
+- **Em todos os relays (desde 26/11/2026):** o relay da conta passa a cópia aos outros da federação,
+  e cada mudança (cópia nova, apagar, apagar a conta, banir) segue o mesmo caminho (secção 25.1).
+  Com um relay parado, a mudança fica em fila e chega-lhe quando voltar.
 - **Onde fica (desde 26/11/2026):** num ficheiro no disco do relay (`/var/lib/qt/copias`, 0600, um
   por cópia; `server/src/backups.rs`). No Redis fica só o índice (dono, partes e prazo) e as partes
   a meio do envio. A resposta `Ack` à última parte só sai com o ficheiro gravado (fsync). Uma cópia
@@ -1232,15 +1238,18 @@ vão na cópia.
   hora a hora) só apaga um ficheiro parado há mais de 90 dias e sem índice. Abaixo de 2 GB livres no
   disco não se gravam cópias novas.
 - **Quando é enviada:** ao confirmar as palavras, quando os contactos ou os bloqueados mudam e
-  ao abrir a app. O núcleo só devolve pedidos se o conteúdo mudou (resumo SHA-256).
+  ao abrir a app. O núcleo só devolve pedidos se o conteúdo mudou (resumo SHA-256) ou, desde a
+  1.1.0, se o último envio foi há mais de 7 dias (assim uma cópia que se perca no relay volta).
 - **Recuperar:** palavras → Argon2 → `BackupGet` das partes → abrir → instalar a identidade
   (pre-keys novas) → cada contacto fica marcado para recomeçar a sessão (`sessions_to_restart`)
   e receber o convite. O outro lado troca para a sessão nova ao receber a primeira mensagem dela
   (o mecanismo de sessões substituídas da secção das sessões cruzadas). As mensagens enviadas
   para o telemóvel antigo antes disso perdem-se. Uma conta só funciona num telemóvel de cada vez.
+  Desde a 1.1.0, se o relay da app não responder (20 s por pedido), pede a cópia ao seguinte e a
+  conta fica nesse. `BackupNotFound` é uma resposta final.
 
 Testes: `core/src/recovery.rs`, `ffi/src/recovery.rs`, `server/tests/relay_backup.rs`,
-`server/tests/backup_disco.rs` e `server/tests/redis_acl.rs`.
+`server/tests/backup_disco.rs`, `server/tests/relay_copias.rs` e `server/tests/redis_acl.rs`.
 
 ## 23. Acesso por conta (desde a app 0.9.20; bloqueio no relay desde a 0.9.21)
 
@@ -1321,9 +1330,11 @@ bundle (cada vez que a app abre) não faz nenhum pedido aos pares.
 
 **Par em baixo ao registar.** A conta regista-se na mesma e fica marcada para verificar
 (`fed:pv:<id>` e a lista `fed:verificar`). De minuto a minuto, quando os pares respondem: se outro relay
-já tinha a conta, este larga-a (bundle, one-time prekeys e campainha; a fila fica e expira sozinha); se os
-dois a registaram sem verificar, fica no relay de nome menor; senão fica verificada. Assim nenhuma conta
-nova falha por um relay estar em baixo.
+já tinha a conta, este larga-a (bundle, one-time prekeys e campainha), fecha as ligações dela e passa-lhe
+as mensagens que entretanto chegaram (`Entregar`; só saem daqui depois de `Feito`); se os dois a
+registaram sem verificar, fica no relay de nome menor; se estava banida no outro, fica banida também
+aqui; senão fica verificada. Assim nenhuma conta nova falha por um relay estar em baixo. Uma conta
+recuperada (o relay tem a cópia dela) não conta para o teto de contas novas.
 
 **Descoberta.** `onde_esta`: primeiro o Redis local, depois a cache, depois os pares. A cache fica **só em
 memória** (nunca no Redis, que vai para as cópias): "a conta está no relay X" 24 h; "nenhum relay a tem",
@@ -1353,9 +1364,18 @@ continuam a fazer os mesmos pedidos ao seu relay.
   offset }` → `BlobDados` (blocos de 40 KB, como as apps) e `ApagarBlob`. "Nenhum par o tem" fica 60 s em
   memória. Perguntas novas: 60 seguidas e 120 por minuto por conta. Anexos e cópias usam no máximo 16 das
   64 perguntas em curso por par.
-* Cópia de recuperação: `BackupGet` que não está aqui → `LerCopia { lookup, part }` a todos os pares (o que
-  a tem fica em memória 10 min, para as outras partes). `BackupPut` só no relay da conta. Se um par
-  responder com erro e nenhum der a cópia, a app recebe um erro e não `BackupNotFound`.
+* Cópia de recuperação (desde 26/11/2026 fica em todos os relays): `BackupPut` é feito no relay da
+  conta, que depois a passa aos pares com `ConferirCopia { owner, lookup, generation, at, ttl }` →
+  `QueroCopia` (seguem as partes em `GuardarCopia`) ou `Feito` (o par já a tem, com o prazo acertado,
+  ou tem algo mais recente). Apagar, apagar a conta e banir: `ApagarCopia { owner, at, conta }`. `at`
+  é a hora da última alteração (`bkat:<conta>`): ganha a mais recente, uma cópia velha nunca passa por
+  cima de uma nova nem volta depois de apagada. O que falta enviar a cada par fica numa lista
+  (`bksync:<par>`, tentada quando o par liga e de 30 em 30 s). 60 s depois de arrancar e uma vez por
+  dia, o relay revê as cópias das suas contas (assim as antigas chegam aos outros). Um relay por
+  atualizar ignora estes pedidos e fica tudo na lista. `BackupGet` que não está aqui (ou que não se
+  consegue ler) → `LerCopia { lookup, part }` a todos os pares (o que a tem fica em memória 10 min,
+  para as outras partes). Só há `BackupNotFound` se todos responderem que não a têm; um par parado ou
+  com erro dá erro.
 * Bloqueio premium: ao ligar, cada relay envia `Bloqueio { on, at }` (`at`: quando o operador decidiu, em ms)
   e fica a decisão mais recente. Um relay por atualizar não responde e nada muda.
 * Registos: só contagens (`fed_enviadas`, `fed_recebidas`, `fed_pedidos`, `fed_indisponivel`).
@@ -1379,7 +1399,9 @@ continuam a fazer os mesmos pedidos ao seu relay.
 * **Conta noutro relay.** O registo de uma conta que vive noutro relay (por exemplo, recuperada com as 12
   palavras num telemóvel novo) dá `Error{"conta noutro relay: <nome>"}` (`relay_elsewhere_name`). Só chega a
   quem prova ser a conta (registo assinado). A app guarda esse relay e volta a ligar-se a ele. A cópia de
-  recuperação encontra-se em qualquer relay (25.1). No máximo 4 mudanças por sessão.
+  recuperação encontra-se em qualquer relay (25.1). No máximo 4 mudanças por sessão. Uma conta
+  recuperada noutro relay, com o dela parado, recebe o mesmo erro em `WaitMessages` e `SendMessage`
+  quando o dela voltar, e a app (1.1.0) muda; uma app anterior muda quando for reaberta.
 * **Operador.** O operador fala com um relay. `AdminGrantPremium` e `AdminBan` de uma
   conta de outro relay vão para o relay dela (pedido `Admin` entre relays); `AdminUnban` e
   `AdminPremiumEnforce` valem em todos; `AdminOnline`, `AdminListPremium` e `AdminListBans` juntam os de todos.

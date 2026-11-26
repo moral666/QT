@@ -211,6 +211,7 @@ impl Telemovel {
             match alvo {
                 Some((n, u)) if n != atual => {
                     self.url = u;
+                    self.qt.relay_moved().unwrap();
                     let _ = self.qt.call_set_relay(Some(n));
                 }
                 _ => return Err(format!("Error({reason})")),

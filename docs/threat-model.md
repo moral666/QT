@@ -17,7 +17,7 @@
 | Adversário | Capacidades assumidas |
 |---|---|
 | **Relay comprometido / curioso** | Acesso total ao processo, ao Redis e ao disco do relay; pode registar, atrasar, duplicar, reordenar, descartar ou fabricar envelopes e bundles. |
-| **Outro relay da federação** (curioso ou comprometido) | Recebe os pedidos do relay par: onde está uma conta, mensagens e anexos para as contas dele, bundles e partes da cópia de recuperação. Pode mentir sobre onde está uma conta, atrasar ou descartar o que lhe pedem. |
+| **Outro relay da federação** (curioso ou comprometido) | Recebe os pedidos do relay par: onde está uma conta, mensagens e anexos para as contas dele, bundles e, desde 26/11/2026, guarda uma réplica das cópias de recuperação (cifradas) das contas do outro. Pode mentir sobre onde está uma conta, atrasar ou descartar o que lhe pedem, ou apagar e substituir essas réplicas. |
 | **Atacante passivo na rede** | Vê todo o tráfego cliente↔relay e relay↔relay. |
 | **Atacante ativo na rede** | Injeta, repete, reordena, corta ou modifica frames. |
 | **Quem lê o Redis / o armazenamento do relay** | Cópia total do que o relay persiste (Redis, anexos e cópias de recuperação no disco). |
@@ -121,6 +121,11 @@ e depois alimenta a root key do Double Ratchet.
   * Um relay da lista pode dizer que uma conta é sua e desviar os pedidos de bundle dessa conta. As
     apps continuam a verificar o bundle contra o ID (ver secção 3): não consegue fingir ser a conta, só
     impedir que lhe cheguem mensagens.
+  * **Cópias de recuperação em todos os relays (desde 26/11/2026):** cada relay guarda também as
+    cópias cifradas das contas dos outros, e sabe a que conta pertence cada uma e quando mudou. Não
+    ganha acesso ao conteúdo (a chave são as 12 palavras). Um relay da lista comprometido pode apagar
+    as cópias, pôr lixo no lugar delas (a app não consegue abrir) ou mandar apagar uma conta nos
+    outros. Com um relay parado, um apagar ou um banir só lá chega quando ele voltar.
   * Os dois relays são do mesmo operador.
 * **Conta nova no relay mais rápido (desde a 0.9.69):** ao criar a conta (e na recuperação, quando a
   conta tem de ser criada de novo), a app abre e fecha uma ligação TCP a cada relay da lista para ver
@@ -145,7 +150,8 @@ e depois alimenta a root key do Double Ratchet.
   isso uma denúncia é um indício, não uma prova.
 * **Chave de recuperação (desde a 0.9.19):** as 12 palavras dão a conta inteira a
   quem as tiver (ID, contactos, bloqueados). O relay guarda a cópia cifrada
-  (XChaCha20-Poly1305, chave por Argon2id) e vê que conta a enviou e quando.
+  (XChaCha20-Poly1305, chave por Argon2id) e vê que conta a enviou e quando. Desde 26/11/2026 a
+  cópia existe em todos os relays da federação (mais um sítio de onde pode ser levada, sempre cifrada).
 * **One-time prekeys e validade dos bundles (desde a 0.9.3):** o relay entrega uma
   one-time prekey por pedido e o bundle tem data assinada (recusado com mais de 90
   dias). Quem pede bundles em massa pode esgotar as one-time prekeys de alguém (o

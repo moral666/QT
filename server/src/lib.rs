@@ -21,6 +21,7 @@ pub mod federation;
 pub mod latency;
 pub mod limits;
 pub mod protocol;
+pub mod replicas;
 pub mod apns;
 pub mod push;
 pub mod stats;

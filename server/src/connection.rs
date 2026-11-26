@@ -256,6 +256,13 @@ pub async fn handle_connection_with(
     }
     reply(&mut ws, &mut noise, &ServerMessage::Ack).await?;
 
+    // Sem conta aqui porque afinal era de outro relay (recuperada com esse em baixo): a espera
+    // de mensagens responde logo com o nome dele, para a app mudar.
+    let movida = match &cfg.federacao {
+        Some(_) if !registered => store.fed_movida(&user_id).await.unwrap_or(None),
+        _ => None,
+    };
+
     // ---------- Loop principal ----------
     // Pedido que chegou a meio de uma espera (WaitMessages): tratado a seguir.
     let mut pending: Option<Vec<u8>> = None;
@@ -267,6 +274,7 @@ pub async fn handle_connection_with(
         close: false,
         read: false,
         unregistered_left: cfg.unregistered_requests,
+        movida,
         out_tokens: cfg.egress_per_sec as f64,
         out_at: Instant::now(),
     };
@@ -477,8 +485,15 @@ async fn wait_messages(
     tokio::pin!(notified);
     notified.as_mut().enable();
     match store.peek_messages_raw(user_id, MAX_PAGE_BYTES).await {
-        Ok(raw) if !raw.is_empty() || wait.is_zero() => return WaitEnd::Reply(session.page(raw)),
-        Ok(_) => {}
+        Ok(raw) if !raw.is_empty() => return WaitEnd::Reply(session.page(raw)),
+        Ok(raw) => {
+            if let Some(casa) = &session.movida {
+                return WaitEnd::Reply(err(&crate::protocol::elsewhere(Some(casa))));
+            }
+            if wait.is_zero() {
+                return WaitEnd::Reply(session.page(raw));
+            }
+        }
         Err(e) => return WaitEnd::Reply(internal(e)),
     }
     stats::inc(&STATS.waits);
@@ -530,6 +545,8 @@ struct Session<'a> {
     read: bool,
     /// Pedidos que uma ligacao sem conta ainda pode fazer.
     unregistered_left: u32,
+    /// A conta foi daqui para o relay com este nome (`fed:movida`).
+    movida: Option<String>,
     /// Balde de bytes de saida desta ligacao.
     out_tokens: f64,
     out_at: Instant,
@@ -695,8 +712,12 @@ async fn handle_client_message(
                     }
                 }
             }
+            // Conta recuperada com o relay dela em baixo: a copia esta aqui, por isso nao e uma
+            // conta nova para o teto nem para os limites das primeiras 24 horas.
+            let recuperada = nova && matches!(store.backup_state(me).await, Ok(e) if e.copia.is_some());
             // Teto de contas novas por relay: quem chega passa ao relay seguinte da lista.
             let cap = nova
+                && !recuperada
                 && cfg.novas_contas
                 && (crate::limits::redis_tight() || !crate::limits::allow(crate::limits::Limited::NewAccount, "*", cfg.new_accounts));
             if cap {
@@ -704,7 +725,7 @@ async fn handle_client_message(
             }
             // Relay fechado a contas novas (operador): se a conta ja existir noutro relay, diz
             // qual (sem reservar nada, para o registo la nao encontrar uma reserva daqui).
-            if nova && (cap || !cfg.novas_contas) {
+            if nova && !recuperada && (cap || !cfg.novas_contas) {
                 if let Some(fed) = &cfg.federacao {
                     if let crate::federation::Onde::Par(n) = fed.onde_esta(me).await {
                         return err(&crate::protocol::elsewhere(Some(&n)));
@@ -724,7 +745,7 @@ async fn handle_client_message(
                 }
             }
             // Bundle, fim de uma eliminacao anterior e one-time prekeys numa so transacao.
-            let age = match (nova, young) {
+            let age = match (nova && !recuperada, young) {
                 (true, _) => crate::store::NewAccount::Created,
                 (false, true) => crate::store::NewAccount::Young,
                 (false, false) => crate::store::NewAccount::No,
@@ -740,14 +761,18 @@ async fn handle_client_message(
             match registo {
                 Ok(backup) => {
                     session.slot.set_registered(true);
+                    session.movida = None;
                     stats::inc(&STATS.bundles_registered);
-                    if nova {
+                    if nova && !recuperada {
                         session.slot.set_created_ms(crate::store::now_ms());
                         stats::inc(&STATS.accounts_new);
                     }
                     // A app abriu: a copia de recuperacao (se houver) fica mais 90 dias.
                     if let Some(lookup) = backup {
                         let _ = store.renew_backup_of(me, &lookup).await;
+                        if let Some(fed) = &cfg.federacao {
+                            fed.copia_renovada(me).await;
+                        }
                     }
                     ServerMessage::Ack
                 }
@@ -879,7 +904,10 @@ async fn handle_client_message(
                 Err(StoreError::RecipientDeleted) => err(crate::protocol::RECIPIENT_DELETED),
                 Err(StoreError::SenderNotRegistered) => {
                     stats::inc(&STATS.not_registered);
-                    err(crate::protocol::NOT_REGISTERED)
+                    match &session.movida {
+                        Some(casa) => err(&crate::protocol::elsewhere(Some(casa))),
+                        None => err(crate::protocol::NOT_REGISTERED),
+                    }
                 }
                 Err(StoreError::RecipientUnknown) => {
                     stats::inc(&STATS.recipient_unknown);
@@ -897,6 +925,9 @@ async fn handle_client_message(
                     crate::limits::UserSlot::forget_registered(&user_id);
                     let _ = store.delete_backup(&user_id).await;
                     let _ = store.set_premium(&user_id, 0).await;
+                    if let Some(fed) = &cfg.federacao {
+                        fed.copia_mudou(&user_id).await;
+                    }
                     stats::inc(&STATS.accounts_deleted);
                     ServerMessage::Ack
                 }
@@ -1244,6 +1275,9 @@ async fn handle_client_message(
             match store.ban(&user_id).await {
                 Ok(()) => {
                     let _ = store.expire_backup_of_banned(&user_id).await;
+                    if let Some(fed) = &cfg.federacao {
+                        fed.copia_mudou(&user_id).await;
+                    }
                     crate::limits::UserSlot::close_all(&user_id);
                     stats::inc(&STATS.bans);
                     ServerMessage::Ack
@@ -1323,6 +1357,9 @@ async fn handle_client_message(
                 Ok(()) => {
                     if part + 1 == parts {
                         stats::inc(&STATS.backups_saved);
+                        if let Some(fed) = &cfg.federacao {
+                            fed.copia_mudou(me).await;
+                        }
                     }
                     ServerMessage::Ack
                 }
@@ -1359,11 +1396,24 @@ async fn handle_client_message(
                     }
                     ServerMessage::BackupNotFound
                 }
-                Err(e) => internal(e),
+                // A copia daqui nao se le: o outro relay pode ter uma boa.
+                Err(e) => {
+                    if let Some(fed) = &cfg.federacao {
+                        if let Some(r @ ServerMessage::BackupPart { .. }) = fed.ler_copia(&lookup, part).await {
+                            return r;
+                        }
+                    }
+                    internal(e)
+                }
             }
         }
         ClientMessage::BackupDelete => match store.delete_backup(me).await {
-            Ok(()) => ServerMessage::Ack,
+            Ok(()) => {
+                if let Some(fed) = &cfg.federacao {
+                    fed.copia_mudou(me).await;
+                }
+                ServerMessage::Ack
+            }
             Err(e) => internal(e),
         },
         ClientMessage::PremiumStatus => match (store.premium_until(me).await, store.premium_enforced().await) {

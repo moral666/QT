@@ -137,6 +137,16 @@ pub(crate) fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
+/// O bundle novo vem de outra instalacao da app? O mesmo telemovel, ao trocar a signed
+/// pre-key, sobe-lhe o numero; um telemovel novo recomeca a contagem.
+fn outra_instalacao(anterior: &[u8], novo: &[u8]) -> bool {
+    use qt_core::identity::parse_bundle_v4;
+    match (parse_bundle_v4(anterior), parse_bundle_v4(novo)) {
+        (Ok(a), Ok(n)) => n.signed_pre_key != a.signed_pre_key && n.signed_pre_key_id <= a.signed_pre_key_id,
+        _ => false,
+    }
+}
+
 pub struct Store {
     client: redis::Client,
     /// Uma unica ligacao ao Redis, partilhada por todos os pedidos (os clones
@@ -313,11 +323,25 @@ impl Store {
         let key = self.bundle_key(user_id);
         let young = new_account != NewAccount::No;
         let ttl = if young { NEW_BUNDLE_TTL_SECONDS } else { BUNDLE_TTL_SECONDS as i64 };
+        // Telemovel novo (recuperacao) a registar sem lote (a app manda-o uma vez por dia e o
+        // registo que o levou pode ter ido a outro relay): as one-time prekeys que ca ficaram
+        // sao do telemovel antigo, e quem abrisse uma conversa com elas nao era lido.
+        let velhas = match one_time_pre_keys {
+            None => {
+                let anterior: Option<Vec<u8>> = conn.get(&key).await?;
+                anterior.is_some_and(|a| outra_instalacao(&a, &bundle_bytes))
+            }
+            Some(_) => false,
+        };
         let mut pipe = redis::pipe();
         pipe.atomic();
+        if velhas {
+            pipe.del(format!("{}:otpk:{}", self.key_prefix, user_id)).ignore();
+        }
         pipe.set(&key, bundle_bytes).ignore();
         pipe.expire(&key, ttl).ignore();
         pipe.del(self.deleted_key(user_id)).ignore();
+        pipe.del(self.fed_movida_key(user_id)).ignore();
         if new_account == NewAccount::Created {
             for k in [self.age_key(user_id), self.never_read_key(user_id)] {
                 pipe.set(&k, 1u8).ignore().expire(&k, AGE_MARK_SECONDS).ignore();
@@ -1117,6 +1141,17 @@ impl Store {
 //   {p}:bkpart:{lookup}:{geracao}:{i} uma parte
 //   {p}:bkown:{lookup}                a conta dona (so ela substitui a copia)
 //   {p}:bkof:{conta}                  o lookup da copia desta conta (para a apagar com ela)
+//   {p}:bkat:{conta}                  quando mudou (entre relays fica a mais recente, replicas.rs)
+
+/// De onde vem uma copia que esta a ser gravada.
+#[derive(Debug, Clone, Copy)]
+enum Carimbo {
+    /// Da app, neste relay: conta como alteracao de agora, por 90 dias.
+    App,
+    /// De outro relay, com a hora e o prazo dele.
+    Replica { at: u64, ttl: i64 },
+}
+
 impl Store {
     pub(crate) fn bk_keys(&self, lookup: &str) -> (String, String) {
         let p = &self.key_prefix;
@@ -1144,6 +1179,38 @@ impl Store {
         part: u32,
         parts: u32,
         data: Vec<u8>,
+    ) -> Result<(), StoreError> {
+        self.backup_put_from(owner, lookup, generation, part, parts, data, Carimbo::App).await
+    }
+
+    /// Como `backup_put`, para uma copia que vem de outro relay. Se aqui ja houver uma
+    /// alteracao mais recente, a que chega e ignorada.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn replica_put(
+        &self,
+        owner: &str,
+        lookup: &str,
+        generation: &str,
+        part: u32,
+        parts: u32,
+        data: Vec<u8>,
+        at: u64,
+        ttl: i64,
+    ) -> Result<(), StoreError> {
+        let ttl = ttl.clamp(1, BACKUP_TTL_SECONDS);
+        self.backup_put_from(owner, lookup, generation, part, parts, data, Carimbo::Replica { at, ttl }).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn backup_put_from(
+        &self,
+        owner: &str,
+        lookup: &str,
+        generation: &str,
+        part: u32,
+        parts: u32,
+        data: Vec<u8>,
+        carimbo: Carimbo,
     ) -> Result<(), StoreError> {
         let mut conn = self.connection().await?;
         let (head_key, own_key) = self.bk_keys(lookup);
@@ -1183,6 +1250,13 @@ impl Store {
             Some(b) => Some(b.turn().await),
             None => None,
         };
+        // Dentro da nossa vez: uma copia de outro relay nunca passa por cima de algo mais recente.
+        if let Carimbo::Replica { at, .. } = carimbo {
+            let local: Option<u64> = conn.get(self.bk_at_key(owner)).await?;
+            if local.is_some_and(|l| l > at) {
+                return Ok(());
+            }
+        }
         // Ultima parte: confirma que chegaram todas antes de trocar.
         let mut chunks = Vec::with_capacity(parts as usize);
         for i in 0..parts {
@@ -1197,17 +1271,27 @@ impl Store {
         let old = self.bk_head(&mut conn, lookup).await?;
         let of_key = format!("{}:bkof:{owner}", self.key_prefix);
         let previous_lookup: Option<String> = conn.get(&of_key).await?;
+        let ttl = match carimbo {
+            Carimbo::App => BACKUP_TTL_SECONDS,
+            Carimbo::Replica { ttl, .. } => ttl,
+        };
+        match carimbo {
+            Carimbo::App => {
+                self.bk_bump(owner, ttl).await?;
+            }
+            Carimbo::Replica { at, .. } => self.bk_set_at(owner, at, ttl).await?,
+        }
         let mut pipe = redis::pipe();
-        pipe.set(&head_key, format!("{generation}:{parts}")).ignore().expire(&head_key, BACKUP_TTL_SECONDS).ignore();
-        pipe.set(&own_key, owner).ignore().expire(&own_key, BACKUP_TTL_SECONDS).ignore();
-        pipe.set(&of_key, lookup).ignore().expire(&of_key, BACKUP_TTL_SECONDS).ignore();
+        pipe.set(&head_key, format!("{generation}:{parts}")).ignore().expire(&head_key, ttl).ignore();
+        pipe.set(&own_key, owner).ignore().expire(&own_key, ttl).ignore();
+        pipe.set(&of_key, lookup).ignore().expire(&of_key, ttl).ignore();
         pipe.del(&stage_key).ignore();
         for i in 0..parts {
             let key = self.bk_part(lookup, generation, i);
             if self.backups.is_some() {
                 pipe.del(key).ignore();
             } else {
-                pipe.expire(key, BACKUP_TTL_SECONDS).ignore();
+                pipe.expire(key, ttl).ignore();
             }
         }
         if let Some((g, n)) = old.filter(|(g, _)| g != generation) {
@@ -1216,6 +1300,10 @@ impl Store {
             }
         }
         pipe.query_async::<_, ()>(&mut conn).await?;
+        // O ficheiro "envelhece" o que ja passou do prazo, para a limpeza o apagar na altura.
+        if let (Some(b), true) = (&self.backups, ttl < BACKUP_TTL_SECONDS) {
+            b.set_age(lookup, std::time::Duration::from_secs((BACKUP_TTL_SECONDS - ttl) as u64)).await?;
+        }
         drop(turn);
         // Palavras novas: a copia das palavras antigas desta conta deixa de servir.
         if let Some(prev) = previous_lookup.filter(|l| l != lookup) {
@@ -1279,6 +1367,12 @@ impl Store {
 
     /// Apaga a copia desta conta (pedido da app, conta apagada ou banida).
     pub async fn delete_backup(&self, owner: &str) -> Result<(), StoreError> {
+        // Fica a marca de apagada, para os outros relays a apagarem tambem.
+        self.bk_bump(owner, BACKUP_TTL_SECONDS).await?;
+        self.delete_backup_files(owner).await
+    }
+
+    pub(crate) async fn delete_backup_files(&self, owner: &str) -> Result<(), StoreError> {
         let mut conn = self.connection().await?;
         let of_key = format!("{}:bkof:{owner}", self.key_prefix);
         let lookup: Option<String> = conn.get(&of_key).await?;
@@ -1308,17 +1402,18 @@ impl Store {
         let mut conn = self.connection().await?;
         let of_key = format!("{}:bkof:{owner}", self.key_prefix);
         let Some(lookup) = conn.get::<_, Option<String>>(&of_key).await? else { return Ok(()) };
+        self.bk_bump(owner, BANNED_BACKUP_TTL_SECONDS).await?;
         self.backup_expire_in(owner, &lookup, BANNED_BACKUP_TTL_SECONDS).await
     }
 
-    async fn backup_expire_in(&self, owner: &str, lookup: &str, ttl: i64) -> Result<(), StoreError> {
+    pub(crate) async fn backup_expire_in(&self, owner: &str, lookup: &str, ttl: i64) -> Result<(), StoreError> {
         let mut conn = self.connection().await?;
         let of_key = format!("{}:bkof:{owner}", self.key_prefix);
         let lookup = lookup.to_string();
         let Some((generation, parts)) = self.bk_head(&mut conn, &lookup).await? else { return Ok(()) };
         let (head_key, own_key) = self.bk_keys(&lookup);
         let mut pipe = redis::pipe();
-        for k in [&of_key, &head_key, &own_key] {
+        for k in [&of_key, &head_key, &own_key, &self.bk_at_key(owner)] {
             pipe.expire(k, ttl).ignore();
         }
         for i in 0..parts {

@@ -6,6 +6,25 @@ formal (não há releases numeradas ainda, ver `ROADMAP.md`).
 
 ## [Não lançado]
 
+### 26 de novembro de 2026: versão 1.1.0 (Android e iPhone 1.1.0, build 80): recuperar com um relay parado
+
+Atualizar primeiro os relays (um de cada vez) e depois as apps. A 1.0.4 continua a funcionar.
+
+- **Cópia de recuperação nos dois relays:** o relay da conta passa-a aos outros, também as que já
+  existem. Mudar, apagar e apagar a conta valem em todos; o que não chega a um relay parado chega
+  quando ele voltar.
+- **Recuperar com um relay parado:** se o relay não responder, as apps pedem a cópia ao outro e a
+  conta passa a funcionar aí. Quando o dela voltar, a conta regressa e as mensagens que chegaram
+  entretanto vão atrás.
+- **90 dias:** uma cópia sem mudanças não voltava a ser enviada e podia expirar no relay sem a app
+  saber. Agora é reenviada de 7 em 7 dias.
+- **Conversas novas depois de recuperar:** numa conta que não está no relay principal, ficavam no
+  relay chaves do telemóvel antigo e, até um dia depois, uma conversa nova podia não ser lida. O relay
+  apaga-as e a app envia chaves novas quando muda de relay. Função nova no núcleo: `relay_moved`.
+- **Relay:** um relay que não consegue saber se há cópia responde com erro, nunca "não há cópia"; uma
+  conta banida num relay fica banida nos outros também quando se registou com ele parado.
+- Testes: `server/tests/relay_copias.rs`, `relay_prekeys.rs`, `app_e2e_federacao.rs`.
+
 ### 26 de novembro de 2026: relays: cópia de recuperação no disco (sem mudanças nas apps nem no protocolo)
 
 - **Onde fica a cópia:** passa da memória (Redis) para um ficheiro no disco do relay

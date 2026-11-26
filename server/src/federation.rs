@@ -11,8 +11,12 @@
 //! numerados, varios ao mesmo tempo); as respostas vem pela mesma ligacao.
 //!
 //! Par que nao responde ao registar (decisao do Nuno, A1): regista na mesma e marca a conta
-//! para verificar (`fed:verificar`). Quando o par volta: se ele ja a tinha, este relay larga-a;
-//! se os dois a registaram sem verificar, fica no relay de nome menor.
+//! para verificar (`fed:verificar`). Quando o par volta: se ele ja a tinha, este relay larga-a
+//! (passa-lhe as mensagens em fila e diz a app para mudar); se os dois a registaram sem
+//! verificar, fica no relay de nome menor.
+//!
+//! Copias de recuperacao (`replicas.rs`): o relay da conta manda cada alteracao aos pares, para
+//! a conta se recuperar com um relay em baixo. Fica numa fila ate o par confirmar.
 //!
 //! Registos: so o nome dos pares e contagens. Nunca IDs de contas.
 
@@ -26,7 +30,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
-use tokio::sync::{mpsc, oneshot, Semaphore};
+use tokio::sync::{mpsc, oneshot, Notify, Semaphore};
 
 /// Versao do protocolo entre relays.
 pub const VERSAO: u32 = 1;
@@ -53,6 +57,13 @@ const PING: Duration = Duration::from_secs(30);
 const MORTA: Duration = Duration::from_secs(90);
 /// Verificacao das contas registadas com um par em baixo.
 const VERIFICAR_CADA: Duration = Duration::from_secs(60);
+/// Fila das copias de cada par: nova tentativa, mesmo sem alteracoes.
+const COPIAR_CADA: Duration = Duration::from_secs(30);
+/// Revisao de todas as copias no disco (envia as que faltem num par): ao arrancar e depois.
+const REVER_PRIMEIRA: Duration = Duration::from_secs(60);
+const REVER_CADA: Duration = Duration::from_secs(24 * 3600);
+/// A revisao para enquanto a fila de um par tiver mais do que isto.
+const REVER_FILA_MAX: usize = 200;
 /// "O anexo X esta no relay Y" (fase 2): os anexos apagam-se ao fim de 24 h.
 const CACHE_ANEXO: Duration = Duration::from_secs(24 * 3600);
 /// "A copia de recuperacao X esta no relay Y": so durante uma recuperacao (varias partes).
@@ -191,6 +202,19 @@ pub enum Pedido {
     /// Ao ligar: o bloqueio premium de quem pergunta. Resposta: `Bloqueio`, com o deste relay.
     /// Fica a decisao mais recente dos dois. Um relay sem isto nao responde.
     Bloqueio { on: bool, at: u64 },
+    // ----- Copias de recuperacao nos dois relays. Um relay sem isto nao responde. -----
+    /// A copia da conta `owner` no relay que pergunta. `Feito` se este ja a tem (fica com o
+    /// prazo certo) ou tem algo mais recente; `QueroCopia` se precisa dos dados.
+    ConferirCopia { owner: UserId, lookup: String, generation: String, at: u64, ttl: u64 },
+    /// Uma parte dessa copia (`data` em base64). `Feito`.
+    GuardarCopia { owner: UserId, lookup: String, generation: String, at: u64, ttl: u64, part: u32, parts: u32, data: String },
+    /// A copia foi apagada em `at`; com `conta`, a conta toda (apagada pelo dono). `Feito`.
+    ApagarCopia {
+        owner: UserId,
+        at: u64,
+        #[serde(default)]
+        conta: bool,
+    },
 }
 
 /// Pedidos do operador encaminhados entre relays (fase 3).
@@ -247,6 +271,8 @@ pub enum Resposta {
     ListaPremium { entries: Vec<PremiumEntry> },
     ListaBanidas { ids: Vec<UserId> },
     Bloqueio { on: bool, at: u64 },
+    /// Resposta a `ConferirCopia`: manda os dados.
+    QueroCopia,
 }
 
 /// Resultado de entregar uma mensagem noutro relay.
@@ -369,6 +395,8 @@ pub struct Par {
     ligado: AtomicBool,
     vagas: Semaphore,
     vagas_anexos: Semaphore,
+    /// Ha copias na fila deste par.
+    por_copiar: Notify,
 }
 
 impl Par {
@@ -416,6 +444,7 @@ impl Federacao {
                     ligado: AtomicBool::new(false),
                     vagas: Semaphore::new(EM_CURSO),
                     vagas_anexos: Semaphore::new(EM_CURSO_ANEXOS),
+                    por_copiar: Notify::new(),
                 })
             })
             .collect::<Vec<_>>();
@@ -440,6 +469,24 @@ impl Federacao {
             loop {
                 tick.tick().await;
                 f.verificar_pendentes().await;
+                f.encaminhar_pendentes().await;
+            }
+        });
+        for par in fed.pares.iter().cloned() {
+            let f = fed.clone();
+            tokio::spawn(async move {
+                loop {
+                    let _ = tokio::time::timeout(COPIAR_CADA, par.por_copiar.notified()).await;
+                    f.sincronizar_copias(&par).await;
+                }
+            });
+        }
+        let f = fed.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(REVER_PRIMEIRA).await;
+            loop {
+                f.rever_copias().await;
+                tokio::time::sleep(REVER_CADA).await;
             }
         });
         fed
@@ -459,7 +506,14 @@ impl Federacao {
         if !par.ligado() {
             return None;
         }
-        let lenta = matches!(p, Pedido::InfoBlob { .. } | Pedido::LerBlob { .. } | Pedido::ApagarBlob { .. } | Pedido::LerCopia { .. });
+        let lenta = matches!(
+            p,
+            Pedido::InfoBlob { .. }
+                | Pedido::LerBlob { .. }
+                | Pedido::ApagarBlob { .. }
+                | Pedido::LerCopia { .. }
+                | Pedido::GuardarCopia { .. }
+        );
         let pedido = async {
             let _lenta = if lenta { Some(par.vagas_anexos.acquire().await.ok()?) } else { None };
             let _vaga = par.vagas.acquire().await.ok()?;
@@ -650,6 +704,13 @@ impl Federacao {
 
     /// Uma volta: ate 500 contas por verificar. Devolve (verificadas, largadas).
     pub async fn verificar_pendentes(&self) -> (usize, usize) {
+        enum Decisao {
+            Verificada,
+            Esperar,
+            /// A conta e do relay com este nome.
+            Largar(String),
+            Banida,
+        }
         let Ok(ids) = self.store.fed_por_verificar(500).await else { return (0, 0) };
         if ids.is_empty() {
             return (0, 0);
@@ -666,37 +727,240 @@ impl Federacao {
                 }
                 Err(_) => continue,
             }
-            let mut decisao = Some(false); // Some(largar?) ; None = esperar
+            let mut decisao = Decisao::Verificada;
             for (nome, estados) in &respostas {
                 match estados.as_ref().map(|e| e[k]) {
                     None => {
-                        if decisao == Some(false) {
-                            decisao = None;
+                        if matches!(decisao, Decisao::Verificada) {
+                            decisao = Decisao::Esperar;
                         }
                     }
-                    Some(Estado::Tenho) => decisao = Some(true),
+                    // Banida noutro relay: tambem aqui.
+                    Some(Estado::Banida) => {
+                        decisao = Decisao::Banida;
+                        break;
+                    }
+                    Some(Estado::Tenho) => decisao = Decisao::Largar(nome.clone()),
                     // Os dois registaram sem verificar: fica no relay de nome menor.
-                    Some(Estado::TenhoPorVerificar) if nome.as_str() < self.nome.as_str() => decisao = Some(true),
+                    Some(Estado::TenhoPorVerificar) if nome.as_str() < self.nome.as_str() => {
+                        decisao = Decisao::Largar(nome.clone())
+                    }
                     Some(_) => {}
                 }
-                if decisao == Some(true) {
-                    break;
-                }
             }
-            match decisao {
-                Some(true) if self.store.fed_largar(id).await.is_ok() => {
-                    // Sem bundle aqui: as ligacoes da conta voltam a verificar ao enviar.
-                    crate::limits::UserSlot::forget_registered(id);
-                    largadas += 1
+            let largou = match decisao {
+                Decisao::Esperar => false,
+                Decisao::Verificada => {
+                    verificadas += usize::from(self.store.fed_verificado(id).await.is_ok());
+                    false
                 }
-                Some(false) if self.store.fed_verificado(id).await.is_ok() => verificadas += 1,
-                _ => {}
+                // A marca primeiro: se algo falhar a seguir, a volta seguinte repete.
+                Decisao::Largar(casa) => {
+                    self.store.fed_marcar_movida(id, &casa).await.is_ok() && self.store.fed_largar(id).await.is_ok()
+                }
+                Decisao::Banida => {
+                    let banida = self.store.ban(id).await.is_ok() && self.store.fed_verificado(id).await.is_ok();
+                    if banida {
+                        let _ = self.store.expire_backup_of_banned(id).await;
+                    }
+                    banida
+                }
+            };
+            if largou {
+                // Sem bundle aqui: fecha as ligacoes da conta; ao voltar, a app sabe onde ela esta.
+                crate::limits::UserSlot::forget_registered(id);
+                crate::limits::UserSlot::close_all(id);
+                self.esquecer(id);
+                largadas += 1;
             }
         }
         if verificadas + largadas > 0 {
-            println!("federacao: {verificadas} contas verificadas, {largadas} largadas (estavam noutro relay)");
+            println!("federacao: {verificadas} contas verificadas, {largadas} largadas (de outro relay)");
         }
         (verificadas, largadas)
+    }
+
+    /// Passa ao relay da conta as mensagens que ficaram aqui enquanto ela esteve neste (conta
+    /// recuperada com o relay dela em baixo). Cada uma so sai daqui depois de o outro a guardar.
+    /// Devolve quantas passou.
+    pub async fn encaminhar_pendentes(&self) -> usize {
+        let Ok(ids) = self.store.fed_por_encaminhar(500).await else { return 0 };
+        let mut passadas = 0;
+        for id in ids {
+            match self.store.is_registered(&id).await {
+                // Voltou a registar-se aqui: as mensagens sao dela aqui.
+                Ok(true) => {
+                    let _ = self.store.fed_encaminhada(&id).await;
+                    continue;
+                }
+                Ok(false) => {}
+                Err(_) => continue,
+            }
+            let casa = match self.store.fed_movida(&id).await {
+                Ok(Some(c)) => c,
+                Ok(None) => {
+                    let _ = self.store.fed_encaminhada(&id).await;
+                    continue;
+                }
+                Err(_) => continue,
+            };
+            let Some(par) = self.par(&casa) else { continue };
+            // So sai da lista numa volta que a encontre ja vazia: apanha o que chegou entretanto.
+            let mut vazia_a_partida = true;
+            'fila: loop {
+                let Ok(mensagens) = self.store.peek_messages(&id, 60_000).await else { break };
+                if mensagens.is_empty() {
+                    if vazia_a_partida {
+                        let _ = self.store.fed_encaminhada(&id).await;
+                    }
+                    break;
+                }
+                vazia_a_partida = false;
+                for m in mensagens {
+                    let pedido = Pedido::Entregar {
+                        to: id.clone(),
+                        sealed_from: b64().encode(&m.sealed_from),
+                        ciphertext: b64().encode(&m.ciphertext),
+                        silent: false,
+                        wake: None,
+                        jovem: false,
+                    };
+                    if !matches!(self.perguntar(par, pedido).await, Some(Resposta::Feito)) {
+                        break 'fila;
+                    }
+                    if self.store.ack_messages(&id, &[m.id]).await.is_err() {
+                        break 'fila;
+                    }
+                    passadas += 1;
+                }
+            }
+        }
+        if passadas > 0 {
+            println!("federacao: {passadas} mensagens passadas ao relay da conta");
+        }
+        passadas
+    }
+
+    // ----- Copias de recuperacao nos dois relays -----
+
+    /// A copia desta conta mudou aqui (gravada, apagada ou banida): fica na fila de cada par,
+    /// mesmo que esteja em baixo.
+    pub async fn copia_mudou(&self, owner: &str) {
+        for par in &self.pares {
+            if self.store.bk_sync_add(&par.nome, owner).await.is_ok() {
+                par.por_copiar.notify_one();
+            }
+        }
+    }
+
+    /// A app abriu e a copia so ganhou prazo: avisa os pares ligados. Com um par em baixo nao
+    /// se guarda nada (a proxima abertura ou a revisao tratam disso).
+    pub async fn copia_renovada(&self, owner: &str) {
+        for par in self.pares.iter().filter(|p| p.ligado()) {
+            if self.store.bk_sync_add(&par.nome, owner).await.is_ok() {
+                par.por_copiar.notify_one();
+            }
+        }
+    }
+
+    /// Passa pelas copias no disco das contas deste relay e confirma-as nos pares ligados
+    /// (copias anteriores a esta versao, relay novo na lista). Devolve quantas contas viu.
+    pub async fn rever_copias(&self) -> usize {
+        let mut vistas = 0;
+        for prefixo in 0..=u8::MAX {
+            if self.pares.is_empty() {
+                break;
+            }
+            let Ok(owners) = self.store.backup_owners(prefixo).await else { continue };
+            for owner in owners {
+                if !matches!(self.store.is_registered(&owner).await, Ok(true)) {
+                    continue;
+                }
+                // Ao ritmo do par mais lento, para a fila nunca crescer.
+                for par in &self.pares {
+                    while par.ligado() && matches!(self.store.bk_sync_len(&par.nome).await, Ok(n) if n > REVER_FILA_MAX) {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                }
+                self.copia_renovada(&owner).await;
+                vistas += 1;
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
+        vistas
+    }
+
+    /// Esvazia a fila de copias de um par. O que falhar volta a fila.
+    async fn sincronizar_copias(&self, par: &Par) {
+        let mut falhas = 0;
+        while par.ligado() && falhas < 3 {
+            let Ok(Some(owner)) = self.store.bk_sync_take(&par.nome).await else { break };
+            if self.enviar_copia(par, &owner).await {
+                falhas = 0;
+            } else {
+                let _ = self.store.bk_sync_add(&par.nome, &owner).await;
+                falhas += 1;
+            }
+        }
+    }
+
+    /// Poe o par com o mesmo estado da copia desta conta. Verdadeiro: nao ha mais nada a fazer.
+    async fn enviar_copia(&self, par: &Par, owner: &str) -> bool {
+        let Ok(estado) = self.store.backup_state(owner).await else { return false };
+        let at = estado.at;
+        let pedido = match &estado.copia {
+            Some(c) => Pedido::ConferirCopia {
+                owner: owner.to_string(),
+                lookup: c.lookup.clone(),
+                generation: c.generation.clone(),
+                at,
+                ttl: c.ttl as u64,
+            },
+            None if at == 0 => return true,
+            None => {
+                let Ok(e) = self.store.fed_estado(owner).await else { return false };
+                Pedido::ApagarCopia { owner: owner.to_string(), at, conta: e == Estado::Apagada }
+            }
+        };
+        match self.perguntar_com_erro(par, pedido).await {
+            Some(Resposta::Feito | Resposta::Recusado { .. }) => return true,
+            Some(Resposta::QueroCopia) => {}
+            _ => return false,
+        }
+        let Some(c) = estado.copia else { return false };
+        let Ok(Some(partes)) = self.store.backup_all_parts(&c).await else { return false };
+        for (i, dados) in partes.iter().enumerate() {
+            let pedido = Pedido::GuardarCopia {
+                owner: owner.to_string(),
+                lookup: c.lookup.clone(),
+                generation: c.generation.clone(),
+                at,
+                ttl: c.ttl as u64,
+                part: i as u32,
+                parts: c.parts,
+                data: b64().encode(dados),
+            };
+            match self.perguntar_com_erro(par, pedido).await {
+                Some(Resposta::Feito) => {}
+                Some(Resposta::Recusado { .. }) => return true,
+                _ => return false,
+            }
+        }
+        true
+    }
+
+    /// Um par diz que a copia (ou a conta) foi apagada.
+    async fn apagar_pedido(&self, owner: &str, at: u64, conta: bool) -> Result<(), crate::store::StoreError> {
+        // Aqui mudou depois: fica como esta.
+        if self.store.backup_state(owner).await?.at > at {
+            return Ok(());
+        }
+        if conta && self.store.is_registered(owner).await? {
+            self.store.delete_account(owner).await?;
+            self.store.set_premium(owner, 0).await?;
+            crate::limits::UserSlot::forget_registered(owner);
+        }
+        self.store.replica_delete(owner, at).await
     }
 
     fn par(&self, nome: &str) -> Option<&Arc<Par>> {
@@ -846,8 +1110,8 @@ impl Federacao {
     }
 
     /// Parte de uma copia de recuperacao guardada noutro relay (telemovel novo, conta noutro relay).
-    /// Um par que responde com erro pode te-la: sai um erro e nao "nao ha copia". `None`: nenhum
-    /// dos que responderam a tem.
+    /// Um par que nao responde (ou responde com erro) pode te-la: sai um erro e nao "nao ha
+    /// copia". `None`: todos responderam e nenhum a tem.
     pub async fn ler_copia(&self, lookup: &str, part: u32) -> Option<ServerMessage> {
         let pedido = || Pedido::LerCopia { lookup: lookup.to_string(), part };
         let ler = |r: Option<Resposta>| match r {
@@ -863,7 +1127,7 @@ impl Federacao {
         let perguntas = self.pares.iter().map(|par| async move { (par.nome.clone(), self.perguntar_com_erro(par, pedido()).await) });
         let mut falhou = false;
         for (nome, r) in join_all(perguntas).await {
-            falhou |= matches!(r, Some(Resposta::Erro { .. }));
+            falhou |= matches!(r, None | Some(Resposta::Erro { .. }));
             if let Some(m) = ler(r) {
                 self.copias.put(lookup, &nome);
                 return Some(m);
@@ -917,6 +1181,15 @@ impl Federacao {
         }
     }
 
+    /// Dados de uma copia vindos de um par: so formatos validos, e nunca com hora no futuro.
+    fn copia_valida(owner: &str, lookup: &str, generation: &str, at: u64) -> bool {
+        use crate::protocol::is_hex_of_len;
+        is_valid_user_id(owner)
+            && is_hex_of_len(lookup, 64)
+            && is_hex_of_len(generation, 16)
+            && at <= crate::store::now_ms() + 10 * 60 * 1000
+    }
+
     async fn admin_pedido(&self, a: AdminFed) -> Resposta {
         let feito = |r: Result<(), crate::store::StoreError>| match r {
             Ok(()) => Resposta::Feito,
@@ -929,6 +1202,7 @@ impl Federacao {
                 let r = self.store.ban(&id).await;
                 if r.is_ok() {
                     let _ = self.store.expire_backup_of_banned(&id).await;
+                    self.copia_mudou(&id).await;
                     crate::limits::UserSlot::close_all(&id);
                     crate::stats::inc(&crate::stats::STATS.bans);
                 }
@@ -979,6 +1253,42 @@ impl Federacao {
                 self.entrega_pedida(to, &sealed_from, &ciphertext, silent, wake, jovem).await
             }
             Pedido::Bloqueio { on, at } => self.bloqueio_recebido(on, at).await,
+            Pedido::ConferirCopia { owner, lookup, generation, at, ttl } => {
+                if !Self::copia_valida(&owner, &lookup, &generation, at) {
+                    return Resposta::Recusado { motivo: "copia invalida".into() };
+                }
+                let ttl = ttl.clamp(1, crate::store::BACKUP_TTL_SECONDS as u64) as i64;
+                match self.store.replica_check(&owner, &lookup, &generation, at, ttl).await {
+                    Ok(true) => Resposta::QueroCopia,
+                    Ok(false) => Resposta::Feito,
+                    Err(_) => Resposta::Erro { motivo: "erro interno".into() },
+                }
+            }
+            Pedido::GuardarCopia { owner, lookup, generation, at, ttl, part, parts, data } => {
+                use crate::protocol::{BACKUP_PARTS_MAX, BACKUP_PART_MAX};
+                let dados = b64().decode(data).ok().filter(|d| !d.is_empty() && d.len() <= BACKUP_PART_MAX);
+                let (Some(dados), true) = (dados, Self::copia_valida(&owner, &lookup, &generation, at)) else {
+                    return Resposta::Recusado { motivo: "copia invalida".into() };
+                };
+                if parts == 0 || parts > BACKUP_PARTS_MAX || part >= parts {
+                    return Resposta::Recusado { motivo: "copia invalida".into() };
+                }
+                let ttl = ttl.clamp(1, crate::store::BACKUP_TTL_SECONDS as u64) as i64;
+                match self.store.replica_put(&owner, &lookup, &generation, part, parts, dados, at, ttl).await {
+                    Ok(()) => Resposta::Feito,
+                    Err(crate::store::StoreError::BackupNotOwner) => Resposta::Recusado { motivo: "copia de outra conta".into() },
+                    Err(_) => Resposta::Erro { motivo: "erro interno".into() },
+                }
+            }
+            Pedido::ApagarCopia { owner, at, conta } => {
+                if !is_valid_user_id(&owner) || at > crate::store::now_ms() + 10 * 60 * 1000 {
+                    return Resposta::Recusado { motivo: "copia invalida".into() };
+                }
+                match self.apagar_pedido(&owner, at, conta).await {
+                    Ok(()) => Resposta::Feito,
+                    Err(_) => Resposta::Erro { motivo: "erro interno".into() },
+                }
+            }
             Pedido::PedirBundle { id } => {
                 if !is_valid_user_id(&id) {
                     return Resposta::SemBundle;
@@ -1108,6 +1418,7 @@ async fn manter_ligacao(fed: Arc<Federacao>, par: Arc<Par>, mut rx: mpsc::Receiv
             let (fed, par) = (fed.clone(), par.clone());
             tokio::spawn(async move { fed.acertar_bloqueio(&par).await });
         }
+        par.por_copiar.notify_one();
         let mut pendentes: HashMap<u64, oneshot::Sender<Resposta>> = HashMap::new();
         let mut n: u64 = 0;
         let mut visto = Instant::now();

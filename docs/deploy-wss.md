@@ -104,6 +104,10 @@ vão juntos: uma sem o outro não chega.
 Depois de um relay passar a guardar as cópias no disco, não voltes a uma versão anterior: essa não
 lê os ficheiros.
 
+Com federação, cada relay guarda as cópias das contas dos outros também: conta com o disco para as de
+todos. Ao atualizar, um relay de cada vez; as cópias que já existem passam para o outro um minuto
+depois de os dois estarem atualizados (ou na revisão do dia seguinte).
+
 ## Atualizar o relay
 
 Corre de novo `deploy/aws/setup-ec2.sh`: vai buscar o código ao GitHub,

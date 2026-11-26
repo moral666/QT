@@ -96,6 +96,26 @@ impl Backups {
         .await
     }
 
+    /// Os lookups com ficheiro na pasta `{prefixo}` (dois hex).
+    pub(crate) async fn list(&self, prefixo: u8) -> Result<Vec<String>, StoreError> {
+        self.blocking(move |cfg| {
+            let entries = match std::fs::read_dir(cfg.dir.join(format!("{prefixo:02x}"))) {
+                Ok(e) => e,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+                Err(e) => return Err(e),
+            };
+            let mut out = Vec::new();
+            for entry in entries {
+                let name = entry?.file_name().to_string_lossy().into_owned();
+                if crate::protocol::is_hex_of_len(&name, 64) {
+                    out.push(name);
+                }
+            }
+            Ok(out)
+        })
+        .await
+    }
+
     /// Apaga o ficheiro. Um que nao exista nao e erro.
     pub(crate) async fn remove(&self, turn: Turn, lookup: &str) -> Result<Turn, StoreError> {
         let lookup = lookup.to_string();

@@ -1033,6 +1033,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * recuperada noutro telemovel), ou que ja nao aceita contas novas (tenta o seguinte da lista).
      * Guarda o relay da conta e volta a ligar-se a ele. Verdadeiro se mudou.
      */
+    @Synchronized
     private fun moveRelay(reason: String): Boolean {
         if (relayMoves >= 4) return false
         val current = Relays.home(prefs)
@@ -1048,6 +1049,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (target.name == current.name || !Relays.setHome(prefs, target.name)) return false
         relayMoves++
         Log.i(TAG, "relay da conta: ${target.name}")
+        // O relay novo ainda nao tem as one-time prekeys desta app: o registo leva um lote.
+        runCatching { qt?.relayMoved() }
         runCatching { qt?.callSetRelay(Relays.callName(prefs)) }
         _ui.update { it.copy(relayUrl = target.url, relayKeyHex = target.pin) }
         io { startLink() }
@@ -1779,22 +1782,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: QtException) {
                 error(s(R.string.recovery_bad_words)); return@io
             }
-            val l = RelayLink(client, _ui.value.relayUrl, _ui.value.relayKeyHex.ifBlank { null })
-            val parts = mutableListOf<ByteArray>()
-            try {
-                var total = 1
-                while (parts.size < total) {
-                    when (val r = l.request(client.relayRequestBackupGet(parts.size.toUInt()))) {
-                        is RelayResponse.BackupPart -> { total = r.parts.toInt(); parts += r.data }
-                        is RelayResponse.BackupNotFound -> { error(s(R.string.recovery_not_found)); return@io }
-                        else -> { error(s(R.string.t_resposta_inesperada_do_servidor)); return@io }
+            // A copia esta em todos os relays: se o primeiro nao responder, pergunta-se ao seguinte.
+            val first = Relays.home(prefs)
+            var found: Pair<RelayInfo, List<ByteArray>>? = null
+            var failure = R.string.t_sem_ligacao_ao_servidor
+            for (relay in listOf(first) + Relays.all.filter { it.name != first.name }) {
+                val l = RelayLink(client, relay.url, relay.pin.ifBlank { null })
+                try {
+                    val parts = mutableListOf<ByteArray>()
+                    var total = 1
+                    while (parts.size < total) {
+                        val request = client.relayRequestBackupGet(parts.size.toUInt())
+                        val r = withTimeoutOrNull(RECOVERY_TRY_MS) { l.request(request) } ?: break
+                        when (r) {
+                            is RelayResponse.BackupPart -> { total = r.parts.toInt(); parts += r.data }
+                            is RelayResponse.BackupNotFound -> { error(s(R.string.recovery_not_found)); return@io }
+                            else -> { failure = R.string.t_resposta_inesperada_do_servidor; break }
+                        }
                     }
+                    if (parts.size >= total) { found = relay to parts; break }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "recuperacao: ${relay.name} sem resposta")
+                } finally {
+                    l.shutdown()
                 }
-            } catch (e: Exception) {
-                error(s(R.string.t_sem_ligacao_ao_servidor)); return@io
-            } finally {
-                l.shutdown()
             }
+            val (relay, parts) = found ?: run { error(s(failure)); return@io }
             val acc = try {
                 client.recoveryRestore(parts)
             } catch (e: QtException) {
@@ -1803,6 +1818,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val list = acc.contacts.mapNotNull { c ->
                 runCatching { Contact(c.nickname.ifBlank { s(R.string.t_contacto) }, c.publicId, relayIdOfPublicId(c.publicId)) }.getOrNull()
             }
+            // A conta fica no relay que respondeu; se viver noutro que esteja de pe, o registo diz
+            // qual e a app muda (`moveRelay`).
+            Relays.setHome(prefs, relay.name)
+            runCatching { client.callSetRelay(Relays.callName(prefs)) }
+            _ui.update { it.copy(relayUrl = relay.url, relayKeyHex = relay.pin) }
             // A copia substitui a lista; se a lista guardada nao abria, fica guardada a parte.
             if (contactsBroken) { contactStore.quarantine(); contactsBroken = false }
             newAccountPresenceOff()   // como numa conta nova, neste telemovel
@@ -2625,6 +2645,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         if (first != null) Log.d(TAG, "espera: ${r.messages.size} mensagem(ns) ao fim de ${SystemClock.elapsedRealtime() - t0} ms")
                     }
                     is RelayResponse.Error -> {
+                        // A conta voltou ao relay dela (recuperada com esse em baixo).
+                        if (moveRelay(r.reason)) return
                         if (r.reason == RELAY_UNKNOWN_REQUEST) {
                             waitBlockedUntil = SystemClock.elapsedRealtime() + WAIT_RETRY_MS
                             delivery("Entrega imediata: o relay não a suporta; a verificar de 3 em 3 s")
@@ -3509,6 +3531,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private const val WINDOW = 4
         /** Nova tentativa de abrir uma sessao que falhou em [restartSessions] (1.0.4). */
         private const val RESTART_RETRY_MS = 5 * 60_000L
+        /** Recuperacao: tempo maximo por pedido a um relay antes de passar ao seguinte. */
+        private const val RECOVERY_TRY_MS = 20_000L
         private const val RETRY_MS = 15_000L
         private const val RETRY_MAX_MS = 5 * 60_000L
         /** Recusas seguidas de um anexo antes de ficar como falhado. */

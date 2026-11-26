@@ -169,6 +169,28 @@ async fn relay_completo_com_a_lista_de_comandos_de_producao() {
     store.delete_backup(&alice).await.unwrap();
     assert_eq!(store.backup_get(&lookup, 0).await.unwrap(), None);
 
+    // Copias nos dois relays: estado (TTL), copia vinda de outro, fila por par (LPOP, LLEN),
+    // revisao do disco e contas que voltam ao relay delas.
+    let depois = store.backup_state(&alice).await.unwrap().at + 1_000;
+    assert!(store.replica_check(&alice, &lookup, "0123456789abcdef", depois, 90 * 86_400).await.unwrap());
+    store.replica_put(&alice, &lookup, "0123456789abcdef", 0, 1, vec![7; 10], depois, 86_400).await.unwrap();
+    assert!(!store.replica_check(&alice, &lookup, "0123456789abcdef", depois, 90 * 86_400).await.unwrap());
+    let estado = store.backup_state(&alice).await.unwrap();
+    assert_eq!(store.backup_all_parts(&estado.copia.unwrap()).await.unwrap(), Some(vec![vec![7; 10]]));
+    let prefixo = u8::from_str_radix(&lookup[..2], 16).unwrap();
+    assert_eq!(store.backup_owners(prefixo).await.unwrap(), vec![alice.clone()]);
+    store.replica_delete(&alice, depois + 1).await.unwrap();
+    assert_eq!(store.backup_get(&lookup, 0).await.unwrap(), None);
+    store.bk_sync_add("par", &alice).await.unwrap();
+    assert_eq!(store.bk_sync_len("par").await.unwrap(), 1);
+    assert_eq!(store.bk_sync_take("par").await.unwrap(), Some(alice.clone()));
+    assert_eq!(store.bk_sync_take("par").await.unwrap(), None);
+    store.fed_marcar_movida(&alice, "par").await.unwrap();
+    assert_eq!(store.fed_movida(&alice).await.unwrap().as_deref(), Some("par"));
+    assert_eq!(store.fed_por_encaminhar(10).await.unwrap(), vec![alice.clone()]);
+    store.fed_encaminhada(&alice).await.unwrap();
+    assert!(store.fed_por_encaminhar(10).await.unwrap().is_empty());
+
     // Premium.
     store.set_premium(&alice, 4_102_444_800_000).await.unwrap();
     assert_eq!(store.premium_until(&alice).await.unwrap(), 4_102_444_800_000);

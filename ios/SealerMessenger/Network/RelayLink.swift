@@ -73,6 +73,8 @@ actor RelayLink {
     /// Para ligar e para escrever na ligacao: cifrar e enviar tem de ser pela mesma ordem.
     private let lock = AsyncLock()
     private var conn: Conn?
+    /// Terminada de vez (`shutdown`): nao volta a ligar, os pedidos falham logo.
+    private var shut = false
 
     private final class Conn: @unchecked Sendable {
         let ws: URLSessionWebSocketTask
@@ -113,6 +115,7 @@ actor RelayLink {
                 let ms = min(Self.backoffMs << UInt64(attempt - 1), 8_000)
                 try await Task.sleep(nanoseconds: ms * 1_000_000)
             }
+            if shut { throw RelayLinkError.closed }
             var sentOn: Conn?
             do {
                 let (c, answers) = try await enqueue([bytes])
@@ -176,6 +179,11 @@ actor RelayLink {
                 close(conn)
                 c = try await connect()
                 conn = c
+                // Terminada enquanto ligava: esta ligacao nao fica.
+                if shut {
+                    close(c)
+                    throw RelayLinkError.closed
+                }
             }
             let answers = requests.map { _ in RelayAnswer() }
             c.pending.append(contentsOf: answers)
@@ -196,6 +204,12 @@ actor RelayLink {
     }
 
     func close() { close(conn) }
+
+    /// Fecha de vez: um pedido a meio (ou que chegue depois) nao volta a ligar.
+    func shutdown() {
+        shut = true
+        close()
+    }
 
     /// Fecha esta ligacao (se ainda for a atual, deixa de o ser). Os pedidos por responder falham.
     private func close(_ c: Conn?) {
